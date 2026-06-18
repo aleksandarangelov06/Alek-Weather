@@ -1,6 +1,6 @@
-import { getWeatherInfo, formatDay } from '../utils/weatherCodes'
+import { getWeatherInfo, formatDay, toTemp } from '../utils/weatherCodes'
 
-export function DailyForecast({ daily }) {
+export function DailyForecast({ daily, unit }) {
   const maxTemps = daily.temperature_2m_max
   const minTemps = daily.temperature_2m_min
   const weekMin = Math.min(...minTemps)
@@ -13,12 +13,12 @@ export function DailyForecast({ daily }) {
       <div className="daily-list">
         {daily.time.map((date, i) => {
           const info = getWeatherInfo(daily.weather_code[i])
-          const high = Math.round(maxTemps[i])
-          const low = Math.round(minTemps[i])
+          const high = toTemp(maxTemps[i], unit)
+          const low = toTemp(minTemps[i], unit)
           const precip = daily.precipitation_probability_max[i]
 
-          const barLeft = ((low - weekMin) / range) * 100
-          const barWidth = ((high - low) / range) * 100
+          const barLeft = ((minTemps[i] - weekMin) / range) * 100
+          const barWidth = ((maxTemps[i] - minTemps[i]) / range) * 100
 
           return (
             <div key={date} className="daily-row">

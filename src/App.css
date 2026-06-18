@@ -12,15 +12,11 @@
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
-/* ── Layout ── */
+/* ── Base ── */
 .app {
   min-height: 100vh;
   background: var(--bg);
-  padding: 20px 16px 48px;
   font-family: var(--font);
-  max-width: 480px;
-  margin: 0 auto;
-  box-sizing: border-box;
 }
 
 .card {
@@ -39,10 +35,95 @@
   margin-bottom: 16px;
 }
 
+/* ── Header ── */
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 0;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.app-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
+}
+
+.unit-toggle {
+  background: var(--card-bg);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  padding: 6px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+  cursor: pointer;
+  font-family: var(--font);
+  box-shadow: var(--shadow);
+  transition: background 0.15s, border-color 0.2s;
+}
+
+.unit-toggle:hover {
+  background: var(--accent-light);
+  border-color: var(--accent);
+}
+
+/* ── Layout (mobile default) ── */
+.app-grid {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 16px 48px;
+  max-width: 480px;
+  margin: 0 auto;
+}
+
+.sidebar {
+  width: 100%;
+}
+
+.main-content {
+  width: 100%;
+}
+
+/* ── Desktop layout ── */
+@media (min-width: 768px) {
+  .app-header {
+    max-width: 960px;
+    padding: 20px 24px 0;
+  }
+
+  .app-grid {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 20px;
+    max-width: 960px;
+    padding: 16px 24px 48px;
+  }
+
+  .sidebar {
+    width: 260px;
+    flex-shrink: 0;
+    position: sticky;
+    top: 20px;
+  }
+
+  .main-content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .details-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
 /* ── Search ── */
 .search-wrapper {
   position: relative;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .search-bar {
@@ -156,21 +237,118 @@
   text-align: center;
 }
 
+/* ── Saved cities ── */
+.saved-cities {
+  padding: 16px 20px;
+}
+
+.saved-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.saved-row {
+  display: flex;
+  align-items: center;
+  border-radius: 10px;
+  transition: background 0.15s;
+  overflow: hidden;
+}
+
+.saved-row.active {
+  background: var(--accent-light);
+}
+
+.saved-city-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font);
+  text-align: left;
+  color: var(--text-primary);
+  min-width: 0;
+}
+
+.saved-row:not(.active) .saved-city-btn:hover {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.saved-city-btn svg {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.saved-name {
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.saved-sub {
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.saved-country {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-light);
+  padding: 1px 6px;
+  border-radius: 5px;
+  flex-shrink: 0;
+}
+
+.saved-remove {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  border-radius: 8px;
+  transition: color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+
+.saved-remove:hover {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.08);
+}
+
 /* ── Current weather ── */
 .current-card {
   text-align: center;
-  padding: 32px 20px 28px;
+  padding: 24px 20px 24px;
+}
+
+.current-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 4px;
 }
 
 .current-location {
-  font-size: 18px;
+  font-size: 17px;
   font-weight: 600;
   color: var(--text-primary);
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
+  gap: 7px;
   flex-wrap: wrap;
+  text-align: left;
 }
 
 .country-tag {
@@ -184,15 +362,37 @@
   letter-spacing: 0.5px;
 }
 
+.save-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  padding: 6px;
+  display: flex;
+  align-items: center;
+  border-radius: 10px;
+  transition: color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+
+.save-btn:hover {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+.save-btn.saved {
+  color: var(--accent);
+}
+
 .current-icon {
-  font-size: 80px;
+  font-size: 76px;
   line-height: 1;
-  margin: 20px 0 8px;
+  margin: 16px 0 6px;
   user-select: none;
 }
 
 .current-temp {
-  font-size: 76px;
+  font-size: 72px;
   font-weight: 200;
   color: var(--text-primary);
   line-height: 1;
@@ -220,9 +420,7 @@
   scrollbar-width: none;
 }
 
-.hourly-scroll::-webkit-scrollbar {
-  display: none;
-}
+.hourly-scroll::-webkit-scrollbar { display: none; }
 
 .hourly-item {
   display: flex;
@@ -284,9 +482,7 @@
   transition: background 0.15s;
 }
 
-.daily-row:hover {
-  background: rgba(0, 0, 0, 0.02);
-}
+.daily-row:hover { background: rgba(0, 0, 0, 0.02); }
 
 .daily-day {
   font-size: 14px;
@@ -299,9 +495,7 @@
   user-select: none;
 }
 
-.daily-precip-cell {
-  min-height: 18px;
-}
+.daily-precip-cell { min-height: 18px; }
 
 .precip-badge {
   font-size: 11px;
@@ -376,7 +570,7 @@
   margin-top: 2px;
 }
 
-/* ── States ── */
+/* ── Status / states ── */
 .status-message {
   display: flex;
   align-items: center;
@@ -387,9 +581,7 @@
   font-size: 15px;
 }
 
-.status-message.error {
-  color: #ef4444;
-}
+.status-message.error { color: #ef4444; }
 
 .spinner {
   width: 20px;
@@ -401,9 +593,7 @@
   animation: spin 0.7s linear infinite;
 }
 
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 .empty-state {
   text-align: center;
@@ -428,11 +618,4 @@
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
-}
-
-/* ── Wide screens ── */
-@media (min-width: 600px) {
-  .details-grid {
-    grid-template-columns: repeat(4, 1fr);
-  }
 }

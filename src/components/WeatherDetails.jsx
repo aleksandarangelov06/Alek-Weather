@@ -1,5 +1,5 @@
 import { Wind, Droplets, Eye, Thermometer, Gauge, Sun, Sunrise, Sunset } from 'lucide-react'
-import { getWindDirection, getUVLabel, formatTime } from '../utils/weatherCodes'
+import { getWindDirection, getUVLabel, formatTime, toTemp } from '../utils/weatherCodes'
 
 function DetailCard({ icon, label, value, sub }) {
   return (
@@ -12,12 +12,13 @@ function DetailCard({ icon, label, value, sub }) {
   )
 }
 
-export function WeatherDetails({ current, daily, timezone }) {
+export function WeatherDetails({ current, daily, timezone, unit }) {
   const uv = getUVLabel(current.uv_index)
   const windDir = getWindDirection(current.wind_direction_10m)
   const visibilityMi = (current.visibility / 1609.34).toFixed(1)
   const sunrise = formatTime(daily.sunrise[0], timezone)
   const sunset = formatTime(daily.sunset[0], timezone)
+  const feelsLike = toTemp(current.apparent_temperature, unit)
 
   return (
     <div className="card">
@@ -26,7 +27,7 @@ export function WeatherDetails({ current, daily, timezone }) {
         <DetailCard
           icon={<Thermometer size={19} />}
           label="Feels Like"
-          value={`${Math.round(current.apparent_temperature)}°F`}
+          value={`${feelsLike}°${unit}`}
         />
         <DetailCard
           icon={<Droplets size={19} />}

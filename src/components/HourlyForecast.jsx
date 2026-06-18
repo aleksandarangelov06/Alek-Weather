@@ -1,6 +1,6 @@
-import { getWeatherInfo } from '../utils/weatherCodes'
+import { getWeatherInfo, toTemp } from '../utils/weatherCodes'
 
-export function HourlyForecast({ hourly, timezone }) {
+export function HourlyForecast({ hourly, timezone, unit }) {
   const now = new Date()
   const currentHourStr = now.toLocaleString('en-CA', {
     hour: '2-digit', hour12: false, timeZone: timezone,
@@ -30,7 +30,7 @@ export function HourlyForecast({ hourly, timezone }) {
             <div key={i} className="hourly-item">
               <span className="hourly-time">{label}</span>
               <span className="hourly-icon">{info.icon}</span>
-              <span className="hourly-temp">{Math.round(temps[i])}°</span>
+              <span className="hourly-temp">{toTemp(temps[i], unit)}°</span>
               {precip[i] > 20 ? (
                 <span className="hourly-precip">{precip[i]}%</span>
               ) : (

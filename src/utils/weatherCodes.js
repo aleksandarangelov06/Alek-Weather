@@ -51,6 +51,11 @@ export function formatTime(isoString, timezone) {
   })
 }
 
+export function toTemp(fahrenheit, unit) {
+  if (unit === 'C') return Math.round((fahrenheit - 32) * 5 / 9)
+  return Math.round(fahrenheit)
+}
+
 export function formatDay(dateString) {
   const date = new Date(dateString + 'T12:00:00')
   const today = new Date()
