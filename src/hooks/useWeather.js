@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react'
 
 const GEO_URL = 'https://geocoding-api.open-meteo.com/v1/search'
 const WEATHER_URL = 'https://api.open-meteo.com/v1/forecast'
+const AQI_URL = 'https://air-quality-api.open-meteo.com/v1/air-quality'
 
 const PARAMS = [
   'current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,surface_pressure,wind_speed_10m,wind_direction_10m,uv_index,visibility',
@@ -14,9 +15,13 @@ const PARAMS = [
   'forecast_days=7',
 ].join('&')
 
+const AQI_PARAMS = 'current=us_aqi,pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone'
+
 export function useWeather() {
   const [location, setLocation] = useState(null)
   const [weather, setWeather] = useState(null)
+  const [airQuality, setAirQuality] = useState(null)
+  const [lastUpdated, setLastUpdated] = useState(null)
   const [searchResults, setSearchResults] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -24,14 +29,23 @@ export function useWeather() {
   const fetchWeather = useCallback(async (loc) => {
     setLoading(true)
     setError(null)
+    setAirQuality(null)
     try {
-      const res = await fetch(
-        `${WEATHER_URL}?latitude=${loc.latitude}&longitude=${loc.longitude}&${PARAMS}`
-      )
-      if (!res.ok) throw new Error()
-      const data = await res.json()
+      const [weatherResult, aqiResult] = await Promise.allSettled([
+        fetch(`${WEATHER_URL}?latitude=${loc.latitude}&longitude=${loc.longitude}&${PARAMS}`),
+        fetch(`${AQI_URL}?latitude=${loc.latitude}&longitude=${loc.longitude}&${AQI_PARAMS}`),
+      ])
+
+      if (weatherResult.status === 'rejected' || !weatherResult.value.ok) throw new Error()
+      const data = await weatherResult.value.json()
       setWeather(data)
       setLocation(loc)
+      setLastUpdated(new Date())
+
+      if (aqiResult.status === 'fulfilled' && aqiResult.value.ok) {
+        const aqiData = await aqiResult.value.json()
+        if (aqiData.current?.us_aqi != null) setAirQuality(aqiData.current)
+      }
     } catch {
       setError('Failed to fetch weather data. Please try again.')
     } finally {
@@ -81,7 +95,7 @@ export function useWeather() {
   }, [fetchWeather])
 
   return {
-    location, weather, searchResults, loading, error,
-    searchCity, selectCity, useMyLocation, setSearchResults,
+    location, weather, airQuality, lastUpdated, searchResults, loading, error,
+    searchCity, selectCity, useMyLocation, setSearchResults, fetchWeather,
   }
 }

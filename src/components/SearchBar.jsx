@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Search, MapPin, X } from 'lucide-react'
 
-export function SearchBar({ onSearch, results, onSelect, onUseLocation, onClear }) {
+export function SearchBar({ onSearch, results, onSelect, onUseLocation, onClear, onActivate }) {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const timerRef = useRef(null)
@@ -47,7 +47,7 @@ export function SearchBar({ onSearch, results, onSelect, onUseLocation, onClear 
           placeholder="Search city..."
           value={query}
           onChange={handleChange}
-          onFocus={() => setOpen(true)}
+          onFocus={() => { setOpen(true); onActivate?.() }}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           autoComplete="off"
         />

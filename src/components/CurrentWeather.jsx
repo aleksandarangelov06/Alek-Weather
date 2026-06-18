@@ -1,7 +1,16 @@
-import { Bookmark } from 'lucide-react'
+import { Bookmark, RefreshCw } from 'lucide-react'
 import { getWeatherInfo, toTemp } from '../utils/weatherCodes'
 
-export function CurrentWeather({ current, daily, location, unit, saved, onSave, onRemove }) {
+function formatUpdated(date) {
+  if (!date) return ''
+  const seconds = Math.floor((Date.now() - date) / 1000)
+  if (seconds < 60) return 'Updated just now'
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `Updated ${minutes} min ago`
+  return `Updated at ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+}
+
+export function CurrentWeather({ current, daily, location, unit, saved, onSave, onRemove, lastUpdated, onRefresh, loading }) {
   const info = getWeatherInfo(current.weather_code)
   const temp = toTemp(current.temperature_2m, unit)
   const todayMax = toTemp(daily.temperature_2m_max[0], unit)
@@ -30,6 +39,17 @@ export function CurrentWeather({ current, daily, location, unit, saved, onSave, 
       <div className="current-temp">{temp}°{unit}</div>
       <div className="current-condition">{info.label}</div>
       <div className="current-range">H: {todayMax}°&nbsp;&nbsp;L: {todayMin}°</div>
+      <div className="current-updated">
+        <span className="updated-text">{formatUpdated(lastUpdated)}</span>
+        <button
+          className={`refresh-btn ${loading ? 'spinning' : ''}`}
+          onClick={onRefresh}
+          aria-label="Refresh weather"
+          disabled={loading}
+        >
+          <RefreshCw size={13} />
+        </button>
+      </div>
     </div>
   )
 }

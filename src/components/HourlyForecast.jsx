@@ -26,16 +26,14 @@ export function HourlyForecast({ hourly, timezone, unit }) {
                 hour: 'numeric', hour12: true, timeZone: timezone,
               })
           const info = getWeatherInfo(codes[i])
+          const p = precip[i] ?? 0
+          const precipClass = p >= 30 ? 'hourly-precip high' : p > 0 ? 'hourly-precip low' : 'hourly-precip zero'
           return (
             <div key={i} className="hourly-item">
               <span className="hourly-time">{label}</span>
               <span className="hourly-icon">{info.icon}</span>
               <span className="hourly-temp">{toTemp(temps[i], unit)}°</span>
-              {precip[i] > 20 ? (
-                <span className="hourly-precip">{precip[i]}%</span>
-              ) : (
-                <span className="hourly-precip-empty" />
-              )}
+              <span className={precipClass}>{p}%</span>
             </div>
           )
         })}

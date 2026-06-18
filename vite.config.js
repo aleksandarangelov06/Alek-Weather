@@ -15,7 +15,7 @@ export default defineConfig({
         name: 'Alek Weather',
         short_name: 'Alek Weather',
         description: 'Real-time weather forecasts',
-        theme_color: '#3b82f6',
+        theme_color: '#f0f2f5',
         background_color: '#f0f2f5',
         display: 'standalone',
         orientation: 'portrait',
@@ -46,6 +46,14 @@ export default defineConfig({
             options: {
               cacheName: 'geo-api',
               expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/air-quality-api\.open-meteo\.com\/.*/i,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'aqi-api',
+              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 },
             },
           },
         ],
