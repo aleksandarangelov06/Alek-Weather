@@ -49,6 +49,30 @@ export default defineConfig({
             },
           },
           {
+            urlPattern: /^https:\/\/api\.rainviewer\.com\/.*/i,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'radar-frames',
+              expiration: { maxEntries: 5, maxAgeSeconds: 60 * 10 },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/tilecache\.rainviewer\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'radar-tiles',
+              expiration: { maxEntries: 500, maxAgeSeconds: 60 * 30 },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/[a-d]\.basemaps\.cartocdn\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'map-tiles',
+              expiration: { maxEntries: 500, maxAgeSeconds: 60 * 60 * 24 },
+            },
+          },
+          {
             urlPattern: /^https:\/\/air-quality-api\.open-meteo\.com\/.*/i,
             handler: 'NetworkFirst',
             options: {

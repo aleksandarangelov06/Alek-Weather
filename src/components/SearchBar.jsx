@@ -1,11 +1,15 @@
 import { useState, useRef, useEffect } from 'react'
 import { Search, MapPin, X } from 'lucide-react'
 
-export function SearchBar({ onSearch, results, onSelect, onUseLocation, onClear, onActivate }) {
+export function SearchBar({ onSearch, results, onSelect, onUseLocation, onClear, onActivate, autoFocus }) {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const timerRef = useRef(null)
   const inputRef = useRef(null)
+
+  useEffect(() => {
+    if (autoFocus) inputRef.current?.focus()
+  }, [autoFocus])
 
   const handleChange = (e) => {
     const val = e.target.value

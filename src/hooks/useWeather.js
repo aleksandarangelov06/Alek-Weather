@@ -3,6 +3,7 @@ import { useState, useCallback } from 'react'
 const GEO_URL = 'https://geocoding-api.open-meteo.com/v1/search'
 const WEATHER_URL = 'https://api.open-meteo.com/v1/forecast'
 const AQI_URL = 'https://air-quality-api.open-meteo.com/v1/air-quality'
+const NOAA_ALERTS_URL = 'https://api.weather.gov/alerts/active'
 
 const PARAMS = [
   'current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,surface_pressure,wind_speed_10m,wind_direction_10m,uv_index,visibility',
@@ -21,6 +22,7 @@ export function useWeather() {
   const [location, setLocation] = useState(null)
   const [weather, setWeather] = useState(null)
   const [airQuality, setAirQuality] = useState(null)
+  const [alerts, setAlerts] = useState([])
   const [lastUpdated, setLastUpdated] = useState(null)
   const [searchResults, setSearchResults] = useState([])
   const [loading, setLoading] = useState(false)
@@ -30,10 +32,14 @@ export function useWeather() {
     setLoading(true)
     setError(null)
     setAirQuality(null)
+    setAlerts([])
     try {
-      const [weatherResult, aqiResult] = await Promise.allSettled([
+      const [weatherResult, aqiResult, alertsResult] = await Promise.allSettled([
         fetch(`${WEATHER_URL}?latitude=${loc.latitude}&longitude=${loc.longitude}&${PARAMS}`),
         fetch(`${AQI_URL}?latitude=${loc.latitude}&longitude=${loc.longitude}&${AQI_PARAMS}`),
+        fetch(`${NOAA_ALERTS_URL}?point=${loc.latitude.toFixed(4)},${loc.longitude.toFixed(4)}`, {
+          headers: { 'User-Agent': 'AlekWeatherApp/1.0 (angelov6@terpmail.umd.edu)' },
+        }),
       ])
 
       if (weatherResult.status === 'rejected' || !weatherResult.value.ok) throw new Error()
@@ -45,6 +51,11 @@ export function useWeather() {
       if (aqiResult.status === 'fulfilled' && aqiResult.value.ok) {
         const aqiData = await aqiResult.value.json()
         if (aqiData.current?.us_aqi != null) setAirQuality(aqiData.current)
+      }
+
+      if (alertsResult.status === 'fulfilled' && alertsResult.value.ok) {
+        const alertsData = await alertsResult.value.json()
+        setAlerts(alertsData.features ?? [])
       }
     } catch {
       setError('Failed to fetch weather data. Please try again.')
@@ -95,7 +106,7 @@ export function useWeather() {
   }, [fetchWeather])
 
   return {
-    location, weather, airQuality, lastUpdated, searchResults, loading, error,
+    location, weather, airQuality, alerts, lastUpdated, searchResults, loading, error,
     searchCity, selectCity, useMyLocation, setSearchResults, fetchWeather,
   }
 }

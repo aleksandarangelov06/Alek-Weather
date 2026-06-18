@@ -26,6 +26,15 @@ function SegmentedControl({ options, value, onChange }) {
   )
 }
 
+function Toggle({ id, checked, onChange }) {
+  return (
+    <label className="toggle-switch" htmlFor={id}>
+      <input id={id} type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} />
+      <span className="toggle-track" />
+    </label>
+  )
+}
+
 function AboutSection() {
   const [open, setOpen] = useState(false)
 
@@ -60,7 +69,7 @@ function AboutSection() {
   )
 }
 
-export function SettingsPage({ onBack, darkMode, onDarkModeChange, unit, onUnitChange, closing }) {
+export function SettingsPage({ onBack, darkMode, onDarkModeChange, unit, onUnitChange, showOverview, onShowOverviewChange, closing }) {
   return (
     <div className={`settings-page${closing ? ' closing' : ''}`}>
       <header className="settings-page-header">
@@ -98,6 +107,13 @@ export function SettingsPage({ onBack, darkMode, onDarkModeChange, unit, onUnitC
                 { value: 'C', label: '°C' },
               ]}
             />
+          </SettingRow>
+        </div>
+
+        <div className="settings-group-label">Tiles</div>
+        <div className="card settings-card">
+          <SettingRow label="Weather Overview">
+            <Toggle id="toggle-overview" checked={showOverview} onChange={onShowOverviewChange} />
           </SettingRow>
         </div>
 
