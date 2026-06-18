@@ -1,0 +1,41 @@
+import { getWeatherInfo, formatDay } from '../utils/weatherCodes'
+
+export function DailyForecast({ daily }) {
+  const maxTemps = daily.temperature_2m_max
+  const minTemps = daily.temperature_2m_min
+  const weekMin = Math.min(...minTemps)
+  const weekMax = Math.max(...maxTemps)
+  const range = weekMax - weekMin || 1
+
+  return (
+    <div className="card">
+      <div className="section-label">7-DAY FORECAST</div>
+      <div className="daily-list">
+        {daily.time.map((date, i) => {
+          const info = getWeatherInfo(daily.weather_code[i])
+          const high = Math.round(maxTemps[i])
+          const low = Math.round(minTemps[i])
+          const precip = daily.precipitation_probability_max[i]
+
+          const barLeft = ((low - weekMin) / range) * 100
+          const barWidth = ((high - low) / range) * 100
+
+          return (
+            <div key={date} className="daily-row">
+              <span className="daily-day">{formatDay(date)}</span>
+              <span className="daily-icon">{info.icon}</span>
+              <span className="daily-precip-cell">
+                {precip > 20 ? <span className="precip-badge">{precip}%</span> : null}
+              </span>
+              <span className="daily-low">{low}°</span>
+              <div className="bar-track">
+                <div className="bar-fill" style={{ left: `${barLeft}%`, width: `${Math.max(barWidth, 8)}%` }} />
+              </div>
+              <span className="daily-high">{high}°</span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
