@@ -1173,7 +1173,6 @@
 /* ── Draggable blocks ── */
 .sortable-block {
   position: relative;
-  touch-action: none;
   width: 100%;
   box-sizing: border-box;
 }
@@ -1198,6 +1197,7 @@
   opacity: 0;
   transition: opacity 0.15s, color 0.15s, background 0.15s;
   user-select: none;
+  touch-action: none;
 }
 
 .drag-handle:active {

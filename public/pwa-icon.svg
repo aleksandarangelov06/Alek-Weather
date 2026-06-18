@@ -1,5 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
+    <linearGradient id="skyBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#4AA8E8"/>
+      <stop offset="100%" stop-color="#85CCFF"/>
+    </linearGradient>
     <!-- Sun: bright center → warm golden edge -->
     <radialGradient id="sunG" cx="38%" cy="38%" r="62%">
       <stop offset="0%"   stop-color="#FFF9C4"/>
@@ -35,6 +39,9 @@
       <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#1a5fa8" flood-opacity="0.18"/>
     </filter>
   </defs>
+
+  <!-- Sky background fills the full canvas for maskable icon support -->
+  <rect width="512" height="512" fill="url(#skyBg)"/>
 
   <!-- Sun rays: 8 rounded rects rotated around sun center -->
   <g transform="translate(197,197)" fill="#FFAB00">
