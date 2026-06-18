@@ -52,23 +52,36 @@
   letter-spacing: -0.3px;
 }
 
-.unit-toggle {
+.unit-switcher {
+  display: flex;
   background: var(--card-bg);
-  border: 1.5px solid var(--border);
   border-radius: 10px;
-  padding: 6px 14px;
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--accent);
-  cursor: pointer;
-  font-family: var(--font);
+  padding: 3px;
   box-shadow: var(--shadow);
-  transition: background 0.15s, border-color 0.2s;
+  gap: 2px;
 }
 
-.unit-toggle:hover {
-  background: var(--accent-light);
-  border-color: var(--accent);
+.unit-opt {
+  background: none;
+  border: none;
+  border-radius: 8px;
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: var(--font);
+  transition: background 0.15s, color 0.15s;
+}
+
+.unit-opt.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.unit-opt:not(.active):hover {
+  background: rgba(0, 0, 0, 0.05);
+  color: var(--text-primary);
 }
 
 /* ── Layout (mobile default) ── */

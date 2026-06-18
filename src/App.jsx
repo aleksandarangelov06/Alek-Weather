@@ -19,10 +19,9 @@ function App() {
 
   const { cities, save, remove, isSaved } = useSavedCities()
 
-  const toggleUnit = () => {
-    const next = unit === 'F' ? 'C' : 'F'
-    setUnit(next)
-    localStorage.setItem('alek-weather-unit', next)
+  const changeUnit = (u) => {
+    setUnit(u)
+    localStorage.setItem('alek-weather-unit', u)
   }
 
   const handleSelectSaved = (city) => selectCity(city)
@@ -48,9 +47,10 @@ function App() {
     <div className="app">
       <header className="app-header">
         <div className="app-title">⛅ Alek Weather</div>
-        <button className="unit-toggle" onClick={toggleUnit}>
-          °{unit === 'F' ? 'C' : 'F'}
-        </button>
+        <div className="unit-switcher">
+          <button className={`unit-opt ${unit === 'F' ? 'active' : ''}`} onClick={() => changeUnit('F')}>°F</button>
+          <button className={`unit-opt ${unit === 'C' ? 'active' : ''}`} onClick={() => changeUnit('C')}>°C</button>
+        </div>
       </header>
 
       <div className="app-grid">
