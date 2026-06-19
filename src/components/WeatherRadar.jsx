@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Minimize2, Play, Pause, ChevronLeft, ChevronRight, Navigation } from 'lucide-react'
+import { Minimize2, Play, Pause, Navigation } from 'lucide-react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
-const FRAMES_URL   = 'https://api.rainviewer.com/public/weather-maps.json'
-const TILE_URL = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
-const MAP_MAX_ZOOM     = 10
+const FRAMES_URL = 'https://api.rainviewer.com/public/weather-maps.json'
+const TILE_URL   = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
+const MAP_MAX_ZOOM     = 14
 const RADAR_NATIVE_MAX = 6
 const LEGEND_COLORS = ['#43a4c3', '#326985', '#ffff00', '#ff3300', '#d193c9']
 
@@ -23,6 +23,8 @@ export function WeatherRadar({ location, timezone }) {
   const mapInst     = useRef(null)
   const baseTileRef = useRef(null)
   const radarLayer  = useRef(null)
+  const trackRef    = useRef(null)
+  const isDragging  = useRef(false)
 
   const [host, setHost]           = useState('')
   const [frames, setFrames]       = useState([])
@@ -61,7 +63,7 @@ export function WeatherRadar({ location, timezone }) {
       keyboard: false,
       maxZoom: MAP_MAX_ZOOM,
     })
-    map.setView([location.latitude, location.longitude], 7)
+    map.setView([location.latitude, location.longitude], 10)
     L.circleMarker([location.latitude, location.longitude], {
       radius: 5, fillColor: '#3b82f6', color: '#fff', weight: 2, fillOpacity: 1,
     }).addTo(map)
@@ -117,7 +119,7 @@ export function WeatherRadar({ location, timezone }) {
     if (!map) return
     const t = setTimeout(() => {
       map.invalidateSize()
-      if (!expanded) map.setView([location.latitude, location.longitude], 7, { animate: false })
+      if (!expanded) map.setView([location.latitude, location.longitude], 10, { animate: false })
     }, 80)
     if (expanded) {
       map.dragging.enable(); map.scrollWheelZoom.enable()
@@ -135,40 +137,43 @@ export function WeatherRadar({ location, timezone }) {
     map.setView([location.latitude, location.longitude], 9, { animate: true })
   }, [location.latitude, location.longitude])
 
+  const handlePointerDown = useCallback((e) => {
+    isDragging.current = true
+    setPlaying(false)
+    e.currentTarget.setPointerCapture(e.pointerId)
+    const rect = e.currentTarget.getBoundingClientRect()
+    setIdx(Math.round(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * (frames.length - 1)))
+  }, [frames.length])
+
+  const handlePointerMove = useCallback((e) => {
+    if (!isDragging.current) return
+    const rect = trackRef.current.getBoundingClientRect()
+    setIdx(Math.round(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * (frames.length - 1)))
+  }, [frames.length])
+
+  const handlePointerUp = useCallback(() => { isDragging.current = false }, [])
+
   if (frames.length === 0) return null
-
-  const isForecast = idx >= pastCount
-  const timeLabel  = frames[idx] ? fmtTime(frames[idx].time, timezone) : ''
-
-  // Slider track: played | unplayed past | forecast
-  const idxFrac  = frames.length > 1 ? (idx / (frames.length - 1)) * 100 : 0
-  const pastFrac = frames.length > 0 ? (pastCount / frames.length) * 100 : 70
-  const sliderBg = `linear-gradient(to right,
-    var(--accent) ${idxFrac.toFixed(1)}%,
-    rgba(120,130,150,0.4) ${idxFrac.toFixed(1)}% ${pastFrac.toFixed(1)}%,
-    rgba(59,130,246,0.22) ${pastFrac.toFixed(1)}%)`
 
   return (
     <div className={`card radar-card${expanded ? ' radar-expanded' : ''}`}>
-      <div className="radar-header">
-        <span className="section-label" style={{ margin: 0 }}>RADAR</span>
-        {expanded && (
-          <button className="radar-expand-btn" onClick={() => setExpanded(false)} aria-label="Collapse">
-            <Minimize2 size={15} />
-          </button>
-        )}
-      </div>
+      {!expanded && (
+        <div className="radar-header">
+          <span className="section-label" style={{ margin: 0 }}>RADAR</span>
+        </div>
+      )}
 
       <div className="radar-map-wrap">
         <div ref={mapRef} className="radar-map" />
         {expanded && (
-          <button
-            className="radar-locate-btn"
-            onClick={handleLocate}
-            aria-label="Center on location"
-          >
-            <Navigation size={15} />
-          </button>
+          <>
+            <button className="radar-expand-btn radar-expand-btn--floating" onClick={() => setExpanded(false)} aria-label="Collapse">
+              <Minimize2 size={20} />
+            </button>
+            <button className="radar-locate-btn" onClick={handleLocate} aria-label="Center on location">
+              <Navigation size={15} />
+            </button>
+          </>
         )}
         {!expanded && (
           <div
@@ -181,34 +186,43 @@ export function WeatherRadar({ location, timezone }) {
       </div>
 
       <div className="radar-controls">
-        <div className="radar-slider-wrap">
-          <input
-            type="range"
-            min={0}
-            max={Math.max(0, frames.length - 1)}
-            value={idx}
-            onChange={e => { setPlaying(false); setIdx(Number(e.target.value)) }}
-            className="radar-slider"
-            style={{ background: sliderBg }}
-          />
+        <div className="radar-main-row">
+          <div className="radar-big-time">
+            {frames[idx] ? fmtTime(frames[idx].time, timezone) : ''}
+          </div>
+          <button className="radar-play-circle" onClick={() => setPlaying(v => !v)} aria-label={playing ? 'Pause' : 'Play'}>
+            {playing ? <Pause size={22} /> : <Play size={22} />}
+          </button>
         </div>
 
-        <div className="radar-footer">
-          <div className="radar-btns">
-            <button className="radar-btn" onClick={() => { setPlaying(false); setIdx(i => Math.max(0, i - 1)) }}>
-              <ChevronLeft size={15} />
-            </button>
-            <button className="radar-btn radar-btn-play" onClick={() => setPlaying(v => !v)}>
-              {playing ? <Pause size={15} /> : <Play size={15} />}
-            </button>
-            <button className="radar-btn" onClick={() => { setPlaying(false); setIdx(i => Math.min(frames.length - 1, i + 1)) }}>
-              <ChevronRight size={15} />
-            </button>
-          </div>
-          <span className="radar-time">
-            {timeLabel}
-            {isForecast && <span className="radar-forecast-badge">Forecast</span>}
-          </span>
+        <div
+          className="radar-tick-track"
+          ref={trackRef}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+        >
+          {frames.map((frame, i) => {
+            const d    = new Date(frame.time * 1000)
+            const prev = i > 0 ? new Date(frames[i - 1].time * 1000) : null
+            const isHour = prev !== null && d.getHours() !== prev.getHours()
+            return (
+              <div key={i} className="radar-tick-col">
+                <div className={[
+                  'radar-tick',
+                  i === idx      && 'radar-tick--active',
+                  isHour         && 'radar-tick--hour',
+                  i >= pastCount && 'radar-tick--forecast',
+                ].filter(Boolean).join(' ')} />
+                {isHour && (
+                  <span className="radar-tick-label">
+                    {d.toLocaleTimeString('en-US', { hour: 'numeric', timeZone: timezone })}
+                  </span>
+                )}
+              </div>
+            )
+          })}
         </div>
 
         <div className="radar-legend">
@@ -218,7 +232,7 @@ export function WeatherRadar({ location, timezone }) {
               <div key={i} className="radar-legend-block" style={{ background: color }} />
             ))}
           </div>
-          <span className="radar-legend-lbl">Max</span>
+          <span className="radar-legend-lbl">Heavy</span>
         </div>
       </div>
     </div>

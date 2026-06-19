@@ -5,6 +5,8 @@ import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } 
 import { CSS } from '@dnd-kit/utilities'
 import { useWeather } from './hooks/useWeather'
 import { useSavedCities } from './hooks/useSavedCities'
+import { useNotifications } from './hooks/useNotifications'
+import { fireAlertNotifications, fireRainNotification, fireTomorrowNotification } from './utils/notifications'
 import { SearchBar } from './components/SearchBar'
 import { SavedCities } from './components/SavedCities'
 import { CurrentWeather } from './components/CurrentWeather'
@@ -81,6 +83,7 @@ function App() {
   } = useWeather()
 
   const { cities, save, remove, isSaved } = useSavedCities()
+  const { notifyEnabled, notifyTypes, permission, toggleNotifyEnabled, toggleType } = useNotifications()
 
   useEffect(() => {
     const handler = (e) => { e.preventDefault(); setInstallPrompt(e) }
@@ -122,6 +125,19 @@ function App() {
   useEffect(() => {
     if (cities.length > 0) fetchWeather(cities[0])
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fire NOAA alert notifications
+  useEffect(() => {
+    if (!notifyEnabled || !notifyTypes.includes('alerts') || !alerts?.length) return
+    fireAlertNotifications(alerts)
+  }, [alerts, notifyEnabled, notifyTypes])
+
+  // Fire rain and tomorrow notifications when weather loads
+  useEffect(() => {
+    if (!notifyEnabled || !weather) return
+    if (notifyTypes.includes('rain')) fireRainNotification(weather.hourly, weather.timezone)
+    if (notifyTypes.includes('tomorrow')) fireTomorrowNotification(weather.daily, weather.timezone)
+  }, [weather, notifyEnabled, notifyTypes])
 
   // Close search overlay on Escape key
   useEffect(() => {
@@ -230,6 +246,7 @@ function App() {
         <button className="header-icon-btn" onClick={openSearch} aria-label="Search">
           <Search size={24} />
         </button>
+        <div className="app-title">Alek Weather</div>
         <button className="settings-btn" onClick={openSettings} aria-label="Settings">
           <Settings size={22} />
         </button>
@@ -255,7 +272,6 @@ function App() {
           <div className="weather-content">
             {weatherPanel}
           </div>
-          <div className="app-title">Alek Weather</div>
         </main>
       </div>
 
@@ -304,6 +320,11 @@ function App() {
           installPrompt={installPrompt}
           onInstall={handleInstall}
           closing={settingsClosing}
+          notifyEnabled={notifyEnabled}
+          notifyTypes={notifyTypes}
+          notifyPermission={permission}
+          onNotifyEnabledChange={toggleNotifyEnabled}
+          onNotifyTypeToggle={toggleType}
         />
       )}
     </div>

@@ -130,7 +130,43 @@ function AboutSection() {
   )
 }
 
-export function SettingsPage({ onBack, darkMode, onDarkModeChange, unit, onUnitChange, showOverview, onShowOverviewChange, nowcastMode, onNowcastModeChange, installPrompt, onInstall, closing }) {
+const NOTIFY_TYPE_LABELS = {
+  rain:     'Upcoming Rain / Storm',
+  alerts:   'Weather Alerts',
+  tomorrow: 'Weather Tomorrow',
+}
+
+function NotificationsSection({ notifyEnabled, notifyTypes, permission, onEnabledChange, onTypeToggle }) {
+  const unsupported = permission === 'unsupported'
+  const denied = permission === 'denied'
+  const active = notifyEnabled && permission === 'granted'
+
+  return (
+    <div className="card settings-card">
+      <SettingRow label="Notifications">
+        {unsupported ? (
+          <span className="notify-status-label">Not supported</span>
+        ) : (
+          <Toggle id="toggle-notify" checked={active} onChange={onEnabledChange} />
+        )}
+      </SettingRow>
+      {denied && (
+        <p className="notify-hint">Notifications are blocked. Enable them in your browser or system settings.</p>
+      )}
+      {active && Object.entries(NOTIFY_TYPE_LABELS).map(([type, label]) => (
+        <SettingRow key={type} label={label}>
+          <Toggle
+            id={`toggle-notify-${type}`}
+            checked={notifyTypes.includes(type)}
+            onChange={() => onTypeToggle(type)}
+          />
+        </SettingRow>
+      ))}
+    </div>
+  )
+}
+
+export function SettingsPage({ onBack, darkMode, onDarkModeChange, unit, onUnitChange, showOverview, onShowOverviewChange, nowcastMode, onNowcastModeChange, installPrompt, onInstall, closing, notifyEnabled, notifyTypes, notifyPermission, onNotifyEnabledChange, onNotifyTypeToggle }) {
   return (
     <div className={`settings-page${closing ? ' closing' : ''}`}>
       <header className="settings-page-header">
@@ -189,13 +225,22 @@ export function SettingsPage({ onBack, darkMode, onDarkModeChange, unit, onUnitC
           </SettingRow>
         </div>
 
+        <div className="settings-group-label">Notifications</div>
+        <NotificationsSection
+          notifyEnabled={notifyEnabled}
+          notifyTypes={notifyTypes}
+          permission={notifyPermission}
+          onEnabledChange={onNotifyEnabledChange}
+          onTypeToggle={onNotifyTypeToggle}
+        />
+
         <div className="settings-group-label">Other</div>
         <InstallSection installPrompt={installPrompt} onInstall={onInstall} />
         <ClearStorageSection />
         <AboutSection />
 
         <div className="settings-footer">
-          <p className="settings-version">Version 0.1</p>
+          <p className="settings-version">Version 0.2</p>
           <p className="settings-studio">Alek Studios&#8482;</p>
         </div>
       </div>

@@ -61,6 +61,7 @@
   min-height: 100vh;
   background: var(--bg);
   font-family: var(--font);
+  overflow-x: hidden;
 }
 
 .card {
@@ -90,13 +91,13 @@
 }
 
 .app-title {
+  flex: 1;
   text-align: center;
   font-family: var(--font-display);
   font-size: 18px;
   font-weight: 700;
   color: var(--text-tertiary);
   letter-spacing: -0.3px;
-  padding: 24px 0 calc(24px + env(safe-area-inset-bottom));
 }
 
 .app-logo {
@@ -198,18 +199,18 @@
 /* ── Desktop layout (1100px+) ── */
 @media (min-width: 1100px) {
   .app-header {
-    max-width: 1080px;
+    max-width: none;
     padding: calc(24px + env(safe-area-inset-top)) 48px 0;
   }
 
   .app-grid {
-    max-width: 1080px;
+    max-width: none;
     padding: 24px 48px 64px;
   }
 
   .weather-content {
     display: grid;
-    grid-template-columns: 340px minmax(0, 620px);
+    grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
     gap: 20px;
     align-items: start;
   }
@@ -217,6 +218,10 @@
   .weather-left {
     position: sticky;
     top: 24px;
+  }
+
+  .weather-right {
+    min-width: 0;
   }
 
   /* Search overlay: wider content area */
@@ -234,6 +239,7 @@
     max-width: 560px;
   }
 }
+
 
 /* ── Search ── */
 .search-wrapper {
@@ -1085,6 +1091,20 @@
   padding: 4px 0;
 }
 
+.notify-hint {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+  padding: 2px 0 6px;
+}
+
+
+.notify-status-label {
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
 .settings-footer {
   margin-top: 48px;
   padding-top: 20px;
@@ -1108,6 +1128,53 @@
 @media (min-width: 768px) {
   .settings-page-header { max-width: 700px; padding: 20px 24px 0; }
   .settings-body { max-width: 700px; padding: 16px 24px 48px; }
+}
+
+@media (min-width: 1100px) {
+  .settings-page {
+    left: auto;
+    width: 400px;
+    border-left: 1px solid var(--border);
+    box-shadow: -12px 0 48px rgba(0, 0, 0, 0.18);
+  }
+
+  /* dim backdrop over the rest of the app */
+  .settings-page::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 400px;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.22);
+    z-index: -1;
+    pointer-events: none;
+    animation: fadeInBackdrop 0.25s ease forwards;
+  }
+
+  .settings-page.closing::before {
+    animation: fadeOutBackdrop 0.26s ease forwards;
+  }
+
+  .settings-page-header {
+    max-width: none;
+    padding: calc(24px + env(safe-area-inset-top)) 24px 0;
+  }
+
+  .settings-body {
+    max-width: none;
+    padding: 16px 24px 48px;
+  }
+}
+
+@keyframes fadeInBackdrop {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes fadeOutBackdrop {
+  from { opacity: 1; }
+  to   { opacity: 0; }
 }
 
 /* ── Last updated + refresh ── */
@@ -1331,6 +1398,8 @@
   position: relative;
   width: 100%;
   box-sizing: border-box;
+  align-self: start;
+  min-width: 0;
 }
 
 .sortable-block.dragging {
@@ -1415,16 +1484,25 @@
   border: none;
   cursor: pointer;
   color: var(--text-tertiary);
-  padding: 4px;
+  padding: 8px;
   display: flex;
   align-items: center;
-  border-radius: 6px;
+  border-radius: 8px;
   transition: color 0.15s, background 0.15s;
 }
 
 .radar-expand-btn:hover {
   color: var(--accent);
   background: var(--accent-light);
+}
+
+.radar-expand-btn--floating {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 600;
+  background: var(--card-bg);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
 }
 
 /* Map wrapper: rounded corners + clip in compact mode */
@@ -1562,17 +1640,18 @@
   transform: translateX(18px);
 }
 
-/* Dim map tiles in dark mode — keeps geography readable without going pitch black */
+
+
+/* Invert map tiles in dark mode — Positron's gray palette inverts cleanly to a dark map */
 [data-theme="dark"] .map-base-tiles {
-  filter: brightness(0.6);
+  filter: invert(1) hue-rotate(180deg);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .map-base-tiles {
-    filter: brightness(0.6);
+    filter: invert(1) hue-rotate(180deg);
   }
 }
-
 
 .radar-controls {
   padding: 10px 18px 14px;
@@ -1585,81 +1664,87 @@
   padding-right: max(18px, env(safe-area-inset-right));
 }
 
-/* ── Radar slider ── */
-.radar-slider-wrap {
-  padding: 6px 0 10px;
+/* ── Radar main row (time + play button) ── */
+.radar-main-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0 10px;
 }
 
-.radar-slider {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 100%;
-  height: 4px;
-  border-radius: 2px;
-  outline: none;
+.radar-big-time {
+  font-size: 30px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.5px;
+  line-height: 1;
+}
+
+.radar-play-circle {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
   cursor: pointer;
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+  transition: opacity 0.15s, transform 0.1s;
 }
 
-.radar-slider:focus {
-  outline: none;
+.radar-play-circle:hover  { opacity: 0.88; }
+.radar-play-circle:active { transform: scale(0.94); }
+
+/* ── Radar tick scrubber ── */
+.radar-tick-track {
+  display: flex;
+  align-items: flex-end;
+  min-height: 48px;
+  padding-bottom: 22px;
+  cursor: pointer;
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
-.radar-slider::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 2px;
+.radar-tick-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
 }
 
-.radar-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  margin-top: -9px;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--accent);
-  border: 2.5px solid #ffffff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
-  cursor: grab;
-  transition: transform 0.1s ease, box-shadow 0.1s ease;
+.radar-tick {
+  width: 2px;
+  height: 12px;
+  border-radius: 1px;
+  background: var(--bar-track-bg);
+  transition: background 0.12s;
 }
 
-.radar-slider::-webkit-slider-thumb:active {
-  cursor: grabbing;
-  transform: scale(1.18);
-  box-shadow: 0 0 0 6px rgba(59, 130, 246, 0.18), 0 2px 8px rgba(0, 0, 0, 0.22);
-}
+.radar-tick--hour    { height: 20px; background: var(--text-tertiary); }
+.radar-tick--forecast { background: var(--accent-light); }
+.radar-tick--active  { height: 26px; background: var(--accent); }
 
-.radar-slider:focus::-webkit-slider-thumb {
-  box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.22), 0 2px 8px rgba(0, 0, 0, 0.22);
-}
-
-.radar-slider::-moz-range-track {
-  height: 4px;
-  border-radius: 2px;
-  background: transparent;
-}
-
-.radar-slider::-moz-range-thumb {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  background: var(--accent);
-  border: 2.5px solid #ffffff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
-  cursor: grab;
-  transition: transform 0.1s ease;
-}
-
-.radar-slider::-moz-range-thumb:active {
-  cursor: grabbing;
-  transform: scale(1.18);
+.radar-tick-label {
+  position: absolute;
+  bottom: -20px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 /* ── Locate button (floating on map, expanded mode only) ── */
 .radar-locate-btn {
   position: absolute;
-  top: 12px;
+  bottom: 12px;
   right: 12px;
   z-index: 600;
   background: var(--card-bg);
@@ -1710,58 +1795,6 @@
   border-radius: 4px;
 }
 
-.radar-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.radar-btns {
-  display: flex;
-  gap: 4px;
-}
-
-.radar-btn {
-  background: var(--bg);
-  border: none;
-  border-radius: 8px;
-  padding: 6px 9px;
-  cursor: pointer;
-  color: var(--text-secondary);
-  display: flex;
-  align-items: center;
-  font-family: var(--font);
-  transition: background 0.15s, color 0.15s;
-}
-
-.radar-btn:hover,
-.radar-btn-play:hover {
-  background: var(--accent-light);
-  color: var(--accent);
-}
-
-.radar-btn-play {
-  padding: 6px 12px;
-}
-
-.radar-time {
-  font-size: 12px;
-  color: var(--text-secondary);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.radar-forecast-badge {
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
-  color: var(--accent);
-  background: var(--accent-light);
-  padding: 2px 6px;
-  border-radius: 5px;
-}
 
 /* ── Weather Alerts ── */
 .alerts-card {
