@@ -174,28 +174,32 @@ function App() {
 
   const weatherPanel = weather && !loading && (
     <>
-      <WeatherAlerts alerts={alerts} />
-      <CurrentWeather
-        current={weather.current}
-        daily={weather.daily}
-        location={location}
-        unit={unit}
-        saved={isSaved(location)}
-        onSave={() => save(location)}
-        onRemove={() => remove(location)}
-        lastUpdated={lastUpdated}
-        onRefresh={() => fetchWeather(location)}
-        loading={loading}
-      />
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={blockOrder} strategy={verticalListSortingStrategy}>
-          {blockOrder.filter(id => id !== 'overview' || showOverview).map(id => (
-            <SortableBlock key={id} id={id}>
-              {blockComponents[id]}
-            </SortableBlock>
-          ))}
-        </SortableContext>
-      </DndContext>
+      <div className="weather-left">
+        <WeatherAlerts alerts={alerts} />
+        <CurrentWeather
+          current={weather.current}
+          daily={weather.daily}
+          location={location}
+          unit={unit}
+          saved={isSaved(location)}
+          onSave={() => save(location)}
+          onRemove={() => remove(location)}
+          lastUpdated={lastUpdated}
+          onRefresh={() => fetchWeather(location)}
+          loading={loading}
+        />
+      </div>
+      <div className="weather-right">
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={blockOrder} strategy={verticalListSortingStrategy}>
+            {blockOrder.filter(id => id !== 'overview' || showOverview).map(id => (
+              <SortableBlock key={id} id={id}>
+                {blockComponents[id]}
+              </SortableBlock>
+            ))}
+          </SortableContext>
+        </DndContext>
+      </div>
     </>
   )
 

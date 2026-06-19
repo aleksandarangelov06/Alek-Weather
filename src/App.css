@@ -176,10 +176,9 @@
   width: 100%;
 }
 
-/* ── Desktop layout ── */
+/* ── Tablet layout (768px) ── */
 @media (min-width: 768px) {
-  .app-header,
-  .settings-page-header {
+  .app-header {
     max-width: 600px;
     padding: calc(20px + env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) 0 max(24px, env(safe-area-inset-left));
   }
@@ -195,6 +194,64 @@
 
   .details-grid {
     grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* ── Desktop layout (1100px+) ── */
+@media (min-width: 1100px) {
+  .app-header {
+    max-width: 1240px;
+    padding: calc(24px + env(safe-area-inset-top)) 48px 0;
+  }
+
+  .app-grid {
+    max-width: 1240px;
+    padding: 24px 48px 64px;
+  }
+
+  .weather-content {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    gap: 20px;
+    align-items: start;
+  }
+
+  .weather-left {
+    position: sticky;
+    top: 24px;
+  }
+
+  /* Settings: right-side panel instead of full-screen */
+  .settings-page {
+    inset: 0 0 0 auto;
+    width: 480px;
+    border-left: 1px solid var(--border);
+    box-shadow: -8px 0 40px rgba(0, 0, 0, 0.15);
+  }
+
+  .settings-page-header {
+    max-width: none;
+    padding: calc(24px + env(safe-area-inset-top)) 32px 0;
+  }
+
+  .settings-body {
+    max-width: none;
+    padding: 16px 32px 64px;
+  }
+
+  /* Search overlay: wider content area */
+  .search-overlay {
+    padding: calc(env(safe-area-inset-top) + 14px) 48px 16px;
+  }
+
+  .search-overlay-bar,
+  .search-overlay .saved-cities {
+    max-width: 820px;
+  }
+
+  /* Alert bottom sheet: centered & narrower on desktop */
+  .alert-sheet {
+    max-width: 560px;
   }
 }
 
@@ -948,10 +1005,8 @@
 }
 
 @media (min-width: 768px) {
-  .settings-page-header,
-  .settings-body { max-width: 960px; }
-  .settings-page-header { padding: 20px 24px 0; }
-  .settings-body { padding: 16px 24px 48px; }
+  .settings-page-header { max-width: 700px; padding: 20px 24px 0; }
+  .settings-body { max-width: 700px; padding: 16px 24px 48px; }
 }
 
 /* ── Last updated + refresh ── */
