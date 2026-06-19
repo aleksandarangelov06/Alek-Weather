@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Wind, Droplets, Eye, Gauge, Sun, Sunrise, Sunset, Leaf, ChevronDown, ChevronUp } from 'lucide-react'
 import { getWindDirection, getUVLabel, formatTime } from '../utils/weatherCodes'
-import { AQIMiniMap } from './AQIMiniMap'
 
 function getAQIInfo(aqi) {
   if (aqi <= 50)  return { label: 'Good',                          color: '#22c55e' }
@@ -34,7 +33,7 @@ function DetailCard({ icon, label, value, sub }) {
   )
 }
 
-export function WeatherDetails({ current, daily, timezone, unit, airQuality, location, onOpenAQIMap }) {
+export function WeatherDetails({ current, daily, timezone, unit, airQuality }) {
   const [aqiExpanded, setAqiExpanded] = useState(false)
 
   const uv      = getUVLabel(current.uv_index)
@@ -96,9 +95,6 @@ export function WeatherDetails({ current, daily, timezone, unit, airQuality, loc
             <Pollutant name="O₃"   value={airQuality.ozone}            unit="µg/m³" />
             <Pollutant name="NO₂"  value={airQuality.nitrogen_dioxide} unit="µg/m³" />
           </div>
-          {location && (
-            <AQIMiniMap location={location} onExpand={onOpenAQIMap} />
-          )}
         </div>
       )}
     </div>
