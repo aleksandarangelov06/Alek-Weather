@@ -147,6 +147,16 @@ function App() {
     return () => document.removeEventListener('keydown', handler)
   }, [searchOpen]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Hardware back button / Android back gesture
+  useEffect(() => {
+    const handler = () => {
+      if (showSettings) doCloseSettings()
+      else if (searchOpen) doCloseSearch()
+    }
+    window.addEventListener('popstate', handler)
+    return () => window.removeEventListener('popstate', handler)
+  }, [showSettings, searchOpen]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const changeUnit = (u) => {
     setUnit(u)
     localStorage.setItem('alek-weather-unit', u)
@@ -167,16 +177,24 @@ function App() {
     localStorage.setItem(THEME_KEY, mode)
   }
 
-  const openSettings = () => setShowSettings(true)
+  const openSettings = () => {
+    history.pushState({ overlay: 'settings' }, '')
+    setShowSettings(true)
+  }
 
-  const closeSettings = () => {
+  const doCloseSettings = () => {
     setSettingsClosing(true)
     setTimeout(() => { setShowSettings(false); setSettingsClosing(false) }, SETTINGS_CLOSE_MS)
   }
 
-  const openSearch = () => setSearchOpen(true)
+  const closeSettings = () => history.back()
 
-  const closeSearch = () => {
+  const openSearch = () => {
+    history.pushState({ overlay: 'search' }, '')
+    setSearchOpen(true)
+  }
+
+  const doCloseSearch = () => {
     setSearchClosing(true)
     setTimeout(() => {
       setSearchOpen(false)
@@ -184,6 +202,8 @@ function App() {
       setSearchResults([])
     }, SEARCH_CLOSE_MS)
   }
+
+  const closeSearch = () => history.back()
 
   const handleSavedCitySelect = (city) => {
     fetchWeather(city)
