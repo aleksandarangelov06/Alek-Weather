@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Wind, Droplets, Eye, Gauge, Sun, Sunrise, Sunset, Leaf, ChevronDown, ChevronUp } from 'lucide-react'
+import { Wind, Droplets, Eye, Gauge, Sun, Sunrise, Sunset, Leaf, ChevronDown, ChevronUp, Navigation2 } from 'lucide-react'
 import { getWindDirection, getUVLabel, formatTime } from '../utils/weatherCodes'
 
 function getAQIInfo(aqi) {
@@ -9,6 +9,39 @@ function getAQIInfo(aqi) {
   if (aqi <= 200) return { label: 'Unhealthy',                     color: '#ef4444' }
   if (aqi <= 300) return { label: 'Very Unhealthy',                color: '#a855f7' }
   return                 { label: 'Hazardous',                     color: '#7c3aed' }
+}
+
+function getWindInfo(speed) {
+  if (speed < 5)  return { color: '#22c55e', size: 13 }
+  if (speed < 15) return { color: '#84cc16', size: 15 }
+  if (speed < 25) return { color: '#eab308', size: 17 }
+  if (speed < 35) return { color: '#f97316', size: 19 }
+  if (speed < 45) return { color: '#ef4444', size: 21 }
+  return               { color: '#a855f7',  size: 23 }
+}
+
+function getHumidityInfo(pct) {
+  if (pct < 25) return { color: '#60a5fa', label: 'Dry'       }
+  if (pct < 50) return { color: '#22c55e', label: 'Good'      }
+  if (pct < 65) return { color: '#eab308', label: 'Fair'      }
+  if (pct < 80) return { color: '#f97316', label: 'High'      }
+  return              { color: '#ef4444',  label: 'Very High' }
+}
+
+function getPressureInfo(hpa) {
+  if (hpa < 980)  return { color: '#ef4444', label: 'Stormy'   }
+  if (hpa < 1000) return { color: '#f97316', label: 'Low'      }
+  if (hpa < 1020) return { color: '#22c55e', label: 'Normal'   }
+  if (hpa < 1030) return { color: '#60a5fa', label: 'High'     }
+  return               { color: '#a855f7',  label: 'Very High' }
+}
+
+function getVisibilityInfo(miles) {
+  if (miles < 0.5) return { color: '#ef4444', label: 'Dense Fog' }
+  if (miles < 2)   return { color: '#f97316', label: 'Fog'       }
+  if (miles < 5)   return { color: '#eab308', label: 'Haze'      }
+  if (miles < 10)  return { color: '#84cc16', label: 'Fair'      }
+  return                { color: '#22c55e',  label: 'Clear'     }
 }
 
 function Pollutant({ name, value, unit }) {
@@ -22,21 +55,32 @@ function Pollutant({ name, value, unit }) {
   )
 }
 
-function DetailCard({ icon, label, value, sub }) {
+function DetailCard({ icon, label, value, sub, color, onClick, isExpanded }) {
+  const expandable = Boolean(onClick)
   return (
-    <div className="detail-card">
-      <div className="detail-icon">{icon}</div>
+    <div
+      className={`detail-card${expandable ? ' detail-expand-tile' : ''}${isExpanded ? ' detail-expand-tile--active' : ''}`}
+      onClick={onClick}
+      role={expandable ? 'button' : undefined}
+      aria-expanded={expandable ? isExpanded : undefined}
+    >
+      <div className="detail-icon" style={color ? { color } : undefined}>{icon}</div>
       <div className="detail-label">{label}</div>
-      <div className="detail-value">{value}</div>
-      {sub != null && <div className="detail-sub">{sub}</div>}
+      <div className="detail-value" style={color ? { color } : undefined}>{value}</div>
+      {(sub != null || expandable) && (
+        <div className={`detail-sub${expandable ? ' detail-sub--expand' : ''}`}>
+          {sub}
+          {expandable && (isExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />)}
+        </div>
+      )}
     </div>
   )
 }
 
-export function WeatherDetails({ current, daily, timezone, unit, airQuality }) {
-  const [aqiExpanded, setAqiExpanded] = useState(false)
+export function WeatherDetails({ current, daily, hourly, timezone, unit, airQuality }) {
+  const [expanded, setExpanded] = useState(null)
+  const toggle = (key) => setExpanded(v => v === key ? null : key)
 
-  const uv      = getUVLabel(current.uv_index)
   const windDir = getWindDirection(current.wind_direction_10m)
   const visMi   = (current.visibility / 1609.34).toFixed(1)
   const sunrise = formatTime(daily.sunrise[0], timezone)
@@ -45,38 +89,204 @@ export function WeatherDetails({ current, daily, timezone, unit, airQuality }) {
   const aqiInfo   = airQuality ? getAQIInfo(airQuality.us_aqi) : null
   const markerPct = airQuality ? Math.min((airQuality.us_aqi / 300) * 100, 100) : 0
 
+  const humInfo  = getHumidityInfo(current.relative_humidity_2m)
+  const presInfo = getPressureInfo(current.surface_pressure)
+  const visInfo  = getVisibilityInfo(parseFloat(visMi))
+  const windInfo = getWindInfo(current.wind_speed_10m)
+
+  // Hourly window
+  const now = new Date()
+  const currentHourStr = now.toLocaleString('en-CA', { hour: '2-digit', hour12: false, timeZone: timezone })
+  const startIdx = hourly ? hourly.time.findIndex(t => t.includes(`T${currentHourStr}:`)) : -1
+  const hStart = startIdx === -1 ? 0 : startIdx
+
+  const sliceNext = (arr, n) => (arr ?? []).slice(hStart, hStart + n)
+  const hourlyTimes = hourly ? sliceNext(hourly.time, 24) : []
+
+  const fmt = (time, i) => i === 0
+    ? 'Now'
+    : new Date(time).toLocaleTimeString('en-US', { hour: 'numeric', hour12: true, timeZone: timezone })
+
+  // UV — daytime only
+  const uvValues = hourly ? sliceNext(hourly.uv_index, 24) : []
+  const uvIsDay  = hourly ? sliceNext(hourly.is_day, 24) : []
+  const isCurrentDaytime = uvIsDay[0] === 1
+  const uvDaytimeItems = hourlyTimes
+    .map((time, i) => ({ time, uv: uvValues[i] ?? 0 }))
+    .filter((_, i) => uvIsDay[i] === 1)
+    .slice(0, 6)
+  const uvCurrent = uvValues.length > 0 ? (uvValues[0] ?? current.uv_index) : current.uv_index
+  const uv = getUVLabel(uvCurrent)
+
+  // Wind
+  const windSpeeds = hourly?.wind_speed_10m ? sliceNext(hourly.wind_speed_10m, 6) : []
+  const windDirs   = hourly?.wind_direction_10m ? sliceNext(hourly.wind_direction_10m, 6) : []
+  const windTimes  = windSpeeds.length > 0 ? sliceNext(hourly.time, 6) : []
+
+  // Humidity
+  const humValues = hourly?.relative_humidity_2m ? sliceNext(hourly.relative_humidity_2m, 6) : []
+  const humTimes  = humValues.length > 0 ? sliceNext(hourly.time, 6) : []
+
+  // Pressure
+  const presValues = hourly?.surface_pressure ? sliceNext(hourly.surface_pressure, 6) : []
+  const presTimes  = presValues.length > 0 ? sliceNext(hourly.time, 6) : []
+
+  // Visibility
+  const visValues = hourly?.visibility ? sliceNext(hourly.visibility, 6).map(v => v / 1609.34) : []
+  const visTimes  = visValues.length > 0 ? sliceNext(hourly.time, 6) : []
+
   return (
     <div className="card">
       <div className="section-label">DETAILS</div>
       <div className="details-grid">
-        <DetailCard icon={<Droplets size={19} />} label="Humidity"   value={`${current.relative_humidity_2m}%`} />
-        <DetailCard icon={<Wind size={19} />}     label="Wind"       value={`${Math.round(current.wind_speed_10m)} mph`} sub={windDir} />
-        <DetailCard icon={<Sun size={19} />}      label="UV Index"   value={Math.round(current.uv_index)} sub={<span style={{ color: uv.color, fontWeight: 600 }}>{uv.label}</span>} />
-        <DetailCard icon={<Gauge size={19} />}    label="Pressure"   value={`${Math.round(current.surface_pressure)} hPa`} />
-        <DetailCard icon={<Eye size={19} />}      label="Visibility" value={`${visMi} mi`} />
-        <DetailCard icon={<Sunrise size={19} />}  label="Sunrise"    value={sunrise} />
-        <DetailCard icon={<Sunset size={19} />}   label="Sunset"     value={sunset} />
-
+        <DetailCard
+          icon={<Droplets size={19} />} label="Humidity"
+          value={`${current.relative_humidity_2m}%`}
+          sub={<span style={{ color: humInfo.color, fontWeight: 600 }}>{humInfo.label}</span>}
+          color={humInfo.color}
+          onClick={() => toggle('humidity')} isExpanded={expanded === 'humidity'}
+        />
+        <DetailCard
+          icon={<Wind size={19} />} label="Wind"
+          value={`${Math.round(current.wind_speed_10m)} mph`}
+          sub={windDir}
+          color={windInfo.color}
+          onClick={() => toggle('wind')} isExpanded={expanded === 'wind'}
+        />
+        <DetailCard
+          icon={<Gauge size={19} />} label="Pressure"
+          value={`${Math.round(current.surface_pressure)} hPa`}
+          sub={<span style={{ color: presInfo.color, fontWeight: 600 }}>{presInfo.label}</span>}
+          color={presInfo.color}
+          onClick={() => toggle('pressure')} isExpanded={expanded === 'pressure'}
+        />
+        <DetailCard
+          icon={<Eye size={19} />} label="Visibility"
+          value={`${visMi} mi`}
+          sub={<span style={{ color: visInfo.color, fontWeight: 600 }}>{visInfo.label}</span>}
+          color={visInfo.color}
+          onClick={() => toggle('visibility')} isExpanded={expanded === 'visibility'}
+        />
+        <DetailCard icon={<Sunrise size={19} />} label="Sunrise" value={sunrise} />
+        <DetailCard icon={<Sunset size={19} />}  label="Sunset"  value={sunset} />
+        <DetailCard
+          icon={<Sun size={19} />} label="UV Index"
+          value={Math.round(uvCurrent)}
+          sub={<span style={{ color: uv.color, fontWeight: 600 }}>{uv.label}</span>}
+          color={uv.color}
+          onClick={() => toggle('uv')} isExpanded={expanded === 'uv'}
+        />
         {airQuality && (
-          <div
-            className={`detail-card detail-aqi-tile${aqiExpanded ? ' detail-aqi-tile--active' : ''}`}
-            onClick={() => setAqiExpanded(v => !v)}
-            role="button"
-            aria-expanded={aqiExpanded}
-          >
-            <div className="detail-icon" style={{ color: aqiInfo.color }}><Leaf size={19} /></div>
-            <div className="detail-label">Air Quality</div>
-            <div className="detail-value" style={{ color: aqiInfo.color }}>{airQuality.us_aqi}</div>
-            <div className="detail-sub detail-aqi-sub">
-              {aqiInfo.label}
-              {aqiExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
-            </div>
-          </div>
+          <DetailCard
+            icon={<Leaf size={19} />} label="Air Quality"
+            value={airQuality.us_aqi}
+            sub={aqiInfo.label}
+            color={aqiInfo.color}
+            onClick={() => toggle('aqi')} isExpanded={expanded === 'aqi'}
+          />
         )}
       </div>
 
-      {aqiExpanded && airQuality && (
-        <div className="detail-aqi-expansion">
+      {expanded === 'humidity' && humTimes.length > 0 && (
+        <div className="detail-expansion">
+          <div className="uv-timeline">
+            {humTimes.map((time, i) => {
+              const val  = humValues[i] ?? 0
+              const info = getHumidityInfo(val)
+              return (
+                <div key={i} className="uv-timeline-item">
+                  <span className="uv-tl-time">{fmt(time, i)}</span>
+                  <span className="uv-tl-val" style={{ color: info.color }}>{Math.round(val)}%</span>
+                  <span className="uv-tl-lbl" style={{ color: info.color }}>{info.label}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {expanded === 'wind' && windTimes.length > 0 && (
+        <div className="detail-expansion">
+          <div className="uv-timeline">
+            {windTimes.map((time, i) => {
+              const speed   = windSpeeds[i] ?? 0
+              const degrees = windDirs[i] ?? 0
+              const wInfo   = getWindInfo(speed)
+              return (
+                <div key={i} className="uv-timeline-item">
+                  <span className="uv-tl-time">{fmt(time, i)}</span>
+                  <Navigation2
+                    size={wInfo.size}
+                    style={{ color: wInfo.color, transform: `rotate(${degrees}deg)`, flexShrink: 0 }}
+                  />
+                  <span className="uv-tl-val" style={{ color: wInfo.color }}>{Math.round(speed)}</span>
+                  <span className="uv-tl-lbl" style={{ color: 'var(--text-secondary)' }}>{getWindDirection(degrees)}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {expanded === 'pressure' && presTimes.length > 0 && (
+        <div className="detail-expansion">
+          <div className="uv-timeline">
+            {presTimes.map((time, i) => {
+              const val  = presValues[i] ?? 0
+              const info = getPressureInfo(val)
+              return (
+                <div key={i} className="uv-timeline-item">
+                  <span className="uv-tl-time">{fmt(time, i)}</span>
+                  <span className="uv-tl-val" style={{ color: info.color }}>{Math.round(val)}</span>
+                  <span className="uv-tl-lbl" style={{ color: info.color }}>{info.label}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {expanded === 'visibility' && visTimes.length > 0 && (
+        <div className="detail-expansion">
+          <div className="uv-timeline">
+            {visTimes.map((time, i) => {
+              const val  = visValues[i] ?? 0
+              const info = getVisibilityInfo(val)
+              return (
+                <div key={i} className="uv-timeline-item">
+                  <span className="uv-tl-time">{fmt(time, i)}</span>
+                  <span className="uv-tl-val" style={{ color: info.color }}>{val.toFixed(1)}</span>
+                  <span className="uv-tl-lbl" style={{ color: info.color }}>{info.label}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {expanded === 'uv' && (
+        <div className="detail-expansion">
+          {uvDaytimeItems.length > 0 ? (
+            <div className="uv-timeline">
+              {uvDaytimeItems.map((item, i) => {
+                const uvInfo = getUVLabel(item.uv)
+                return (
+                  <div key={i} className="uv-timeline-item">
+                    <span className="uv-tl-time">{i === 0 && isCurrentDaytime ? 'Now' : new Date(item.time).toLocaleTimeString('en-US', { hour: 'numeric', hour12: true, timeZone: timezone })}</span>
+                    <span className="uv-tl-val" style={{ color: uvInfo.color }}>{Math.round(item.uv)}</span>
+                    <span className="uv-tl-lbl" style={{ color: uvInfo.color }}>{uvInfo.label}</span>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="uv-no-exposure">No UV exposure right now</div>
+          )}
+        </div>
+      )}
+
+      {expanded === 'aqi' && airQuality && (
+        <div className="detail-expansion">
           <div className="aqi-main">
             <div className="aqi-number" style={{ color: aqiInfo.color }}>{airQuality.us_aqi}</div>
             <div className="aqi-info">

@@ -90,7 +90,7 @@ function ClearStorageSection() {
   return (
     <div className="card settings-card">
       <button className="settings-row clear-cache-btn" onClick={handleClear} disabled={cleared}>
-        <div className="settings-row-label">{cleared ? 'Clearing…' : 'Clear Cache'}</div>
+        <div className="settings-row-label">{cleared ? 'Refreshing…' : 'Refresh'}</div>
       </button>
     </div>
   )
