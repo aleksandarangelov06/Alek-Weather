@@ -200,18 +200,18 @@
 /* ── Desktop layout (1100px+) ── */
 @media (min-width: 1100px) {
   .app-header {
-    max-width: 1240px;
+    max-width: 1080px;
     padding: calc(24px + env(safe-area-inset-top)) 48px 0;
   }
 
   .app-grid {
-    max-width: 1240px;
+    max-width: 1080px;
     padding: 24px 48px 64px;
   }
 
   .weather-content {
     display: grid;
-    grid-template-columns: 360px 1fr;
+    grid-template-columns: 340px minmax(0, 620px);
     gap: 20px;
     align-items: start;
   }
