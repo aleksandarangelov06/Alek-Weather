@@ -7,7 +7,7 @@ const FRAMES_URL   = 'https://api.rainviewer.com/public/weather-maps.json'
 const TILE_URL = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
 const MAP_MAX_ZOOM     = 10
 const RADAR_NATIVE_MAX = 6
-const LEGEND_COLORS = ['#c8e8ff', '#ffff00', '#ff8800', '#ff2200', '#aa00cc']
+const LEGEND_COLORS = ['#43a4c3', '#326985', '#ffff00', '#ff3300', '#d193c9']
 
 delete L.Icon.Default.prototype._getIconUrl
 L.Icon.Default.mergeOptions({ iconUrl: '', shadowUrl: '' })
@@ -99,7 +99,7 @@ export function WeatherRadar({ location, timezone }) {
     const frame = frames[idx]
     if (!frame) return
     radarLayer.current = L.tileLayer(
-      `${host}${frame.path}/512/{z}/{x}/{y}/6/1_1.png`,
+      `${host}${frame.path}/512/{z}/{x}/{y}/4/1_1.png`,
       { opacity: 0.65, zIndex: 200, maxZoom: MAP_MAX_ZOOM, maxNativeZoom: RADAR_NATIVE_MAX, crossOrigin: true }
     ).addTo(map)
   }, [mapReady, host, frames, idx])
@@ -218,7 +218,7 @@ export function WeatherRadar({ location, timezone }) {
               <div key={i} className="radar-legend-block" style={{ background: color }} />
             ))}
           </div>
-          <span className="radar-legend-lbl">Extreme</span>
+          <span className="radar-legend-lbl">Max</span>
         </div>
       </div>
     </div>

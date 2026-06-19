@@ -21,17 +21,16 @@ export function DailyForecast({ daily, unit }) {
           const barWidth = ((maxTemps[i] - minTemps[i]) / range) * 100
 
           const p = precip ?? 0
-          const precipClass = `daily-precip${p >= 30 ? ' high' : p > 0 ? ' low' : ' zero'}`
           return (
             <div key={date} className="daily-row">
-              <span className="daily-day">{formatDay(date)}</span>
+              <div className="daily-day-cell">
+                <span className="daily-day">{formatDay(date)}</span>
+                {p > 0 && <span className="daily-precip-label">{p}%</span>}
+              </div>
               <span className="daily-icon">{info.icon}</span>
-              <span className="daily-precip-cell">
-                <span className={precipClass}>{p}%</span>
-              </span>
               <span className="daily-low">{low}°</span>
               <div className="bar-track">
-                <div className="bar-fill" style={{ left: `${barLeft}%`, width: `${Math.max(barWidth, 8)}%` }} />
+                <div className="bar-fill" style={{ left: `${barLeft}%`, width: `${Math.max(barWidth, 6)}%` }} />
               </div>
               <span className="daily-high">{high}°</span>
             </div>

@@ -1,6 +1,24 @@
+import { useRef, useEffect } from 'react'
 import { getWeatherInfo, toTemp } from '../utils/weatherCodes'
 
 export function HourlyForecast({ hourly, timezone, unit }) {
+  const scrollRef = useRef(null)
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const onWheel = (e) => {
+      e.preventDefault()
+      el.scrollLeft += e.deltaY + e.deltaX
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    return () => el.removeEventListener('wheel', onWheel)
+  }, [])
+
+  const scroll = (dir) => {
+    if (!scrollRef.current) return
+    scrollRef.current.scrollBy({ left: dir * 200, behavior: 'smooth' })
+  }
   const now = new Date()
   const currentHourStr = now.toLocaleString('en-CA', {
     hour: '2-digit', hour12: false, timeZone: timezone,
@@ -19,7 +37,9 @@ export function HourlyForecast({ hourly, timezone, unit }) {
   return (
     <div className="card">
       <div className="section-label">HOURLY FORECAST</div>
-      <div className="hourly-scroll">
+      <div className="hourly-scroll-wrapper">
+        <button className="hourly-nav hourly-nav-left" onClick={() => scroll(-1)} aria-label="Scroll left">‹</button>
+        <div className="hourly-scroll" ref={scrollRef}>
         {hours.map((time, i) => {
           const label = i === 0
             ? 'Now'
@@ -38,6 +58,8 @@ export function HourlyForecast({ hourly, timezone, unit }) {
             </div>
           )
         })}
+        </div>
+        <button className="hourly-nav hourly-nav-right" onClick={() => scroll(1)} aria-label="Scroll right">›</button>
       </div>
     </div>
   )

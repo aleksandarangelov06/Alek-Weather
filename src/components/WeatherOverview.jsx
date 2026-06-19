@@ -1,4 +1,4 @@
-import { getWeatherInfo, toTemp } from '../utils/weatherCodes'
+import { getWeatherInfo } from '../utils/weatherCodes'
 
 const SEVERE_CODES   = new Set([95, 96, 99, 82])
 const HEAVY_CODES    = new Set([65, 75, 86])
@@ -31,21 +31,22 @@ function clothingAdvice(apparentTempF, codes) {
   const hasSnow = codes.some(c => SNOW_CODES.has(c))
 
   let base
-  if (apparentTempF >= 85)      base = 'Shorts and a t-shirt'
-  else if (apparentTempF >= 75) base = 'Light, breathable clothing'
-  else if (apparentTempF >= 65) base = 'Light layers'
-  else if (apparentTempF >= 55) base = 'Light jacket'
-  else if (apparentTempF >= 45) base = 'Jacket recommended'
-  else if (apparentTempF >= 35) base = 'Warm coat'
-  else if (apparentTempF >= 20) base = 'Heavy coat, hat and gloves'
-  else                           base = 'Bundle up — heavy coat, hat, gloves and scarf'
+  if (apparentTempF >= 85)      base = 'Wear shorts and a t-shirt today'
+  else if (apparentTempF >= 75) base = 'Wear light, breathable clothing today'
+  else if (apparentTempF >= 65) base = 'Light layers are perfect today'
+  else if (apparentTempF >= 55) base = 'Wear a light jacket today'
+  else if (apparentTempF >= 45) base = 'Wear a jacket today'
+  else if (apparentTempF >= 35) base = 'Wear a warm coat today'
+  else if (apparentTempF >= 20) base = 'Wear a heavy coat, hat, and gloves today'
+  else                           base = 'Bundle up today'
 
-  if (hasSnow) return `${base}; waterproof boots recommended`
-  if (hasRain) return `${base}; bring an umbrella`
+  if (hasSnow && hasRain) return `${base} and bring waterproof boots and an umbrella`
+  if (hasSnow)            return `${base} and bring waterproof boots`
+  if (hasRain)            return `${base} and bring an umbrella`
   return base
 }
 
-export function WeatherOverview({ hourly, daily, current, unit, timezone }) {
+export function WeatherOverview({ hourly, daily, current, timezone, yesterdayTemps }) {
   const now = new Date()
   const currentMinute = parseInt(
     now.toLocaleString('en-CA', { minute: '2-digit', timeZone: timezone }),
@@ -124,16 +125,47 @@ export function WeatherOverview({ hourly, daily, current, unit, timezone }) {
   }
 
   if (daily?.temperature_2m_max?.[0] != null) {
-    const hi = toTemp(daily.temperature_2m_max[0], unit)
-    const lo = toTemp(daily.temperature_2m_min[0], unit)
-    insights.push({ level: 'neutral', text: `Today's range: ${lo}°–${hi}°${unit}.` })
-  }
+    // All temps are in °F from the API
+    const todayAvg = (daily.temperature_2m_max[0] + daily.temperature_2m_min[0]) / 2
 
-  if (current?.apparent_temperature != null) {
-    insights.push({
-      level: 'neutral',
-      text: clothingAdvice(current.apparent_temperature, codes),
-    })
+    const compareCount = Math.min(4, (daily.temperature_2m_max.length ?? 0) - 1)
+    let diffWeek = null
+    if (compareCount >= 2) {
+      let sum = 0
+      for (let i = 1; i <= compareCount; i++) {
+        sum += (daily.temperature_2m_max[i] + daily.temperature_2m_min[i]) / 2
+      }
+      diffWeek = todayAvg - sum / compareCount
+    }
+
+    const diffYesterday = yesterdayTemps
+      ? todayAvg - (yesterdayTemps.max + yesterdayTemps.min) / 2
+      : null
+
+    let context = ''
+    if (diffWeek !== null && diffWeek > 8)
+      context = ', notably warmer than the rest of the week'
+    else if (diffWeek !== null && diffWeek > 3)
+      context = ', warmer than the rest of the week'
+    else if (diffWeek !== null && diffWeek < -8)
+      context = ', notably cooler than the rest of the week'
+    else if (diffWeek !== null && diffWeek < -3)
+      context = ', cooler than the rest of the week'
+    else if (diffYesterday !== null && diffYesterday > 6)
+      context = ', a good bit warmer than yesterday'
+    else if (diffYesterday !== null && diffYesterday > 3)
+      context = ', a little warmer than yesterday'
+    else if (diffYesterday !== null && diffYesterday < -6)
+      context = ', a good bit cooler than yesterday'
+    else if (diffYesterday !== null && diffYesterday < -3)
+      context = ', a little cooler than yesterday'
+    else if (diffWeek !== null)
+      context = ', about the same as the rest of the week'
+
+    if (current?.apparent_temperature != null) {
+      const clothing = clothingAdvice(current.apparent_temperature, codes)
+      insights.push({ level: 'neutral', text: `${clothing}${context}.` })
+    }
   }
 
   return (

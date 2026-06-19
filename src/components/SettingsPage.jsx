@@ -69,6 +69,33 @@ function InstallSection({ installPrompt, onInstall }) {
   return null
 }
 
+function ClearStorageSection() {
+  const [cleared, setCleared] = useState(false)
+
+  async function handleClear() {
+    localStorage.clear()
+    sessionStorage.clear()
+    if ('caches' in window) {
+      const keys = await caches.keys()
+      await Promise.all(keys.map(k => caches.delete(k)))
+    }
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations()
+      await Promise.all(regs.map(r => r.unregister()))
+    }
+    setCleared(true)
+    setTimeout(() => window.location.reload(), 600)
+  }
+
+  return (
+    <div className="card settings-card">
+      <button className="settings-row clear-cache-btn" onClick={handleClear} disabled={cleared}>
+        <div className="settings-row-label">{cleared ? 'Clearing…' : 'Clear Cache'}</div>
+      </button>
+    </div>
+  )
+}
+
 function AboutSection() {
   const [open, setOpen] = useState(false)
 
@@ -164,6 +191,7 @@ export function SettingsPage({ onBack, darkMode, onDarkModeChange, unit, onUnitC
 
         <div className="settings-group-label">Other</div>
         <InstallSection installPrompt={installPrompt} onInstall={onInstall} />
+        <ClearStorageSection />
         <AboutSection />
 
         <div className="settings-footer">

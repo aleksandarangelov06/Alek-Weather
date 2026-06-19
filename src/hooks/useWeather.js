@@ -9,11 +9,13 @@ const PARAMS = [
   'current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,surface_pressure,wind_speed_10m,wind_direction_10m,uv_index,visibility',
   'hourly=temperature_2m,precipitation_probability,weather_code,is_day',
   'daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,uv_index_max,sunrise,sunset',
+  'minutely_15=precipitation',
   'temperature_unit=fahrenheit',
   'wind_speed_unit=mph',
   'precipitation_unit=inch',
   'timezone=auto',
   'forecast_days=7',
+  'past_days=1',
 ].join('&')
 
 const AQI_PARAMS = 'current=us_aqi,pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone'
@@ -44,7 +46,23 @@ export function useWeather() {
 
       if (weatherResult.status === 'rejected' || !weatherResult.value.ok) throw new Error()
       const data = await weatherResult.value.json()
-      setWeather(data)
+
+      // Slice daily from today so existing components are unaffected,
+      // but stash yesterday's temps before the slice.
+      const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: data.timezone })
+      const todayIdx = data.daily.time.indexOf(todayStr)
+      const start = todayIdx > 0 ? todayIdx : 0
+      const yesterdayTemps = start > 0 ? {
+        max: data.daily.temperature_2m_max[start - 1],
+        min: data.daily.temperature_2m_min[start - 1],
+      } : null
+      if (start > 0) {
+        data.daily = Object.fromEntries(
+          Object.entries(data.daily).map(([k, v]) => [k, Array.isArray(v) ? v.slice(start) : v])
+        )
+      }
+
+      setWeather({ ...data, yesterdayTemps })
       setLocation(loc)
       setLastUpdated(new Date())
 

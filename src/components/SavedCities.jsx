@@ -11,11 +11,7 @@ export function SavedCities({ cities, onSelect, onRemove, currentLatitude }) {
           <div key={i} className={`saved-row ${currentLatitude === city.latitude ? 'active' : ''}`}>
             <button className="saved-city-btn" onClick={() => onSelect(city)}>
               <MapPin size={13} />
-              <span className="saved-name">{city.name}</span>
-              {city.admin1 && city.admin1 !== city.name && (
-                <span className="saved-sub">, {city.admin1}</span>
-              )}
-              {city.country && <span className="saved-country">{city.country}</span>}
+              <span className="saved-name">{city.name}</span>{city.admin1 && city.admin1 !== city.name && <span className="saved-sub">, {city.admin1}</span>}
             </button>
             <button className="saved-remove" onClick={() => onRemove(city)} aria-label="Remove">
               <X size={13} />

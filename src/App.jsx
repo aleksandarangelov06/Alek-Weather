@@ -185,7 +185,7 @@ function App() {
   }
 
   const blockComponents = weather && !loading ? {
-    overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} unit={unit} timezone={weather.timezone} />,
+    overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} timezone={weather.timezone} yesterdayTemps={weather.yesterdayTemps} />,
     hourly:  <HourlyForecast hourly={weather.hourly} timezone={weather.timezone} unit={unit} />,
     daily:   <DailyForecast daily={weather.daily} unit={unit} />,
     details: <WeatherDetails current={weather.current} daily={weather.daily} timezone={weather.timezone} unit={unit} airQuality={airQuality} />,
@@ -227,17 +227,12 @@ function App() {
   return (
     <div className="app">
       <header className="app-header">
-        <div className="app-title">
-          Alek Weather
-        </div>
-        <div className="header-actions">
-          <button className="header-icon-btn" onClick={openSearch} aria-label="Search">
-            <Search size={20} />
-          </button>
-          <button className="settings-btn" onClick={openSettings} aria-label="Settings">
-            <Settings size={18} />
-          </button>
-        </div>
+        <button className="header-icon-btn" onClick={openSearch} aria-label="Search">
+          <Search size={24} />
+        </button>
+        <button className="settings-btn" onClick={openSettings} aria-label="Settings">
+          <Settings size={22} />
+        </button>
       </header>
 
       <div className="app-grid">
@@ -260,35 +255,39 @@ function App() {
           <div className="weather-content">
             {weatherPanel}
           </div>
+          <div className="app-title">Alek Weather</div>
         </main>
       </div>
 
       {/* Search overlay — slides down from top */}
       {searchOpen && (
-        <div className={`search-overlay${searchClosing ? ' closing' : ''}`}>
-          <div className="search-overlay-bar" ref={searchAreaRef}>
-            <button className="header-icon-btn" onClick={closeSearch} aria-label="Cancel search">
-              <ArrowLeft size={20} />
-            </button>
-            <SearchBar
-              autoFocus
-              onSearch={searchCity}
-              results={searchResults}
-              onSelect={handleSelectCity}
-              onUseLocation={handleUseLocation}
-              onClear={() => setSearchResults([])}
-              onActivate={() => {}}
-            />
+        <>
+          <div className={`search-backdrop${searchClosing ? ' closing' : ''}`} onClick={closeSearch} />
+          <div className={`search-overlay${searchClosing ? ' closing' : ''}`}>
+            <div className="search-overlay-bar" ref={searchAreaRef}>
+              <button className="header-icon-btn" onClick={closeSearch} aria-label="Cancel search">
+                <ArrowLeft size={20} />
+              </button>
+              <SearchBar
+                autoFocus
+                onSearch={searchCity}
+                results={searchResults}
+                onSelect={handleSelectCity}
+                onUseLocation={handleUseLocation}
+                onClear={() => setSearchResults([])}
+                onActivate={() => {}}
+              />
+            </div>
+            {cities.length > 0 && (
+              <SavedCities
+                cities={cities}
+                onSelect={handleSavedCitySelect}
+                onRemove={remove}
+                currentLatitude={location?.latitude}
+              />
+            )}
           </div>
-          {cities.length > 0 && (
-            <SavedCities
-              cities={cities}
-              onSelect={handleSavedCitySelect}
-              onRemove={remove}
-              currentLatitude={location?.latitude}
-            />
-          )}
-        </div>
+        </>
       )}
 
       {showSettings && (

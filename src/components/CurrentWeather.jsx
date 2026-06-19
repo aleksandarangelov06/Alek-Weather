@@ -24,7 +24,6 @@ export function CurrentWeather({ current, daily, location, unit, saved, onSave, 
       <div className="current-header">
         <div className="current-location">
           {locationLine}
-          {location.country && <span className="country-tag">{location.country}</span>}
         </div>
         <button
           className={`save-btn ${saved ? 'saved' : ''}`}
