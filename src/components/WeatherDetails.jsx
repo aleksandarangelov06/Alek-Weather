@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import { Wind, Droplets, Eye, Gauge, Sun, Sunrise, Sunset, Leaf, ChevronDown, ChevronUp } from 'lucide-react'
+import { Wind, Droplets, Eye, Gauge, Sun, Sunrise, Sunset, Leaf } from 'lucide-react'
 import { getWindDirection, getUVLabel, formatTime } from '../utils/weatherCodes'
 
 function getAQIInfo(aqi) {
@@ -33,17 +32,14 @@ function DetailCard({ icon, label, value, sub }) {
   )
 }
 
-export function WeatherDetails({ current, daily, timezone, unit, airQuality }) {
-  const [aqiExpanded, setAqiExpanded] = useState(false)
-
+export function WeatherDetails({ current, daily, timezone, unit, airQuality, onOpenAQIMap }) {
   const uv      = getUVLabel(current.uv_index)
   const windDir = getWindDirection(current.wind_direction_10m)
   const visMi   = (current.visibility / 1609.34).toFixed(1)
   const sunrise = formatTime(daily.sunrise[0], timezone)
   const sunset  = formatTime(daily.sunset[0], timezone)
 
-  const aqiInfo   = airQuality ? getAQIInfo(airQuality.us_aqi) : null
-  const markerPct = airQuality ? Math.min((airQuality.us_aqi / 300) * 100, 100) : 0
+  const aqiInfo = airQuality ? getAQIInfo(airQuality.us_aqi) : null
 
   return (
     <div className="card">
@@ -59,44 +55,18 @@ export function WeatherDetails({ current, daily, timezone, unit, airQuality }) {
 
         {airQuality && (
           <div
-            className={`detail-card detail-aqi-tile${aqiExpanded ? ' detail-aqi-tile--active' : ''}`}
-            onClick={() => setAqiExpanded(v => !v)}
+            className="detail-card detail-aqi-tile"
+            onClick={onOpenAQIMap}
             role="button"
-            aria-expanded={aqiExpanded}
+            aria-label="Open AQI map"
           >
             <div className="detail-icon" style={{ color: aqiInfo.color }}><Leaf size={19} /></div>
             <div className="detail-label">Air Quality</div>
             <div className="detail-value" style={{ color: aqiInfo.color }}>{airQuality.us_aqi}</div>
-            <div className="detail-sub detail-aqi-sub">
-              {aqiInfo.label}
-              {aqiExpanded ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
-            </div>
+            <div className="detail-sub">{aqiInfo.label}</div>
           </div>
         )}
       </div>
-
-      {aqiExpanded && airQuality && (
-        <div className="detail-aqi-expansion">
-          <div className="aqi-main">
-            <div className="aqi-number" style={{ color: aqiInfo.color }}>{airQuality.us_aqi}</div>
-            <div className="aqi-info">
-              <div className="aqi-status" style={{ color: aqiInfo.color }}>{aqiInfo.label}</div>
-              <div className="aqi-sublabel">US AQI</div>
-            </div>
-          </div>
-          <div className="aqi-scale">
-            <div className="aqi-gradient-bar">
-              <div className="aqi-marker" style={{ left: `${markerPct}%`, borderColor: aqiInfo.color }} />
-            </div>
-          </div>
-          <div className="aqi-pollutants">
-            <Pollutant name="PM2.5" value={airQuality.pm2_5}            unit="µg/m³" />
-            <Pollutant name="PM10"  value={airQuality.pm10}             unit="µg/m³" />
-            <Pollutant name="O₃"   value={airQuality.ozone}            unit="µg/m³" />
-            <Pollutant name="NO₂"  value={airQuality.nitrogen_dioxide} unit="µg/m³" />
-          </div>
-        </div>
-      )}
     </div>
   )
 }

@@ -18,6 +18,7 @@ import { PrecipNowcast } from './components/PrecipNowcast'
 import { WeatherAlerts } from './components/WeatherAlerts'
 import { WeatherOverview } from './components/WeatherOverview'
 import { SettingsPage } from './components/SettingsPage'
+import { AQIMap } from './components/AQIMap'
 import './App.css'
 
 const THEME_KEY = 'alek-weather-theme'
@@ -55,6 +56,7 @@ function App() {
   const [settingsClosing, setSettingsClosing] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchClosing, setSearchClosing] = useState(false)
+  const [aqiMapOpen, setAqiMapOpen] = useState(false)
   const searchAreaRef = useRef(null)
   const [blockOrder, setBlockOrder] = useState(() => {
     const saved = JSON.parse(localStorage.getItem(BLOCK_ORDER_KEY) ?? 'null')
@@ -152,10 +154,11 @@ function App() {
     const handler = () => {
       if (showSettings) doCloseSettings()
       else if (searchOpen) doCloseSearch()
+      else if (aqiMapOpen) doCloseAQIMap()
     }
     window.addEventListener('popstate', handler)
     return () => window.removeEventListener('popstate', handler)
-  }, [showSettings, searchOpen]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [showSettings, searchOpen, aqiMapOpen]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const changeUnit = (u) => {
     setUnit(u)
@@ -205,6 +208,14 @@ function App() {
 
   const closeSearch = () => history.back()
 
+  const openAQIMap = () => {
+    history.pushState({ overlay: 'aqi' }, '')
+    setAqiMapOpen(true)
+  }
+
+  const doCloseAQIMap = () => setAqiMapOpen(false)
+  const closeAQIMap = () => history.back()
+
   const handleSavedCitySelect = (city) => {
     fetchWeather(city)
     closeSearch()
@@ -224,7 +235,7 @@ function App() {
     overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} timezone={weather.timezone} yesterdayTemps={weather.yesterdayTemps} />,
     hourly:  <HourlyForecast hourly={weather.hourly} timezone={weather.timezone} unit={unit} />,
     daily:   <DailyForecast daily={weather.daily} unit={unit} />,
-    details: <WeatherDetails current={weather.current} daily={weather.daily} timezone={weather.timezone} unit={unit} airQuality={airQuality} />,
+    details: <WeatherDetails current={weather.current} daily={weather.daily} timezone={weather.timezone} unit={unit} airQuality={airQuality} onOpenAQIMap={openAQIMap} />,
     radar:   <WeatherRadar location={location} timezone={weather.timezone} />,
     nowcast: <PrecipNowcast minutely={weather.minutely_15} currentTime={weather.current.time} mode={nowcastMode} />,
   } : null
@@ -324,6 +335,10 @@ function App() {
             )}
           </div>
         </>
+      )}
+
+      {aqiMapOpen && location && (
+        <AQIMap location={location} onClose={closeAQIMap} />
       )}
 
       {showSettings && (
