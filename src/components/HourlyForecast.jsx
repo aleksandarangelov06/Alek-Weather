@@ -14,6 +14,7 @@ export function HourlyForecast({ hourly, timezone, unit }) {
   const temps = slice(hourly.temperature_2m)
   const codes = slice(hourly.weather_code)
   const precip = slice(hourly.precipitation_probability)
+  const isDay = slice(hourly.is_day ?? [])
 
   return (
     <div className="card">
@@ -25,7 +26,7 @@ export function HourlyForecast({ hourly, timezone, unit }) {
             : new Date(time).toLocaleTimeString('en-US', {
                 hour: 'numeric', hour12: true, timeZone: timezone,
               })
-          const info = getWeatherInfo(codes[i])
+          const info = getWeatherInfo(codes[i], !isDay[i])
           const p = precip[i] ?? 0
           const precipClass = p >= 30 ? 'hourly-precip high' : p > 0 ? 'hourly-precip low' : 'hourly-precip zero'
           return (

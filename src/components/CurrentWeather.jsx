@@ -11,7 +11,7 @@ function formatUpdated(date) {
 }
 
 export function CurrentWeather({ current, daily, location, unit, saved, onSave, onRemove, lastUpdated, onRefresh, loading }) {
-  const info = getWeatherInfo(current.weather_code)
+  const info = getWeatherInfo(current.weather_code, !current.is_day)
   const temp = toTemp(current.temperature_2m, unit)
   const todayMax = toTemp(daily.temperature_2m_max[0], unit)
   const todayMin = toTemp(daily.temperature_2m_min[0], unit)

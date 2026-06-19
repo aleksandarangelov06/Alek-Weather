@@ -203,7 +203,6 @@ function App() {
     <div className="app">
       <header className="app-header">
         <div className="app-title">
-          <img src={`${import.meta.env.BASE_URL}pwa-icon.svg`} alt="" className="app-logo" />
           Alek Weather
         </div>
         <div className="header-actions">

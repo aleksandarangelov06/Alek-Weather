@@ -1,12 +1,12 @@
 const codes = {
-  0:  { label: 'Clear Sky',               icon: '☀️'  },
-  1:  { label: 'Mainly Clear',            icon: '🌤️'  },
-  2:  { label: 'Partly Cloudy',           icon: '⛅'  },
+  0:  { label: 'Clear Sky',               icon: '☀️',  nightIcon: '🌙'  },
+  1:  { label: 'Mainly Clear',            icon: '🌤️',  nightIcon: '🌙'  },
+  2:  { label: 'Partly Cloudy',           icon: '⛅',  nightIcon: '☁️'  },
   3:  { label: 'Overcast',               icon: '☁️'  },
   45: { label: 'Foggy',                  icon: '🌫️'  },
   48: { label: 'Rime Fog',              icon: '🌫️'  },
-  51: { label: 'Light Drizzle',          icon: '🌦️'  },
-  53: { label: 'Moderate Drizzle',       icon: '🌦️'  },
+  51: { label: 'Light Drizzle',          icon: '🌦️',  nightIcon: '🌧️'  },
+  53: { label: 'Moderate Drizzle',       icon: '🌦️',  nightIcon: '🌧️'  },
   55: { label: 'Heavy Drizzle',          icon: '🌧️'  },
   61: { label: 'Slight Rain',            icon: '🌧️'  },
   63: { label: 'Moderate Rain',          icon: '🌧️'  },
@@ -15,7 +15,7 @@ const codes = {
   73: { label: 'Moderate Snow',          icon: '❄️'  },
   75: { label: 'Heavy Snow',             icon: '❄️'  },
   77: { label: 'Snow Grains',            icon: '🌨️'  },
-  80: { label: 'Slight Showers',         icon: '🌦️'  },
+  80: { label: 'Slight Showers',         icon: '🌦️',  nightIcon: '🌧️'  },
   81: { label: 'Moderate Showers',       icon: '🌧️'  },
   82: { label: 'Violent Showers',        icon: '⛈️'  },
   85: { label: 'Slight Snow Showers',    icon: '🌨️'  },
@@ -25,8 +25,9 @@ const codes = {
   99: { label: 'T-Storm w/ Heavy Hail',  icon: '⛈️'  },
 }
 
-export function getWeatherInfo(code) {
-  return codes[code] ?? { label: 'Unknown', icon: '🌡️' }
+export function getWeatherInfo(code, isNight = false) {
+  const entry = codes[code] ?? { label: 'Unknown', icon: '🌡️' }
+  return { label: entry.label, icon: isNight && entry.nightIcon ? entry.nightIcon : entry.icon }
 }
 
 export function getWindDirection(degrees) {
