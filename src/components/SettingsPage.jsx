@@ -59,9 +59,9 @@ function InstallSection({ installPrompt, onInstall }) {
   if (isIOS()) {
     return (
       <div className="card settings-card">
-        <p className="install-ios-hint">
-          Tap <strong>Share</strong> then <strong>Add to Home Screen</strong> to install this app.
-        </p>
+        <SettingRow label="Add to Home Screen">
+          <span className="install-ios-hint">Tap Share → Add to Home Screen</span>
+        </SettingRow>
       </div>
     )
   }
@@ -240,7 +240,7 @@ export function SettingsPage({ onBack, darkMode, onDarkModeChange, unit, onUnitC
         <AboutSection />
 
         <div className="settings-footer">
-          <p className="settings-version">Version 0.2</p>
+          <p className="settings-version">Version 1.6</p>
           <p className="settings-studio">Alek Studios&#8482;</p>
         </div>
       </div>

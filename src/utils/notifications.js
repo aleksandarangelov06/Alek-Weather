@@ -22,6 +22,16 @@ function canNotify() {
   return 'Notification' in window && Notification.permission === 'granted'
 }
 
+// Android Chrome requires showNotification() via service worker — new Notification() throws there.
+async function showNotification(title, options) {
+  try {
+    new Notification(title, options)
+  } catch {
+    const reg = await navigator.serviceWorker?.ready.catch(() => null)
+    reg?.showNotification(title, options)
+  }
+}
+
 // ── NOAA Alerts ──────────────────────────────────────────────────────────────
 
 function getSeenAlertIds() {
@@ -41,7 +51,7 @@ export function fireAlertNotifications(alerts) {
   const toNotify = alerts.filter(a => !seen.includes(a.id))
   toNotify.forEach(alert => {
     const p = alert.properties
-    new Notification(p.event || 'Weather Alert', {
+    showNotification(p.event || 'Weather Alert', {
       body: p.headline || p.areaDesc?.split(';')[0] || '',
       icon: '/pwa-192x192.png',
       tag: alert.id,
@@ -117,7 +127,7 @@ export function fireRainNotification(hourly, timezone) {
     light:                'Light rain or drizzle expected in the next 12 hours.',
   }
 
-  new Notification(titles[worstLevel], { body: bodies[worstLevel], icon: '/pwa-192x192.png', tag: 'rain-forecast' })
+  showNotification(titles[worstLevel], { body: bodies[worstLevel], icon: '/pwa-192x192.png', tag: 'rain-forecast' })
   markNotifiedDate('rain', today)
 }
 
@@ -160,7 +170,7 @@ export function fireTomorrowNotification(daily, timezone) {
   const code = daily.weather_code?.[1]
   const conditionNote = RAIN_CODES.has(code) ? ' with rain' : SNOW_CODES.has(code) ? ' with snow' : ''
 
-  new Notification("Tomorrow's Weather", {
+  showNotification("Tomorrow's Weather", {
     body: `High ${fmtTemp(tHigh)}, Low ${fmtTemp(tLow)}${conditionNote}${weekContext}.`,
     icon: '/pwa-192x192.png',
     tag: 'tomorrow-weather',

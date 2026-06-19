@@ -1086,9 +1086,8 @@
 .install-ios-hint {
   font-size: 13px;
   color: var(--text-secondary);
-  line-height: 1.5;
-  margin: 0;
-  padding: 4px 0;
+  line-height: 1.4;
+  text-align: right;
 }
 
 .notify-hint {
