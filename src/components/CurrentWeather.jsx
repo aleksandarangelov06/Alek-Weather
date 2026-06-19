@@ -13,8 +13,7 @@ function formatUpdated(date) {
 export function CurrentWeather({ current, daily, location, unit, saved, onSave, onRemove, lastUpdated, onRefresh, loading }) {
   const info = getWeatherInfo(current.weather_code, !current.is_day)
   const temp = toTemp(current.temperature_2m, unit)
-  const todayMax = toTemp(daily.temperature_2m_max[0], unit)
-  const todayMin = toTemp(daily.temperature_2m_min[0], unit)
+  const feelsLike = toTemp(current.apparent_temperature, unit)
   const locationLine = [
     location.name,
     location.admin1 && location.admin1 !== location.name ? location.admin1 : null,
@@ -38,7 +37,7 @@ export function CurrentWeather({ current, daily, location, unit, saved, onSave, 
       <div className="current-icon">{info.icon}</div>
       <div className="current-temp">{temp}°{unit}</div>
       <div className="current-condition">{info.label}</div>
-      <div className="current-range">H: {todayMax}°&nbsp;&nbsp;L: {todayMin}°</div>
+      <div className="current-feels">Feels like {feelsLike}°{unit}</div>
       <div className="current-updated">
         <span className="updated-text">{formatUpdated(lastUpdated)}</span>
         <button

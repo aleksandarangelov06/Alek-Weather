@@ -514,9 +514,7 @@
 }
 
 .current-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
+  position: relative;
   margin-bottom: 4px;
 }
 
@@ -528,7 +526,6 @@
   align-items: center;
   gap: 7px;
   flex-wrap: wrap;
-  text-align: left;
 }
 
 .country-tag {
@@ -543,6 +540,9 @@
 }
 
 .save-btn {
+  position: absolute;
+  top: 0;
+  right: 0;
   background: none;
   border: none;
   cursor: pointer;
@@ -552,7 +552,6 @@
   align-items: center;
   border-radius: 10px;
   transition: color 0.15s, background 0.15s;
-  flex-shrink: 0;
 }
 
 .save-btn:hover {
@@ -567,7 +566,7 @@
 .current-icon {
   font-size: 76px;
   line-height: 1;
-  margin: 16px 0 6px;
+  margin: 16px 0 16px;
   user-select: none;
 }
 
@@ -600,19 +599,60 @@
   margin-top: 10px;
 }
 
-.current-range {
-  font-size: 15px;
+.current-feels {
+  font-size: 14px;
   color: var(--text-tertiary);
-  margin-top: 6px;
+  margin-top: 12px;
+  text-align: center;
 }
 
+
 /* ── Hourly forecast ── */
+.hourly-scroll-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.hourly-nav {
+  display: none;
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+  padding: 0;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+}
+
+.hourly-nav-left  { left: -14px; }
+.hourly-nav-right { right: -14px; }
+
+@media (hover: hover) and (pointer: fine) {
+  .hourly-nav { display: flex; }
+  .hourly-scroll-wrapper:hover .hourly-nav { opacity: 1; }
+  .hourly-nav:hover { opacity: 1 !important; background: var(--accent-light); }
+}
+
 .hourly-scroll {
   display: flex;
   gap: 2px;
   overflow-x: auto;
   padding-bottom: 4px;
   scrollbar-width: none;
+  flex: 1;
 }
 
 .hourly-scroll::-webkit-scrollbar { display: none; }
@@ -671,64 +711,63 @@
 
 .daily-row {
   display: grid;
-  grid-template-columns: 72px 28px 40px 28px 1fr 28px;
+  grid-template-columns: 72px 34px 36px 1fr 36px;
   align-items: center;
   gap: 8px;
-  padding: 8px 4px;
+  padding: 7px 4px;
   border-radius: 10px;
   transition: background 0.15s;
 }
 
 .daily-row:hover { background: var(--hover-subtle); }
 
+.daily-day-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
 .daily-day {
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   font-family: var(--font-display);
   color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.daily-precip-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  line-height: 1.2;
 }
 
 .daily-icon {
-  font-size: 20px;
+  font-size: 26px;
   user-select: none;
 }
 
-.daily-precip-cell { min-height: 18px; }
-
-.precip-badge {
-  font-size: 11px;
-  color: var(--accent);
-  font-weight: 600;
-}
-
 .daily-low {
-  font-size: 13px;
+  font-size: 14px;
   font-family: var(--font-display);
   color: var(--text-tertiary);
   text-align: right;
+  white-space: nowrap;
 }
 
 .daily-high {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   font-family: var(--font-display);
   color: var(--text-primary);
+  white-space: nowrap;
 }
-
-.daily-precip {
-  font-size: 11px;
-  font-weight: 600;
-  font-family: var(--font-display);
-}
-.daily-precip.high { color: var(--accent); }
-.daily-precip.low  { color: var(--text-secondary); }
-.daily-precip.zero { color: var(--text-tertiary); font-weight: 400; }
 
 .bar-track {
   position: relative;
-  height: 5px;
+  height: 10px;
   background: var(--bar-track-bg);
-  border-radius: 3px;
+  border-radius: 10px;
 }
 
 .bar-fill {
@@ -736,7 +775,7 @@
   top: 0;
   height: 100%;
   background: linear-gradient(90deg, #60a5fa, #f97316);
-  border-radius: 3px;
+  border-radius: 10px;
 }
 
 /* ── Detail cards ── */
@@ -777,6 +816,32 @@
   font-size: 13px;
   color: var(--text-secondary);
   margin-top: 2px;
+}
+
+.detail-aqi-tile {
+  cursor: pointer;
+  transition: background 0.15s;
+  user-select: none;
+}
+
+.detail-aqi-tile:hover {
+  background: var(--hover-medium);
+}
+
+.detail-aqi-tile--active {
+  background: var(--accent-light);
+}
+
+.detail-aqi-sub {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.detail-aqi-expansion {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
 }
 
 /* ── Status / states ── */
@@ -984,6 +1049,28 @@
   color: var(--text-primary);
 }
 
+.install-btn {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 6px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.install-btn:hover { opacity: 0.85; }
+
+.install-ios-hint {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+  padding: 4px 0;
+}
+
 .settings-footer {
   margin-top: 48px;
   padding-top: 20px;
@@ -1015,7 +1102,7 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  margin-top: 12px;
+  margin-top: 4px;
 }
 
 .updated-text {
@@ -1472,6 +1559,7 @@
   }
 }
 
+
 .radar-controls {
   padding: 10px 18px 14px;
   flex-shrink: 0;
@@ -1898,4 +1986,16 @@
   font-size: 11px;
   color: var(--text-tertiary);
   margin: 0;
+}
+
+/* ── Precipitation Nowcast ── */
+.nowcast-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.nowcast-dry {
+  font-size: 11px;
+  color: var(--text-secondary);
 }

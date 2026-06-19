@@ -35,6 +35,40 @@ function Toggle({ id, checked, onChange }) {
   )
 }
 
+const isStandalone = () =>
+  window.matchMedia('(display-mode: standalone)').matches || !!window.navigator.standalone
+
+const isMobileDevice = () =>
+  /iPad|iPhone|iPod|Android|Mobi/i.test(navigator.userAgent)
+
+const isIOS = () => /iPad|iPhone|iPod/i.test(navigator.userAgent)
+
+function InstallSection({ installPrompt, onInstall }) {
+  if (isStandalone() || !isMobileDevice()) return null
+
+  if (installPrompt) {
+    return (
+      <div className="card settings-card">
+        <SettingRow label="Add to Home Screen">
+          <button className="install-btn" onClick={onInstall}>Install</button>
+        </SettingRow>
+      </div>
+    )
+  }
+
+  if (isIOS()) {
+    return (
+      <div className="card settings-card">
+        <p className="install-ios-hint">
+          Tap <strong>Share</strong> then <strong>Add to Home Screen</strong> to install this app.
+        </p>
+      </div>
+    )
+  }
+
+  return null
+}
+
 function AboutSection() {
   const [open, setOpen] = useState(false)
 
@@ -47,7 +81,7 @@ function AboutSection() {
       {open && (
         <div className="about-content">
           <p className="about-desc">
-            Alek Weather uses free, open-source weather APIs — no account or API key required.
+            Alek Weather uses free, open-source weather APIs.
           </p>
           <div className="about-apis">
             <div className="about-api-row">
@@ -69,7 +103,7 @@ function AboutSection() {
   )
 }
 
-export function SettingsPage({ onBack, darkMode, onDarkModeChange, unit, onUnitChange, showOverview, onShowOverviewChange, closing }) {
+export function SettingsPage({ onBack, darkMode, onDarkModeChange, unit, onUnitChange, showOverview, onShowOverviewChange, nowcastMode, onNowcastModeChange, installPrompt, onInstall, closing }) {
   return (
     <div className={`settings-page${closing ? ' closing' : ''}`}>
       <header className="settings-page-header">
@@ -115,9 +149,21 @@ export function SettingsPage({ onBack, darkMode, onDarkModeChange, unit, onUnitC
           <SettingRow label="Weather Overview">
             <Toggle id="toggle-overview" checked={showOverview} onChange={onShowOverviewChange} />
           </SettingRow>
+          <SettingRow label="Precipitation">
+            <SegmentedControl
+              value={nowcastMode}
+              onChange={onNowcastModeChange}
+              options={[
+                { value: 'on',   label: 'On'   },
+                { value: 'auto', label: 'Auto' },
+                { value: 'off',  label: 'Off'  },
+              ]}
+            />
+          </SettingRow>
         </div>
 
-        <div className="settings-group-label">Info</div>
+        <div className="settings-group-label">Other</div>
+        <InstallSection installPrompt={installPrompt} onInstall={onInstall} />
         <AboutSection />
 
         <div className="settings-footer">

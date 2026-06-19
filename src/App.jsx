@@ -11,8 +11,8 @@ import { CurrentWeather } from './components/CurrentWeather'
 import { HourlyForecast } from './components/HourlyForecast'
 import { DailyForecast } from './components/DailyForecast'
 import { WeatherDetails } from './components/WeatherDetails'
-import { AirQuality } from './components/AirQuality'
 import { WeatherRadar } from './components/WeatherRadar'
+import { PrecipNowcast } from './components/PrecipNowcast'
 import { WeatherAlerts } from './components/WeatherAlerts'
 import { WeatherOverview } from './components/WeatherOverview'
 import { SettingsPage } from './components/SettingsPage'
@@ -23,8 +23,9 @@ const SETTINGS_CLOSE_MS = 260
 const SEARCH_CLOSE_MS = 220
 
 const BLOCK_ORDER_KEY = 'alek-weather-block-order'
-const DEFAULT_BLOCK_ORDER = ['overview', 'hourly', 'daily', 'details', 'aqi', 'radar']
+const DEFAULT_BLOCK_ORDER = ['overview', 'nowcast', 'hourly', 'daily', 'details', 'radar']
 const SHOW_OVERVIEW_KEY = 'alek-weather-show-overview'
+const NOWCAST_MODE_KEY  = 'alek-weather-nowcast-mode'
 
 function SortableBlock({ id, children }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
@@ -46,6 +47,8 @@ function App() {
   const [unit, setUnit] = useState(() => localStorage.getItem('alek-weather-unit') ?? 'F')
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem(THEME_KEY) ?? 'system')
   const [showOverview, setShowOverview] = useState(() => localStorage.getItem(SHOW_OVERVIEW_KEY) !== 'false')
+  const [nowcastMode, setNowcastMode] = useState(() => localStorage.getItem(NOWCAST_MODE_KEY) ?? 'auto')
+  const [installPrompt, setInstallPrompt] = useState(null)
   const [showSettings, setShowSettings] = useState(false)
   const [settingsClosing, setSettingsClosing] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -78,6 +81,19 @@ function App() {
   } = useWeather()
 
   const { cities, save, remove, isSaved } = useSavedCities()
+
+  useEffect(() => {
+    const handler = (e) => { e.preventDefault(); setInstallPrompt(e) }
+    window.addEventListener('beforeinstallprompt', handler)
+    return () => window.removeEventListener('beforeinstallprompt', handler)
+  }, [])
+
+  const handleInstall = async () => {
+    if (!installPrompt) return
+    installPrompt.prompt()
+    const { outcome } = await installPrompt.userChoice
+    if (outcome === 'accepted') setInstallPrompt(null)
+  }
 
   // Apply dark mode theme
   useEffect(() => {
@@ -125,6 +141,11 @@ function App() {
     localStorage.setItem(SHOW_OVERVIEW_KEY, String(val))
   }
 
+  const changeNowcastMode = (mode) => {
+    setNowcastMode(mode)
+    localStorage.setItem(NOWCAST_MODE_KEY, mode)
+  }
+
   const changeDarkMode = (mode) => {
     setDarkMode(mode)
     localStorage.setItem(THEME_KEY, mode)
@@ -167,9 +188,9 @@ function App() {
     overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} unit={unit} timezone={weather.timezone} />,
     hourly:  <HourlyForecast hourly={weather.hourly} timezone={weather.timezone} unit={unit} />,
     daily:   <DailyForecast daily={weather.daily} unit={unit} />,
-    details: <WeatherDetails current={weather.current} daily={weather.daily} timezone={weather.timezone} unit={unit} />,
-    aqi:     <AirQuality data={airQuality} />,
+    details: <WeatherDetails current={weather.current} daily={weather.daily} timezone={weather.timezone} unit={unit} airQuality={airQuality} />,
     radar:   <WeatherRadar location={location} timezone={weather.timezone} />,
+    nowcast: <PrecipNowcast minutely={weather.minutely_15} currentTime={weather.current.time} mode={nowcastMode} />,
   } : null
 
   const weatherPanel = weather && !loading && (
@@ -192,7 +213,7 @@ function App() {
       <div className="weather-right">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={blockOrder} strategy={verticalListSortingStrategy}>
-            {blockOrder.filter(id => id !== 'overview' || showOverview).map(id => (
+            {blockOrder.filter(id => id !== 'aqi' && (id !== 'overview' || showOverview)).map(id => (
               <SortableBlock key={id} id={id}>
                 {blockComponents[id]}
               </SortableBlock>
@@ -279,6 +300,10 @@ function App() {
           onUnitChange={changeUnit}
           showOverview={showOverview}
           onShowOverviewChange={changeShowOverview}
+          nowcastMode={nowcastMode}
+          onNowcastModeChange={changeNowcastMode}
+          installPrompt={installPrompt}
+          onInstall={handleInstall}
           closing={settingsClosing}
         />
       )}
