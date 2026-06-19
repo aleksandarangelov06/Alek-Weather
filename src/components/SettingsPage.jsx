@@ -240,7 +240,7 @@ export function SettingsPage({ onBack, darkMode, onDarkModeChange, unit, onUnitC
         <AboutSection />
 
         <div className="settings-footer">
-          <p className="settings-version">Version 1.6</p>
+          <p className="settings-version">Version 1.7</p>
           <p className="settings-studio">Alek Studios&#8482;</p>
         </div>
       </div>

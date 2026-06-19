@@ -1,4 +1,5 @@
 import { getWeatherInfo, formatDay, toTemp } from '../utils/weatherCodes'
+import { WeatherIcon } from './WeatherIcon'
 
 export function DailyForecast({ daily, unit }) {
   const maxTemps = daily.temperature_2m_max
@@ -27,7 +28,7 @@ export function DailyForecast({ daily, unit }) {
                 <span className="daily-day">{formatDay(date)}</span>
                 {p > 0 && <span className="daily-precip-label">{p}%</span>}
               </div>
-              <span className="daily-icon">{info.icon}</span>
+              <span className="daily-icon"><WeatherIcon id={info.icon} alt={info.label} /></span>
               <span className="daily-low">{low}°</span>
               <div className="bar-track">
                 <div className="bar-fill" style={{ left: `${barLeft}%`, width: `${Math.max(barWidth, 6)}%` }} />

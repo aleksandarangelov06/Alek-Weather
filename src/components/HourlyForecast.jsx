@@ -1,5 +1,6 @@
 import { useRef, useEffect } from 'react'
 import { getWeatherInfo, toTemp } from '../utils/weatherCodes'
+import { WeatherIcon } from './WeatherIcon'
 
 export function HourlyForecast({ hourly, timezone, unit }) {
   const scrollRef = useRef(null)
@@ -52,7 +53,7 @@ export function HourlyForecast({ hourly, timezone, unit }) {
           return (
             <div key={i} className="hourly-item">
               <span className="hourly-time">{label}</span>
-              <span className="hourly-icon">{info.icon}</span>
+              <span className="hourly-icon"><WeatherIcon id={info.icon} alt={info.label} /></span>
               <span className="hourly-temp">{toTemp(temps[i], unit)}°</span>
               <span className={precipClass}>{p}%</span>
             </div>

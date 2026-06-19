@@ -580,19 +580,6 @@
   user-select: none;
 }
 
-/* Boost emoji brightness in dark mode so light-colored icons (e.g. ☁️) stay visible */
-[data-theme="dark"] .current-icon,
-[data-theme="dark"] .hourly-icon,
-[data-theme="dark"] .daily-icon {
-  filter: brightness(1.25);
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .current-icon,
-  :root:not([data-theme="light"]) .hourly-icon,
-  :root:not([data-theme="light"]) .daily-icon {
-    filter: brightness(1.25);
-  }
-}
 
 .current-temp {
   font-size: 72px;
@@ -695,7 +682,6 @@
 
 .hourly-temp {
   font-size: 14px;
-  font-weight: 500;
   font-family: var(--font-display);
   color: var(--text-primary);
 }
@@ -739,7 +725,6 @@
 
 .daily-day {
   font-size: 14px;
-  font-weight: 600;
   font-family: var(--font-display);
   color: var(--text-primary);
   line-height: 1.2;
@@ -767,7 +752,6 @@
 
 .daily-high {
   font-size: 14px;
-  font-weight: 600;
   font-family: var(--font-display);
   color: var(--text-primary);
   white-space: nowrap;

@@ -1,5 +1,6 @@
 import { Bookmark, RefreshCw } from 'lucide-react'
 import { getWeatherInfo, toTemp } from '../utils/weatherCodes'
+import { WeatherIcon } from './WeatherIcon'
 
 function formatUpdated(date) {
   if (!date) return ''
@@ -33,7 +34,7 @@ export function CurrentWeather({ current, daily, location, unit, saved, onSave, 
           <Bookmark size={18} fill={saved ? 'currentColor' : 'none'} />
         </button>
       </div>
-      <div className="current-icon">{info.icon}</div>
+      <div className="current-icon"><WeatherIcon id={info.icon} alt={info.label} /></div>
       <div className="current-temp">{temp}°{unit}</div>
       <div className="current-condition">{info.label}</div>
       <div className="current-feels">Feels like {feelsLike}°{unit}</div>
