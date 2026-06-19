@@ -235,7 +235,7 @@ function App() {
     overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} timezone={weather.timezone} yesterdayTemps={weather.yesterdayTemps} />,
     hourly:  <HourlyForecast hourly={weather.hourly} timezone={weather.timezone} unit={unit} />,
     daily:   <DailyForecast daily={weather.daily} unit={unit} />,
-    details: <WeatherDetails current={weather.current} daily={weather.daily} timezone={weather.timezone} unit={unit} airQuality={airQuality} onOpenAQIMap={openAQIMap} />,
+    details: <WeatherDetails current={weather.current} daily={weather.daily} timezone={weather.timezone} unit={unit} airQuality={airQuality} location={location} onOpenAQIMap={openAQIMap} />,
     radar:   <WeatherRadar location={location} timezone={weather.timezone} />,
     nowcast: <PrecipNowcast minutely={weather.minutely_15} currentTime={weather.current.time} mode={nowcastMode} />,
   } : null

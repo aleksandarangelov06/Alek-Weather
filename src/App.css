@@ -2046,6 +2046,31 @@
   color: var(--text-secondary);
 }
 
+/* ── AQI mini map (inside expansion) ── */
+.aqi-mini-map-wrap {
+  position: relative;
+  margin-top: 14px;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.aqi-mini-map {
+  width: 100%;
+  height: 160px;
+  background: var(--bg);
+}
+
+.aqi-mini-map-tap {
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+  border-radius: 12px;
+}
+
+.aqi-mini-map-tap:hover {
+  background: rgba(59, 130, 246, 0.04);
+}
+
 /* ── AQI Map overlay ── */
 .aqi-map-overlay {
   position: fixed;
