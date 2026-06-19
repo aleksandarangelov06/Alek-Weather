@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { Minimize2, Play, Pause, Navigation } from 'lucide-react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -249,6 +250,13 @@ export function WeatherRadar({ location, timezone }) {
           <span className="radar-legend-lbl">Heavy</span>
         </div>
       </div>
+      {expanded && createPortal(
+        <div className="radar-loading-overlay">
+          <div className="spinner" />
+          <span className="radar-loading-text">Loading radar...</span>
+        </div>,
+        document.body
+      )}
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 
 const GEO_URL = 'https://geocoding-api.open-meteo.com/v1/search'
 const WEATHER_URL = 'https://api.open-meteo.com/v1/forecast'
@@ -29,8 +29,10 @@ export function useWeather() {
   const [searchResults, setSearchResults] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const geoActiveRef = useRef(false)
 
   const fetchWeather = useCallback(async (loc) => {
+    geoActiveRef.current = false
     setLoading(true)
     setError(null)
     setAirQuality(null)
@@ -109,8 +111,11 @@ export function useWeather() {
   const useMyLocation = useCallback(() => {
     if (!navigator.geolocation) { setError('Geolocation not supported by your browser.'); return }
     setLoading(true)
+    geoActiveRef.current = true
     navigator.geolocation.getCurrentPosition(
       (pos) => {
+        if (!geoActiveRef.current) return
+        geoActiveRef.current = false
         fetchWeather({
           latitude: pos.coords.latitude,
           longitude: pos.coords.longitude,
@@ -120,6 +125,8 @@ export function useWeather() {
         })
       },
       (err) => {
+        if (!geoActiveRef.current) return
+        geoActiveRef.current = false
         const msg = err.code === 1 ? 'Location access denied.' : 'Unable to determine your location.'
         setError(msg)
         setLoading(false)

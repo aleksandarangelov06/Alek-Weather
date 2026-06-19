@@ -43,7 +43,7 @@ export function SearchBar({ onSearch, results, onSelect, onUseLocation, onClear,
         <input
           ref={inputRef}
           type="text"
-          placeholder="Search city..."
+          placeholder="Search for a city..."
           value={query}
           onChange={handleChange}
           onFocus={() => { setOpen(true); onActivate?.() }}

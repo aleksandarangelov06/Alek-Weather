@@ -57,6 +57,36 @@ export function toTemp(fahrenheit, unit) {
   return Math.round(fahrenheit)
 }
 
+// Color stops: [°F, [r, g, b]]
+const TEMP_STOPS = [
+  [10,  [94,  184, 255]],  // icy blue
+  [32,  [116, 192, 252]],  // freezing blue
+  [45,  [169, 227,  75]],  // cool light green
+  [60,  [ 81, 207, 102]],  // mild green
+  [75,  [255, 212,  59]],  // warm yellow
+  [85,  [255, 146,  43]],  // hot orange
+  [95,  [250,  82,  82]],  // very hot red
+  [110, [204,  93, 232]],  // extreme purple
+]
+
+export function tempColor(fahrenheit) {
+  if (fahrenheit <= TEMP_STOPS[0][0]) return `rgb(${TEMP_STOPS[0][1].join(',')})`
+  if (fahrenheit >= TEMP_STOPS[TEMP_STOPS.length - 1][0]) {
+    return `rgb(${TEMP_STOPS[TEMP_STOPS.length - 1][1].join(',')})`
+  }
+  for (let i = 0; i < TEMP_STOPS.length - 1; i++) {
+    const [t0, c0] = TEMP_STOPS[i]
+    const [t1, c1] = TEMP_STOPS[i + 1]
+    if (fahrenheit <= t1) {
+      const t = (fahrenheit - t0) / (t1 - t0)
+      const r = Math.round(c0[0] + t * (c1[0] - c0[0]))
+      const g = Math.round(c0[1] + t * (c1[1] - c0[1]))
+      const b = Math.round(c0[2] + t * (c1[2] - c0[2]))
+      return `rgb(${r},${g},${b})`
+    }
+  }
+}
+
 export function formatDay(dateString) {
   const date = new Date(dateString + 'T12:00:00')
   const today = new Date()

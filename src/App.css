@@ -21,8 +21,8 @@
 /* ── Dark mode (system preference) ── */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0d1117;
-    --card-bg: #161b22;
+    --bg: #000000;
+    --card-bg: #1c1c1e;
     --text-primary: #e6edf3;
     --text-secondary: #8b949e;
     --text-tertiary: #6e7681;
@@ -40,8 +40,8 @@
 
 /* ── Dark mode (explicit override) ── */
 [data-theme="dark"] {
-  --bg: #0d1117;
-  --card-bg: #161b22;
+  --bg: #000000;
+  --card-bg: #1c1c1e;
   --text-primary: #e6edf3;
   --text-secondary: #8b949e;
   --text-tertiary: #6e7681;
@@ -246,14 +246,13 @@
 .search-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   background: var(--card-bg);
-  border-radius: 14px;
-  padding: 0 14px;
-  height: 50px;
-  box-shadow: var(--shadow);
-  border: 1.5px solid transparent;
-  transition: border-color 0.2s;
+  border-radius: 999px;
+  padding: 0 16px;
+  height: 46px;
+  border: 1.5px solid var(--border);
+  transition: border-color 0.18s;
 }
 
 .search-bar.focused {
@@ -269,7 +268,7 @@
   flex: 1;
   border: none;
   outline: none;
-  font-size: 16px;
+  font-size: 15px;
   font-family: var(--font);
   color: var(--text-primary);
   background: transparent;
@@ -285,25 +284,26 @@
   border: none;
   cursor: pointer;
   color: var(--text-tertiary);
-  padding: 4px;
+  padding: 3px;
   display: flex;
   align-items: center;
   border-radius: 50%;
-  transition: background 0.15s;
+  transition: color 0.15s;
   flex-shrink: 0;
 }
 
 .clear-btn:hover {
-  background: var(--hover-clear);
+  color: var(--text-primary);
 }
 
 .search-dropdown {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + 8px);
   left: 0;
   right: 0;
   background: var(--card-bg);
-  border-radius: 14px;
+  border-radius: 18px;
+  border: 1px solid var(--border);
   box-shadow: var(--dropdown-shadow);
   z-index: 100;
   overflow: hidden;
@@ -314,25 +314,28 @@
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 13px 16px;
+  padding: 12px 18px;
   border: none;
   background: none;
   cursor: pointer;
   font-family: var(--font);
   text-align: left;
-  transition: background 0.15s;
+  transition: background 0.12s;
   box-sizing: border-box;
 }
 
+.dropdown-item + .dropdown-item {
+  border-top: 1px solid var(--border);
+}
+
 .dropdown-item:hover {
-  background: var(--accent-light);
+  background: var(--hover-subtle);
 }
 
 .location-item {
   color: var(--accent);
   font-size: 14px;
   font-weight: 500;
-  border-bottom: 1px solid var(--border);
 }
 
 .city-name {
@@ -348,9 +351,9 @@
 }
 
 .dropdown-empty {
-  padding: 14px 16px;
+  padding: 16px 18px;
   font-size: 14px;
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
   text-align: center;
 }
 
@@ -418,8 +421,7 @@
 }
 
 .search-overlay .search-bar {
-  background: var(--bg);
-  box-shadow: none;
+  background: var(--card-bg);
 }
 
 .search-overlay .saved-cities {
@@ -783,7 +785,6 @@
   position: absolute;
   top: 0;
   height: 100%;
-  background: linear-gradient(90deg, #60a5fa, #f97316);
   border-radius: 10px;
 }
 
@@ -879,17 +880,32 @@
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .empty-state {
-  text-align: center;
-  padding: 80px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  cursor: pointer;
+  min-height: calc(100svh - 120px);
 }
 
-.empty-icon {
-  font-size: 64px;
-  margin-bottom: 16px;
+.empty-pin-icon {
+  color: var(--accent);
+  opacity: 0.85;
+}
+
+.empty-state:active .empty-pin-icon {
+  animation: pin-tap 0.3s ease forwards;
+}
+
+@keyframes pin-tap {
+  0%   { transform: scale(1); }
+  40%  { transform: scale(0.82); }
+  100% { transform: scale(1); }
 }
 
 .empty-text {
-  font-size: 16px;
+  font-size: 17px;
   color: var(--text-secondary);
   margin: 0;
 }
@@ -1476,13 +1492,46 @@
   flex-direction: column;
 }
 
+.radar-loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  pointer-events: none;
+  animation: radar-overlay-fade 2s ease both;
+}
+
+.radar-loading-text {
+  font-size: 11px;
+  font-family: var(--font);
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+}
+
+@keyframes radar-overlay-fade {
+  0%, 55% { opacity: 1; }
+  100%     { opacity: 0; }
+}
+
 .radar-expanded {
   position: fixed;
   inset: 0;
   z-index: 400;
   border-radius: 0 !important;
   margin: 0 !important;
-  animation: fadeIn 0.22s ease;
+  animation: radar-expand 0.38s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+@keyframes radar-expand {
+  from { clip-path: inset(4% 3% round var(--radius)); }
+  to   { clip-path: inset(0% 0% round 0px); }
 }
 
 .radar-header {

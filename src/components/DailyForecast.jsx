@@ -1,4 +1,4 @@
-import { getWeatherInfo, formatDay, toTemp } from '../utils/weatherCodes'
+import { getWeatherInfo, formatDay, toTemp, tempColor } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
 
 export function DailyForecast({ daily, unit }) {
@@ -29,11 +29,15 @@ export function DailyForecast({ daily, unit }) {
                 {p > 0 && <span className="daily-precip-label">{p}%</span>}
               </div>
               <span className="daily-icon"><WeatherIcon id={info.icon} alt={info.label} /></span>
-              <span className="daily-low">{low}°</span>
+              <span className="daily-low" style={{ color: tempColor(minTemps[i]) }}>{low}°</span>
               <div className="bar-track">
-                <div className="bar-fill" style={{ left: `${barLeft}%`, width: `${Math.max(barWidth, 6)}%` }} />
+                <div className="bar-fill" style={{
+                  left: `${barLeft}%`,
+                  width: `${Math.max(barWidth, 6)}%`,
+                  background: `linear-gradient(90deg, ${tempColor(minTemps[i])}, ${tempColor(maxTemps[i])})`,
+                }} />
               </div>
-              <span className="daily-high">{high}°</span>
+              <span className="daily-high" style={{ color: tempColor(maxTemps[i]) }}>{high}°</span>
             </div>
           )
         })}

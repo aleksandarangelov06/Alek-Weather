@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Settings, Search, ArrowLeft, GripHorizontal } from 'lucide-react'
+import { SlidersHorizontal, MapPin, ArrowLeft, GripHorizontal } from 'lucide-react'
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -119,7 +119,7 @@ function App() {
   useEffect(() => {
     const meta = document.querySelector('meta[name="theme-color"]')
     if (!meta) return
-    const apply = (dark) => { meta.content = dark ? '#0d1117' : '#f0f2f5' }
+    const apply = (dark) => { meta.content = dark ? '#000000' : '#f0f2f5' }
     if (darkMode === 'on')  { apply(true);  return }
     if (darkMode === 'off') { apply(false); return }
     // system mode: follow OS and keep listening for changes
@@ -294,11 +294,11 @@ function App() {
     <div className="app">
       <header className="app-header">
         <button className="header-icon-btn" onClick={openSearch} aria-label="Search">
-          <Search size={24} />
+          <MapPin size={24} />
         </button>
         <div className="app-title">Alek Weather</div>
         <button className="settings-btn" onClick={isDesktop && weather && !loading ? () => setDesktopSettingsOpen(v => !v) : (showSettings ? closeSettings : openSettings)} aria-label="Settings">
-          <Settings size={22} />
+          <SlidersHorizontal size={22} />
         </button>
       </header>
 
@@ -314,9 +314,9 @@ function App() {
             <div className="status-message error">{error}</div>
           )}
           {!weather && !loading && !error && (
-            <div className="empty-state">
-              <div className="empty-icon">🌍</div>
-              <p className="empty-text">Tap 🔍 to search for a city</p>
+            <div className="empty-state" onClick={openSearch} role="button" aria-label="Search for a location">
+              <MapPin size={72} className="empty-pin-icon" />
+              <p className="empty-text">Tap to find a location</p>
             </div>
           )}
           <div className="weather-content">
