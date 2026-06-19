@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { Wind, Droplets, Eye, Gauge, Sun, Sunrise, Sunset, Leaf, ChevronDown, ChevronUp, Navigation2 } from 'lucide-react'
 import { getWindDirection, getUVLabel, formatTime } from '../utils/weatherCodes'
 
@@ -55,14 +55,20 @@ function Pollutant({ name, value, unit }) {
   )
 }
 
-function DetailCard({ icon, label, value, sub, color, onClick, isExpanded }) {
+function DetailCard({ icon, label, value, sub, color, onClick, isExpanded, onDragStart, onDragEnter, onDragEnd, onDragOver, isDragging, isDragOver }) {
   const expandable = Boolean(onClick)
   return (
     <div
-      className={`detail-card${expandable ? ' detail-expand-tile' : ''}${isExpanded ? ' detail-expand-tile--active' : ''}`}
+      className={`detail-card${expandable ? ' detail-expand-tile' : ''}${isExpanded ? ' detail-expand-tile--active' : ''}${isDragOver ? ' detail-card--drag-over' : ''}`}
       onClick={onClick}
       role={expandable ? 'button' : undefined}
       aria-expanded={expandable ? isExpanded : undefined}
+      draggable
+      onDragStart={onDragStart}
+      onDragEnter={onDragEnter}
+      onDragEnd={onDragEnd}
+      onDragOver={onDragOver}
+      style={{ opacity: isDragging ? 0.35 : 1, cursor: isDragging ? 'grabbing' : 'grab' }}
     >
       <div className="detail-icon" style={color ? { color } : undefined}>{icon}</div>
       <div className="detail-label">{label}</div>
@@ -80,6 +86,34 @@ function DetailCard({ icon, label, value, sub, color, onClick, isExpanded }) {
 export function WeatherDetails({ current, daily, hourly, timezone, unit, airQuality }) {
   const [expanded, setExpanded] = useState(null)
   const toggle = (key) => setExpanded(v => v === key ? null : key)
+
+  const [cardOrder, setCardOrder] = useState(['humidity', 'wind', 'pressure', 'visibility', 'sunrise', 'sunset', 'uv', 'aqi'])
+  const [draggingKey, setDraggingKey] = useState(null)
+  const [dragOverKey, setDragOverKey] = useState(null)
+  const dragSrc = useRef(null)
+  const dragTarget = useRef(null)
+
+  const handleDragStart = (key) => { dragSrc.current = key; setDraggingKey(key) }
+  const handleDragEnter = (key) => { dragTarget.current = key; setDragOverKey(key) }
+  const handleDragOver  = (e)   => e.preventDefault()
+  const handleDragEnd   = ()    => {
+    const src = dragSrc.current
+    const tgt = dragTarget.current
+    if (src && tgt && src !== tgt) {
+      setCardOrder(prev => {
+        const next = [...prev]
+        const from = next.indexOf(src)
+        const to   = next.indexOf(tgt)
+        next.splice(from, 1)
+        next.splice(to, 0, src)
+        return next
+      })
+    }
+    dragSrc.current = null
+    dragTarget.current = null
+    setDraggingKey(null)
+    setDragOverKey(null)
+  }
 
   const windDir = getWindDirection(current.wind_direction_10m)
   const visMi   = (current.visibility / 1609.34).toFixed(1)
@@ -135,56 +169,72 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
   const visValues = hourly?.visibility ? sliceNext(hourly.visibility, 6).map(v => v / 1609.34) : []
   const visTimes  = visValues.length > 0 ? sliceNext(hourly.time, 6) : []
 
+  const cardDefs = {
+    humidity:   {
+      icon: <Droplets size={19} />, label: 'Humidity',
+      value: `${current.relative_humidity_2m}%`,
+      sub: <span style={{ color: humInfo.color, fontWeight: 600 }}>{humInfo.label}</span>,
+      color: humInfo.color,
+      onClick: () => toggle('humidity'), isExpanded: expanded === 'humidity',
+    },
+    wind: {
+      icon: <Wind size={19} />, label: 'Wind',
+      value: `${Math.round(current.wind_speed_10m)} mph`,
+      sub: windDir,
+      color: windInfo.color,
+      onClick: () => toggle('wind'), isExpanded: expanded === 'wind',
+    },
+    pressure: {
+      icon: <Gauge size={19} />, label: 'Pressure',
+      value: `${Math.round(current.surface_pressure)} hPa`,
+      sub: <span style={{ color: presInfo.color, fontWeight: 600 }}>{presInfo.label}</span>,
+      color: presInfo.color,
+      onClick: () => toggle('pressure'), isExpanded: expanded === 'pressure',
+    },
+    visibility: {
+      icon: <Eye size={19} />, label: 'Visibility',
+      value: `${visMi} mi`,
+      sub: <span style={{ color: visInfo.color, fontWeight: 600 }}>{visInfo.label}</span>,
+      color: visInfo.color,
+      onClick: () => toggle('visibility'), isExpanded: expanded === 'visibility',
+    },
+    sunrise: { icon: <Sunrise size={19} />, label: 'Sunrise', value: sunrise },
+    sunset:  { icon: <Sunset  size={19} />, label: 'Sunset',  value: sunset  },
+    uv: {
+      icon: <Sun size={19} />, label: 'UV Index',
+      value: Math.round(uvCurrent),
+      sub: <span style={{ color: uv.color, fontWeight: 600 }}>{uv.label}</span>,
+      color: uv.color,
+      onClick: () => toggle('uv'), isExpanded: expanded === 'uv',
+    },
+    aqi: airQuality ? {
+      icon: <Leaf size={19} />, label: 'Air Quality',
+      value: airQuality.us_aqi,
+      sub: aqiInfo?.label,
+      color: aqiInfo?.color,
+      onClick: () => toggle('aqi'), isExpanded: expanded === 'aqi',
+    } : null,
+  }
+
   return (
     <div className="card">
       <div className="section-label">DETAILS</div>
       <div className="details-grid">
-        <DetailCard
-          icon={<Droplets size={19} />} label="Humidity"
-          value={`${current.relative_humidity_2m}%`}
-          sub={<span style={{ color: humInfo.color, fontWeight: 600 }}>{humInfo.label}</span>}
-          color={humInfo.color}
-          onClick={() => toggle('humidity')} isExpanded={expanded === 'humidity'}
-        />
-        <DetailCard
-          icon={<Wind size={19} />} label="Wind"
-          value={`${Math.round(current.wind_speed_10m)} mph`}
-          sub={windDir}
-          color={windInfo.color}
-          onClick={() => toggle('wind')} isExpanded={expanded === 'wind'}
-        />
-        <DetailCard
-          icon={<Gauge size={19} />} label="Pressure"
-          value={`${Math.round(current.surface_pressure)} hPa`}
-          sub={<span style={{ color: presInfo.color, fontWeight: 600 }}>{presInfo.label}</span>}
-          color={presInfo.color}
-          onClick={() => toggle('pressure')} isExpanded={expanded === 'pressure'}
-        />
-        <DetailCard
-          icon={<Eye size={19} />} label="Visibility"
-          value={`${visMi} mi`}
-          sub={<span style={{ color: visInfo.color, fontWeight: 600 }}>{visInfo.label}</span>}
-          color={visInfo.color}
-          onClick={() => toggle('visibility')} isExpanded={expanded === 'visibility'}
-        />
-        <DetailCard icon={<Sunrise size={19} />} label="Sunrise" value={sunrise} />
-        <DetailCard icon={<Sunset size={19} />}  label="Sunset"  value={sunset} />
-        <DetailCard
-          icon={<Sun size={19} />} label="UV Index"
-          value={Math.round(uvCurrent)}
-          sub={<span style={{ color: uv.color, fontWeight: 600 }}>{uv.label}</span>}
-          color={uv.color}
-          onClick={() => toggle('uv')} isExpanded={expanded === 'uv'}
-        />
-        {airQuality && (
-          <DetailCard
-            icon={<Leaf size={19} />} label="Air Quality"
-            value={airQuality.us_aqi}
-            sub={aqiInfo.label}
-            color={aqiInfo.color}
-            onClick={() => toggle('aqi')} isExpanded={expanded === 'aqi'}
-          />
-        )}
+        {cardOrder
+          .filter(key => cardDefs[key] != null)
+          .map(key => (
+            <DetailCard
+              key={key}
+              {...cardDefs[key]}
+              onDragStart={() => handleDragStart(key)}
+              onDragEnter={() => handleDragEnter(key)}
+              onDragOver={handleDragOver}
+              onDragEnd={handleDragEnd}
+              isDragging={draggingKey === key}
+              isDragOver={dragOverKey === key && draggingKey !== key}
+            />
+          ))
+        }
       </div>
 
       {expanded === 'humidity' && humTimes.length > 0 && (
