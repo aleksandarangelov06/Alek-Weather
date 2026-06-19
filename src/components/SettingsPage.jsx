@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowLeft, ChevronRight } from 'lucide-react'
+import { ArrowLeft, ChevronRight, ChevronDown, X } from 'lucide-react'
 
 function SettingRow({ label, children }) {
   return (
@@ -166,7 +166,95 @@ function NotificationsSection({ notifyEnabled, notifyTypes, permission, onEnable
   )
 }
 
-export function SettingsPage({ onBack, darkMode, onDarkModeChange, unit, onUnitChange, showOverview, onShowOverviewChange, nowcastMode, onNowcastModeChange, installPrompt, onInstall, closing, notifyEnabled, notifyTypes, notifyPermission, onNotifyEnabledChange, onNotifyTypeToggle }) {
+function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, showOverview, onShowOverviewChange, nowcastMode, onNowcastModeChange, installPrompt, onInstall, notifyEnabled, notifyTypes, notifyPermission, onNotifyEnabledChange, onNotifyTypeToggle }) {
+  return (
+    <>
+      <div className="settings-group-label">Appearance</div>
+      <div className="card settings-card">
+        <SettingRow label="Theme">
+          <SegmentedControl
+            value={darkMode}
+            onChange={onDarkModeChange}
+            options={[
+              { value: 'off',    label: 'Light'  },
+              { value: 'on',     label: 'Dark'   },
+              { value: 'system', label: 'System' },
+            ]}
+          />
+        </SettingRow>
+      </div>
+
+      <div className="settings-group-label">Units</div>
+      <div className="card settings-card">
+        <SettingRow label="Temperature">
+          <SegmentedControl
+            value={unit}
+            onChange={onUnitChange}
+            options={[
+              { value: 'F', label: '°F' },
+              { value: 'C', label: '°C' },
+            ]}
+          />
+        </SettingRow>
+      </div>
+
+      <div className="settings-group-label">Tiles</div>
+      <div className="card settings-card">
+        <SettingRow label="Weather Overview">
+          <Toggle id="toggle-overview" checked={showOverview} onChange={onShowOverviewChange} />
+        </SettingRow>
+        <SettingRow label="Precipitation">
+          <SegmentedControl
+            value={nowcastMode}
+            onChange={onNowcastModeChange}
+            options={[
+              { value: 'on',   label: 'On'   },
+              { value: 'auto', label: 'Auto' },
+              { value: 'off',  label: 'Off'  },
+            ]}
+          />
+        </SettingRow>
+      </div>
+
+      <div className="settings-group-label">Notifications</div>
+      <NotificationsSection
+        notifyEnabled={notifyEnabled}
+        notifyTypes={notifyTypes}
+        permission={notifyPermission}
+        onEnabledChange={onNotifyEnabledChange}
+        onTypeToggle={onNotifyTypeToggle}
+      />
+
+      <div className="settings-group-label">Other</div>
+      <InstallSection installPrompt={installPrompt} onInstall={onInstall} />
+      <ClearStorageSection />
+      <AboutSection />
+
+      <div className="settings-footer">
+        <p className="settings-version">Version 1.8</p>
+        <p className="settings-studio">Alek Studios&#8482;</p>
+      </div>
+    </>
+  )
+}
+
+export function SettingsPage({ onBack, inline, closing, ...bodyProps }) {
+  if (inline) {
+    return (
+      <div className="card settings-inline">
+        <div className="settings-inline-header">
+          <span className="settings-inline-title">Settings</span>
+          <button className="header-icon-btn" onClick={onBack} aria-label="Close settings">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="settings-inline-body">
+          <SettingsBody {...bodyProps} />
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className={`settings-page${closing ? ' closing' : ''}`}>
       <header className="settings-page-header">
@@ -176,74 +264,25 @@ export function SettingsPage({ onBack, darkMode, onDarkModeChange, unit, onUnitC
         </button>
         <span className="settings-page-title">Settings</span>
       </header>
-
       <div className="settings-body">
-        <div className="settings-group-label">Appearance</div>
-        <div className="card settings-card">
-          <SettingRow label="Theme">
-            <SegmentedControl
-              value={darkMode}
-              onChange={onDarkModeChange}
-              options={[
-                { value: 'off',    label: 'Light'  },
-                { value: 'on',     label: 'Dark'   },
-                { value: 'system', label: 'System' },
-              ]}
-            />
-          </SettingRow>
-        </div>
-
-        <div className="settings-group-label">Units</div>
-        <div className="card settings-card">
-          <SettingRow label="Temperature">
-            <SegmentedControl
-              value={unit}
-              onChange={onUnitChange}
-              options={[
-                { value: 'F', label: '°F' },
-                { value: 'C', label: '°C' },
-              ]}
-            />
-          </SettingRow>
-        </div>
-
-        <div className="settings-group-label">Tiles</div>
-        <div className="card settings-card">
-          <SettingRow label="Weather Overview">
-            <Toggle id="toggle-overview" checked={showOverview} onChange={onShowOverviewChange} />
-          </SettingRow>
-          <SettingRow label="Precipitation">
-            <SegmentedControl
-              value={nowcastMode}
-              onChange={onNowcastModeChange}
-              options={[
-                { value: 'on',   label: 'On'   },
-                { value: 'auto', label: 'Auto' },
-                { value: 'off',  label: 'Off'  },
-              ]}
-            />
-          </SettingRow>
-        </div>
-
-        <div className="settings-group-label">Notifications</div>
-        <NotificationsSection
-          notifyEnabled={notifyEnabled}
-          notifyTypes={notifyTypes}
-          permission={notifyPermission}
-          onEnabledChange={onNotifyEnabledChange}
-          onTypeToggle={onNotifyTypeToggle}
-        />
-
-        <div className="settings-group-label">Other</div>
-        <InstallSection installPrompt={installPrompt} onInstall={onInstall} />
-        <ClearStorageSection />
-        <AboutSection />
-
-        <div className="settings-footer">
-          <p className="settings-version">Version 1.7</p>
-          <p className="settings-studio">Alek Studios&#8482;</p>
-        </div>
+        <SettingsBody {...bodyProps} />
       </div>
+    </div>
+  )
+}
+
+export function SettingsPill({ expanded, onToggle, ...bodyProps }) {
+  return (
+    <div className="card settings-pill">
+      <button className="settings-pill-bar" onClick={onToggle} aria-expanded={expanded}>
+        <span className="settings-pill-label">Settings</span>
+        <ChevronDown size={16} className={`settings-pill-chevron${expanded ? ' open' : ''}`} />
+      </button>
+      {expanded && (
+        <div className="settings-inline-body">
+          <SettingsBody {...bodyProps} />
+        </div>
+      )}
     </div>
   )
 }

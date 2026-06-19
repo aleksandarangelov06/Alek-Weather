@@ -119,7 +119,12 @@ export function useWeather() {
           admin1: '',
         })
       },
-      () => { setError('Location access denied.'); setLoading(false) }
+      (err) => {
+        const msg = err.code === 1 ? 'Location access denied.' : 'Unable to determine your location.'
+        setError(msg)
+        setLoading(false)
+      },
+      { timeout: 10000, maximumAge: 60000 }
     )
   }, [fetchWeather])
 

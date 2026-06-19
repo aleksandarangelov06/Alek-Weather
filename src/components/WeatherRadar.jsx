@@ -113,6 +113,20 @@ export function WeatherRadar({ location, timezone }) {
     return () => clearInterval(id)
   }, [playing, frames.length])
 
+  const expand = () => {
+    history.pushState({ overlay: 'radar' }, '')
+    setExpanded(true)
+  }
+
+  const collapse = () => history.back()
+
+  useEffect(() => {
+    if (!expanded) return
+    const handler = () => setExpanded(false)
+    window.addEventListener('popstate', handler)
+    return () => window.removeEventListener('popstate', handler)
+  }, [expanded])
+
   // Resize, re-center, and toggle interaction on expand/collapse
   useEffect(() => {
     const map = mapInst.current
@@ -167,7 +181,7 @@ export function WeatherRadar({ location, timezone }) {
         <div ref={mapRef} className="radar-map" />
         {expanded && (
           <>
-            <button className="radar-expand-btn radar-expand-btn--floating" onClick={() => setExpanded(false)} aria-label="Collapse">
+            <button className="radar-expand-btn radar-expand-btn--floating" onClick={collapse} aria-label="Collapse">
               <Minimize2 size={20} />
             </button>
             <button className="radar-locate-btn" onClick={handleLocate} aria-label="Center on location">
@@ -178,7 +192,7 @@ export function WeatherRadar({ location, timezone }) {
         {!expanded && (
           <div
             className="radar-map-tap"
-            onClick={() => setExpanded(true)}
+            onClick={expand}
             role="button"
             aria-label="Expand radar"
           />

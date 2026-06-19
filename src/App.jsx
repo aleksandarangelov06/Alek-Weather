@@ -17,7 +17,7 @@ import { WeatherRadar } from './components/WeatherRadar'
 import { PrecipNowcast } from './components/PrecipNowcast'
 import { WeatherAlerts } from './components/WeatherAlerts'
 import { WeatherOverview } from './components/WeatherOverview'
-import { SettingsPage } from './components/SettingsPage'
+import { SettingsPage, SettingsPill } from './components/SettingsPage'
 import './App.css'
 
 const THEME_KEY = 'alek-weather-theme'
@@ -53,6 +53,8 @@ function App() {
   const [installPrompt, setInstallPrompt] = useState(null)
   const [showSettings, setShowSettings] = useState(false)
   const [settingsClosing, setSettingsClosing] = useState(false)
+  const [isDesktop, setIsDesktop] = useState(() => window.matchMedia('(min-width: 1100px)').matches)
+  const [desktopSettingsOpen, setDesktopSettingsOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchClosing, setSearchClosing] = useState(false)
   const searchAreaRef = useRef(null)
@@ -97,6 +99,13 @@ function App() {
     const { outcome } = await installPrompt.userChoice
     if (outcome === 'accepted') setInstallPrompt(null)
   }
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1100px)')
+    const handler = (e) => setIsDesktop(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
 
   // Apply dark mode theme
   useEffect(() => {
@@ -245,6 +254,27 @@ function App() {
           onRefresh={() => fetchWeather(location)}
           loading={loading}
         />
+        {isDesktop && (
+          <SettingsPill
+            expanded={desktopSettingsOpen}
+            onToggle={() => setDesktopSettingsOpen(v => !v)}
+            darkMode={darkMode}
+            onDarkModeChange={changeDarkMode}
+            unit={unit}
+            onUnitChange={changeUnit}
+            showOverview={showOverview}
+            onShowOverviewChange={changeShowOverview}
+            nowcastMode={nowcastMode}
+            onNowcastModeChange={changeNowcastMode}
+            installPrompt={installPrompt}
+            onInstall={handleInstall}
+            notifyEnabled={notifyEnabled}
+            notifyTypes={notifyTypes}
+            notifyPermission={permission}
+            onNotifyEnabledChange={toggleNotifyEnabled}
+            onNotifyTypeToggle={toggleType}
+          />
+        )}
       </div>
       <div className="weather-right">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -267,7 +297,7 @@ function App() {
           <Search size={24} />
         </button>
         <div className="app-title">Alek Weather</div>
-        <button className="settings-btn" onClick={openSettings} aria-label="Settings">
+        <button className="settings-btn" onClick={isDesktop && weather && !loading ? () => setDesktopSettingsOpen(v => !v) : (showSettings ? closeSettings : openSettings)} aria-label="Settings">
           <Settings size={22} />
         </button>
       </header>
@@ -326,7 +356,7 @@ function App() {
         </>
       )}
 
-      {showSettings && (
+      {showSettings && (!isDesktop || !weather || loading) && (
         <SettingsPage
           onBack={closeSettings}
           darkMode={darkMode}

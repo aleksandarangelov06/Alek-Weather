@@ -32,14 +32,9 @@ export function SearchBar({ onSearch, results, onSelect, onUseLocation, onClear,
     onSelect(city)
   }
 
-  const handleLocation = () => {
-    setOpen(false)
-    onUseLocation()
-  }
-
   useEffect(() => () => clearTimeout(timerRef.current), [])
 
-  const showDropdown = open && (results.length > 0 || query.trim().length > 0)
+  const showDropdown = open && query.trim().length > 0
 
   return (
     <div className="search-wrapper">
@@ -64,7 +59,7 @@ export function SearchBar({ onSearch, results, onSelect, onUseLocation, onClear,
 
       {showDropdown && (
         <div className="search-dropdown">
-          <button className="dropdown-item location-item" onMouseDown={handleLocation}>
+          <button className="dropdown-item location-item" onMouseDown={onUseLocation}>
             <MapPin size={15} />
             <span>Use my location</span>
           </button>
