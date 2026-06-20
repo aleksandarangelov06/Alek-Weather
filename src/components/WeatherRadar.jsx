@@ -8,6 +8,7 @@ const FRAMES_URL = 'https://api.rainviewer.com/public/weather-maps.json'
 const TILE_URL   = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
 const MAP_MAX_ZOOM     = 14
 const RADAR_NATIVE_MAX = 6
+const RADAR_OPACITY     = 0.65
 const LEGEND_COLORS = ['#43a4c3', '#326985', '#ffff00', '#ff3300', '#d193c9']
 
 delete L.Icon.Default.prototype._getIconUrl
@@ -23,7 +24,7 @@ export function WeatherRadar({ location, timezone }) {
   const mapRef      = useRef(null)
   const mapInst     = useRef(null)
   const baseTileRef = useRef(null)
-  const radarLayer  = useRef(null)
+  const radarLayers = useRef([])
   const trackRef    = useRef(null)
   const isDragging  = useRef(false)
 
@@ -74,7 +75,7 @@ export function WeatherRadar({ location, timezone }) {
       map.remove()
       mapInst.current = null
       baseTileRef.current = null
-      radarLayer.current = null
+      radarLayers.current = []
       setMapReady(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -94,18 +95,27 @@ export function WeatherRadar({ location, timezone }) {
     }
   }, [mapReady])
 
-  // Swap radar tile layer when frame index changes
+  // Preload every frame as a hidden tile layer so playback is instant (no per-frame fetch)
   useEffect(() => {
     const map = mapInst.current
     if (!map || !mapReady || !host || frames.length === 0) return
-    if (radarLayer.current) { map.removeLayer(radarLayer.current); radarLayer.current = null }
-    const frame = frames[idx]
-    if (!frame) return
-    radarLayer.current = L.tileLayer(
-      `${host}${frame.path}/512/{z}/{x}/{y}/4/1_1.png`,
-      { opacity: 0.65, zIndex: 200, maxZoom: MAP_MAX_ZOOM, maxNativeZoom: RADAR_NATIVE_MAX, crossOrigin: true }
-    ).addTo(map)
-  }, [mapReady, host, frames, idx])
+    radarLayers.current.forEach(l => map.removeLayer(l))
+    radarLayers.current = frames.map(frame =>
+      L.tileLayer(
+        `${host}${frame.path}/512/{z}/{x}/{y}/4/1_1.png`,
+        { opacity: 0, zIndex: 200, maxZoom: MAP_MAX_ZOOM, maxNativeZoom: RADAR_NATIVE_MAX, crossOrigin: true }
+      ).addTo(map)
+    )
+    return () => {
+      radarLayers.current.forEach(l => map.removeLayer(l))
+      radarLayers.current = []
+    }
+  }, [mapReady, host, frames])
+
+  // Reveal only the active frame (layers stay mounted, so tiles are already cached)
+  useEffect(() => {
+    radarLayers.current.forEach((layer, i) => layer.setOpacity(i === idx ? RADAR_OPACITY : 0))
+  }, [idx, frames])
 
   // Animation playback
   useEffect(() => {
