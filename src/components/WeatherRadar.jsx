@@ -100,9 +100,12 @@ export function WeatherRadar({ location, timezone }) {
     const map = mapInst.current
     if (!map || !mapReady || !host || frames.length === 0) return
     radarLayers.current.forEach(l => map.removeLayer(l))
+    // URL is /{size}/{z}/{x}/{y}/{color}/{smooth}_{snow}.png. RainViewer's free API
+    // ignores the color and snow flags (always one fixed palette), but smoothing works.
+    // Smoothing on (1) wraps precip in ugly khaki halos, so we disable it (0_0) for crisp tiles.
     radarLayers.current = frames.map(frame =>
       L.tileLayer(
-        `${host}${frame.path}/512/{z}/{x}/{y}/6/1_0.png`,
+        `${host}${frame.path}/512/{z}/{x}/{y}/2/0_0.png`,
         { opacity: 0, zIndex: 200, maxZoom: MAP_MAX_ZOOM, maxNativeZoom: RADAR_NATIVE_MAX, crossOrigin: true }
       ).addTo(map)
     )
