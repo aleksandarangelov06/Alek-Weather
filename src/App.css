@@ -713,6 +713,24 @@
 
 .hourly-scroll::-webkit-scrollbar { display: none; }
 
+.hourly-track {
+  display: flex;
+  flex-direction: column;
+  width: max-content;
+}
+
+.hourly-row {
+  display: flex;
+  gap: 2px;
+}
+
+.hourly-graph {
+  display: block;
+  width: 100%;
+  margin-top: 2px;
+  overflow: visible;
+}
+
 .hourly-item {
   display: flex;
   flex-direction: column;
