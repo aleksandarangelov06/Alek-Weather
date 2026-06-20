@@ -102,7 +102,7 @@ export function WeatherRadar({ location, timezone }) {
     radarLayers.current.forEach(l => map.removeLayer(l))
     radarLayers.current = frames.map(frame =>
       L.tileLayer(
-        `${host}${frame.path}/512/{z}/{x}/{y}/4/1_1.png`,
+        `${host}${frame.path}/512/{z}/{x}/{y}/6/1_0.png`,
         { opacity: 0, zIndex: 200, maxZoom: MAP_MAX_ZOOM, maxNativeZoom: RADAR_NATIVE_MAX, crossOrigin: true }
       ).addTo(map)
     )
