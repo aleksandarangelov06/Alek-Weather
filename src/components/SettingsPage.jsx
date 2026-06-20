@@ -73,8 +73,8 @@ function ClearStorageSection() {
   const [cleared, setCleared] = useState(false)
 
   async function handleClear() {
-    localStorage.clear()
-    sessionStorage.clear()
+    // Only clear the service-worker app-shell cache, not localStorage —
+    // saved cities and settings live in localStorage and should survive a refresh.
     if ('caches' in window) {
       const keys = await caches.keys()
       await Promise.all(keys.map(k => caches.delete(k)))
