@@ -24,7 +24,7 @@ export function WeatherRadar({ location, timezone }) {
   const mapRef      = useRef(null)
   const mapInst     = useRef(null)
   const baseTileRef = useRef(null)
-  const radarLayers = useRef([])
+  const radarLayer  = useRef(null)
   const trackRef    = useRef(null)
   const isDragging  = useRef(false)
 
@@ -75,7 +75,7 @@ export function WeatherRadar({ location, timezone }) {
       map.remove()
       mapInst.current = null
       baseTileRef.current = null
-      radarLayers.current = []
+      radarLayer.current = null
       setMapReady(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -95,30 +95,22 @@ export function WeatherRadar({ location, timezone }) {
     }
   }, [mapReady])
 
-  // Preload every frame as a hidden tile layer so playback is instant (no per-frame fetch)
+  // Show a single radar layer for the active frame, swapping as idx changes.
+  // One layer at a time keeps tile requests light, so zoom/pan don't drop tiles.
+  // The service worker caches radar tiles, so repeated playback is smooth after the first pass.
+  // URL is /{size}/{z}/{x}/{y}/{color}/{smooth}_{snow}.png. RainViewer's free API
+  // ignores the color and snow flags (always one fixed palette), but smoothing works.
   useEffect(() => {
     const map = mapInst.current
     if (!map || !mapReady || !host || frames.length === 0) return
-    radarLayers.current.forEach(l => map.removeLayer(l))
-    // URL is /{size}/{z}/{x}/{y}/{color}/{smooth}_{snow}.png. RainViewer's free API
-    // ignores the color and snow flags (always one fixed palette), but smoothing works.
-    // Smoothing on (1) wraps precip in ugly khaki halos, so we disable it (0_0) for crisp tiles.
-    radarLayers.current = frames.map(frame =>
-      L.tileLayer(
-        `${host}${frame.path}/512/{z}/{x}/{y}/2/0_0.png`,
-        { opacity: 0, zIndex: 200, maxZoom: MAP_MAX_ZOOM, maxNativeZoom: RADAR_NATIVE_MAX, crossOrigin: true }
-      ).addTo(map)
-    )
-    return () => {
-      radarLayers.current.forEach(l => map.removeLayer(l))
-      radarLayers.current = []
-    }
-  }, [mapReady, host, frames])
-
-  // Reveal only the active frame (layers stay mounted, so tiles are already cached)
-  useEffect(() => {
-    radarLayers.current.forEach((layer, i) => layer.setOpacity(i === idx ? RADAR_OPACITY : 0))
-  }, [idx, frames])
+    const frame = frames[idx]
+    if (!frame) return
+    if (radarLayer.current) { map.removeLayer(radarLayer.current); radarLayer.current = null }
+    radarLayer.current = L.tileLayer(
+      `${host}${frame.path}/512/{z}/{x}/{y}/2/1_0.png`,
+      { opacity: RADAR_OPACITY, zIndex: 200, maxZoom: MAP_MAX_ZOOM, maxNativeZoom: RADAR_NATIVE_MAX, crossOrigin: true }
+    ).addTo(map)
+  }, [mapReady, host, frames, idx])
 
   // Animation playback
   useEffect(() => {
