@@ -1,5 +1,5 @@
 import { Bookmark, RefreshCw } from 'lucide-react'
-import { getWeatherInfo, toTemp, tempStyle } from '../utils/weatherCodes'
+import { getWeatherInfo, liveWeatherCode, toTemp, tempStyle } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
 
 function formatUpdated(date) {
@@ -11,13 +11,16 @@ function formatUpdated(date) {
   return `Updated at ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
 }
 
-export function CurrentWeather({ current, daily, location, timezone, unit, saved, onSave, onRemove, lastUpdated, onRefresh, loading, colorCoding = true, glow = true }) {
+export function CurrentWeather({ current, minutely, daily, location, timezone, unit, saved, onSave, onRemove, lastUpdated, onRefresh, loading, colorCoding = true, glow = true }) {
   const tzOpts = timezone ? { timeZone: timezone } : {}
   const dateStr = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric', ...tzOpts,
   })
 
-  const info = getWeatherInfo(current.weather_code, !current.is_day)
+  // Derive the condition from the live 15-min nowcast rather than the raw
+  // weather_code, which lags after a brief downpour (e.g. reads "Violent Showers"
+  // while only light rain is actually falling).
+  const info = getWeatherInfo(liveWeatherCode(current, minutely), !current.is_day)
   const temp = toTemp(current.temperature_2m, unit)
 
   const currentTempStyle = tempStyle(current.temperature_2m, colorCoding, 1, glow)

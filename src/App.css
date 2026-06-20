@@ -801,7 +801,7 @@
 
 .daily-row {
   display: grid;
-  grid-template-columns: 72px 34px 36px 1fr 36px;
+  grid-template-columns: 34px 72px 1fr;
   align-items: center;
   gap: 8px;
   padding: 7px 4px;
@@ -849,33 +849,53 @@
   user-select: none;
 }
 
-.daily-low {
-  font-size: 14px;
-  font-family: var(--font-display);
-  color: var(--text-tertiary);
-  text-align: right;
-  white-space: nowrap;
-}
-
-.daily-high {
-  font-size: 14px;
-  font-family: var(--font-display);
-  color: var(--text-primary);
-  white-space: nowrap;
-}
-
-.bar-track {
+/* Dark Sky–style temperature pills: a single track whose pill's left/width map
+   the day's low→high onto the week's range. The low/high numbers are absolutely
+   positioned to the pill's ends so the whole cluster shifts and scales together.
+   The inner box is inset on both sides to leave room for the numbers when a
+   pill sits at the extreme cold/hot edge of the week. */
+.daily-range {
   position: relative;
-  height: 10px;
-  background: var(--bar-track-bg);
-  border-radius: 10px;
+  height: 24px;
+  border-left: 1px solid var(--border);
+}
+
+.daily-range-inner {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 64px;
+  right: 42px;
 }
 
 .bar-fill {
   position: absolute;
-  top: 0;
-  height: 100%;
-  border-radius: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 14px;
+  min-width: 14px;
+  border-radius: 999px;
+}
+
+.daily-low,
+.daily-high {
+  position: absolute;
+  top: 50%;
+  font-size: 14px;
+  font-family: var(--font-display);
+  white-space: nowrap;
+}
+
+/* Right-aligned to the pill's left edge, with a small gap */
+.daily-low {
+  transform: translate(calc(-100% - 7px), -50%);
+  color: var(--text-tertiary);
+}
+
+/* Left-aligned to the pill's right edge, with a small gap */
+.daily-high {
+  transform: translate(7px, -50%);
+  color: var(--text-primary);
 }
 
 /* ── Detail cards ── */

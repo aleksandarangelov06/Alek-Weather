@@ -61,8 +61,15 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
           const low = toTemp(minTemps[i], unit)
           const precip = daily.precipitation_probability_max[i]
 
+          // Map this day's low→high onto the week's overall range so pill
+          // position and width carry the actual temperature magnitudes. The
+          // low/high numbers ride the pill's ends (see .daily-range CSS), so the
+          // whole cluster shifts and scales together — quick to compare at a glance.
           const barLeft = ((minTemps[i] - weekMin) / range) * 100
           const barWidth = ((maxTemps[i] - minTemps[i]) / range) * 100
+          const pillWidth = Math.max(barWidth, 8) // keep a capsule even for flat days
+          const pillLeft = Math.min(barLeft, 100 - pillWidth)
+          const pillRight = pillLeft + pillWidth
 
           const p = precip ?? 0
           const isExpanded = expanded === date
@@ -75,22 +82,24 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
                 role="button"
                 aria-expanded={isExpanded}
               >
+                <span className="daily-icon"><WeatherIcon id={info.icon} alt={info.label} /></span>
                 <div className="daily-day-cell">
                   <span className="daily-day">{formatDay(date)}</span>
                   {p > 0 && <span className="daily-precip-label">{p}%</span>}
                 </div>
-                <span className="daily-icon"><WeatherIcon id={info.icon} alt={info.label} /></span>
-                <span className="daily-low" style={tempStyle(minTemps[i], colorCoding, 0.4, glow)}>{low}°</span>
-                <div className="bar-track">
-                  <div className="bar-fill" style={{
-                    left: `${barLeft}%`,
-                    width: `${Math.max(barWidth, 6)}%`,
-                    background: colorCoding
-                      ? `linear-gradient(90deg, ${tempColor(minTemps[i])}, ${tempColor(maxTemps[i])})`
-                      : 'var(--accent)',
-                  }} />
+                <div className="daily-range">
+                  <div className="daily-range-inner">
+                    <span className="daily-low" style={{ ...tempStyle(minTemps[i], colorCoding, 0.4, glow), left: `${pillLeft}%` }}>{low}°</span>
+                    <div className="bar-fill" style={{
+                      left: `${pillLeft}%`,
+                      width: `${pillWidth}%`,
+                      background: colorCoding
+                        ? `linear-gradient(90deg, ${tempColor(minTemps[i])}, ${tempColor(maxTemps[i])})`
+                        : 'var(--bar-track-bg)',
+                    }} />
+                    <span className="daily-high" style={{ ...tempStyle(maxTemps[i], colorCoding, 0.4, glow), left: `${pillRight}%` }}>{high}°</span>
+                  </div>
                 </div>
-                <span className="daily-high" style={tempStyle(maxTemps[i], colorCoding, 0.4, glow)}>{high}°</span>
               </div>
 
               {isExpanded && hours.length > 0 && (
@@ -98,6 +107,11 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
                   <div className="hourly-scroll-wrapper">
                   <button className="hourly-nav hourly-nav-left" onClick={() => scroll(-1)} aria-label="Scroll left">‹</button>
                   <div className="hourly-scroll" ref={setScrollEl}>
+                    {/* .hourly-track composites the scrolled content (will-change:
+                        transform) so horizontal scroll is a cheap GPU translate —
+                        same fix as the main hourly forecast strip. */}
+                    <div className="hourly-track">
+                    <div className="hourly-row">
                     {hours.map((h, hi) => {
                       const hInfo = getWeatherInfo(h.code, !h.isDay)
                       const label = new Date(h.time).toLocaleTimeString('en-US', {
@@ -113,6 +127,8 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
                         </div>
                       )
                     })}
+                    </div>
+                    </div>
                   </div>
                   <button className="hourly-nav hourly-nav-right" onClick={() => scroll(1)} aria-label="Scroll right">›</button>
                   </div>

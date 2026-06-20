@@ -30,6 +30,77 @@ export function getWeatherInfo(code, isNight = false) {
   return { label: entry.label, icon: isNight && entry.nightIcon ? entry.nightIcon : entry.icon }
 }
 
+// ── Live "right now" condition from the 15-min nowcast ──────────────────────
+// Open-Meteo's current.weather_code is a categorical, often-lagging snapshot: a
+// brief downpour can leave it reading "Violent Showers" (82) while the live
+// minutely_15 trend already shows light, tapering rain (observed in Montreal).
+// These helpers re-derive the present condition from the *measured* precip rate
+// so the headline matches what's actually falling.
+
+// Inches per 15 min. Matches PrecipNowcast's chart thresholds.
+const PRECIP_RATE = { TRACE: 0.004, LIGHT: 0.02, HEAVY: 0.08 }
+
+// Same-family intensity ladders, indexed by tier [light, moderate, heavy/violent].
+const FAMILY = {
+  drizzle: [51, 53, 55],
+  rain:    [61, 63, 65],
+  showers: [80, 81, 82],
+  snow:    [71, 73, 75],
+}
+const CODE_FAMILY = {
+  51: 'drizzle', 53: 'drizzle', 55: 'drizzle',
+  61: 'rain',    63: 'rain',    65: 'rain',
+  80: 'showers', 81: 'showers', 82: 'showers',
+  71: 'snow',    73: 'snow',    75: 'snow',
+}
+// Fog and thunder aren't characterized by precip rate alone — never downgrade them.
+const NO_RATE_OVERRIDE = new Set([45, 48, 95, 96, 99])
+
+function rateTier(rate) {
+  if (rate >= PRECIP_RATE.HEAVY) return 2
+  if (rate >= PRECIP_RATE.LIGHT) return 1
+  return 0
+}
+
+// Sky condition when nothing is falling, from cloud cover (%).
+function skyCode(cloudCover) {
+  if (cloudCover == null) return 3
+  if (cloudCover >= 85) return 3 // overcast
+  if (cloudCover >= 40) return 2 // partly cloudy
+  if (cloudCover >= 15) return 1 // mainly clear
+  return 0                       // clear
+}
+
+// Measured precip rate (inches/15min) at the current time from minutely_15.
+export function livePrecipRate(current, minutely) {
+  const times = minutely?.time, precip = minutely?.precipitation
+  if (!times?.length || !precip?.length || !current?.time) return null
+  let i = times.findIndex(t => t >= current.time)
+  if (i < 0) i = times.length - 1
+  return precip[i] ?? null
+}
+
+// Best estimate of the current weather code, corrected against the live nowcast.
+// Falls back to the API's weather_code whenever minutely data is unavailable.
+export function liveWeatherCode(current, minutely) {
+  const code = current?.weather_code
+  if (code == null || NO_RATE_OVERRIDE.has(code)) return code
+  const rate = livePrecipRate(current, minutely)
+  if (rate == null) return code
+  const fam = CODE_FAMILY[code]
+  if (fam) {
+    // Code claims precipitation: if essentially nothing is falling, show the sky.
+    if (rate < PRECIP_RATE.TRACE) return skyCode(current.cloud_cover)
+    return FAMILY[fam][rateTier(rate)]
+  }
+  // Code says clear/cloudy but the nowcast shows real precip → upgrade to rain/snow.
+  if (rate >= PRECIP_RATE.LIGHT) {
+    const snow = current.temperature_2m != null && current.temperature_2m <= 32 // °F
+    return FAMILY[snow ? 'snow' : 'rain'][rateTier(rate)]
+  }
+  return code
+}
+
 export function getWindDirection(degrees) {
   const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
   return dirs[Math.round(degrees / 45) % 8]

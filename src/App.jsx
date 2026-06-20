@@ -294,6 +294,7 @@ function App() {
         <WeatherAlerts alerts={alerts} />
         <CurrentWeather
           current={weather.current}
+          minutely={weather.minutely_15}
           daily={weather.daily}
           location={location}
           timezone={weather.timezone}

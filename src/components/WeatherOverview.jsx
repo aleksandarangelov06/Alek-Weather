@@ -1,4 +1,4 @@
-import { getWeatherInfo } from '../utils/weatherCodes'
+import { getWeatherInfo, liveWeatherCode, livePrecipRate } from '../utils/weatherCodes'
 
 const SEVERE_CODES   = new Set([95, 96, 99, 82])
 const HEAVY_CODES    = new Set([65, 75, 86])
@@ -62,6 +62,25 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ye
 
   const codes = hourly.weather_code.slice(start, start + LOOK_AHEAD)
 
+  // Slot 0 is "right now". The hourly weather_code is coarse and the real-time
+  // current.weather_code lags after a downpour, so re-derive the present slot from
+  // the live 15-min nowcast (same source the Current Conditions card uses) to keep
+  // the two sections consistent. slice() returns a fresh array — safe to mutate.
+  if (codes.length > 0) {
+    const live = liveWeatherCode(current, minutely)
+    if (live != null) codes[0] = live
+  }
+
+  // Precipitation probability (%) for a slot within the look-ahead window.
+  const probAt = (slotIndex) => hourly.precipitation_probability?.[start + slotIndex]
+
+  // Indefinite article for a condition label; "" for plurals (e.g. "showers")
+  // since "a showers" is wrong.
+  const article = (lower) =>
+    lower.endsWith('s') ? '' : (/^[aeiou]/.test(lower) ? 'an ' : 'a ')
+
+  const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1)
+
   // Is precipitation *actually* falling right now? The hourly weather_code is a
   // coarse summary that sometimes flags rain/thunder for the current hour when
   // the real-time and minute-level data show nothing — which contradicts the
@@ -92,37 +111,141 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ye
     if (cat === 'fog'      && firstFog      === -1) firstFog      = i
   }
 
+  // Near-term precipitation from the 15-min nowcast (minutely_15.precipitation,
+  // inches/15min — the same data the PRECIPITATION card draws). The hourly
+  // weather_code is a coarse, often-lagging summary: in Montreal it flagged only
+  // a light-drizzle code ~3h out while the nowcast and probability already showed
+  // heavy rain within the hour. For the next 60 minutes we trust the nowcast so
+  // all three sections agree; beyond that we fall back to weather_code below.
+  // Thresholds match PrecipNowcast: LIGHT 0.02, MED 0.08, HEAVY 0.12 in/15min.
+  const nowcastInsight = (() => {
+    const times = minutely?.time, precip = minutely?.precipitation
+    if (!times?.length || !precip?.length || !current?.time) return null
+    let si = times.findIndex(t => t >= current.time)
+    if (si < 0) return null
+
+    const N = Math.min(5, times.length - si) // 0–60 min, five 15-min slots
+    let onset = -1, peak = 0
+    for (let i = 0; i < N; i++) {
+      const p = precip[si + i] ?? 0
+      if (p >= 0.02 && onset === -1) onset = i
+      if (onset !== -1) peak = Math.max(peak, p)
+    }
+    if (onset === -1) return null
+
+    const mins = onset * 15
+    if (mins === 0) return null // already falling — handled by current conditions
+
+    const hourOffset = Math.min(codes.length - 1, Math.floor((currentMinute + mins) / 60))
+    const noun = SNOW_CODES.has(codes[hourOffset]) ? 'snow' : 'rain'
+    const when = mins >= 60 ? 'within the hour' : `in about ${mins} minutes`
+    const p = probAt(hourOffset)
+    const pct = p != null ? ` (${p}% chance)` : ''
+
+    if (peak >= 0.08) return { level: 'warning', text: `Heavy ${noun} expected ${when}${pct}.` }
+    if (peak >= 0.04) return { level: 'info', text: `${cap(noun)} moving in ${when}${pct}.` }
+    return {
+      level: 'notice',
+      text: p != null ? `${p}% chance of light ${noun} ${when}.` : `Light ${noun} ${when}.`,
+    }
+  })()
+
+  // When rain/snow is falling right now, describe it and — if the 15-min nowcast
+  // shows it tapering below the light threshold and staying there — say when it
+  // ends, mirroring "rain ending in X min" from AccuWeather/Google. Uses the
+  // measured minutely trend, not the lagging weather_code.
+  const precipNowInsight = (() => {
+    if (!precipNow) return null
+    const noun = SNOW_CODES.has(codes[0]) ? 'snow' : 'rain'
+
+    // Find the first slot where the nowcast drops below the light threshold AND
+    // stays there for ~30 min, so a momentary dip mid-storm doesn't read as "ending".
+    let endSlot = -1
+    const times = minutely?.time, precip = minutely?.precipitation
+    if (times?.length && precip?.length && current?.time) {
+      const si = times.findIndex(t => t >= current.time)
+      if (si >= 0) {
+        const LIGHT = 0.02 // in/15min — same as elsewhere
+        const HORIZON = Math.min(12, times.length - si) // look up to ~3h ahead
+        for (let i = 0; i < HORIZON; i++) {
+          if ((precip[si + i] ?? 0) >= LIGHT) continue
+          let stays = true
+          for (let j = i + 1; j < Math.min(i + 2, HORIZON); j++) {
+            if ((precip[si + j] ?? 0) >= LIGHT) { stays = false; break }
+          }
+          if (stays) { endSlot = i; break }
+        }
+      }
+    }
+
+    if (endSlot === 0) return { level: 'info', text: `${cap(noun)} ending shortly.` }
+    if (endSlot > 0) {
+      const mins = endSlot * 15
+      const when = mins <= 20 ? 'shortly'
+        : mins < 75 ? 'within the hour'
+        : `in about ${Math.round(mins / 60)} hours`
+      return { level: 'info', text: `${cap(noun)} ending ${when}.` }
+    }
+    // Falling now with no end within the look-ahead horizon.
+    return { level: 'info', text: `${cap(noun)} expected to continue.` }
+  })()
+
   const insights = []
 
   // Emit a single precipitation insight for the most significant condition in
   // the window so the user never sees two overlapping "rain coming" messages.
+  // Append "(X% chance)" for upcoming precipitation. Skipped for "right now"
+  // (slot 0) since it's already falling, not a forecast, and when the API has no
+  // probability for the slot.
+  const chance = (slotIndex) => {
+    const p = probAt(slotIndex)
+    return slotIndex > 0 && p != null ? ` (${p}% chance)` : ''
+  }
+
   if (firstSevere !== -1) {
     const when = timeDesc(firstSevere, currentMinute)
     const isThunder = [95, 96, 99].includes(codes[firstSevere])
     insights.push({
       level: 'severe',
       text: isThunder
-        ? `Thunderstorm ${when}. Seek shelter!`
-        : `Violent rain showers ${when}. Stay safe!`,
+        ? `Thunderstorm ${when}${chance(firstSevere)}. Seek shelter!`
+        : `Violent rain showers ${when}${chance(firstSevere)}. Stay indoors!`,
     })
+  } else if (precipNowInsight) {
+    insights.push(precipNowInsight)
+  } else if (nowcastInsight) {
+    insights.push(nowcastInsight)
   } else if (firstHeavy !== -1) {
     const when = timeDesc(firstHeavy, currentMinute)
     const isSnow = [75, 86].includes(codes[firstHeavy])
     insights.push({
       level: 'warning',
-      text: isSnow ? `Heavy snow arriving ${when}.` : `Heavy rain expected ${when}.`,
+      text: isSnow
+        ? `Heavy snow arriving ${when}${chance(firstHeavy)}.`
+        : `Heavy rain expected ${when}${chance(firstHeavy)}.`,
     })
   } else if (firstModerate !== -1) {
     const when = timeDesc(firstModerate, currentMinute)
     const isSnow = codes[firstModerate] === 73
     insights.push({
       level: 'info',
-      text: isSnow ? `Moderate snow on the way ${when}.` : `Rain moving in ${when}.`,
+      text: isSnow
+        ? `Moderate snow on the way ${when}${chance(firstModerate)}.`
+        : `Rain moving in ${when}${chance(firstModerate)}.`,
     })
   } else if (firstLight !== -1) {
     const info = getWeatherInfo(codes[firstLight])
     const when = timeDesc(firstLight, currentMinute)
-    insights.push({ level: 'notice', text: `${info.label} ${when}.` })
+    const prob = probAt(firstLight)
+    const label = info.label.toLowerCase()
+    // Phrase upcoming light precip as a chance, e.g. "30% chance of a light drizzle
+    // within the hour."; keep the plain label when it's already happening now.
+    insights.push({
+      level: 'notice',
+      text: prob != null && firstLight > 0
+        ? `${prob}% chance of ${article(label)}${label} ${when}.`
+        : `${info.label} ${when}.`,
+    })
   }
 
   // Fog is independent of rain, so it can accompany a precipitation insight.

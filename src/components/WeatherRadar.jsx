@@ -6,9 +6,10 @@ import 'leaflet/dist/leaflet.css'
 
 const FRAMES_URL = 'https://api.rainviewer.com/public/weather-maps.json'
 const TILE_URL   = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
-const MAP_MAX_ZOOM     = 14
-const RADAR_NATIVE_MAX = 7
+const MAP_MAX_ZOOM     = 12
+const RADAR_NATIVE_MAX = 7 // RainViewer's 512px radar tiles cap here; higher returns "zoom level not supported"
 const RADAR_OPACITY     = 0.65
+const RADAR_WINDOW      = 2 // frames either side of current kept attached to the map
 const LEGEND_COLORS = ['#43a4c3', '#326985', '#ffff00', '#ff3300', '#d193c9']
 
 delete L.Icon.Default.prototype._getIconUrl
@@ -66,6 +67,11 @@ export function WeatherRadar({ location, timezone }) {
       boxZoom: false,
       keyboard: false,
       maxZoom: MAP_MAX_ZOOM,
+      // Perf on low-end laptops: skip Leaflet's per-frame repaint work.
+      fadeAnimation: false,       // no tile cross-fade (composites every tile load)
+      zoomAnimation: false,       // no animated zoom re-raster
+      markerZoomAnimation: false,
+      updateWhenZooming: false,   // don't refresh the tile grid mid-zoom
     })
     map.setView([location.latitude, location.longitude], 10)
     L.circleMarker([location.latitude, location.longitude], {
@@ -89,8 +95,10 @@ export function WeatherRadar({ location, timezone }) {
     const map = mapInst.current
     if (!map || !mapReady) return
     baseTileRef.current = L.tileLayer(TILE_URL, {
-      maxZoom: 20, detectRetina: true, crossOrigin: true,
+      maxZoom: 20, detectRetina: false, crossOrigin: true,
       className: 'map-base-tiles', zIndex: 1,
+      updateWhenIdle: true, // only fetch tiles once panning stops — fewer requests/repaints
+      keepBuffer: 1,        // hold fewer off-screen tiles in memory
     })
     baseTileRef.current.addTo(map)
     return () => {
@@ -99,9 +107,11 @@ export function WeatherRadar({ location, timezone }) {
   }, [mapReady])
 
   // Cross-fade between cached radar layers as idx changes.
-  // Each frame's layer is created once and kept on the map (hidden at opacity 0),
-  // so scrubbing/playback only toggles opacity instead of refetching tiles — no lag,
-  // no churn. The previous frame stays visible until the new one finishes loading,
+  // Each frame's layer is created once and cached (no recreate churn). Layers near
+  // the current index stay attached to the map (hidden at opacity 0) so scrubbing/
+  // playback only toggles opacity instead of refetching; far layers are detached so
+  // pan/zoom isn't dragging every frame's tile grid at once. The previous frame stays
+  // visible until the new one finishes loading,
   // which prevents the blank-frame flash on slow devices/connections. We also prefetch
   // one frame ahead so the next frame is ready before playback reaches it.
   // URL is /{size}/{z}/{x}/{y}/{color}/{smooth}_{snow}.png. RainViewer's free API
@@ -110,7 +120,12 @@ export function WeatherRadar({ location, timezone }) {
     const map = mapInst.current
     if (!map || !mapReady || !host || frames.length === 0) return
 
-    const getLayer = (frame) => {
+    // Build/return a layer (cached), but only ATTACH it to the map when it's
+    // within the active window. Attached layers reposition & reload tiles on
+    // every pan/zoom, so keeping all ~13 on the map at once is what makes the
+    // map drag laggy. We keep them in the cache (no recreate churn) but detach
+    // the far ones so pan/zoom only moves a handful of grids.
+    const getLayer = (frame, attach) => {
       let layer = layerCache.current.get(frame.path)
       if (!layer) {
         layer = L.tileLayer(
@@ -118,16 +133,29 @@ export function WeatherRadar({ location, timezone }) {
           { opacity: 0, zIndex: 200, maxZoom: MAP_MAX_ZOOM, maxNativeZoom: RADAR_NATIVE_MAX, crossOrigin: true, className: 'radar-tiles' }
         )
         layer.on('load', () => { layer._radarLoaded = true })
-        layer.addTo(map)
         layerCache.current.set(frame.path, layer)
       }
+      if (attach && !map.hasLayer(layer)) layer.addTo(map)
       return layer
     }
+
+    // Detach layers outside the window so the map isn't dragging 13 tile grids.
+    const inWindow = new Set()
+    for (let d = -RADAR_WINDOW; d <= RADAR_WINDOW; d++) {
+      inWindow.add(frames[((idx + d) % frames.length + frames.length) % frames.length].path)
+    }
+    layerCache.current.forEach((layer, path) => {
+      if (!inWindow.has(path) && map.hasLayer(layer)) {
+        layer.setOpacity(0)
+        layer._radarLoaded = false // tiles get unloaded on detach; wait for reload next time
+        map.removeLayer(layer)
+      }
+    })
 
     const frame = frames[idx]
     if (!frame) return
     wantedKey.current = frame.path
-    const layer = getLayer(frame)
+    const layer = getLayer(frame, true)
 
     const show = () => {
       if (wantedKey.current !== frame.path) return // user moved on before this loaded
@@ -146,7 +174,7 @@ export function WeatherRadar({ location, timezone }) {
     else layer.once('load', show)
 
     // Prefetch the next frame so playback never waits on a cold layer.
-    getLayer(frames[(idx + 1) % frames.length])
+    getLayer(frames[(idx + 1) % frames.length], true)
   }, [mapReady, host, frames, idx])
 
   // Animation playback
@@ -169,6 +197,29 @@ export function WeatherRadar({ location, timezone }) {
     window.addEventListener('popstate', handler)
     return () => window.removeEventListener('popstate', handler)
   }, [expanded])
+
+  // Desktop keyboard shortcuts while expanded: Esc collapses, Space toggles play/pause.
+  useEffect(() => {
+    if (!expanded) return
+    const onKey = (e) => {
+      if (e.key === 'Escape') {
+        collapse()
+      } else if (e.key === ' ' || e.code === 'Space') {
+        e.preventDefault() // stop the page from scrolling
+        setPlaying(v => !v)
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        setPlaying(false)
+        setIdx(i => (i + 1) % frames.length)
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        setPlaying(false)
+        setIdx(i => (i - 1 + frames.length) % frames.length)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [expanded, frames.length])
 
   // Resize, re-center, and toggle interaction on expand/collapse
   useEffect(() => {
