@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { Wind, Droplets, Eye, Gauge, Sun, Sunrise, Sunset, Leaf, ChevronDown, ChevronUp, Navigation2 } from 'lucide-react'
+import { Wind, Droplets, Eye, Gauge, Sun, Sunrise, Sunset, Leaf, AlertTriangle, ShieldAlert, ChevronDown, ChevronUp, Navigation2 } from 'lucide-react'
 import { getWindDirection, getUVLabel, formatTime } from '../utils/weatherCodes'
 
 function getAQIInfo(aqi) {
@@ -122,6 +122,10 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
 
   const aqiInfo   = airQuality ? getAQIInfo(airQuality.us_aqi) : null
   const markerPct = airQuality ? Math.min((airQuality.us_aqi / 300) * 100, 100) : 0
+  // AQI > 150 is "Unhealthy" or worse — swap the leaf for a warning symbol.
+  // AQI > 200 is "Very Unhealthy"/"Hazardous" — advise wearing a mask outdoors.
+  const aqiBad       = airQuality ? airQuality.us_aqi > 150 : false
+  const aqiHazardous = airQuality ? airQuality.us_aqi > 200 : false
 
   const humInfo  = getHumidityInfo(current.relative_humidity_2m)
   const presInfo = getPressureInfo(current.surface_pressure)
@@ -151,6 +155,8 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
     .slice(0, 6)
   const uvCurrent = uvValues.length > 0 ? (uvValues[0] ?? current.uv_index) : current.uv_index
   const uv = getUVLabel(uvCurrent)
+  // UV > 7 is "Very High"/"Extreme" — swap the sun for a warning symbol.
+  const uvHigh = uvCurrent > 7
 
   // Wind
   const windSpeeds = hourly?.wind_speed_10m ? sliceNext(hourly.wind_speed_10m, 6) : []
@@ -201,14 +207,14 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
     sunrise: { icon: <Sunrise size={19} />, label: 'Sunrise', value: sunrise },
     sunset:  { icon: <Sunset  size={19} />, label: 'Sunset',  value: sunset  },
     uv: {
-      icon: <Sun size={19} />, label: 'UV Index',
+      icon: uvHigh ? <AlertTriangle size={19} /> : <Sun size={19} />, label: 'UV Index',
       value: Math.round(uvCurrent),
       sub: <span style={{ color: uv.color, fontWeight: 600 }}>{uv.label}</span>,
       color: uv.color,
       onClick: () => toggle('uv'), isExpanded: expanded === 'uv',
     },
     aqi: airQuality ? {
-      icon: <Leaf size={19} />, label: 'Air Quality',
+      icon: aqiBad ? <AlertTriangle size={19} /> : <Leaf size={19} />, label: 'Air Quality',
       value: airQuality.us_aqi,
       sub: aqiInfo?.label,
       color: aqiInfo?.color,
@@ -343,6 +349,11 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
               <div className="aqi-status" style={{ color: aqiInfo.color }}>{aqiInfo.label}</div>
               <div className="aqi-sublabel">US AQI</div>
             </div>
+            {aqiHazardous && (
+              <ShieldAlert className="aqi-mask-icon" size={26} style={{ color: aqiInfo.color }} aria-label="Wear a mask outdoors">
+                <title>Wear a mask outdoors</title>
+              </ShieldAlert>
+            )}
           </div>
           <div className="aqi-scale">
             <div className="aqi-gradient-bar">

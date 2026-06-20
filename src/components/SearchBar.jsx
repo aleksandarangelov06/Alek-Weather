@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Search, MapPin, X } from 'lucide-react'
 
-export function SearchBar({ onSearch, results, onSelect, onUseLocation, onClear, onActivate, autoFocus }) {
+export function SearchBar({ onSearch, results, onSelect, onUseLocation, onClear, onActivate, autoFocus, children }) {
   const [query, setQuery] = useState('')
   const [open, setOpen] = useState(false)
   const timerRef = useRef(null)
@@ -34,7 +34,8 @@ export function SearchBar({ onSearch, results, onSelect, onUseLocation, onClear,
 
   useEffect(() => () => clearTimeout(timerRef.current), [])
 
-  const showDropdown = open && query.trim().length > 0
+  const hasQuery = query.trim().length > 0
+  const showDropdown = open
 
   return (
     <div className="search-wrapper">
@@ -58,12 +59,13 @@ export function SearchBar({ onSearch, results, onSelect, onUseLocation, onClear,
       </div>
 
       {showDropdown && (
-        <div className="search-dropdown">
+        <div className="search-dropdown" onMouseDown={(e) => e.preventDefault()}>
           <button className="dropdown-item location-item" onMouseDown={onUseLocation}>
             <MapPin size={15} />
             <span>Use my location</span>
           </button>
-          {results.map((city, i) => (
+          {!hasQuery && children}
+          {hasQuery && results.map((city, i) => (
             <button key={i} className="dropdown-item" onMouseDown={() => handleSelect(city)}>
               <span className="city-name">{city.name}</span>
               <span className="city-sub">
@@ -71,7 +73,7 @@ export function SearchBar({ onSearch, results, onSelect, onUseLocation, onClear,
               </span>
             </button>
           ))}
-          {results.length === 0 && query.trim() && (
+          {hasQuery && results.length === 0 && (
             <div className="dropdown-empty">No results found</div>
           )}
         </div>

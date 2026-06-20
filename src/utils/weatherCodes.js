@@ -87,6 +87,20 @@ export function tempColor(fahrenheit) {
   }
 }
 
+// Color-coded temperature style: the text color plus a heat glow that starts
+// subtly at 90°F and intensifies up to 110°F. `scale` tunes the glow's blur
+// radius so it fits smaller temperature elements (hourly/daily) as well as the
+// large current temperature. Returns undefined when color coding is off.
+export function tempStyle(fahrenheit, colorCoding, scale = 1, glow = true) {
+  if (!colorCoding) return undefined
+  const style = { color: tempColor(fahrenheit) }
+  if (glow && fahrenheit >= 90) {
+    const t = Math.min((fahrenheit - 90) / 20, 1)
+    style.textShadow = `0 0 ${(8 + t * 24) * scale}px currentColor`
+  }
+  return style
+}
+
 export function formatDay(dateString) {
   const date = new Date(dateString + 'T12:00:00')
   const today = new Date()

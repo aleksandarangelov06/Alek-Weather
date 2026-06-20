@@ -1,5 +1,5 @@
 import { Bookmark, RefreshCw } from 'lucide-react'
-import { getWeatherInfo, toTemp } from '../utils/weatherCodes'
+import { getWeatherInfo, toTemp, tempStyle } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
 
 function formatUpdated(date) {
@@ -11,9 +11,16 @@ function formatUpdated(date) {
   return `Updated at ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
 }
 
-export function CurrentWeather({ current, daily, location, unit, saved, onSave, onRemove, lastUpdated, onRefresh, loading }) {
+export function CurrentWeather({ current, daily, location, timezone, unit, saved, onSave, onRemove, lastUpdated, onRefresh, loading, colorCoding = true, glow = true }) {
+  const tzOpts = timezone ? { timeZone: timezone } : {}
+  const dateStr = new Date().toLocaleDateString('en-US', {
+    weekday: 'long', month: 'long', day: 'numeric', ...tzOpts,
+  })
+
   const info = getWeatherInfo(current.weather_code, !current.is_day)
   const temp = toTemp(current.temperature_2m, unit)
+
+  const currentTempStyle = tempStyle(current.temperature_2m, colorCoding, 1, glow)
   const feelsLike = toTemp(current.apparent_temperature, unit)
   const locationLine = [
     location.name,
@@ -26,6 +33,7 @@ export function CurrentWeather({ current, daily, location, unit, saved, onSave, 
         <div className="current-location">
           {locationLine}
         </div>
+        <div className="current-date">{dateStr}</div>
         <button
           className={`save-btn ${saved ? 'saved' : ''}`}
           onClick={saved ? onRemove : onSave}
@@ -35,7 +43,7 @@ export function CurrentWeather({ current, daily, location, unit, saved, onSave, 
         </button>
       </div>
       <div className="current-icon"><WeatherIcon id={info.icon} alt={info.label} /></div>
-      <div className="current-temp">{temp}°{unit}</div>
+      <div className="current-temp" style={currentTempStyle}>{temp}°{unit}</div>
       <div className="current-condition">{info.label}</div>
       <div className="current-feels">Feels like {feelsLike}°{unit}</div>
       <div className="current-updated">

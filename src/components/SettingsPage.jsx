@@ -166,7 +166,40 @@ function NotificationsSection({ notifyEnabled, notifyTypes, permission, onEnable
   )
 }
 
-function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, showOverview, onShowOverviewChange, nowcastMode, onNowcastModeChange, installPrompt, onInstall, notifyEnabled, notifyTypes, notifyPermission, onNotifyEnabledChange, onNotifyTypeToggle }) {
+const COLOR_CODING_TILES = [
+  { key: 'current', label: 'Current Weather' },
+  { key: 'hourly',  label: 'Hourly Forecast' },
+  { key: 'daily',   label: '7-Day Forecast'  },
+]
+
+function ColorCodingView({ colorCoding, onToggle, onBack }) {
+  return (
+    <>
+      {onBack && (
+        <button className="back-btn color-coding-back" onClick={onBack} aria-label="Back to settings">
+          <ArrowLeft size={18} />
+          <span>Back</span>
+        </button>
+      )}
+      <p className="color-coding-desc">Choose which tiles color the temperature by how hot or cold it is.</p>
+      <div className="card settings-card">
+        {COLOR_CODING_TILES.map(({ key, label }) => (
+          <SettingRow key={key} label={label}>
+            <Toggle id={`toggle-cc-${key}`} checked={colorCoding[key]} onChange={() => onToggle(key)} />
+          </SettingRow>
+        ))}
+      </div>
+      <p className="color-coding-desc">Add a glow to color-coded temperatures when it gets very hot.</p>
+      <div className="card settings-card">
+        <SettingRow label="Heat Glow">
+          <Toggle id="toggle-cc-glow" checked={colorCoding.glow} onChange={() => onToggle('glow')} />
+        </SettingRow>
+      </div>
+    </>
+  )
+}
+
+function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, showOverview, onShowOverviewChange, nowcastMode, onNowcastModeChange, onColorCodingOpen, installPrompt, onInstall, notifyEnabled, notifyTypes, notifyPermission, onNotifyEnabledChange, onNotifyTypeToggle }) {
   return (
     <>
       <div className="settings-group-label">Appearance</div>
@@ -182,6 +215,10 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, showOver
             ]}
           />
         </SettingRow>
+        <button className="settings-row about-row" onClick={onColorCodingOpen}>
+          <div className="settings-row-label">Color Coding</div>
+          <ChevronRight size={16} className="about-chevron" />
+        </button>
       </div>
 
       <div className="settings-group-label">Units</div>
@@ -231,25 +268,36 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, showOver
       <AboutSection />
 
       <div className="settings-footer">
-        <p className="settings-version">Version 1.8</p>
+        <p className="settings-version">Version 1.9</p>
         <p className="settings-studio">Alek Studios&#8482;</p>
       </div>
     </>
   )
 }
 
-export function SettingsPage({ onBack, inline, closing, ...bodyProps }) {
+export function SettingsPage({ onBack, inline, closing, colorCodingOpen, onColorCodingOpen, onColorCodingBack, colorCoding, onColorCodingToggle, ...bodyProps }) {
+  const body = colorCodingOpen
+    ? <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} />
+    : <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} />
+
   if (inline) {
     return (
       <div className="card settings-inline">
         <div className="settings-inline-header">
-          <span className="settings-inline-title">Settings</span>
+          {colorCodingOpen ? (
+            <button className="back-btn settings-inline-back" onClick={onColorCodingBack} aria-label="Back to settings">
+              <ArrowLeft size={16} />
+              <span>Back</span>
+            </button>
+          ) : (
+            <span className="settings-inline-title">Settings</span>
+          )}
           <button className="header-icon-btn" onClick={onBack} aria-label="Close settings">
             <X size={16} />
           </button>
         </div>
         <div className="settings-inline-body">
-          <SettingsBody {...bodyProps} />
+          {body}
         </div>
       </div>
     )
@@ -258,20 +306,20 @@ export function SettingsPage({ onBack, inline, closing, ...bodyProps }) {
   return (
     <div className={`settings-page${closing ? ' closing' : ''}`}>
       <header className="settings-page-header">
-        <button className="back-btn" onClick={onBack} aria-label="Back">
+        <button className="back-btn" onClick={colorCodingOpen ? onColorCodingBack : onBack} aria-label="Back">
           <ArrowLeft size={18} />
           <span>Back</span>
         </button>
-        <span className="settings-page-title">Settings</span>
+        <span className="settings-page-title">{colorCodingOpen ? 'Color Coding' : 'Settings'}</span>
       </header>
       <div className="settings-body">
-        <SettingsBody {...bodyProps} />
+        {body}
       </div>
     </div>
   )
 }
 
-export function SettingsPill({ expanded, onToggle, ...bodyProps }) {
+export function SettingsPill({ expanded, onToggle, colorCodingOpen, onColorCodingOpen, onColorCodingBack, colorCoding, onColorCodingToggle, ...bodyProps }) {
   return (
     <div className="card settings-pill">
       <button className="settings-pill-bar" onClick={onToggle} aria-expanded={expanded}>
@@ -280,7 +328,9 @@ export function SettingsPill({ expanded, onToggle, ...bodyProps }) {
       </button>
       {expanded && (
         <div className="settings-inline-body">
-          <SettingsBody {...bodyProps} />
+          {colorCodingOpen
+            ? <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} onBack={onColorCodingBack} />
+            : <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} />}
         </div>
       )}
     </div>

@@ -9,6 +9,7 @@ import { useNotifications } from './hooks/useNotifications'
 import { fireAlertNotifications, fireRainNotification, fireTomorrowNotification } from './utils/notifications'
 import { SearchBar } from './components/SearchBar'
 import { SavedCities } from './components/SavedCities'
+import { SavedCitiesPage } from './components/SavedCitiesPage'
 import { CurrentWeather } from './components/CurrentWeather'
 import { HourlyForecast } from './components/HourlyForecast'
 import { DailyForecast } from './components/DailyForecast'
@@ -28,6 +29,8 @@ const BLOCK_ORDER_KEY = 'alek-weather-block-order'
 const DEFAULT_BLOCK_ORDER = ['overview', 'nowcast', 'hourly', 'daily', 'details', 'radar']
 const SHOW_OVERVIEW_KEY = 'alek-weather-show-overview'
 const NOWCAST_MODE_KEY  = 'alek-weather-nowcast-mode'
+const COLOR_CODING_KEY  = 'alek-weather-color-coding'
+const DEFAULT_COLOR_CODING = { current: true, hourly: true, daily: true, glow: true }
 
 function SortableBlock({ id, children }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
@@ -50,13 +53,20 @@ function App() {
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem(THEME_KEY) ?? 'system')
   const [showOverview, setShowOverview] = useState(() => localStorage.getItem(SHOW_OVERVIEW_KEY) !== 'false')
   const [nowcastMode, setNowcastMode] = useState(() => localStorage.getItem(NOWCAST_MODE_KEY) ?? 'auto')
+  const [colorCoding, setColorCoding] = useState(() => {
+    const saved = JSON.parse(localStorage.getItem(COLOR_CODING_KEY) ?? 'null')
+    return saved ? { ...DEFAULT_COLOR_CODING, ...saved } : DEFAULT_COLOR_CODING
+  })
   const [installPrompt, setInstallPrompt] = useState(null)
   const [showSettings, setShowSettings] = useState(false)
   const [settingsClosing, setSettingsClosing] = useState(false)
+  const [colorCodingOpen, setColorCodingOpen] = useState(false)
   const [isDesktop, setIsDesktop] = useState(() => window.matchMedia('(min-width: 1100px)').matches)
   const [desktopSettingsOpen, setDesktopSettingsOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchClosing, setSearchClosing] = useState(false)
+  const [savedOpen, setSavedOpen] = useState(false)
+  const [savedClosing, setSavedClosing] = useState(false)
   const searchAreaRef = useRef(null)
   const [blockOrder, setBlockOrder] = useState(() => {
     const saved = JSON.parse(localStorage.getItem(BLOCK_ORDER_KEY) ?? 'null')
@@ -115,11 +125,11 @@ function App() {
     else root.removeAttribute('data-theme')
   }, [darkMode])
 
-  // Keep theme-color meta in sync so the Android status bar matches the app background
+  // Keep theme-color metas in sync so the Android status bar and navigation bar match the app background
   useEffect(() => {
-    const meta = document.querySelector('meta[name="theme-color"]')
-    if (!meta) return
-    const apply = (dark) => { meta.content = dark ? '#000000' : '#f0f2f5' }
+    const metas = document.querySelectorAll('meta[name="theme-color"]')
+    if (!metas.length) return
+    const apply = (dark) => { metas.forEach(m => { m.content = dark ? '#000000' : '#f0f2f5' }) }
     if (darkMode === 'on')  { apply(true);  return }
     if (darkMode === 'off') { apply(false); return }
     // system mode: follow OS and keep listening for changes
@@ -159,12 +169,14 @@ function App() {
   // Hardware back button / Android back gesture
   useEffect(() => {
     const handler = () => {
-      if (showSettings) doCloseSettings()
+      if (colorCodingOpen) setColorCodingOpen(false)
+      else if (showSettings) doCloseSettings()
       else if (searchOpen) doCloseSearch()
+      else if (savedOpen) doCloseSaved()
     }
     window.addEventListener('popstate', handler)
     return () => window.removeEventListener('popstate', handler)
-  }, [showSettings, searchOpen]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [colorCodingOpen, showSettings, searchOpen, savedOpen]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const changeUnit = (u) => {
     setUnit(u)
@@ -181,22 +193,43 @@ function App() {
     localStorage.setItem(NOWCAST_MODE_KEY, mode)
   }
 
+  const toggleColorCoding = (key) => {
+    setColorCoding(prev => {
+      const next = { ...prev, [key]: !prev[key] }
+      localStorage.setItem(COLOR_CODING_KEY, JSON.stringify(next))
+      return next
+    })
+  }
+
   const changeDarkMode = (mode) => {
     setDarkMode(mode)
     localStorage.setItem(THEME_KEY, mode)
   }
 
   const openSettings = () => {
+    setColorCodingOpen(false)
     history.pushState({ overlay: 'settings' }, '')
     setShowSettings(true)
   }
 
   const doCloseSettings = () => {
     setSettingsClosing(true)
-    setTimeout(() => { setShowSettings(false); setSettingsClosing(false) }, SETTINGS_CLOSE_MS)
+    setTimeout(() => { setShowSettings(false); setSettingsClosing(false); setColorCodingOpen(false) }, SETTINGS_CLOSE_MS)
   }
 
   const closeSettings = () => history.back()
+
+  const openColorCoding = () => {
+    history.pushState({ overlay: 'colorcoding' }, '')
+    setColorCodingOpen(true)
+  }
+
+  const closeColorCoding = () => history.back()
+
+  const toggleDesktopSettings = () => {
+    setColorCodingOpen(false)
+    setDesktopSettingsOpen(v => !v)
+  }
 
   const openSearch = () => {
     history.pushState({ overlay: 'search' }, '')
@@ -213,6 +246,23 @@ function App() {
   }
 
   const closeSearch = () => history.back()
+
+  const openSaved = () => {
+    history.pushState({ overlay: 'saved' }, '')
+    setSavedOpen(true)
+  }
+
+  const doCloseSaved = () => {
+    setSavedClosing(true)
+    setTimeout(() => { setSavedOpen(false); setSavedClosing(false) }, SETTINGS_CLOSE_MS)
+  }
+
+  const closeSaved = () => history.back()
+
+  const handleSavedPageSelect = (city) => {
+    fetchWeather(city)
+    closeSaved()
+  }
 
   const handleSavedCitySelect = (city) => {
     fetchWeather(city)
@@ -231,8 +281,8 @@ function App() {
 
   const blockComponents = weather && !loading ? {
     overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} timezone={weather.timezone} yesterdayTemps={weather.yesterdayTemps} />,
-    hourly:  <HourlyForecast hourly={weather.hourly} timezone={weather.timezone} unit={unit} />,
-    daily:   <DailyForecast daily={weather.daily} unit={unit} />,
+    hourly:  <HourlyForecast hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.hourly} glow={colorCoding.glow} />,
+    daily:   <DailyForecast daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.daily} glow={colorCoding.glow} />,
     details: <WeatherDetails current={weather.current} daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} airQuality={airQuality} />,
     radar:   <WeatherRadar location={location} timezone={weather.timezone} />,
     nowcast: <PrecipNowcast minutely={weather.minutely_15} currentTime={weather.current.time} mode={nowcastMode} />,
@@ -246,6 +296,7 @@ function App() {
           current={weather.current}
           daily={weather.daily}
           location={location}
+          timezone={weather.timezone}
           unit={unit}
           saved={isSaved(location)}
           onSave={() => save(location)}
@@ -253,11 +304,16 @@ function App() {
           lastUpdated={lastUpdated}
           onRefresh={() => fetchWeather(location)}
           loading={loading}
+          colorCoding={colorCoding.current}
+          glow={colorCoding.glow}
         />
         {isDesktop && (
           <SettingsPill
             expanded={desktopSettingsOpen}
-            onToggle={() => setDesktopSettingsOpen(v => !v)}
+            onToggle={toggleDesktopSettings}
+            colorCodingOpen={colorCodingOpen}
+            onColorCodingOpen={openColorCoding}
+            onColorCodingBack={closeColorCoding}
             darkMode={darkMode}
             onDarkModeChange={changeDarkMode}
             unit={unit}
@@ -266,6 +322,8 @@ function App() {
             onShowOverviewChange={changeShowOverview}
             nowcastMode={nowcastMode}
             onNowcastModeChange={changeNowcastMode}
+            colorCoding={colorCoding}
+            onColorCodingToggle={toggleColorCoding}
             installPrompt={installPrompt}
             onInstall={handleInstall}
             notifyEnabled={notifyEnabled}
@@ -296,8 +354,8 @@ function App() {
         <button className="header-icon-btn" onClick={openSearch} aria-label="Search">
           <MapPin size={24} />
         </button>
-        <div className="app-title">Alek Weather</div>
-        <button className="settings-btn" onClick={isDesktop && weather && !loading ? () => setDesktopSettingsOpen(v => !v) : (showSettings ? closeSettings : openSettings)} aria-label="Settings">
+        <button className="app-title" onClick={openSaved} aria-label="View saved cities">Alek Weather</button>
+        <button className="settings-btn" onClick={isDesktop && weather && !loading ? toggleDesktopSettings : (showSettings ? closeSettings : openSettings)} aria-label="Settings">
           <SlidersHorizontal size={22} />
         </button>
       </header>
@@ -342,23 +400,38 @@ function App() {
                 onUseLocation={handleUseLocation}
                 onClear={() => setSearchResults([])}
                 onActivate={() => {}}
-              />
+              >
+                {cities.length > 0 && (
+                  <SavedCities
+                    cities={cities}
+                    onSelect={handleSavedCitySelect}
+                    onRemove={remove}
+                    currentLatitude={location?.latitude}
+                  />
+                )}
+              </SearchBar>
             </div>
-            {cities.length > 0 && (
-              <SavedCities
-                cities={cities}
-                onSelect={handleSavedCitySelect}
-                onRemove={remove}
-                currentLatitude={location?.latitude}
-              />
-            )}
           </div>
         </>
+      )}
+
+      {savedOpen && (
+        <SavedCitiesPage
+          cities={cities}
+          onSelect={handleSavedPageSelect}
+          onRemove={remove}
+          onBack={closeSaved}
+          currentLatitude={location?.latitude}
+          closing={savedClosing}
+        />
       )}
 
       {showSettings && (!isDesktop || !weather || loading) && (
         <SettingsPage
           onBack={closeSettings}
+          colorCodingOpen={colorCodingOpen}
+          onColorCodingOpen={openColorCoding}
+          onColorCodingBack={closeColorCoding}
           darkMode={darkMode}
           onDarkModeChange={changeDarkMode}
           unit={unit}
@@ -367,6 +440,8 @@ function App() {
           onShowOverviewChange={changeShowOverview}
           nowcastMode={nowcastMode}
           onNowcastModeChange={changeNowcastMode}
+          colorCoding={colorCoding}
+          onColorCodingToggle={toggleColorCoding}
           installPrompt={installPrompt}
           onInstall={handleInstall}
           closing={settingsClosing}

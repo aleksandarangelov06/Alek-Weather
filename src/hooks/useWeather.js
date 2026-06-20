@@ -109,11 +109,26 @@ export function useWeather() {
   }, [fetchWeather])
 
   const useMyLocation = useCallback(() => {
-    if (!navigator.geolocation) { setError('Geolocation not supported by your browser.'); return }
+    if (!navigator.geolocation) { setError('Geolocation is not supported by your browser.'); return }
     setLoading(true)
+    setError(null)
     geoActiveRef.current = true
+
+    // The `timeout` option below only starts counting once permission is
+    // granted — it does NOT cover the time the permission prompt is on screen.
+    // So if the prompt is dismissed (or the OS location service never
+    // responds), neither callback fires and we'd hang on "Fetching weather…"
+    // forever. This watchdog guarantees the loading state always resolves.
+    const watchdog = setTimeout(() => {
+      if (!geoActiveRef.current) return
+      geoActiveRef.current = false
+      setError('Timed out getting your location. Make sure location access is allowed and try again.')
+      setLoading(false)
+    }, 15000)
+
     navigator.geolocation.getCurrentPosition(
       (pos) => {
+        clearTimeout(watchdog)
         if (!geoActiveRef.current) return
         geoActiveRef.current = false
         fetchWeather({
@@ -125,9 +140,14 @@ export function useWeather() {
         })
       },
       (err) => {
+        clearTimeout(watchdog)
         if (!geoActiveRef.current) return
         geoActiveRef.current = false
-        const msg = err.code === 1 ? 'Location access denied.' : 'Unable to determine your location.'
+        const msg = err.code === 1
+          ? 'Location access was denied. Enable it for this site in your browser settings.'
+          : err.code === 2
+            ? 'Your location is unavailable. On Windows, check Settings → Privacy & security → Location is on.'
+            : 'Unable to determine your location. Please try again.'
         setError(msg)
         setLoading(false)
       },

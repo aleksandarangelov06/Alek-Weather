@@ -98,6 +98,15 @@
   font-weight: 700;
   color: var(--text-tertiary);
   letter-spacing: -0.3px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px 8px;
+  transition: color 0.15s;
+}
+
+.app-title:hover {
+  color: var(--text-secondary);
 }
 
 .app-logo {
@@ -425,13 +434,12 @@
 }
 
 .search-overlay .saved-cities {
-  max-width: 480px;
-  margin: 0 auto;
-  padding: 4px 0 10px;
+  padding: 4px 8px 8px;
 }
 
 .search-overlay .saved-cities .section-label {
-  padding: 6px 16px 4px;
+  padding: 6px 10px 4px;
+  margin-bottom: 0;
 }
 
 @media (min-width: 1100px) {
@@ -445,6 +453,30 @@
 /* ── Saved cities ── */
 .saved-cities {
   padding: 16px 20px;
+}
+
+.saved-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 18px;
+  padding: 64px 24px;
+  min-height: calc(100svh - 200px);
+}
+
+.saved-empty-icon {
+  color: var(--accent);
+  opacity: 0.7;
+}
+
+.saved-empty-text {
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin: 0;
+  max-width: 280px;
 }
 
 .saved-list {
@@ -543,6 +575,7 @@
 .current-header {
   position: relative;
   margin-bottom: 4px;
+  padding: 0 36px;
 }
 
 .current-location {
@@ -551,8 +584,10 @@
   color: var(--text-primary);
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 7px;
   flex-wrap: wrap;
+  overflow-wrap: anywhere;
 }
 
 .country-tag {
@@ -588,6 +623,13 @@
 
 .save-btn.saved {
   color: var(--accent);
+}
+
+.current-date {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  margin-top: 2px;
 }
 
 .current-icon {
@@ -733,6 +775,19 @@
 }
 
 .daily-row:hover { background: var(--hover-subtle); }
+
+.daily-row--expand {
+  cursor: pointer;
+  user-select: none;
+}
+
+.daily-row--active { background: var(--accent-light); }
+.daily-row--active:hover { background: var(--accent-light); }
+
+/* Hourly strip inside an expanded day — no "Now" highlight on the first item */
+.daily-list .detail-expansion .hourly-item:first-child {
+  background: transparent;
+}
 
 .daily-day-cell {
   display: flex;
@@ -1047,6 +1102,19 @@
 }
 
 .back-btn:hover { opacity: 0.7; }
+
+.color-coding-back {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.color-coding-desc {
+  font-size: 13px;
+  color: var(--text-tertiary);
+  margin: 4px 4px 16px;
+  line-height: 1.45;
+}
 
 .settings-body {
   padding: 16px 16px 48px;
@@ -1399,6 +1467,10 @@
 .aqi-poll-unit {
   font-size: 11px;
   color: var(--text-secondary);
+}
+
+.aqi-mask-icon {
+  margin-left: auto;
 }
 
 @media (max-width: 420px) {

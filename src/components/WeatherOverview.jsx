@@ -31,14 +31,14 @@ function clothingAdvice(apparentTempF, codes) {
   const hasSnow = codes.some(c => SNOW_CODES.has(c))
 
   let base
-  if (apparentTempF >= 85)      base = 'Wear shorts and a t-shirt today'
-  else if (apparentTempF >= 75) base = 'Wear light, breathable clothing today'
-  else if (apparentTempF >= 65) base = 'Light layers are perfect today'
-  else if (apparentTempF >= 55) base = 'Wear a light jacket today'
-  else if (apparentTempF >= 45) base = 'Wear a jacket today'
-  else if (apparentTempF >= 35) base = 'Wear a warm coat today'
-  else if (apparentTempF >= 20) base = 'Wear a heavy coat, hat, and gloves today'
-  else                           base = 'Bundle up today'
+  if (apparentTempF >= 85)      base = 'Wear shorts and a t-shirt'
+  else if (apparentTempF >= 75) base = 'Wear light, breathable clothing'
+  else if (apparentTempF >= 65) base = 'Light layers are perfect'
+  else if (apparentTempF >= 55) base = 'Wear a light jacket'
+  else if (apparentTempF >= 45) base = 'Wear a jacket'
+  else if (apparentTempF >= 35) base = 'Wear a warm coat'
+  else if (apparentTempF >= 20) base = 'Wear a heavy coat, hat, and gloves'
+  else                           base = 'Bundle up'
 
   if (hasSnow && hasRain) return `${base} and bring waterproof boots and an umbrella`
   if (hasSnow)            return `${base} and bring waterproof boots`
@@ -80,8 +80,8 @@ export function WeatherOverview({ hourly, daily, current, timezone, yesterdayTem
     insights.push({
       level: 'severe',
       text: isThunder
-        ? `Thunderstorm ${when} — seek shelter!`
-        : `Violent rain showers ${when} — stay safe!`,
+        ? `Thunderstorm ${when}. Seek shelter!`
+        : `Violent rain showers ${when}. Stay safe!`,
     })
   }
 
@@ -125,46 +125,60 @@ export function WeatherOverview({ hourly, daily, current, timezone, yesterdayTem
   }
 
   if (daily?.temperature_2m_max?.[0] != null) {
-    // All temps are in °F from the API
-    const todayAvg = (daily.temperature_2m_max[0] + daily.temperature_2m_min[0]) / 2
+    // All temps are in °F from the API.
+    // In the evening, most people care about tomorrow rather than the day that's ending.
+    const currentHour = parseInt(currentHourStr, 10)
+    const eveningMode = currentHour >= 20
+    const baseIdx = eveningMode && daily.temperature_2m_max.length > 1 ? 1 : 0
+    const dayLabel = baseIdx === 1 ? 'Tomorrow' : 'Today'
 
-    const compareCount = Math.min(4, (daily.temperature_2m_max.length ?? 0) - 1)
+    const avgAt = (i) => (daily.temperature_2m_max[i] + daily.temperature_2m_min[i]) / 2
+    const baseAvg = avgAt(baseIdx)
+
+    const compareCount = Math.min(4, (daily.temperature_2m_max.length ?? 0) - 1 - baseIdx)
     let diffWeek = null
     if (compareCount >= 2) {
       let sum = 0
-      for (let i = 1; i <= compareCount; i++) {
-        sum += (daily.temperature_2m_max[i] + daily.temperature_2m_min[i]) / 2
+      for (let i = baseIdx + 1; i <= baseIdx + compareCount; i++) {
+        sum += avgAt(i)
       }
-      diffWeek = todayAvg - sum / compareCount
+      diffWeek = baseAvg - sum / compareCount
     }
 
-    const diffYesterday = yesterdayTemps
-      ? todayAvg - (yesterdayTemps.max + yesterdayTemps.min) / 2
-      : null
+    // The previous day for comparison: today (when looking at tomorrow) or yesterday (when looking at today).
+    const prevAvg = baseIdx === 1
+      ? avgAt(0)
+      : (yesterdayTemps ? (yesterdayTemps.max + yesterdayTemps.min) / 2 : null)
+    const prevLabel = baseIdx === 1 ? 'today' : 'yesterday'
+    const diffPrev = prevAvg !== null ? baseAvg - prevAvg : null
 
-    let context = ''
+    let comparison = ''
     if (diffWeek !== null && diffWeek > 8)
-      context = ', notably warmer than the rest of the week'
+      comparison = 'notably warmer than the rest of the week'
     else if (diffWeek !== null && diffWeek > 3)
-      context = ', warmer than the rest of the week'
+      comparison = 'warmer than the rest of the week'
     else if (diffWeek !== null && diffWeek < -8)
-      context = ', notably cooler than the rest of the week'
+      comparison = 'notably cooler than the rest of the week'
     else if (diffWeek !== null && diffWeek < -3)
-      context = ', cooler than the rest of the week'
-    else if (diffYesterday !== null && diffYesterday > 6)
-      context = ', a good bit warmer than yesterday'
-    else if (diffYesterday !== null && diffYesterday > 3)
-      context = ', a little warmer than yesterday'
-    else if (diffYesterday !== null && diffYesterday < -6)
-      context = ', a good bit cooler than yesterday'
-    else if (diffYesterday !== null && diffYesterday < -3)
-      context = ', a little cooler than yesterday'
+      comparison = 'cooler than the rest of the week'
+    else if (diffPrev !== null && diffPrev > 6)
+      comparison = `a good bit warmer than ${prevLabel}`
+    else if (diffPrev !== null && diffPrev < -6)
+      comparison = `a good bit cooler than ${prevLabel}`
+    else if (diffPrev !== null && Math.abs(diffPrev) <= 2)
+      comparison = `about the same temperature as ${prevLabel}`
     else if (diffWeek !== null)
-      context = ', about the same as the rest of the week'
+      comparison = 'about the same temperature as the rest of the week'
 
-    if (current?.apparent_temperature != null) {
+    // Skip clothing advice during severe weather: the headline insight tells the
+    // user to seek shelter, so "wear a t-shirt" would be tone-deaf and unsafe.
+    if (current?.apparent_temperature != null && firstSevere === -1) {
       const clothing = clothingAdvice(current.apparent_temperature, codes)
-      insights.push({ level: 'neutral', text: `${clothing}${context}.` })
+      insights.push({ level: 'neutral', text: `${clothing}.` })
+    }
+
+    if (comparison) {
+      insights.push({ level: 'neutral', text: `${dayLabel} will be ${comparison}.` })
     }
   }
 
