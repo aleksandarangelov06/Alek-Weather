@@ -90,6 +90,19 @@
   margin: 0 auto;
 }
 
+/* With no city selected, the side icons are unbalanced (search only on the
+   left, settings hidden on desktop), so flex centering leaves the title
+   off-center. Absolutely center it within the full header width instead. */
+.app-header--no-city {
+  position: relative;
+}
+
+.app-header--no-city .app-title {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
 .app-title {
   flex: 1;
   text-align: center;
@@ -709,6 +722,7 @@
   padding-bottom: 4px;
   scrollbar-width: none;
   flex: 1;
+  overscroll-behavior-x: contain;
 }
 
 .hourly-scroll::-webkit-scrollbar { display: none; }
@@ -717,6 +731,8 @@
   display: flex;
   flex-direction: column;
   width: max-content;
+  /* Composite the scrolled content so horizontal scroll is a cheap translate. */
+  will-change: transform;
 }
 
 .hourly-row {
@@ -738,6 +754,7 @@
   gap: 6px;
   min-width: 58px;
   padding: 10px 6px;
+  contain: content;
   border-radius: 12px;
   flex-shrink: 0;
 }
@@ -1715,6 +1732,10 @@
   margin: 0 12px 12px;
   border-radius: 12px;
   overflow: hidden;
+  /* Promote to its own compositor layer so page scroll slides a cached bitmap
+     instead of re-rasterizing the (filtered, in dark mode) map every frame. */
+  transform: translateZ(0);
+  will-change: transform;
 }
 
 .radar-expanded .radar-map-wrap {
@@ -1753,6 +1774,11 @@
 .leaflet-container {
   background: var(--bg);
   font-family: var(--font);
+}
+
+/* Smooth (not pixelated) scaling when radar tiles are upscaled past native zoom */
+.radar-tiles {
+  image-rendering: auto;
 }
 
 /* ── Weather Overview ── */

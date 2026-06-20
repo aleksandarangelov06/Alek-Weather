@@ -7,7 +7,7 @@ import 'leaflet/dist/leaflet.css'
 const FRAMES_URL = 'https://api.rainviewer.com/public/weather-maps.json'
 const TILE_URL   = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
 const MAP_MAX_ZOOM     = 14
-const RADAR_NATIVE_MAX = 6
+const RADAR_NATIVE_MAX = 7
 const RADAR_OPACITY     = 0.65
 const LEGEND_COLORS = ['#43a4c3', '#326985', '#ffff00', '#ff3300', '#d193c9']
 
@@ -24,7 +24,9 @@ export function WeatherRadar({ location, timezone }) {
   const mapRef      = useRef(null)
   const mapInst     = useRef(null)
   const baseTileRef = useRef(null)
-  const radarLayer  = useRef(null)
+  const layerCache  = useRef(new Map()) // frame.path -> L.TileLayer (kept alive for smooth playback)
+  const activeKey   = useRef(null)
+  const wantedKey   = useRef(null) // latest frame requested; guards stale async loads
   const trackRef    = useRef(null)
   const isDragging  = useRef(false)
 
@@ -75,7 +77,8 @@ export function WeatherRadar({ location, timezone }) {
       map.remove()
       mapInst.current = null
       baseTileRef.current = null
-      radarLayer.current = null
+      layerCache.current.clear()
+      activeKey.current = null
       setMapReady(false)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -95,21 +98,55 @@ export function WeatherRadar({ location, timezone }) {
     }
   }, [mapReady])
 
-  // Show a single radar layer for the active frame, swapping as idx changes.
-  // One layer at a time keeps tile requests light, so zoom/pan don't drop tiles.
-  // The service worker caches radar tiles, so repeated playback is smooth after the first pass.
+  // Cross-fade between cached radar layers as idx changes.
+  // Each frame's layer is created once and kept on the map (hidden at opacity 0),
+  // so scrubbing/playback only toggles opacity instead of refetching tiles — no lag,
+  // no churn. The previous frame stays visible until the new one finishes loading,
+  // which prevents the blank-frame flash on slow devices/connections. We also prefetch
+  // one frame ahead so the next frame is ready before playback reaches it.
   // URL is /{size}/{z}/{x}/{y}/{color}/{smooth}_{snow}.png. RainViewer's free API
   // ignores the color and snow flags (always one fixed palette), but smoothing works.
   useEffect(() => {
     const map = mapInst.current
     if (!map || !mapReady || !host || frames.length === 0) return
+
+    const getLayer = (frame) => {
+      let layer = layerCache.current.get(frame.path)
+      if (!layer) {
+        layer = L.tileLayer(
+          `${host}${frame.path}/512/{z}/{x}/{y}/2/1_0.png`,
+          { opacity: 0, zIndex: 200, maxZoom: MAP_MAX_ZOOM, maxNativeZoom: RADAR_NATIVE_MAX, crossOrigin: true, className: 'radar-tiles' }
+        )
+        layer.on('load', () => { layer._radarLoaded = true })
+        layer.addTo(map)
+        layerCache.current.set(frame.path, layer)
+      }
+      return layer
+    }
+
     const frame = frames[idx]
     if (!frame) return
-    if (radarLayer.current) { map.removeLayer(radarLayer.current); radarLayer.current = null }
-    radarLayer.current = L.tileLayer(
-      `${host}${frame.path}/512/{z}/{x}/{y}/2/1_0.png`,
-      { opacity: RADAR_OPACITY, zIndex: 200, maxZoom: MAP_MAX_ZOOM, maxNativeZoom: RADAR_NATIVE_MAX, crossOrigin: true }
-    ).addTo(map)
+    wantedKey.current = frame.path
+    const layer = getLayer(frame)
+
+    const show = () => {
+      if (wantedKey.current !== frame.path) return // user moved on before this loaded
+      const prev = activeKey.current
+      if (prev && prev !== frame.path) {
+        const prevLayer = layerCache.current.get(prev)
+        if (prevLayer) prevLayer.setOpacity(0)
+      }
+      layer.setOpacity(RADAR_OPACITY)
+      activeKey.current = frame.path
+    }
+
+    // Show immediately if tiles are already cached; otherwise keep the old frame
+    // up until this one loads, then swap.
+    if (layer._radarLoaded) show()
+    else layer.once('load', show)
+
+    // Prefetch the next frame so playback never waits on a cold layer.
+    getLayer(frames[(idx + 1) % frames.length])
   }, [mapReady, host, frames, idx])
 
   // Animation playback

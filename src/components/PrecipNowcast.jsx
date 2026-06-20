@@ -78,7 +78,7 @@ export function PrecipNowcast({ minutely, currentTime, mode = 'auto' }) {
   const yLightLabel = (Y_LIGHT + CB) / 2 + 3
 
   return (
-    <div className="card">
+    <div className="card nowcast-card">
       <div className="nowcast-header">
         <span className="section-label" style={{ margin: 0 }}>PRECIPITATION</span>
         {allDry && <span className="nowcast-dry">None expected</span>}

@@ -280,7 +280,7 @@ function App() {
   }
 
   const blockComponents = weather && !loading ? {
-    overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} timezone={weather.timezone} yesterdayTemps={weather.yesterdayTemps} />,
+    overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} minutely={weather.minutely_15} timezone={weather.timezone} yesterdayTemps={weather.yesterdayTemps} />,
     hourly:  <HourlyForecast hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.hourly} glow={colorCoding.glow} />,
     daily:   <DailyForecast daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.daily} glow={colorCoding.glow} />,
     details: <WeatherDetails current={weather.current} daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} airQuality={airQuality} />,
@@ -307,6 +307,10 @@ function App() {
           colorCoding={colorCoding.current}
           glow={colorCoding.glow}
         />
+        {/* On desktop the compact precipitation chart sits under the current
+            weather instead of stretching the wide right column. On mobile it
+            stays in the draggable block list below. */}
+        {isDesktop && blockComponents.nowcast}
         {isDesktop && (
           <SettingsPill
             expanded={desktopSettingsOpen}
@@ -337,7 +341,7 @@ function App() {
       <div className="weather-right">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={blockOrder} strategy={verticalListSortingStrategy}>
-            {blockOrder.filter(id => id !== 'aqi' && (id !== 'overview' || showOverview)).map(id => (
+            {blockOrder.filter(id => id !== 'aqi' && (id !== 'overview' || showOverview) && !(isDesktop && id === 'nowcast')).map(id => (
               <SortableBlock key={id} id={id}>
                 {blockComponents[id]}
               </SortableBlock>
@@ -350,7 +354,7 @@ function App() {
 
   return (
     <div className="app">
-      <header className="app-header">
+      <header className={`app-header${!weather ? ' app-header--no-city' : ''}`}>
         <button className="header-icon-btn" onClick={openSearch} aria-label="Search">
           <MapPin size={24} />
         </button>

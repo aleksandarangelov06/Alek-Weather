@@ -46,7 +46,7 @@ function clothingAdvice(apparentTempF, codes) {
   return base
 }
 
-export function WeatherOverview({ hourly, daily, current, timezone, yesterdayTemps }) {
+export function WeatherOverview({ hourly, daily, current, minutely, timezone, yesterdayTemps }) {
   const now = new Date()
   const currentMinute = parseInt(
     now.toLocaleString('en-CA', { minute: '2-digit', timeZone: timezone }),
@@ -62,9 +62,29 @@ export function WeatherOverview({ hourly, daily, current, timezone, yesterdayTem
 
   const codes = hourly.weather_code.slice(start, start + LOOK_AHEAD)
 
+  // Is precipitation *actually* falling right now? The hourly weather_code is a
+  // coarse summary that sometimes flags rain/thunder for the current hour when
+  // the real-time and minute-level data show nothing — which contradicts the
+  // Precipitation tile. We trust the observed/minutely data for "right now" so
+  // the two sections stay consistent.
+  const precipNow = (() => {
+    if ((current?.precipitation ?? 0) > 0.001) return true
+    const times = minutely?.time, precip = minutely?.precipitation
+    if (times?.length && precip?.length && current?.time) {
+      let si = times.findIndex(t => t >= current.time)
+      if (si < 0) si = 0
+      if ((precip[si] ?? 0) > 0.001) return true
+    }
+    return false
+  })()
+
   let firstSevere = -1, firstHeavy = -1, firstModerate = -1, firstLight = -1, firstFog = -1
   for (let i = 0; i < codes.length; i++) {
     const cat = classify(codes[i])
+    // Don't let the current hour's coarse code claim active precipitation when
+    // nothing is actually falling — defer to the next slot that genuinely has it.
+    const isPrecipCat = cat === 'severe' || cat === 'heavy' || cat === 'moderate' || cat === 'light'
+    if (i === 0 && isPrecipCat && !precipNow) continue
     if (cat === 'severe'   && firstSevere   === -1) firstSevere   = i
     if (cat === 'heavy'    && firstHeavy    === -1) firstHeavy    = i
     if (cat === 'moderate' && firstModerate === -1) firstModerate = i
@@ -74,6 +94,8 @@ export function WeatherOverview({ hourly, daily, current, timezone, yesterdayTem
 
   const insights = []
 
+  // Emit a single precipitation insight for the most significant condition in
+  // the window so the user never sees two overlapping "rain coming" messages.
   if (firstSevere !== -1) {
     const when = timeDesc(firstSevere, currentMinute)
     const isThunder = [95, 96, 99].includes(codes[firstSevere])
@@ -83,32 +105,27 @@ export function WeatherOverview({ hourly, daily, current, timezone, yesterdayTem
         ? `Thunderstorm ${when}. Seek shelter!`
         : `Violent rain showers ${when}. Stay safe!`,
     })
-  }
-
-  if (firstHeavy !== -1) {
+  } else if (firstHeavy !== -1) {
     const when = timeDesc(firstHeavy, currentMinute)
     const isSnow = [75, 86].includes(codes[firstHeavy])
     insights.push({
       level: 'warning',
       text: isSnow ? `Heavy snow arriving ${when}.` : `Heavy rain expected ${when}.`,
     })
-  }
-
-  if (firstModerate !== -1 && insights.length < 2) {
+  } else if (firstModerate !== -1) {
     const when = timeDesc(firstModerate, currentMinute)
     const isSnow = codes[firstModerate] === 73
     insights.push({
       level: 'info',
       text: isSnow ? `Moderate snow on the way ${when}.` : `Rain moving in ${when}.`,
     })
-  }
-
-  if (firstLight !== -1 && insights.length < 2) {
+  } else if (firstLight !== -1) {
     const info = getWeatherInfo(codes[firstLight])
     const when = timeDesc(firstLight, currentMinute)
     insights.push({ level: 'notice', text: `${info.label} ${when}.` })
   }
 
+  // Fog is independent of rain, so it can accompany a precipitation insight.
   if (firstFog !== -1 && insights.length < 2) {
     const when = timeDesc(firstFog, currentMinute)
     insights.push({ level: 'notice', text: `Foggy conditions expected ${when}.` })
@@ -172,13 +189,20 @@ export function WeatherOverview({ hourly, daily, current, timezone, yesterdayTem
 
     // Skip clothing advice during severe weather: the headline insight tells the
     // user to seek shelter, so "wear a t-shirt" would be tone-deaf and unsafe.
-    if (current?.apparent_temperature != null && firstSevere === -1) {
-      const clothing = clothingAdvice(current.apparent_temperature, codes)
-      insights.push({ level: 'neutral', text: `${clothing}.` })
-    }
+    const clothing = (current?.apparent_temperature != null && firstSevere === -1)
+      ? clothingAdvice(current.apparent_temperature, codes)
+      : null
 
-    if (comparison) {
+    // Combine the temperature comparison and clothing advice into a single line,
+    // e.g. "Today will be about the same temperature as yesterday, light layers
+    // are perfect."
+    if (comparison && clothing) {
+      const lower = clothing.charAt(0).toLowerCase() + clothing.slice(1)
+      insights.push({ level: 'neutral', text: `${dayLabel} will be ${comparison}, ${lower}.` })
+    } else if (comparison) {
       insights.push({ level: 'neutral', text: `${dayLabel} will be ${comparison}.` })
+    } else if (clothing) {
+      insights.push({ level: 'neutral', text: `${clothing}.` })
     }
   }
 
