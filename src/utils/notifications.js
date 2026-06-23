@@ -98,7 +98,7 @@ export function fireRainNotification(hourly, timezone) {
   const currentHourStr = new Date().toLocaleString('en-CA', {
     hour: '2-digit', hour12: false, timeZone: timezone,
   })
-  const start = Math.max(0, hourly.time.findIndex(t => t.includes(`T${currentHourStr}:`)))
+  const start = Math.max(0, hourly.time.findIndex(t => t.startsWith(`${today}T${currentHourStr}`)))
   const codes = hourly.weather_code.slice(start, start + 12)
 
   let worstLevel = 'clear', worstCode = null

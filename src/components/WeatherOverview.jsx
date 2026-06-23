@@ -1,4 +1,4 @@
-import { getWeatherInfo, liveWeatherCode, livePrecipRate } from '../utils/weatherCodes'
+import { getWeatherInfo, liveWeatherCode, displayPrecipChance, precipTier } from '../utils/weatherCodes'
 
 const SEVERE_CODES   = new Set([95, 96, 99, 82])
 const HEAVY_CODES    = new Set([65, 75, 86])
@@ -23,7 +23,9 @@ function timeDesc(slotIndex, currentMinute) {
   if (mins < 25) return 'in a few minutes'
   if (mins < 70) return 'within the hour'
   const hours = Math.round(mins / 60)
-  return hours === 1 ? 'in about 1 hour' : `in about ${hours} hours`
+  if (hours <= 1) return 'in about 1 hour'
+  if (hours <= 5) return `in about ${hours} hours`
+  return 'later today'
 }
 
 function clothingAdvice(apparentTempF, codes) {
@@ -56,9 +58,10 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ye
     hour: '2-digit', hour12: false, timeZone: timezone,
   })
 
-  const startIdx = hourly.time.findIndex(t => t.includes(`T${currentHourStr}:`))
+  const todayStr = now.toLocaleDateString('en-CA', { timeZone: timezone })
+  const startIdx = hourly.time.findIndex(t => t.startsWith(`${todayStr}T${currentHourStr}`))
   const start = startIdx === -1 ? 0 : startIdx
-  const LOOK_AHEAD = 12
+  const LOOK_AHEAD = 24
 
   const codes = hourly.weather_code.slice(start, start + LOOK_AHEAD)
 
@@ -66,13 +69,26 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ye
   // current.weather_code lags after a downpour, so re-derive the present slot from
   // the live 15-min nowcast (same source the Current Conditions card uses) to keep
   // the two sections consistent. slice() returns a fresh array — safe to mutate.
+  //
+  // But trust the condition: the nowcast may refine the current hour's intensity,
+  // it must NOT erase precipitation the hourly forecast asserts. minutely_15
+  // under-reports light/just-started rain (it read ~0 here during real rain, which
+  // used to flip this card to "Clear skies" while the hourly strip showed a rain
+  // icon). So only accept the nowcast's value when it still shows precip, or when
+  // the raw hourly code wasn't precip to begin with.
+  const rawNowIsPrecip = codes.length > 0 && precipTier(codes[0]) > 0
   if (codes.length > 0) {
     const live = liveWeatherCode(current, minutely)
-    if (live != null) codes[0] = live
+    if (live != null && (precipTier(live) > 0 || !rawNowIsPrecip)) codes[0] = live
   }
 
-  // Precipitation probability (%) for a slot within the look-ahead window.
-  const probAt = (slotIndex) => hourly.precipitation_probability?.[start + slotIndex]
+  // Precipitation chance (%) for a slot, floored to the slot's own condition so an
+  // upcoming "rain" insight never appends a contradictory "(0% chance)".
+  const probAt = (slotIndex) => {
+    const code = codes[slotIndex]
+    const raw = hourly.precipitation_probability?.[start + slotIndex]
+    return code != null && precipTier(code) > 0 ? displayPrecipChance(code, raw) : raw
+  }
 
   // Indefinite article for a condition label; "" for plurals (e.g. "showers")
   // since "a showers" is wrong.
@@ -81,12 +97,9 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ye
 
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1)
 
-  // Is precipitation *actually* falling right now? The hourly weather_code is a
-  // coarse summary that sometimes flags rain/thunder for the current hour when
-  // the real-time and minute-level data show nothing — which contradicts the
-  // Precipitation tile. We trust the observed/minutely data for "right now" so
-  // the two sections stay consistent.
-  const precipNow = (() => {
+  // Is precipitation *measurably* falling right now, per observed/minutely data?
+  // (Used to decide whether we can estimate an "ending in X" time below.)
+  const precipMeasuredNow = (() => {
     if ((current?.precipitation ?? 0) > 0.001) return true
     const times = minutely?.time, precip = minutely?.precipitation
     if (times?.length && precip?.length && current?.time) {
@@ -97,11 +110,18 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ye
     return false
   })()
 
+  // Trust the condition: the current hour counts as "raining now" when either the
+  // live nowcast shows it OR the deterministic forecast (reconciled codes[0]) does.
+  // This is the fix for "Clear skies" appearing over a rain icon — minutely_15 can
+  // read ~0 during real rain, but we no longer let that suppress the forecast.
+  const precipNow = precipMeasuredNow || (codes.length > 0 && precipTier(codes[0]) > 0)
+
   let firstSevere = -1, firstHeavy = -1, firstModerate = -1, firstLight = -1, firstFog = -1
   for (let i = 0; i < codes.length; i++) {
     const cat = classify(codes[i])
-    // Don't let the current hour's coarse code claim active precipitation when
-    // nothing is actually falling — defer to the next slot that genuinely has it.
+    // Skip a current-hour precip claim only when neither the live nowcast nor the
+    // forecast backs it (precipNow) — i.e. truly nothing falling; otherwise defer
+    // to the next slot that genuinely has precipitation.
     const isPrecipCat = cat === 'severe' || cat === 'heavy' || cat === 'moderate' || cat === 'light'
     if (i === 0 && isPrecipCat && !precipNow) continue
     if (cat === 'severe'   && firstSevere   === -1) firstSevere   = i
@@ -157,6 +177,19 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ye
   const precipNowInsight = (() => {
     if (!precipNow) return null
     const noun = SNOW_CODES.has(codes[0]) ? 'snow' : 'rain'
+
+    // We're here on the forecast's word but the live nowcast shows nothing
+    // measurable — there's no trend to estimate an end time from, so state it
+    // plainly instead of computing a bogus "ending shortly".
+    if (!precipMeasuredNow) {
+      const cat = classify(codes[0])
+      const heavy = cat === 'heavy' || cat === 'severe'
+      const adj = heavy ? 'Heavy ' : cat === 'light' ? 'Light ' : ''
+      return {
+        level: heavy ? 'warning' : 'info',
+        text: adj ? `${adj}${noun} right now.` : `${cap(noun)} right now.`,
+      }
+    }
 
     // Find the first slot where the nowcast drops below the light threshold AND
     // stays there for ~30 min, so a momentary dip mid-storm doesn't read as "ending".
@@ -259,8 +292,8 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ye
     insights.push({
       level: 'good',
       text: allClear
-        ? 'Clear skies for the next 12 hours.'
-        : 'No significant weather in the next 12 hours.',
+        ? 'Clear skies for the rest of the day.'
+        : 'No significant weather for the rest of the day.',
     })
   }
 
@@ -316,16 +349,73 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ye
       ? clothingAdvice(current.apparent_temperature, codes)
       : null
 
-    // Combine the temperature comparison and clothing advice into a single line,
-    // e.g. "Today will be about the same temperature as yesterday, light layers
-    // are perfect."
+    // Build the temperature/clothing text, then either merge it into the single
+    // precipitation insight already in the list (so the user sees one combined
+    // bullet instead of two) or push it as its own neutral insight.
+    let tempText = null
     if (comparison && clothing) {
       const lower = clothing.charAt(0).toLowerCase() + clothing.slice(1)
-      insights.push({ level: 'neutral', text: `${dayLabel} will be ${comparison}, ${lower}.` })
+      tempText = `${dayLabel} will be ${comparison}, ${lower}.`
     } else if (comparison) {
-      insights.push({ level: 'neutral', text: `${dayLabel} will be ${comparison}.` })
+      tempText = `${dayLabel} will be ${comparison}.`
     } else if (clothing) {
-      insights.push({ level: 'neutral', text: `${clothing}.` })
+      tempText = `${clothing}.`
+    }
+
+    if (tempText) {
+      if (insights.length === 1 && insights[0].level !== 'severe') {
+        const base = insights[0].text.replace(/\.$/, '')
+        const lower = tempText.charAt(0).toLowerCase() + tempText.slice(1)
+        insights[0] = { ...insights[0], text: `${base}. ${tempText}` }
+      } else {
+        insights.push({ level: 'neutral', text: tempText })
+      }
+    }
+
+    // When showing tomorrow's forecast (evening mode), add an insight for any
+    // notable weather event so the user knows what to prepare for.
+    if (baseIdx === 1 && daily?.weather_code?.[1] != null) {
+      const tCode = daily.weather_code[1]
+      const tCat = classify(tCode)
+      const tProb = daily.precipitation_probability_max?.[1]
+      const probStr = tProb != null ? ` (${tProb}% chance)` : ''
+      const isSnow = SNOW_CODES.has(tCode)
+      const isThunder = [95, 96, 99].includes(tCode)
+
+      if (tCat === 'severe') {
+        insights.push({
+          level: 'severe',
+          text: isThunder
+            ? `Thunderstorms forecast tomorrow${probStr}. Seek shelter and avoid open areas.`
+            : `Severe weather tomorrow${probStr}. Plan ahead.`,
+        })
+      } else if (tCat === 'heavy') {
+        insights.push({
+          level: 'warning',
+          text: isSnow
+            ? `Heavy snow tomorrow${probStr}. Avoid travelling and dress warmly.`
+            : `Heavy rain tomorrow${probStr}. Bring a waterproof jacket and umbrella.`,
+        })
+      } else if (tCat === 'moderate') {
+        insights.push({
+          level: 'info',
+          text: isSnow
+            ? `Moderate snow tomorrow${probStr}. Pack boots and a warm coat, avoid travel if possible.`
+            : `Rain expected tomorrow${probStr}. Don't forget an umbrella.`,
+        })
+      } else if (tCat === 'light') {
+        insights.push({
+          level: 'notice',
+          text: isSnow
+            ? `Light snow possible tomorrow${probStr}.`
+            : `Light rain possible tomorrow${probStr}.`,
+        })
+      } else if (tCat === 'fog') {
+        insights.push({
+          level: 'notice',
+          text: `Foggy conditions expected tomorrow.`,
+        })
+      }
     }
   }
 

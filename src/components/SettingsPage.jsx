@@ -268,7 +268,7 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, showOver
       <AboutSection />
 
       <div className="settings-footer">
-        <p className="settings-version">Version 2.1</p>
+        <p className="settings-version">Version 2.2</p>
         <p className="settings-studio">Alek Studios&#8482;</p>
       </div>
     </>

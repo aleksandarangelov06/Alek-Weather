@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useLayoutEffect, useId } from 'react'
-import { getWeatherInfo, toTemp, tempStyle, tempColor } from '../utils/weatherCodes'
+import { getWeatherInfo, toTemp, tempStyle, tempColor, displayPrecipChance } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
 
 const GRAPH_HEIGHT = 60
@@ -49,7 +49,8 @@ export function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glo
     hour: '2-digit', hour12: false, timeZone: timezone,
   })
 
-  const startIdx = hourly.time.findIndex((t) => t.includes(`T${currentHourStr}:`))
+  const todayStr = now.toLocaleDateString('en-CA', { timeZone: timezone })
+  const startIdx = hourly.time.findIndex((t) => t.startsWith(`${todayStr}T${currentHourStr}`))
   const start = startIdx === -1 ? 0 : startIdx
   const slice = (arr) => arr.slice(start, start + 25)
 
@@ -106,7 +107,8 @@ export function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glo
                 hour: 'numeric', hour12: true, timeZone: timezone,
               })
           const info = getWeatherInfo(codes[i], !isDay[i])
-          const p = precip[i] ?? 0
+          // Trust the condition: never show 0% beside a rain icon.
+          const p = displayPrecipChance(codes[i], precip[i])
           const precipClass = p >= 30 ? 'hourly-precip high' : p > 0 ? 'hourly-precip low' : 'hourly-precip zero'
           return (
             <div key={i} className="hourly-item">

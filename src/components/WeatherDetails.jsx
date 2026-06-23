@@ -135,7 +135,8 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
   // Hourly window
   const now = new Date()
   const currentHourStr = now.toLocaleString('en-CA', { hour: '2-digit', hour12: false, timeZone: timezone })
-  const startIdx = hourly ? hourly.time.findIndex(t => t.includes(`T${currentHourStr}:`)) : -1
+  const todayStr = now.toLocaleDateString('en-CA', { timeZone: timezone })
+  const startIdx = hourly ? hourly.time.findIndex(t => t.startsWith(`${todayStr}T${currentHourStr}`)) : -1
   const hStart = startIdx === -1 ? 0 : startIdx
 
   const sliceNext = (arr, n) => (arr ?? []).slice(hStart, hStart + n)
