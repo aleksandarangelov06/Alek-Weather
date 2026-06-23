@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { TriangleAlert, X, ChevronRight } from 'lucide-react'
 
@@ -18,20 +18,59 @@ function formatExpires(iso) {
 }
 
 function AlertModal({ alert, onClose }) {
+  const [dragOffset, setDragOffset] = useState(0)
+  const dragStartY = useRef(null)
+
   useEffect(() => {
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => { document.body.style.overflow = prev }
   }, [])
 
+  const handleTouchStart = (e) => {
+    dragStartY.current = e.touches[0].clientY
+  }
+
+  const handleTouchMove = (e) => {
+    if (dragStartY.current === null) return
+    const delta = e.touches[0].clientY - dragStartY.current
+    if (delta > 0) {
+      e.preventDefault()
+      setDragOffset(delta)
+    }
+  }
+
+  const handleTouchEnd = () => {
+    if (dragOffset > 80) {
+      onClose()
+    } else {
+      setDragOffset(0)
+    }
+    dragStartY.current = null
+  }
+
   const props = alert.properties
   const cfg = SEVERITY_CONFIG[props.severity] ?? SEVERITY_CONFIG.Unknown
 
   return (
     <div className="alert-backdrop" onClick={onClose}>
-      <div className="alert-sheet" onClick={e => e.stopPropagation()}>
+      <div
+        className="alert-sheet"
+        onClick={e => e.stopPropagation()}
+        style={{
+          transform: dragOffset > 0 ? `translateY(${dragOffset}px)` : undefined,
+          transition: dragOffset > 0 ? 'none' : 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        }}
+      >
         <div className="alert-sheet-fixed">
-          <div className="alert-sheet-handle" />
+          <div
+            className="alert-sheet-handle-area"
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+          >
+            <div className="alert-sheet-handle" />
+          </div>
 
           <div className="alert-sheet-header">
             <div className="alert-sheet-title-row">

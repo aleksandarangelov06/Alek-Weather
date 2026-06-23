@@ -1921,6 +1921,16 @@
 .overview-good    .overview-dot { background: #22c55e; }
 .overview-neutral .overview-dot { background: var(--text-tertiary); }
 
+@keyframes overview-dot-pulse {
+  0%        { box-shadow: 0 0 0 0   rgba(239, 68, 68, 0.7); }
+  70%       { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0);   }
+  100%      { box-shadow: 0 0 0 0   rgba(239, 68, 68, 0);   }
+}
+
+.overview-dot--alert {
+  animation: overview-dot-pulse 1.5s ease-out infinite;
+}
+
 .overview-text {
   font-size: 14px;
   font-weight: 400;
@@ -2261,12 +2271,18 @@
   to   { transform: translateY(0);    opacity: 1; }
 }
 
+.alert-sheet-handle-area {
+  padding: 6px 0 10px;
+  touch-action: none;
+  cursor: grab;
+}
+
 .alert-sheet-handle {
   width: 36px;
   height: 4px;
   border-radius: 2px;
   background: var(--bar-track-bg);
-  margin: 0 auto 16px;
+  margin: 0 auto;
 }
 
 .alert-sheet-header {

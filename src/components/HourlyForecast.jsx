@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useLayoutEffect, useId } from 'react'
-import { getWeatherInfo, toTemp, tempStyle, tempColor, displayPrecipChance } from '../utils/weatherCodes'
+import { getWeatherInfo, liveWeatherCode, nowcastHourlyCode, precipTier, toTemp, tempStyle, tempColor, displayPrecipChance } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
 
 const GRAPH_HEIGHT = 60
@@ -23,7 +23,7 @@ function smoothPath(pts) {
   return d
 }
 
-export function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glow = true }) {
+export function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glow = true, current, minutely }) {
   const scrollRef = useRef(null)
   const rowRef = useRef(null)
   const gradId = useId()
@@ -106,9 +106,18 @@ export function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glo
             : new Date(time).toLocaleTimeString('en-US', {
                 hour: 'numeric', hour12: true, timeZone: timezone,
               })
-          const info = getWeatherInfo(codes[i], !isDay[i])
-          // Trust the condition: never show 0% beside a rain icon.
-          const p = displayPrecipChance(codes[i], precip[i])
+          // Slot 0 ("Now"): use the live rate-corrected code so it matches the
+          // current conditions card. All other slots: run the minutely_15 nowcast
+          // check — if nothing is forecast to fall during that hour's window, the
+          // NWS code is premature and gets downgraded to a sky condition.
+          const displayCode = i === 0 && current
+            ? (liveWeatherCode(current, minutely) ?? codes[i])
+            : nowcastHourlyCode(codes[i], minutely, hours[i], current?.cloud_cover)
+          const info = getWeatherInfo(displayCode, !isDay[i])
+          // When the corrected code carries no precipitation, zero out the chance
+          // so the display is internally consistent (no "Clear Sky, 75%").
+          const nowPrecip = precipTier(displayCode) === 0 ? 0 : precip[i]
+          const p = displayPrecipChance(displayCode, nowPrecip)
           const precipClass = p >= 30 ? 'hourly-precip high' : p > 0 ? 'hourly-precip low' : 'hourly-precip zero'
           return (
             <div key={i} className="hourly-item">

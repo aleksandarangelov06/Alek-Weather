@@ -76,8 +76,9 @@ const CODE_FAMILY = {
   80: 'showers', 81: 'showers', 82: 'showers',
   71: 'snow',    73: 'snow',    75: 'snow',
 }
-// Fog and thunder aren't characterized by precip rate alone — never downgrade them.
-const NO_RATE_OVERRIDE = new Set([45, 48, 95, 96, 99])
+// Fog is not characterized by precip rate — never downgrade it.
+// Thunder is handled explicitly below: show sky condition when nothing is measured.
+const NO_RATE_OVERRIDE = new Set([45, 48])
 
 function rateTier(rate) {
   if (rate >= PRECIP_RATE.HEAVY) return 2
@@ -103,6 +104,26 @@ export function livePrecipRate(current, minutely) {
   return precip[i] ?? null
 }
 
+// Reality-checks a FUTURE hourly slot code against the minutely_15 nowcast.
+// If the nowcast shows negligible precip across the entire slot window, downgrade
+// a precipitation code to a sky condition. Non-precip codes pass through unchanged.
+// Safe to call for any slot: returns the original code when minutely data doesn't
+// cover that hour (i.e. the slot is beyond the nowcast window).
+export function nowcastHourlyCode(code, minutely, slotTimeStr, cloudCover) {
+  if (precipTier(code) === 0) return code
+  if (!minutely?.time?.length || !minutely?.precipitation?.length) return code
+  // slotTimeStr format: "YYYY-MM-DDTHH:MM" — match all minutely entries in the same hour.
+  const prefix = slotTimeStr.slice(0, 14) // "YYYY-MM-DDTHH:"
+  let peak = 0, found = false
+  for (let j = 0; j < minutely.time.length; j++) {
+    if (minutely.time[j].startsWith(prefix)) {
+      peak = Math.max(peak, minutely.precipitation[j] ?? 0)
+      found = true
+    }
+  }
+  return found && peak < PRECIP_RATE.TRACE ? skyCode(cloudCover) : code
+}
+
 // Best estimate of the current weather code, corrected against the live nowcast.
 // Falls back to the API's weather_code whenever minutely data is unavailable.
 export function liveWeatherCode(current, minutely) {
@@ -110,6 +131,13 @@ export function liveWeatherCode(current, minutely) {
   if (code == null || NO_RATE_OVERRIDE.has(code)) return code
   const rate = livePrecipRate(current, minutely)
   if (rate == null) return code
+  // Thunderstorm codes: show sky condition when nothing is measurably falling.
+  // Hourly models assign code 95/96/99 to the entire forecast window even when
+  // the storm is still minutes away, which would show "Thunderstorm" before
+  // anything has started. Trust the measured rate to confirm it's actually active.
+  if (code === 95 || code === 96 || code === 99) {
+    return rate < PRECIP_RATE.TRACE ? skyCode(current.cloud_cover) : code
+  }
   const fam = CODE_FAMILY[code]
   if (fam) {
     // Code claims precipitation: if essentially nothing is falling, show the sky.

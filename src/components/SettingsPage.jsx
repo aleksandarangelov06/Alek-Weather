@@ -108,12 +108,20 @@ function AboutSection() {
       {open && (
         <div className="about-content">
           <p className="about-desc">
-            Alek Weather uses free, open-source weather APIs.
+            Alek Weather uses free, open-source weather APIs. US locations use NWS for improved hourly accuracy.
           </p>
           <div className="about-apis">
             <div className="about-api-row">
               <span className="about-api-name">Weather &amp; Forecast</span>
               <span className="about-api-url">api.open-meteo.com</span>
+            </div>
+            <div className="about-api-row">
+              <span className="about-api-name">US Hourly Forecast</span>
+              <span className="about-api-url">api.weather.gov</span>
+            </div>
+            <div className="about-api-row">
+              <span className="about-api-name">Weather Alerts</span>
+              <span className="about-api-url">api.weather.gov</span>
             </div>
             <div className="about-api-row">
               <span className="about-api-name">Air Quality</span>

@@ -1,8 +1,8 @@
 import { useState, useRef, useCallback } from 'react'
-import { getWeatherInfo, formatDay, toTemp, tempColor, tempStyle, displayPrecipChance } from '../utils/weatherCodes'
+import { getWeatherInfo, formatDay, liveWeatherCode, nowcastHourlyCode, precipTier, toTemp, tempColor, tempStyle, displayPrecipChance } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
 
-export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = true, glow = true }) {
+export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = true, glow = true, current, minutely }) {
   const [expanded, setExpanded] = useState(null)
   const toggle = (date) => setExpanded(v => v === date ? null : date)
 
@@ -34,18 +34,32 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
   const weekMax = Math.max(...maxTemps)
   const range = weekMax - weekMin || 1
 
-  // Build the hourly entries that fall on a given day (date is "YYYY-MM-DD").
+  // Build the hourly entries that fall on a given day (date is "YYYY-MM-DD"),
+  // applying the same live/nowcast corrections used by the main hourly strip.
   const hoursForDay = (date) => {
     if (!hourly?.time) return []
+    // Current hour string in the location's timezone, e.g. "2025-06-23T17:00"
+    const localNow = new Date().toLocaleString('sv', { timeZone: timezone })
+    const currentHourStr = `${localNow.slice(0, 10)}T${localNow.slice(11, 13)}:00`
     const out = []
     for (let i = 0; i < hourly.time.length; i++) {
       if (!hourly.time[i].startsWith(date)) continue
+      const slotTime = hourly.time[i]
+      const rawCode = hourly.weather_code[i]
+      let code
+      if (slotTime === currentHourStr && current) {
+        code = liveWeatherCode(current, minutely) ?? rawCode
+      } else if (slotTime > currentHourStr) {
+        code = nowcastHourlyCode(rawCode, minutely, slotTime, current?.cloud_cover)
+      } else {
+        code = rawCode
+      }
+      const prob = precipTier(code) === 0 ? 0 : hourly.precipitation_probability?.[i]
       out.push({
-        time: hourly.time[i],
+        time: slotTime,
         temp: hourly.temperature_2m[i],
-        code: hourly.weather_code[i],
-        // Trust the condition: floor the chance so a rain icon never reads 0%.
-        precip: displayPrecipChance(hourly.weather_code[i], hourly.precipitation_probability?.[i]),
+        code,
+        precip: displayPrecipChance(code, prob),
         isDay: hourly.is_day?.[i],
       })
     }
