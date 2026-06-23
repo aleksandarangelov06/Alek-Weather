@@ -235,7 +235,15 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ye
     return slotIndex > 0 && p != null ? ` (${p}% chance)` : ''
   }
 
-  if (firstSevere !== -1) {
+  // Suppress alarming insights for future slots whose probability is too low.
+  // Slot 0 (happening right now) is always shown regardless of probability.
+  const aboveThreshold = (slotIndex, min) => {
+    if (slotIndex === 0) return true
+    const p = probAt(slotIndex)
+    return p == null || p >= min
+  }
+
+  if (firstSevere !== -1 && aboveThreshold(firstSevere, 50)) {
     const when = timeDesc(firstSevere, currentMinute)
     const isThunder = [95, 96, 99].includes(codes[firstSevere])
     insights.push({
@@ -248,7 +256,7 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ye
     insights.push(precipNowInsight)
   } else if (nowcastInsight) {
     insights.push(nowcastInsight)
-  } else if (firstHeavy !== -1) {
+  } else if (firstHeavy !== -1 && aboveThreshold(firstHeavy, 50)) {
     const when = timeDesc(firstHeavy, currentMinute)
     const isSnow = [75, 86].includes(codes[firstHeavy])
     insights.push({
@@ -257,7 +265,7 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ye
         ? `Heavy snow arriving ${when}${chance(firstHeavy)}.`
         : `Heavy rain expected ${when}${chance(firstHeavy)}.`,
     })
-  } else if (firstModerate !== -1) {
+  } else if (firstModerate !== -1 && aboveThreshold(firstModerate, 40)) {
     const when = timeDesc(firstModerate, currentMinute)
     const isSnow = codes[firstModerate] === 73
     insights.push({
