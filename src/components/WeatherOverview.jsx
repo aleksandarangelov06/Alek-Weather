@@ -236,11 +236,13 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ye
   }
 
   // Suppress alarming insights for future slots whose probability is too low.
+  // Uses the raw API probability, not the display-floored value from probAt,
+  // so a 2% raw chance on a thunderstorm code isn't inflated to 75% and let through.
   // Slot 0 (happening right now) is always shown regardless of probability.
   const aboveThreshold = (slotIndex, min) => {
     if (slotIndex === 0) return true
-    const p = probAt(slotIndex)
-    return p == null || p >= min
+    const raw = hourly.precipitation_probability?.[start + slotIndex]
+    return raw == null || raw >= min
   }
 
   if (firstSevere !== -1 && aboveThreshold(firstSevere, 50)) {
