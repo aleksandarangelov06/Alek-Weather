@@ -136,6 +136,7 @@
 }
 
 .header-icon-btn {
+  position: relative;
   background: none;
   border: none;
   cursor: pointer;
@@ -145,11 +146,49 @@
   align-items: center;
   border-radius: 10px;
   transition: color 0.15s, background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none; /* iOS: no callout menu on press-and-hold */
+  touch-action: manipulation; /* avoid long-press text selection / callout while holding */
 }
 
 .header-icon-btn:hover {
   color: var(--text-primary);
   background: var(--hover-subtle);
+}
+
+/* Press-and-hold to use my location: a circle fills under the icon over
+   --long-press-ms (set inline from App.jsx) to signal progress. */
+.header-icon-btn > svg {
+  position: relative;
+  z-index: 1;
+}
+
+.header-icon-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+  transform: scale(0);
+  pointer-events: none;
+  z-index: 0;
+}
+
+.header-icon-btn--holding {
+  color: var(--accent);
+}
+
+.header-icon-btn--holding::before {
+  animation: header-hold-fill var(--long-press-ms, 2000ms) linear forwards;
+}
+
+@keyframes header-hold-fill {
+  from { transform: scale(0.2); opacity: 0.12; }
+  to   { transform: scale(1.5); opacity: 0.38; }
 }
 
 .unit-switcher {
@@ -220,6 +259,11 @@
 
 /* ── Desktop layout (1100px+) ── */
 @media (min-width: 1100px) {
+  html::-webkit-scrollbar       { width: 4px; }
+  html::-webkit-scrollbar-track { background: transparent; }
+  html::-webkit-scrollbar-thumb { background: var(--bar-track-bg); border-radius: 2px; }
+  html::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
+
   .app-header {
     max-width: none;
     padding: calc(24px + env(safe-area-inset-top)) 48px 0;
@@ -252,10 +296,6 @@
     border-radius: 0;
   }
 
-  /* Alert bottom sheet: centered & narrower on desktop */
-  .alert-sheet {
-    max-width: 560px;
-  }
 }
 
 
@@ -1021,6 +1061,49 @@
 }
 
 .status-message.error { color: #ef4444; }
+
+.location-error-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  margin: 0 auto;
+  padding: 28px 24px;
+  max-width: 320px;
+  background: var(--card-bg);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+
+.location-error-icon {
+  color: var(--text-tertiary);
+}
+
+.location-error-msg {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.location-error-search {
+  background: none;
+  border: 1.5px solid var(--accent);
+  color: var(--accent);
+  border-radius: 8px;
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.location-error-search:hover {
+  background: var(--accent);
+  color: #fff;
+}
 
 .spinner {
   width: 20px;
@@ -2252,7 +2335,6 @@
   color: var(--text-secondary);
   margin: 0;
   line-height: 1.6;
-  white-space: pre-wrap;
 }
 
 .alert-sheet-instruction {
@@ -2283,6 +2365,52 @@
   font-size: 11px;
   color: var(--text-tertiary);
   margin: 0;
+}
+
+/* ── Alert dialog on desktop ── */
+/* Must live AFTER the base .alert-sheet rule to win the cascade. */
+@media (min-width: 1100px) {
+  .alert-sheet {
+    inset: 0;
+    margin: auto;
+    width: min(900px, calc(100vw - 96px));
+    max-width: none;
+    max-height: min(88vh, 860px);
+    border-radius: 16px;
+    animation: alertFadeIn 0.2s ease;
+  }
+
+  .alert-sheet-handle {
+    display: none;
+  }
+
+  .alert-sheet-scroll {
+    padding-bottom: 24px;
+  }
+
+  .alert-sheet-scroll::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .alert-sheet-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .alert-sheet-scroll::-webkit-scrollbar-thumb {
+    background: var(--bar-track-bg);
+    border-radius: 2px;
+  }
+
+  .alert-sheet-scroll::-webkit-scrollbar-thumb:hover {
+    background: var(--text-tertiary);
+  }
+
+  .alert-sheet-event      { font-size: 21px; }
+  .alert-sheet-headline   { font-size: 16px; }
+  .alert-sheet-description { font-size: 15px; line-height: 1.7; }
+  .alert-sheet-instruction p { font-size: 15px; }
+  .alert-sheet-area       { font-size: 14px; }
+  .alert-sheet-expires    { font-size: 13px; }
 }
 
 /* ── Precipitation Nowcast ── */

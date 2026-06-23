@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { SlidersHorizontal, MapPin, ArrowLeft, GripHorizontal } from 'lucide-react'
+import { SlidersHorizontal, MapPin, MapPinOff, ArrowLeft, GripHorizontal } from 'lucide-react'
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -24,6 +24,10 @@ import './App.css'
 const THEME_KEY = 'alek-weather-theme'
 const SETTINGS_CLOSE_MS = 260
 const SEARCH_CLOSE_MS = 220
+// Hold the header search button this long to skip the overlay and geolocate.
+// Passed to App.css as the --long-press-ms custom property so the fill animation
+// always matches this value.
+const LONG_PRESS_MS = 2000
 
 const BLOCK_ORDER_KEY = 'alek-weather-block-order'
 const DEFAULT_BLOCK_ORDER = ['overview', 'nowcast', 'hourly', 'daily', 'details', 'radar']
@@ -65,9 +69,13 @@ function App() {
   const [desktopSettingsOpen, setDesktopSettingsOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchClosing, setSearchClosing] = useState(false)
+  const [searchInitialQuery, setSearchInitialQuery] = useState('')
   const [savedOpen, setSavedOpen] = useState(false)
   const [savedClosing, setSavedClosing] = useState(false)
   const searchAreaRef = useRef(null)
+  const searchHoldTimer = useRef(null)
+  const searchLongPressed = useRef(false)
+  const [searchHolding, setSearchHolding] = useState(false)
   const [blockOrder, setBlockOrder] = useState(() => {
     const saved = JSON.parse(localStorage.getItem(BLOCK_ORDER_KEY) ?? 'null')
     if (!saved) return DEFAULT_BLOCK_ORDER
@@ -166,6 +174,20 @@ function App() {
     return () => document.removeEventListener('keydown', handler)
   }, [searchOpen]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // On desktop with no city loaded, any printable key press opens search pre-filled
+  // with that character so the user can just start typing immediately.
+  useEffect(() => {
+    if (!isDesktop || weather || loading || searchOpen) return
+    const handler = (e) => {
+      if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return
+      setSearchInitialQuery(e.key)
+      history.pushState({ overlay: 'search' }, '')
+      setSearchOpen(true)
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [isDesktop, weather, loading, searchOpen])
+
   // Hardware back button / Android back gesture
   useEffect(() => {
     const handler = () => {
@@ -238,6 +260,7 @@ function App() {
 
   const doCloseSearch = () => {
     setSearchClosing(true)
+    setSearchInitialQuery('')
     setTimeout(() => {
       setSearchOpen(false)
       setSearchClosing(false)
@@ -246,6 +269,34 @@ function App() {
   }
 
   const closeSearch = () => history.back()
+
+  // Press-and-hold the header search button to skip the overlay and jump straight
+  // to the device's current location; a normal tap still opens search. The fill
+  // animation under the icon (App.css) signals progress toward the LONG_PRESS_MS
+  // threshold.
+  const startSearchHold = () => {
+    searchLongPressed.current = false
+    setSearchHolding(true)
+    searchHoldTimer.current = setTimeout(() => {
+      searchLongPressed.current = true
+      setSearchHolding(false)
+      navigator.vibrate?.(40) // haptic confirmation where supported
+      useMyLocation()
+    }, LONG_PRESS_MS)
+  }
+
+  const endSearchHold = () => {
+    clearTimeout(searchHoldTimer.current)
+    setSearchHolding(false)
+  }
+
+  const handleSearchButton = () => {
+    // Swallow the click that trails a completed hold so it doesn't also open search.
+    if (searchLongPressed.current) { searchLongPressed.current = false; return }
+    openSearch()
+  }
+
+  useEffect(() => () => clearTimeout(searchHoldTimer.current), [])
 
   const openSaved = () => {
     history.pushState({ overlay: 'saved' }, '')
@@ -356,7 +407,17 @@ function App() {
   return (
     <div className="app">
       <header className={`app-header${!weather ? ' app-header--no-city' : ''}`}>
-        <button className="header-icon-btn" onClick={openSearch} aria-label="Search">
+        <button
+          className={`header-icon-btn${searchHolding ? ' header-icon-btn--holding' : ''}`}
+          style={{ '--long-press-ms': `${LONG_PRESS_MS}ms` }}
+          onClick={handleSearchButton}
+          onPointerDown={startSearchHold}
+          onPointerUp={endSearchHold}
+          onPointerLeave={endSearchHold}
+          onPointerCancel={endSearchHold}
+          onContextMenu={(e) => e.preventDefault()}
+          aria-label="Search — hold to use my location"
+        >
           <MapPin size={24} />
         </button>
         <button className="app-title" onClick={openSaved} aria-label="View saved cities">Alek Weather</button>
@@ -374,12 +435,20 @@ function App() {
             </div>
           )}
           {error && !loading && (
-            <div className="status-message error">{error}</div>
+            error.startsWith('Location access was denied') ? (
+              <div className="location-error-card">
+                <MapPinOff size={32} className="location-error-icon" />
+                <p className="location-error-msg">Location access was denied.<br />Enable it in your browser settings to use this feature.</p>
+                <button className="location-error-search" onClick={openSearch}>Search for a city instead</button>
+              </div>
+            ) : (
+              <div className="status-message error">{error}</div>
+            )
           )}
           {!weather && !loading && !error && (
             <div className="empty-state" onClick={openSearch} role="button" aria-label="Search for a location">
               <MapPin size={72} className="empty-pin-icon" />
-              <p className="empty-text">Tap to find a location</p>
+              <p className="empty-text">{isDesktop ? 'Click anywhere or begin typing to search for a city' : 'Tap to find a location'}</p>
             </div>
           )}
           <div className="weather-content">
@@ -399,11 +468,12 @@ function App() {
               </button>
               <SearchBar
                 autoFocus
+                initialQuery={searchInitialQuery}
                 onSearch={searchCity}
                 results={searchResults}
                 onSelect={handleSelectCity}
                 onUseLocation={handleUseLocation}
-                onClear={() => setSearchResults([])}
+                onClear={() => { setSearchResults([]); setSearchInitialQuery('') }}
                 onActivate={() => {}}
               >
                 {cities.length > 0 && (

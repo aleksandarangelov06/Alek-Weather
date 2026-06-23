@@ -145,7 +145,9 @@ export function WeatherRadar({ location, timezone }) {
       inWindow.add(frames[((idx + d) % frames.length + frames.length) % frames.length].path)
     }
     layerCache.current.forEach((layer, path) => {
-      if (!inWindow.has(path) && map.hasLayer(layer)) {
+      // Never detach the active layer — it's the fallback display until the next frame loads.
+      // Detaching it before a replacement shows causes a blank map.
+      if (!inWindow.has(path) && map.hasLayer(layer) && layer._radarLoaded && path !== activeKey.current) {
         layer.setOpacity(0)
         layer._radarLoaded = false // tiles get unloaded on detach; wait for reload next time
         map.removeLayer(layer)
@@ -173,8 +175,10 @@ export function WeatherRadar({ location, timezone }) {
     if (layer._radarLoaded) show()
     else layer.once('load', show)
 
-    // Prefetch the next frame so playback never waits on a cold layer.
-    getLayer(frames[(idx + 1) % frames.length], true)
+    // Prefetch the full forward window so playback never waits on cold layers.
+    for (let d = 1; d <= RADAR_WINDOW; d++) {
+      getLayer(frames[(idx + d) % frames.length], true)
+    }
   }, [mapReady, host, frames, idx])
 
   // Animation playback

@@ -27,6 +27,7 @@ export function useWeather() {
   const [alerts, setAlerts] = useState([])
   const [lastUpdated, setLastUpdated] = useState(null)
   const [searchResults, setSearchResults] = useState([])
+  const searchAbortRef = useRef(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const geoActiveRef = useRef(false)
@@ -85,15 +86,19 @@ export function useWeather() {
   }, [])
 
   const searchCity = useCallback(async (query) => {
-    if (!query.trim()) { setSearchResults([]); return }
+    const trimmed = query.trim()
+    if (!trimmed) { setSearchResults([]); return }
+    searchAbortRef.current?.abort()
+    searchAbortRef.current = new AbortController()
     try {
       const res = await fetch(
-        `${GEO_URL}?name=${encodeURIComponent(query)}&count=6&language=en&format=json`
+        `${GEO_URL}?name=${encodeURIComponent(trimmed)}&count=6&language=en&format=json`,
+        { signal: searchAbortRef.current.signal }
       )
       const data = await res.json()
       setSearchResults(data.results ?? [])
-    } catch {
-      setSearchResults([])
+    } catch (e) {
+      if (e.name !== 'AbortError') setSearchResults([])
     }
   }, [])
 

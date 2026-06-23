@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { TriangleAlert, X, ChevronRight } from 'lucide-react'
 
@@ -18,6 +18,12 @@ function formatExpires(iso) {
 }
 
 function AlertModal({ alert, onClose }) {
+  useEffect(() => {
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = prev }
+  }, [])
+
   const props = alert.properties
   const cfg = SEVERITY_CONFIG[props.severity] ?? SEVERITY_CONFIG.Unknown
 
@@ -51,13 +57,15 @@ function AlertModal({ alert, onClose }) {
           {props.headline && (
             <p className="alert-sheet-headline">{props.headline}</p>
           )}
-          {props.description && (
-            <p className="alert-sheet-description">{props.description}</p>
-          )}
+          {props.description && props.description.split('\n\n').map((para, i) => (
+            <p key={i} className="alert-sheet-description">{para.replace(/\n/g, ' ')}</p>
+          ))}
           {props.instruction && (
             <div className="alert-sheet-instruction">
               <strong>Instructions</strong>
-              <p>{props.instruction}</p>
+              {props.instruction.split('\n\n').map((para, i) => (
+                <p key={i}>{para.replace(/\n/g, ' ')}</p>
+              ))}
             </div>
           )}
           {props.expires && (

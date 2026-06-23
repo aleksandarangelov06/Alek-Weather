@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react'
-import { getWeatherInfo, formatDay, toTemp, tempColor, tempStyle } from '../utils/weatherCodes'
+import { getWeatherInfo, formatDay, toTemp, tempColor, tempStyle, displayPrecipChance } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
 
 export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = true, glow = true }) {
@@ -44,7 +44,8 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
         time: hourly.time[i],
         temp: hourly.temperature_2m[i],
         code: hourly.weather_code[i],
-        precip: hourly.precipitation_probability?.[i] ?? 0,
+        // Trust the condition: floor the chance so a rain icon never reads 0%.
+        precip: displayPrecipChance(hourly.weather_code[i], hourly.precipitation_probability?.[i]),
         isDay: hourly.is_day?.[i],
       })
     }
@@ -59,7 +60,9 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
           const info = getWeatherInfo(daily.weather_code[i])
           const high = toTemp(maxTemps[i], unit)
           const low = toTemp(minTemps[i], unit)
-          const precip = daily.precipitation_probability_max[i]
+          // Floor against the day's condition so the row's % never undercuts its
+          // own rain icon. This is the day's peak chance, not "right now".
+          const precip = displayPrecipChance(daily.weather_code[i], daily.precipitation_probability_max[i])
 
           // Map this day's low→high onto the week's overall range so pill
           // position and width carry the actual temperature magnitudes. The

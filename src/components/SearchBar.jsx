@@ -1,27 +1,36 @@
 import { useState, useRef, useEffect } from 'react'
 import { Search, MapPin, X } from 'lucide-react'
 
-export function SearchBar({ onSearch, results, onSelect, onUseLocation, onClear, onActivate, autoFocus, children }) {
-  const [query, setQuery] = useState('')
-  const [open, setOpen] = useState(false)
+export function SearchBar({ onSearch, results, onSelect, onUseLocation, onClear, onActivate, autoFocus, initialQuery, children }) {
+  const [query, setQuery] = useState(initialQuery ?? '')
+  const [open, setOpen] = useState(!!initialQuery)
+  const [pendingSearch, setPendingSearch] = useState(false)
   const timerRef = useRef(null)
   const inputRef = useRef(null)
 
   useEffect(() => {
     if (autoFocus) inputRef.current?.focus()
-  }, [autoFocus])
+    // Fire the initial search if the overlay was opened by a keypress
+    if (initialQuery) {
+      clearTimeout(timerRef.current)
+      timerRef.current = setTimeout(() => onSearch(initialQuery), 0)
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleChange = (e) => {
     const val = e.target.value
     setQuery(val)
     setOpen(true)
+    setPendingSearch(true)
     clearTimeout(timerRef.current)
-    timerRef.current = setTimeout(() => onSearch(val), 300)
+    timerRef.current = setTimeout(() => { setPendingSearch(false); onSearch(val) }, 300)
   }
 
   const handleClear = () => {
     setQuery('')
     setOpen(false)
+    setPendingSearch(false)
+    clearTimeout(timerRef.current)
     onClear()
     inputRef.current?.focus()
   }
@@ -73,7 +82,7 @@ export function SearchBar({ onSearch, results, onSelect, onUseLocation, onClear,
               </span>
             </button>
           ))}
-          {hasQuery && results.length === 0 && (
+          {hasQuery && results.length === 0 && !pendingSearch && (
             <div className="dropdown-empty">No results found</div>
           )}
         </div>

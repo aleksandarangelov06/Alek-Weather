@@ -30,6 +30,29 @@ export function getWeatherInfo(code, isNight = false) {
   return { label: entry.label, icon: isNight && entry.nightIcon ? entry.nightIcon : entry.icon }
 }
 
+// ── Precipitation: condition vs. probability ────────────────────────────────
+// weather_code is Open-Meteo's *deterministic* "it will precipitate" signal;
+// precipitation_probability is a *separate statistical* field that routinely
+// reads 0% for the very same hour the code says rain. We trust the condition:
+// wherever a precip code is shown (rain icon), the chance must never display a
+// contradictory 0%. precipTier gives the code's intensity; displayPrecipChance
+// floors the shown chance to an intensity-based minimum (a display guard, not a
+// real probability — it only ever raises the number, never lowers it).
+export const RAIN_CODES = new Set([51, 53, 55, 61, 63, 65, 80, 81, 82, 95, 96, 99])
+export const SNOW_CODES = new Set([71, 73, 75, 77, 85, 86])
+
+// 0 none · 1 light · 2 moderate · 3 heavy · 4 severe
+const PRECIP_TIER = {
+  51: 1, 53: 2, 55: 2, 61: 1, 63: 2, 65: 3, 71: 1, 73: 2, 75: 3, 77: 1,
+  80: 1, 81: 2, 82: 4, 85: 1, 86: 3, 95: 4, 96: 4, 99: 4,
+}
+export function precipTier(code) { return PRECIP_TIER[code] ?? 0 }
+
+const CHANCE_FLOOR = [0, 25, 45, 60, 75] // indexed by tier
+export function displayPrecipChance(code, prob) {
+  return Math.max(prob ?? 0, CHANCE_FLOOR[precipTier(code)])
+}
+
 // ── Live "right now" condition from the 15-min nowcast ──────────────────────
 // Open-Meteo's current.weather_code is a categorical, often-lagging snapshot: a
 // brief downpour can leave it reading "Violent Showers" (82) while the live
