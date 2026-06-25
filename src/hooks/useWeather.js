@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from 'react'
+import { nowcastHourlyCode, precipTier } from '../utils/weatherCodes'
 
 const GEO_URL = 'https://geocoding-api.open-meteo.com/v1/search'
 const WEATHER_URL = 'https://api.open-meteo.com/v1/forecast'
@@ -116,6 +117,62 @@ function mergeNWSHourly(hourly, periods, timezone) {
   }
 }
 
+// WMO code severity for finding the worst condition in a day.
+function wmoSeverity(code) {
+  if (code >= 95) return 8  // thunderstorm
+  if (code >= 85) return 7  // snow showers
+  if (code >= 80) return 6  // rain showers
+  if (code >= 71) return 5  // snow
+  if (code >= 65) return 4  // heavy rain
+  if (code >= 61) return 3  // moderate rain
+  if (code >= 51) return 2  // drizzle
+  if (code >= 45) return 1  // fog
+  return 0
+}
+
+// After NWS hourly data has been merged into `hourly`, re-derive the daily
+// weather code and precipitation probability from the hourly arrays so that
+// DailyForecast, HourlyForecast, and WeatherOverview always agree.
+//
+// The NWS period-summary (/forecast) and hourly (/forecast/hourly) endpoints
+// are produced by different systems and routinely disagree — e.g. the daily
+// period may say "75 % thunderstorms" while the hourly breakdown shows only
+// clouds. Re-deriving from hourly makes the three views internally consistent.
+function alignDailyWithHourly(daily, hourly, minutely, current, timezone) {
+  // Only look at future/current slots — past NWS codes can no longer be
+  // nowcast-corrected and would inflate the daily summary with phantom events.
+  const nowLocal = new Date().toLocaleString('sv', { timeZone: timezone })
+  const currentSlot = `${nowLocal.slice(0, 10)}T${nowLocal.slice(11, 13)}:00`
+
+  for (let i = 0; i < daily.time.length; i++) {
+    const date = daily.time[i]
+    let maxProb = null
+    let peakCode = null
+    let peakSev = -1
+    for (let j = 0; j < hourly.time.length; j++) {
+      const slotTime = hourly.time[j]
+      if (!slotTime.startsWith(date)) continue
+      if (slotTime < currentSlot) continue  // skip past hours
+
+      const rawCode = hourly.weather_code?.[j]
+      if (rawCode == null) continue
+
+      // Apply the same nowcast correction used by HourlyForecast and WeatherOverview.
+      // Slots beyond the minutely window are returned unchanged.
+      const code = nowcastHourlyCode(rawCode, minutely, slotTime, current?.cloud_cover)
+
+      // When nowcast downgrades to non-precip, that slot contributes 0 probability.
+      const p = precipTier(code) === 0 ? 0 : (hourly.precipitation_probability?.[j] ?? null)
+      if (p != null) maxProb = maxProb == null ? p : Math.max(maxProb, p)
+
+      const sev = wmoSeverity(code)
+      if (sev > peakSev) { peakSev = sev; peakCode = code }
+    }
+    if (maxProb != null) daily.precipitation_probability_max[i] = maxProb
+    if (peakCode != null) daily.weather_code[i] = peakCode
+  }
+}
+
 // Overwrite Open-Meteo daily arrays with NWS forecast data for US locations.
 // NWS gives day/night period pairs; we map them to daily hi/lo temps, weather
 // codes, and max precipitation probability. UV, precip totals, sunrise/sunset
@@ -182,9 +239,24 @@ export function useWeather() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const geoActiveRef = useRef(false)
+  const fetchIdRef = useRef(0)
+
+  const reset = useCallback(() => {
+    fetchIdRef.current++
+    geoActiveRef.current = false
+    setLocation(null)
+    setWeather(null)
+    setAirQuality(null)
+    setAlerts([])
+    setLastUpdated(null)
+    setSearchResults([])
+    setLoading(false)
+    setError(null)
+  }, [])
 
   const fetchWeather = useCallback(async (loc) => {
     geoActiveRef.current = false
+    const fetchId = ++fetchIdRef.current
     setLoading(true)
     setError(null)
     setAirQuality(null)
@@ -223,34 +295,40 @@ export function useWeather() {
             hourlyUrl   ? fetch(hourlyUrl,   { headers: NWS_HEADERS }) : Promise.reject(),
             forecastUrl ? fetch(forecastUrl, { headers: NWS_HEADERS }) : Promise.reject(),
           ])
+          let nwsHourlyMerged = false
           if (nwsHourlyRes.status === 'fulfilled' && nwsHourlyRes.value.ok) {
             const d = await nwsHourlyRes.value.json()
             mergeNWSHourly(data.hourly, d.properties?.periods ?? [], data.timezone)
+            nwsHourlyMerged = true
           }
           if (nwsForecastRes.status === 'fulfilled' && nwsForecastRes.value.ok) {
             const d = await nwsForecastRes.value.json()
             mergeNWSDaily(data.daily, d.properties?.periods ?? [], data.timezone)
           }
+          // Re-derive daily code + probability from the merged hourly data so
+          // all three forecast views (daily, hourly, overview) agree.
+          if (nwsHourlyMerged) alignDailyWithHourly(data.daily, data.hourly, data.minutely_15, data.current, data.timezone)
         } catch {} // non-fatal
       }
 
+      if (fetchIdRef.current !== fetchId) return
       setWeather(data)
       setLocation(loc)
       setLastUpdated(new Date())
 
       if (aqiResult.status === 'fulfilled' && aqiResult.value.ok) {
         const aqiData = await aqiResult.value.json()
-        if (aqiData.current?.us_aqi != null) setAirQuality(aqiData.current)
+        if (fetchIdRef.current === fetchId && aqiData.current?.us_aqi != null) setAirQuality(aqiData.current)
       }
 
       if (alertsResult.status === 'fulfilled' && alertsResult.value.ok) {
         const alertsData = await alertsResult.value.json()
-        setAlerts(alertsData.features ?? [])
+        if (fetchIdRef.current === fetchId) setAlerts(alertsData.features ?? [])
       }
     } catch {
-      setError('Failed to fetch weather data. Please try again.')
+      if (fetchIdRef.current === fetchId) setError('Failed to fetch weather data. Please try again.')
     } finally {
-      setLoading(false)
+      if (fetchIdRef.current === fetchId) setLoading(false)
     }
   }, [])
 
@@ -282,8 +360,25 @@ export function useWeather() {
     })
   }, [fetchWeather])
 
-  const useMyLocation = useCallback(() => {
+  const useMyLocation = useCallback(async () => {
     if (!navigator.geolocation) { setError('Geolocation is not supported by your browser.'); return }
+
+    // Check the stored permission state before starting the loading spinner.
+    // If Chrome has already blocked this site, getCurrentPosition fires the
+    // error callback immediately (no prompt shown). Detecting it here lets us
+    // surface the "denied" card right away without a spinner flash.
+    if (navigator.permissions) {
+      try {
+        const perm = await navigator.permissions.query({ name: 'geolocation' })
+        if (perm.state === 'denied') {
+          setError('geo:Location access was denied. Enable it for this site in your browser settings.')
+          return
+        }
+      } catch {
+        // Permissions API unavailable — fall through to getCurrentPosition
+      }
+    }
+
     setLoading(true)
     setError(null)
     geoActiveRef.current = true
@@ -296,7 +391,7 @@ export function useWeather() {
     const watchdog = setTimeout(() => {
       if (!geoActiveRef.current) return
       geoActiveRef.current = false
-      setError('Timed out getting your location. Make sure location access is allowed and try again.')
+      setError('geo:Timed out getting your location. Make sure location access is allowed and try again.')
       setLoading(false)
     }, 15000)
 
@@ -318,19 +413,19 @@ export function useWeather() {
         if (!geoActiveRef.current) return
         geoActiveRef.current = false
         const msg = err.code === 1
-          ? 'Location access was denied. Enable it for this site in your browser settings.'
+          ? 'geo:Location access was denied. Enable it for this site in your browser settings.'
           : err.code === 2
-            ? 'Your location is unavailable. On Windows, check Settings → Privacy & security → Location is on.'
-            : 'Unable to determine your location. Please try again.'
+            ? 'geo:Your location is unavailable. On Windows, check Settings → Privacy & security → Location is on.'
+            : 'geo:Unable to determine your location. Please try again.'
         setError(msg)
         setLoading(false)
       },
-      { timeout: 10000, maximumAge: 60000 }
+      { timeout: 20000, maximumAge: 60000 }
     )
   }, [fetchWeather])
 
   return {
     location, weather, airQuality, alerts, lastUpdated, searchResults, loading, error,
-    searchCity, selectCity, useMyLocation, setSearchResults, fetchWeather,
+    searchCity, selectCity, useMyLocation, setSearchResults, fetchWeather, reset,
   }
 }

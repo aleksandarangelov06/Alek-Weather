@@ -1,12 +1,18 @@
 import { useState, useEffect, useRef } from 'react'
-import { SlidersHorizontal, MapPin, MapPinOff, ArrowLeft, GripHorizontal } from 'lucide-react'
+
+const STARS = Array.from({ length: 40 }, () => ({
+  top:   `${Math.random() * 88 + 4}%`,
+  left:  `${Math.random() * 92 + 2}%`,
+  dur:   `${(Math.random() * 3 + 2).toFixed(1)}s`,
+  delay: `${-(Math.random() * 4).toFixed(1)}s`,
+}))
+import { SlidersHorizontal, MapPin, MapPinOff, ArrowLeft, GripHorizontal, Library } from 'lucide-react'
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useWeather } from './hooks/useWeather'
 import { useSavedCities } from './hooks/useSavedCities'
-import { useNotifications } from './hooks/useNotifications'
-import { fireAlertNotifications, fireRainNotification, fireTomorrowNotification } from './utils/notifications'
+import { useRecentSearches } from './hooks/useRecentSearches'
 import { SearchBar } from './components/SearchBar'
 import { SavedCities } from './components/SavedCities'
 import { SavedCitiesPage } from './components/SavedCitiesPage'
@@ -72,6 +78,7 @@ function App() {
   const [searchInitialQuery, setSearchInitialQuery] = useState('')
   const [savedOpen, setSavedOpen] = useState(false)
   const [savedClosing, setSavedClosing] = useState(false)
+  const [splashPhase, setSplashPhase] = useState('visible') // 'visible' | 'exit' | 'done'
   const searchAreaRef = useRef(null)
   const searchHoldTimer = useRef(null)
   const searchLongPressed = useRef(false)
@@ -99,12 +106,11 @@ function App() {
 
   const {
     location, weather, airQuality, alerts, lastUpdated, searchResults, loading, error,
-    searchCity, selectCity, useMyLocation, setSearchResults, fetchWeather,
+    searchCity, selectCity, useMyLocation, setSearchResults, fetchWeather, reset,
   } = useWeather()
 
   const { cities, save, remove, isSaved } = useSavedCities()
-  const { notifyEnabled, notifyTypes, permission, toggleNotifyEnabled, toggleType } = useNotifications()
-
+  const { recents, addRecent, removeRecent } = useRecentSearches()
   useEffect(() => {
     const handler = (e) => { e.preventDefault(); setInstallPrompt(e) }
     window.addEventListener('beforeinstallprompt', handler)
@@ -153,19 +159,6 @@ function App() {
     if (cities.length > 0) fetchWeather(cities[0])
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fire NOAA alert notifications
-  useEffect(() => {
-    if (!notifyEnabled || !notifyTypes.includes('alerts') || !alerts?.length) return
-    fireAlertNotifications(alerts)
-  }, [alerts, notifyEnabled, notifyTypes])
-
-  // Fire rain and tomorrow notifications when weather loads
-  useEffect(() => {
-    if (!notifyEnabled || !weather) return
-    if (notifyTypes.includes('rain')) fireRainNotification(weather.hourly, weather.timezone)
-    if (notifyTypes.includes('tomorrow')) fireTomorrowNotification(weather.daily, weather.timezone)
-  }, [weather, notifyEnabled, notifyTypes])
-
   // Close search overlay on Escape key
   useEffect(() => {
     if (!searchOpen) return
@@ -173,6 +166,17 @@ function App() {
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
   }, [searchOpen]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fly splash logo to header when weather arrives; dismiss immediately on error
+  useEffect(() => {
+    if (splashPhase !== 'visible') return
+    if (weather) {
+      setSplashPhase('exit')
+      const t = setTimeout(() => setSplashPhase('done'), 700)
+      return () => clearTimeout(t)
+    }
+    if (error) setSplashPhase('done')
+  }, [weather, error]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // On desktop with no city loaded, any printable key press opens search pre-filled
   // with that character so the user can just start typing immediately.
@@ -270,18 +274,19 @@ function App() {
 
   const closeSearch = () => history.back()
 
-  // Press-and-hold the header search button to skip the overlay and jump straight
-  // to the device's current location; a normal tap still opens search. The fill
+  // Press-and-hold the header search button to open saved cities without going
+  // through the search overlay; a normal tap still opens search. The fill
   // animation under the icon (App.css) signals progress toward the LONG_PRESS_MS
   // threshold.
   const startSearchHold = () => {
+    if (splashPhase !== 'done') return
     searchLongPressed.current = false
     setSearchHolding(true)
     searchHoldTimer.current = setTimeout(() => {
       searchLongPressed.current = true
       setSearchHolding(false)
-      navigator.vibrate?.(40) // haptic confirmation where supported
-      useMyLocation()
+      navigator.vibrate?.(40)
+      openSaved()
     }, LONG_PRESS_MS)
   }
 
@@ -293,6 +298,7 @@ function App() {
   const handleSearchButton = () => {
     // Swallow the click that trails a completed hold so it doesn't also open search.
     if (searchLongPressed.current) { searchLongPressed.current = false; return }
+    if (splashPhase !== 'done') { openSaved(); return }
     openSearch()
   }
 
@@ -311,16 +317,19 @@ function App() {
   const closeSaved = () => history.back()
 
   const handleSavedPageSelect = (city) => {
+    addRecent(city)
     fetchWeather(city)
     closeSaved()
   }
 
   const handleSavedCitySelect = (city) => {
+    addRecent(city)
     fetchWeather(city)
     closeSearch()
   }
 
   const handleSelectCity = (city) => {
+    addRecent(city)
     selectCity(city)
     closeSearch()
   }
@@ -328,6 +337,12 @@ function App() {
   const handleUseLocation = () => {
     useMyLocation()
     closeSearch()
+  }
+
+  const handleLogoClick = () => {
+    if (!weather || splashPhase !== 'done') return
+    reset()
+    setSplashPhase('visible')
   }
 
   const hasActiveAlert = alerts.some(a =>
@@ -386,11 +401,6 @@ function App() {
             onColorCodingToggle={toggleColorCoding}
             installPrompt={installPrompt}
             onInstall={handleInstall}
-            notifyEnabled={notifyEnabled}
-            notifyTypes={notifyTypes}
-            notifyPermission={permission}
-            onNotifyEnabledChange={toggleNotifyEnabled}
-            onNotifyTypeToggle={toggleType}
           />
         )}
       </div>
@@ -422,9 +432,17 @@ function App() {
           onContextMenu={(e) => e.preventDefault()}
           aria-label="Search — hold to use my location"
         >
-          <MapPin size={24} />
+          <span className="header-loc-icons">
+            <Library size={24} style={{ opacity: splashPhase !== 'done' ? 1 : 0, pointerEvents: splashPhase !== 'done' ? undefined : 'none' }} />
+            <MapPin  size={24} style={{ opacity: splashPhase === 'done' ? 1 : 0, pointerEvents: splashPhase === 'done' ? undefined : 'none' }} />
+          </span>
         </button>
-        <button className="app-title" onClick={openSaved} aria-label="View saved cities">Alek Weather</button>
+        <span
+          className={`app-title${splashPhase === 'visible' ? ' app-title--splash' : ''}${splashPhase === 'exit' ? ' app-title--splash-exit' : ''}${splashPhase === 'done' && weather ? ' app-title--home' : ''}`}
+          onClick={handleLogoClick}
+          role={splashPhase === 'done' && weather ? 'button' : undefined}
+          aria-label={splashPhase === 'done' && weather ? 'Go to home' : undefined}
+        >Alek Weather</span>
         <button className="settings-btn" onClick={isDesktop && weather && !loading ? toggleDesktopSettings : (showSettings ? closeSettings : openSettings)} aria-label="Settings">
           <SlidersHorizontal size={22} />
         </button>
@@ -439,17 +457,17 @@ function App() {
             </div>
           )}
           {error && !loading && (
-            error.startsWith('Location access was denied') ? (
+            error.startsWith('geo:') ? (
               <div className="location-error-card">
                 <MapPinOff size={32} className="location-error-icon" />
-                <p className="location-error-msg">Location access was denied.<br />Enable it in your browser settings to use this feature.</p>
+                <p className="location-error-msg">{error.slice(4)}</p>
                 <button className="location-error-search" onClick={openSearch}>Search for a city instead</button>
               </div>
             ) : (
               <div className="status-message error">{error}</div>
             )
           )}
-          {!weather && !loading && !error && (
+          {!weather && !loading && !error && splashPhase === 'done' && (
             <div className="empty-state" onClick={openSearch} role="button" aria-label="Search for a location">
               <MapPin size={72} className="empty-pin-icon" />
               <p className="empty-text">{isDesktop ? 'Click anywhere or begin typing to search for a city' : 'Tap to find a location'}</p>
@@ -460,6 +478,34 @@ function App() {
           </div>
         </main>
       </div>
+
+      {/* Splash screen — big logo centered, animates to header on city select */}
+      {splashPhase !== 'done' && (
+        <>
+          <div className="splash-bg" aria-hidden="true">
+            <div className="splash-clouds">
+              <div className="splash-el e1" /><div className="splash-el e2" /><div className="splash-el e3" />
+              <div className="splash-el e4" /><div className="splash-el e5" /><div className="splash-el e6" />
+            </div>
+            <div className="splash-stars">
+              {STARS.map((s, i) => (
+                <div key={i} className="splash-star" style={{ top: s.top, left: s.left, animationDuration: s.dur, animationDelay: s.delay }} />
+              ))}
+            </div>
+          </div>
+          {splashPhase === 'visible' && (
+            <div className="splash-overlay" onClick={openSearch} aria-label="Search for a city" role="button" />
+          )}
+          <div className={`splash-logo${splashPhase === 'exit' ? ' splash-logo--exit' : ''}`}>
+            <span className="splash-logo-text">Alek Weather</span>
+            {splashPhase === 'visible' && (
+              <p className="splash-hint">
+                {isDesktop ? 'Click or type anywhere to search for a location' : 'Tap anywhere to find a location'}
+              </p>
+            )}
+          </div>
+        </>
+      )}
 
       {/* Search overlay — slides down from top */}
       {searchOpen && (
@@ -479,6 +525,8 @@ function App() {
                 onUseLocation={handleUseLocation}
                 onClear={() => { setSearchResults([]); setSearchInitialQuery('') }}
                 onActivate={() => {}}
+                recents={recents}
+                onRemoveRecent={removeRecent}
               >
                 {cities.length > 0 && (
                   <SavedCities
@@ -502,6 +550,8 @@ function App() {
           onBack={closeSaved}
           currentLatitude={location?.latitude}
           closing={savedClosing}
+          recents={recents}
+          onRemoveRecent={removeRecent}
         />
       )}
 
@@ -524,11 +574,6 @@ function App() {
           installPrompt={installPrompt}
           onInstall={handleInstall}
           closing={settingsClosing}
-          notifyEnabled={notifyEnabled}
-          notifyTypes={notifyTypes}
-          notifyPermission={permission}
-          onNotifyEnabledChange={toggleNotifyEnabled}
-          onNotifyTypeToggle={toggleType}
         />
       )}
     </div>

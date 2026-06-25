@@ -4,28 +4,11 @@
       <stop offset="0%" stop-color="#4AA8E8"/>
       <stop offset="100%" stop-color="#85CCFF"/>
     </linearGradient>
-    <!-- Sun: bright center → warm golden edge -->
     <radialGradient id="sunG" cx="38%" cy="38%" r="62%">
       <stop offset="0%"   stop-color="#FFF9C4"/>
       <stop offset="45%"  stop-color="#FFD600"/>
       <stop offset="100%" stop-color="#F57C00"/>
     </radialGradient>
-
-    <!-- Cloud: white top → soft blue bottom (userSpaceOnUse for consistent gradient across shape) -->
-    <linearGradient id="cloudG" x1="0" y1="228" x2="0" y2="456" gradientUnits="userSpaceOnUse">
-      <stop offset="0%"   stop-color="#FFFFFF"/>
-      <stop offset="100%" stop-color="#C5DFF8"/>
-    </linearGradient>
-
-    <!-- Cloud silhouette: 3 bumps + flat-bottom rect -->
-    <clipPath id="cloudClip">
-      <circle cx="248" cy="370" r="70"/>
-      <circle cx="338" cy="326" r="96"/>
-      <circle cx="426" cy="370" r="68"/>
-      <rect x="178" y="370" width="316" height="86"/>
-    </clipPath>
-
-    <!-- Soft glow behind sun -->
     <filter id="sunGlow" x="-22%" y="-22%" width="144%" height="144%">
       <feGaussianBlur stdDeviation="10" result="blur"/>
       <feMerge>
@@ -33,17 +16,10 @@
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>
-
-    <!-- Cloud drop shadow -->
-    <filter id="cloudShadow" x="-8%" y="-6%" width="122%" height="130%">
-      <feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#1a5fa8" flood-opacity="0.18"/>
-    </filter>
   </defs>
 
-  <!-- Sky background fills the full canvas for maskable icon support -->
   <rect width="512" height="512" fill="url(#skyBg)"/>
 
-  <!-- Sun rays: 8 rounded rects rotated around sun center -->
   <g transform="translate(197,197)" fill="#FFAB00">
     <rect x="-11" y="-152" width="22" height="48" rx="11" transform="rotate(0)"/>
     <rect x="-11" y="-152" width="22" height="48" rx="11" transform="rotate(45)"/>
@@ -55,11 +31,8 @@
     <rect x="-11" y="-152" width="22" height="48" rx="11" transform="rotate(315)"/>
   </g>
 
-  <!-- Sun body -->
   <circle cx="197" cy="197" r="90" fill="url(#sunG)" filter="url(#sunGlow)"/>
 
-  <!-- Cloud: single gradient rect clipped to cloud shape, with drop shadow -->
-  <g filter="url(#cloudShadow)">
-    <rect x="174" y="224" width="326" height="232" fill="url(#cloudG)" clip-path="url(#cloudClip)"/>
-  </g>
+  <text x="348" y="470" font-size="310" text-anchor="middle"
+        font-family="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji">☁️</text>
 </svg>

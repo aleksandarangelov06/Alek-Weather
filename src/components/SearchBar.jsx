@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
-import { Search, MapPin, X } from 'lucide-react'
+import { Search, MapPin, X, Clock } from 'lucide-react'
 
-export function SearchBar({ onSearch, results, onSelect, onUseLocation, onClear, onActivate, autoFocus, initialQuery, children }) {
+export function SearchBar({ onSearch, results, onSelect, onUseLocation, onClear, onActivate, autoFocus, initialQuery, recents, onRemoveRecent, children }) {
   const [query, setQuery] = useState(initialQuery ?? '')
   const [open, setOpen] = useState(!!initialQuery)
   const [pendingSearch, setPendingSearch] = useState(false)
@@ -10,7 +10,6 @@ export function SearchBar({ onSearch, results, onSelect, onUseLocation, onClear,
 
   useEffect(() => {
     if (autoFocus) inputRef.current?.focus()
-    // Fire the initial search if the overlay was opened by a keypress
     if (initialQuery) {
       clearTimeout(timerRef.current)
       timerRef.current = setTimeout(() => onSearch(initialQuery), 0)
@@ -73,7 +72,31 @@ export function SearchBar({ onSearch, results, onSelect, onUseLocation, onClear,
             <MapPin size={15} />
             <span>Use my location</span>
           </button>
+
+          {!hasQuery && recents?.length > 0 && (
+            <>
+              <div className="recent-header">Recent</div>
+              {recents.map((city, i) => (
+                <div key={i} className="recent-item">
+                  <button className="recent-item-btn" onMouseDown={() => handleSelect(city)}>
+                    <Clock size={13} className="recent-icon" />
+                    <span className="city-name">{city.name}</span>
+                    <span className="city-sub">{[city.admin1, city.country_code].filter(Boolean).join(', ')}</span>
+                  </button>
+                  <button
+                    className="recent-remove-btn"
+                    onMouseDown={(e) => { e.stopPropagation(); onRemoveRecent(city) }}
+                    aria-label="Remove"
+                  >
+                    <X size={13} />
+                  </button>
+                </div>
+              ))}
+            </>
+          )}
+
           {!hasQuery && children}
+
           {hasQuery && results.map((city, i) => (
             <button key={i} className="dropdown-item" onMouseDown={() => handleSelect(city)}>
               <span className="city-name">{city.name}</span>

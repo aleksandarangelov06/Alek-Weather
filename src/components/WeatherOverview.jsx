@@ -1,4 +1,4 @@
-import { getWeatherInfo, liveWeatherCode, displayPrecipChance, precipTier } from '../utils/weatherCodes'
+import { getWeatherInfo, liveWeatherCode, nowcastHourlyCode, displayPrecipChance, precipTier } from '../utils/weatherCodes'
 
 const SEVERE_CODES   = new Set([95, 96, 99, 82])
 const HEAVY_CODES    = new Set([65, 75, 86])
@@ -17,14 +17,29 @@ function classify(code) {
   return 'clear'
 }
 
-function timeDesc(slotIndex, currentMinute) {
+function timeDesc(slotIndex, currentMinute, hourlyTimes, start, timezone) {
   if (slotIndex === 0) return 'right now'
+  const slotTimeStr = hourlyTimes?.[start + slotIndex]
+  const slotHour = slotTimeStr ? parseInt(slotTimeStr.slice(11, 13), 10) : -1
+
+  if (slotTimeStr) {
+    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: timezone })
+    if (!slotTimeStr.startsWith(todayStr)) {
+      if (slotHour < 6)  return 'overnight'
+      if (slotHour < 12) return 'tomorrow morning'
+      if (slotHour < 17) return 'tomorrow afternoon'
+      if (slotHour < 21) return 'tomorrow evening'
+      return 'tomorrow night'
+    }
+  }
+
   const mins = (60 - currentMinute) + (slotIndex - 1) * 60
   if (mins < 25) return 'in a few minutes'
   if (mins < 70) return 'within the hour'
   const hours = Math.round(mins / 60)
   if (hours <= 1) return 'in about 1 hour'
   if (hours <= 5) return `in about ${hours} hours`
+  if (slotHour >= 0 && slotHour < 6) return 'tonight'
   return 'later today'
 }
 
@@ -65,21 +80,22 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ha
 
   const codes = hourly.weather_code.slice(start, start + LOOK_AHEAD)
 
-  // Slot 0 is "right now". The hourly weather_code is coarse and the real-time
-  // current.weather_code lags after a downpour, so re-derive the present slot from
-  // the live 15-min nowcast (same source the Current Conditions card uses) to keep
-  // the two sections consistent. slice() returns a fresh array — safe to mutate.
-  //
-  // But trust the condition: the nowcast may refine the current hour's intensity,
-  // it must NOT erase precipitation the hourly forecast asserts. minutely_15
-  // under-reports light/just-started rain (it read ~0 here during real rain, which
-  // used to flip this card to "Clear skies" while the hourly strip showed a rain
-  // icon). So only accept the nowcast's value when it still shows precip, or when
-  // the raw hourly code wasn't precip to begin with.
+  // Slot 0 is "right now". Re-derive from the live 15-min nowcast to match the
+  // Current Conditions card, but only accept a downgrade when the raw hourly code
+  // wasn't already precipitation (minutely under-reports at the very start of rain).
   const rawNowIsPrecip = codes.length > 0 && precipTier(codes[0]) > 0
   if (codes.length > 0) {
     const live = liveWeatherCode(current, minutely)
     if (live != null && (precipTier(live) > 0 || !rawNowIsPrecip)) codes[0] = live
+  }
+
+  // Slots 1+ (future hours): apply the same nowcast correction used by HourlyForecast
+  // so that all three forecast views agree. nowcastHourlyCode only downgrades a
+  // precipitation code when the minutely data covers that hour AND shows < TRACE
+  // precipitation — slots beyond the nowcast window are left unchanged.
+  for (let i = 1; i < codes.length; i++) {
+    const slotTime = hourly.time[start + i]
+    if (slotTime) codes[i] = nowcastHourlyCode(codes[i], minutely, slotTime, current?.cloud_cover)
   }
 
   // Precipitation chance (%) for a slot, floored to the slot's own condition so an
@@ -250,14 +266,14 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ha
     return raw == null || raw >= min
   }
 
-  // Compute severe show-condition up front so the else-if chain falls through to
+  // Compute severe show-ccondition up front so the else-if chain falls through to
   // nowcastInsight when a severe code exists but the probability threshold isn't met.
   const severeP = firstSevere !== -1 ? pctOf(firstSevere) : null
   const showSevere = firstSevere !== -1 &&
-    (hasActiveAlert || firstSevere === 0 || (severeP != null && severeP > 80))
+    (hasActiveAlert || firstSevere === 0 || aboveThreshold(firstSevere, 30))
 
   if (showSevere) {
-    const when = timeDesc(firstSevere, currentMinute)
+    const when = timeDesc(firstSevere, currentMinute, hourly.time, start, timezone)
     const isThunder = [95, 96, 99].includes(codes[firstSevere])
     insights.push({
       level: 'severe',
@@ -274,7 +290,7 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ha
   } else if (nowcastInsight) {
     insights.push(nowcastInsight)
   } else if (firstHeavy !== -1 && aboveThreshold(firstHeavy, 50)) {
-    const when = timeDesc(firstHeavy, currentMinute)
+    const when = timeDesc(firstHeavy, currentMinute, hourly.time, start, timezone)
     const isSnow = [75, 86].includes(codes[firstHeavy])
     const p = pctOf(firstHeavy)
     insights.push({
@@ -284,7 +300,7 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ha
         : (p != null ? `${p}% chance of heavy rain ${when}.` : `Heavy rain expected ${when}.`),
     })
   } else if (firstModerate !== -1 && aboveThreshold(firstModerate, 40)) {
-    const when = timeDesc(firstModerate, currentMinute)
+    const when = timeDesc(firstModerate, currentMinute, hourly.time, start, timezone)
     const isSnow = codes[firstModerate] === 73
     const p = pctOf(firstModerate)
     insights.push({
@@ -295,7 +311,7 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ha
     })
   } else if (firstLight !== -1) {
     const info = getWeatherInfo(codes[firstLight])
-    const when = timeDesc(firstLight, currentMinute)
+    const when = timeDesc(firstLight, currentMinute, hourly.time, start, timezone)
     const prob = probAt(firstLight)
     const label = info.label.toLowerCase()
     // Phrase upcoming light precip as a chance, e.g. "30% chance of a light drizzle
@@ -310,7 +326,7 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ha
 
   // Fog is independent of rain, so it can accompany a precipitation insight.
   if (firstFog !== -1 && insights.length < 2) {
-    const when = timeDesc(firstFog, currentMinute)
+    const when = timeDesc(firstFog, currentMinute, hourly.time, start, timezone)
     insights.push({ level: 'notice', text: `Foggy conditions expected ${when}.` })
   }
 

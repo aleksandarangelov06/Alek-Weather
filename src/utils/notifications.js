@@ -53,7 +53,7 @@ export function fireAlertNotifications(alerts) {
     const p = alert.properties
     showNotification(p.event || 'Weather Alert', {
       body: p.headline || p.areaDesc?.split(';')[0] || '',
-      icon: '/pwa-192x192.png',
+      icon: '/pwa-icon.svg',
       tag: alert.id,
     })
   })
@@ -127,7 +127,7 @@ export function fireRainNotification(hourly, timezone) {
     light:                'Light rain or drizzle expected in the next 12 hours.',
   }
 
-  showNotification(titles[worstLevel], { body: bodies[worstLevel], icon: '/pwa-192x192.png', tag: 'rain-forecast' })
+  showNotification(titles[worstLevel], { body: bodies[worstLevel], icon: '/pwa-icon.svg', tag: 'rain-forecast' })
   markNotifiedDate('rain', today)
 }
 
@@ -172,7 +172,7 @@ export function fireTomorrowNotification(daily, timezone) {
 
   showNotification("Tomorrow's Weather", {
     body: `High ${fmtTemp(tHigh)}, Low ${fmtTemp(tLow)}${conditionNote}${weekContext}.`,
-    icon: '/pwa-192x192.png',
+    icon: '/pwa-icon.svg',
     tag: 'tomorrow-weather',
   })
   markNotifiedDate('tomorrow', today)

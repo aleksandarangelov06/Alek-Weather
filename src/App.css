@@ -86,6 +86,8 @@
   align-items: center;
   justify-content: space-between;
   padding: calc(16px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
+  position: relative;
+  z-index: 6;
   max-width: 480px;
   margin: 0 auto;
 }
@@ -111,16 +113,33 @@
   font-weight: 700;
   color: var(--text-tertiary);
   letter-spacing: -0.3px;
-  background: none;
-  border: none;
-  cursor: pointer;
   padding: 6px 8px;
-  transition: color 0.15s;
 }
 
-.app-title:hover {
-  color: var(--text-secondary);
+.app-title--home {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
+
+.app-title--home:active {
+  opacity: 0.6;
+}
+
+/* Hidden while splash is centered */
+.app-title--splash {
+  opacity: 0;
+}
+
+/* Fades in as the splash logo arrives at the header position */
+.app-title--splash-exit {
+  opacity: 0;
+  animation: splashTitleReveal 0.22s ease 0.44s forwards;
+}
+
+@keyframes splashTitleReveal {
+  to { opacity: 1; }
+}
+
 
 .app-logo {
   width: 28px;
@@ -158,9 +177,26 @@
 
 /* Press-and-hold to use my location: a circle fills under the icon over
    --long-press-ms (set inline from App.jsx) to signal progress. */
-.header-icon-btn > svg {
+.header-icon-btn > svg,
+.header-icon-btn > .header-loc-icons {
   position: relative;
   z-index: 1;
+}
+
+/* Crossfade between Library (splash) and MapPin (weather loaded) icons */
+.header-loc-icons {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+}
+
+.header-loc-icons > svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transition: opacity 0.3s ease;
 }
 
 .header-icon-btn::before {
@@ -412,6 +448,66 @@
   margin-left: auto;
 }
 
+.recent-header {
+  padding: 10px 18px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  border-top: 1px solid var(--border);
+}
+
+.recent-item {
+  display: flex;
+  align-items: center;
+  border-top: 1px solid var(--border);
+  transition: background 0.12s;
+}
+
+.recent-header + .recent-item {
+  border-top: none;
+}
+
+.recent-item:hover {
+  background: var(--hover-subtle);
+}
+
+.recent-item-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  padding: 12px 18px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font);
+  text-align: left;
+  min-width: 0;
+}
+
+.recent-icon {
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+}
+
+.recent-remove-btn {
+  padding: 12px 14px 12px 4px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  transition: color 0.12s;
+}
+
+.recent-remove-btn:hover {
+  color: var(--text-primary);
+}
+
 .dropdown-empty {
   padding: 16px 18px;
   font-size: 14px;
@@ -530,6 +626,12 @@
   color: var(--text-secondary);
   margin: 0;
   max-width: 280px;
+}
+
+.saved-section + .saved-section {
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
 }
 
 .saved-list {
@@ -1148,8 +1250,148 @@
   margin: 0;
 }
 
-.weather-content {
-  animation: fadeIn 0.3s ease;
+/* ── Splash screen ── */
+/* ── Splash background ── */
+.splash-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  background: #b3d9f5;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* Clouds (light mode) */
+.splash-clouds { position: absolute; inset: 0; }
+.splash-el {
+  position: absolute;
+  background: #fff;
+  border-radius: 50px;
+  opacity: 0.85;
+  animation: cloudDrift linear infinite;
+}
+.splash-el::before {
+  content: '';
+  position: absolute;
+  background: inherit;
+  border-radius: inherit;
+}
+.e1 { width: 140px; height: 45px; top: 18%; left: -160px; animation-duration: 55s; animation-delay: -8s; }
+.e1::before { width: 70px; height: 55px; top: -28px; left: 28px; }
+.e2 { width: 100px; height: 35px; top: 38%; left: -120px; animation-duration: 44s; animation-delay: -22s; }
+.e2::before { width: 55px; height: 45px; top: -24px; left: 18px; }
+.e3 { width: 180px; height: 55px; top: 62%; left: -200px; animation-duration: 66s; animation-delay: -40s; }
+.e3::before { width: 90px; height: 65px; top: -32px; left: 40px; }
+.e4 { width: 120px; height: 40px; top: 78%; left: -140px; animation-duration: 50s; animation-delay: -14s; }
+.e4::before { width: 60px; height: 50px; top: -26px; left: 22px; }
+.e5 { width: 90px;  height: 30px; top: 10%; left: -110px; animation-duration: 38s; animation-delay: -30s; }
+.e5::before { width: 48px; height: 40px; top: -20px; left: 16px; }
+.e6 { width: 160px; height: 50px; top: 50%; left: -180px; animation-duration: 60s; animation-delay: -4s; }
+.e6::before { width: 80px; height: 60px; top: -30px; left: 35px; }
+
+@keyframes cloudDrift {
+  from { transform: translateX(0); }
+  to   { transform: translateX(calc(100vw + 220px)); }
+}
+
+/* Stars (dark mode) */
+.splash-stars { display: none; position: absolute; inset: 0; }
+.splash-star {
+  position: absolute;
+  width: 2px; height: 2px;
+  border-radius: 50%;
+  background: #fff;
+  animation: starTwinkle ease-in-out infinite;
+  opacity: 0;
+}
+
+[data-theme="dark"] .splash-bg { background: #0a1628; }
+[data-theme="dark"] .splash-clouds { display: none; }
+[data-theme="dark"] .splash-stars { display: block; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .splash-bg { background: #0a1628; }
+  :root:not([data-theme="light"]) .splash-clouds { display: none; }
+  :root:not([data-theme="light"]) .splash-stars { display: block; }
+}
+
+@keyframes starTwinkle {
+  0%, 100% { opacity: 0.15; transform: scale(1); }
+  50%       { opacity: 1;    transform: scale(1.6); }
+}
+
+@keyframes splashIn {
+  from { opacity: 0; transform: translate(-50%, calc(-50% + 12px)); }
+  to   { opacity: 1; transform: translate(-50%, -50%); }
+}
+
+.splash-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.splash-logo {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  z-index: 5;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  animation: splashIn 0.45s cubic-bezier(0.34, 1.2, 0.64, 1) forwards;
+  transition:
+    top 0.55s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.55s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.splash-logo--exit {
+  top: calc(env(safe-area-inset-top) + 28px);
+  transform: translate(-50%, 0);
+  opacity: 0;
+  cursor: default;
+  pointer-events: none;
+  transition:
+    top 0.55s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.55s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.2s ease 0.38s;
+  animation: none;
+}
+
+.splash-logo-text {
+  font-family: var(--font-display);
+  font-size: clamp(2.5rem, 8vw, 4.5rem);
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: -2px;
+  white-space: nowrap;
+  line-height: 1;
+  transition:
+    font-size 0.55s cubic-bezier(0.4, 0, 0.2, 1),
+    letter-spacing 0.55s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.splash-logo--exit .splash-logo-text {
+  font-size: 18px;
+  letter-spacing: -0.3px;
+}
+
+.splash-hint {
+  font-size: 15px;
+  color: var(--text-tertiary);
+  font-family: var(--font-display);
+  margin: 0;
+  transition: opacity 0.15s ease;
+}
+
+.splash-logo--exit .splash-hint {
+  opacity: 0;
 }
 
 @keyframes fadeIn {
@@ -1178,6 +1420,8 @@
 
 @media (min-width: 1100px) {
   .settings-btn { display: none; }
+  /* Show settings button on splash (no city loaded) */
+  .app-header--no-city .settings-btn { display: flex; }
 }
 
 /* ── Settings page ── */
@@ -1397,6 +1641,11 @@
 @media (min-width: 768px) {
   .settings-page-header { max-width: 700px; padding: 20px 24px 0; }
   .settings-body { max-width: 700px; padding: 16px 24px 48px; }
+}
+
+@media (min-width: 1100px) {
+  .saved-cities-page .settings-page-header { max-width: 100%; padding: 20px 40px 0; }
+  .saved-cities-page .settings-body { max-width: 100%; padding: 16px 40px 48px; }
 }
 
 /* ── Settings pill (desktop only) ── */
@@ -2103,6 +2352,36 @@
 }
 
 .radar-locate-btn:hover {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+/* ── Zoom buttons (floating on map, expanded mode only) ── */
+.radar-zoom-btns {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 600;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.radar-zoom-btn {
+  background: var(--card-bg);
+  border: none;
+  border-radius: 8px;
+  padding: 8px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  transition: background 0.15s, color 0.15s;
+}
+
+.radar-zoom-btn:hover {
   background: var(--accent-light);
   color: var(--accent);
 }

@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { Minimize2, Play, Pause, Navigation } from 'lucide-react'
+import { Minimize2, Play, Pause, Navigation, ZoomIn, ZoomOut } from 'lucide-react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 
 const FRAMES_URL = 'https://api.rainviewer.com/public/weather-maps.json'
 const TILE_URL   = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
+const MAP_MIN_ZOOM     = 4
 const MAP_MAX_ZOOM     = 12
 const RADAR_NATIVE_MAX = 7 // RainViewer's 512px radar tiles cap here; higher returns "zoom level not supported"
 const RADAR_OPACITY     = 0.65
@@ -66,6 +67,7 @@ export function WeatherRadar({ location, timezone }) {
       touchZoom: false,
       boxZoom: false,
       keyboard: false,
+      minZoom: MAP_MIN_ZOOM,
       maxZoom: MAP_MAX_ZOOM,
       // Perf on low-end laptops: skip Leaflet's per-frame repaint work.
       fadeAnimation: false,       // no tile cross-fade (composites every tile load)
@@ -197,7 +199,7 @@ export function WeatherRadar({ location, timezone }) {
 
   useEffect(() => {
     if (!expanded) return
-    const handler = () => setExpanded(false)
+    const handler = () => { setExpanded(false); setPlaying(false) }
     window.addEventListener('popstate', handler)
     return () => window.removeEventListener('popstate', handler)
   }, [expanded])
@@ -219,6 +221,12 @@ export function WeatherRadar({ location, timezone }) {
         e.preventDefault()
         setPlaying(false)
         setIdx(i => (i - 1 + frames.length) % frames.length)
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        mapInst.current?.zoomIn()
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        mapInst.current?.zoomOut()
       }
     }
     window.addEventListener('keydown', onKey)
@@ -248,6 +256,9 @@ export function WeatherRadar({ location, timezone }) {
     if (!map) return
     map.setView([location.latitude, location.longitude], 9, { animate: true })
   }, [location.latitude, location.longitude])
+
+  const handleZoomIn  = useCallback(() => mapInst.current?.zoomIn(),  [])
+  const handleZoomOut = useCallback(() => mapInst.current?.zoomOut(), [])
 
   const handlePointerDown = useCallback((e) => {
     isDragging.current = true
@@ -282,6 +293,14 @@ export function WeatherRadar({ location, timezone }) {
             <button className="radar-expand-btn radar-expand-btn--floating" onClick={collapse} aria-label="Collapse">
               <Minimize2 size={20} />
             </button>
+            <div className="radar-zoom-btns">
+              <button className="radar-zoom-btn" onClick={handleZoomIn} aria-label="Zoom in">
+                <ZoomIn size={16} />
+              </button>
+              <button className="radar-zoom-btn" onClick={handleZoomOut} aria-label="Zoom out">
+                <ZoomOut size={16} />
+              </button>
+            </div>
             <button className="radar-locate-btn" onClick={handleLocate} aria-label="Center on location">
               <Navigation size={15} />
             </button>
