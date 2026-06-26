@@ -57,11 +57,17 @@
 }
 
 /* ── Base ── */
+body {
+  background: var(--bg);
+}
+
 .app {
   min-height: 100vh;
-  background: var(--bg);
+  background: transparent;
   font-family: var(--font);
   overflow-x: hidden;
+  position: relative;
+  z-index: 2;
 }
 
 .card {
@@ -70,6 +76,39 @@
   padding: 20px;
   box-shadow: var(--shadow);
   margin-bottom: 12px;
+  transition: background 0.8s ease;
+}
+
+/* Light-mode cards darken with sky; current-card and settings excluded */
+.sky-lvl-slight .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline)  { background: #5a6d85; }
+.sky-lvl-medium .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline)  { background: #4d6078; }
+.sky-lvl-dark .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline)    { background: #3e5068; }
+.sky-lvl-darkest .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline) { background: #324055; }
+
+.sky-lvl-slight .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline),
+.sky-lvl-medium .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline),
+.sky-lvl-dark .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline),
+.sky-lvl-darkest .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline) {
+  --text-primary:   #ffffff;
+  --text-secondary: rgba(255,255,255,0.80);
+  --text-tertiary:  rgba(255,255,255,0.55);
+}
+
+/* Details subcards get a darker tint so they read as nested */
+.sky-lvl-slight .detail-card { background: #445468; }
+.sky-lvl-medium .detail-card { background: #38495c; }
+.sky-lvl-dark .detail-card   { background: #2b3a4e; }
+.sky-lvl-darkest .detail-card { background: #1f2c3e; }
+
+[data-theme="dark"] .sky-lvl-slight .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline),
+[data-theme="dark"] .sky-lvl-medium .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline),
+[data-theme="dark"] .sky-lvl-dark .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline),
+[data-theme="dark"] .sky-lvl-darkest .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline) { background: var(--card-bg); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .sky-lvl-slight .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline),
+  :root:not([data-theme="light"]) .sky-lvl-medium .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline),
+  :root:not([data-theme="light"]) .sky-lvl-dark .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline),
+  :root:not([data-theme="light"]) .sky-lvl-darkest .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline) { background: var(--card-bg); }
 }
 
 .section-label {
@@ -99,14 +138,21 @@
   position: relative;
 }
 
-.app-header--no-city .app-title {
+.app-header--no-city .app-title-wrapper {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
 }
 
-.app-title {
+.app-title-wrapper {
   flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  pointer-events: none;
+}
+
+.app-title {
   text-align: center;
   font-family: var(--font-display);
   font-size: 18px;
@@ -114,6 +160,7 @@
   color: var(--text-tertiary);
   letter-spacing: -0.3px;
   padding: 6px 8px;
+  pointer-events: auto;
 }
 
 .app-title--home {
@@ -124,6 +171,14 @@
 .app-title--home:active {
   opacity: 0.6;
 }
+
+/* Header + search adapt to sky — white icons/text over any sky color */
+.sky-active .app-title { color: rgba(255,255,255,0.85); }
+.sky-active .header-icon-btn,
+.sky-active .settings-btn { color: rgba(255,255,255,0.70); }
+.sky-active .search-overlay { background: #2d3f55; }
+.sky-active .search-overlay .search-bar { background: #3a5068; border-color: transparent; --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; }
+.sky-active .search-dropdown { background: #2d3f55; --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; }
 
 /* Hidden while splash is centered */
 .app-title--splash {
@@ -722,9 +777,70 @@
 /* ── Current weather ── */
 .current-card {
   background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: none;
   box-shadow: none;
   text-align: center;
   padding: 24px 20px 24px;
+  transition: background 0.8s ease;
+}
+
+/* White text on mobile (over sky) */
+.current-card .current-location { color: #fff; }
+.current-card .current-date     { color: rgba(255,255,255,0.8); }
+.current-card .current-temp     { color: #fff; }
+.current-card .current-condition { color: rgba(255,255,255,0.9); }
+.current-card .current-feels    { color: rgba(255,255,255,0.72); }
+.current-card .save-btn         { color: rgba(255,255,255,0.7); }
+.current-card .save-btn.saved   { color: #fff; }
+.current-card .updated-text     { color: rgba(255,255,255,0.6); }
+.current-card .refresh-btn      { color: rgba(255,255,255,0.6); }
+
+/* Effects off: current card text reverts to normal theme colors */
+.no-effects .current-card .current-location { color: var(--text-primary); }
+.no-effects .current-card .current-date     { color: var(--text-tertiary); }
+.no-effects .current-card .current-temp     { color: var(--text-primary); }
+.no-effects .current-card .current-condition { color: var(--text-secondary); }
+.no-effects .current-card .current-feels    { color: var(--text-tertiary); }
+.no-effects .current-card .save-btn         { color: var(--text-tertiary); }
+.no-effects .current-card .save-btn.saved   { color: var(--accent); }
+.no-effects .current-card .updated-text     { color: var(--text-tertiary); }
+.no-effects .current-card .refresh-btn      { color: var(--text-tertiary); }
+
+/* Desktop: current card is an opaque card, same as the rest */
+@media (min-width: 1100px) {
+  .current-card {
+    background: var(--card-bg);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: none;
+    box-shadow: var(--shadow);
+  }
+  .sky-lvl-slight .current-card  { background: #5a6d85; --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); }
+  .sky-lvl-medium .current-card  { background: #4d6078; --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); }
+  .sky-lvl-dark .current-card    { background: #3e5068; --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); }
+  .sky-lvl-darkest .current-card { background: #324055; --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); }
+  [data-theme="dark"] .current-card,
+  [data-theme="dark"] .sky-lvl-slight .current-card,
+  [data-theme="dark"] .sky-lvl-medium .current-card,
+  [data-theme="dark"] .sky-lvl-dark .current-card,
+  [data-theme="dark"] .sky-lvl-darkest .current-card { background: var(--card-bg); }
+  .current-card .current-location { color: var(--text-primary); text-shadow: none; }
+  .current-card .current-date     { color: var(--text-tertiary); }
+  .current-card .current-temp     { color: var(--text-primary); }
+  .current-card .current-condition { color: var(--text-secondary); }
+  .current-card .current-feels    { color: var(--text-tertiary); }
+  .current-card .save-btn         { color: var(--text-tertiary); }
+  .current-card .save-btn.saved   { color: var(--accent); }
+  .current-card .updated-text     { color: var(--text-tertiary); }
+  .current-card .refresh-btn      { color: var(--text-tertiary); }
+}
+@media (min-width: 1100px) and (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .sky-lvl-slight .current-card,
+  :root:not([data-theme="light"]) .sky-lvl-medium .current-card,
+  :root:not([data-theme="light"]) .sky-lvl-dark .current-card,
+  :root:not([data-theme="light"]) .sky-lvl-darkest .current-card { background: var(--card-bg); }
 }
 
 .current-header {
@@ -1251,6 +1367,35 @@
 }
 
 /* ── Splash screen ── */
+/* ── Sky + weather canvas ── */
+.sky-bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.sky-clear-day    { background: linear-gradient(180deg, #1565c0 0%, #1e88e5 40%, #81d4fa 100%); }
+.sky-clear-night  { background: linear-gradient(180deg, #050d1f 0%, #0d1b42 50%, #1a237e 100%); }
+.sky-partly-day   { background: linear-gradient(180deg, #2e6da4 0%, #5b9bd5 45%, #a8cce8 100%); }
+.sky-partly-night { background: linear-gradient(180deg, #0d1520 0%, #1a2a3a 55%, #243040 100%); }
+.sky-overcast-day { background: linear-gradient(180deg, #455a64 0%, #607d8b 50%, #90a4ae 100%); }
+.sky-overcast-night { background: linear-gradient(180deg, #121a1d 0%, #1c2a30 55%, #243038 100%); }
+.sky-fog          { background: linear-gradient(180deg, #90a4ae 0%, #b0bec5 55%, #cfd8dc 100%); }
+.sky-rain-day     { background: linear-gradient(180deg, #263238 0%, #37474f 50%, #546e7a 100%); }
+.sky-rain-night   { background: linear-gradient(180deg, #0d1418 0%, #161f24 55%, #1c272d 100%); }
+.sky-snow-day     { background: linear-gradient(180deg, #78909c 0%, #90a4ae 50%, #b0bec5 100%); }
+.sky-snow-night   { background: linear-gradient(180deg, #1c2529 0%, #263238 55%, #2e3d44 100%); }
+.sky-storm        { background: linear-gradient(180deg, #0a0c14 0%, #12172a 50%, #1a1f38 100%); }
+
+.weather-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  pointer-events: none;
+}
+
 /* ── Splash background ── */
 .splash-bg {
   position: fixed;
@@ -1334,7 +1479,7 @@
 }
 
 .splash-logo {
-  position: fixed;
+  position: absolute;
   left: 50%;
   top: 50%;
   transform: translate(-50%, -50%);
@@ -1342,7 +1487,6 @@
   flex-direction: column;
   align-items: center;
   gap: 14px;
-  z-index: 5;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   animation: splashIn 0.45s cubic-bezier(0.34, 1.2, 0.64, 1) forwards;
@@ -1394,6 +1538,44 @@
   opacity: 0;
 }
 
+.splash-logo-img {
+  position: absolute;
+  left: 50%;
+  top: 30%;
+  transform: translate(-50%, -50%);
+  width: clamp(100px, 28vw, 180px);
+  height: auto;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.3s ease;
+}
+
+.splash-logo-img--exit {
+  opacity: 0;
+}
+
+.splash-logo-img-dark { display: none; }
+
+.splash-version {
+  position: absolute;
+  bottom: calc(env(safe-area-inset-bottom) + 20px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 13px;
+  color: var(--text-tertiary);
+  margin: 0;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+[data-theme="dark"] .splash-logo-img-light { display: none; }
+[data-theme="dark"] .splash-logo-img-dark  { display: block; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .splash-logo-img-light { display: none; }
+  :root:not([data-theme="light"]) .splash-logo-img-dark  { display: block; }
+}
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: none; }
@@ -1418,11 +1600,6 @@
   color: var(--text-primary);
 }
 
-@media (min-width: 1100px) {
-  .settings-btn { display: none; }
-  /* Show settings button on splash (no city loaded) */
-  .app-header--no-city .settings-btn { display: flex; }
-}
 
 /* ── Settings page ── */
 .settings-page {
@@ -2661,6 +2838,90 @@
   color: var(--text-tertiary);
   margin: 0;
 }
+
+/* Alert sheet follows sky-level card styling */
+.sky-lvl-slight .alert-sheet  { background: #5a6d85; --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; }
+.sky-lvl-medium .alert-sheet  { background: #4d6078; --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; }
+.sky-lvl-dark .alert-sheet    { background: #3e5068; --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; }
+.sky-lvl-darkest .alert-sheet { background: #324055; --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; }
+[data-theme="dark"] .alert-sheet,
+[data-theme="dark"] .sky-lvl-slight .alert-sheet,
+[data-theme="dark"] .sky-lvl-medium .alert-sheet,
+[data-theme="dark"] .sky-lvl-dark .alert-sheet,
+[data-theme="dark"] .sky-lvl-darkest .alert-sheet { background: var(--card-bg); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .sky-lvl-slight .alert-sheet,
+  :root:not([data-theme="light"]) .sky-lvl-medium .alert-sheet,
+  :root:not([data-theme="light"]) .sky-lvl-dark .alert-sheet,
+  :root:not([data-theme="light"]) .sky-lvl-darkest .alert-sheet { background: var(--card-bg); }
+}
+
+/* Search overlay container follows sky-level card styling */
+.sky-lvl-slight .search-overlay  { background: #5a6d85; }
+.sky-lvl-medium .search-overlay  { background: #4d6078; }
+.sky-lvl-dark .search-overlay    { background: #3e5068; }
+.sky-lvl-darkest .search-overlay { background: #324055; }
+[data-theme="dark"] .sky-lvl-slight .search-overlay,
+[data-theme="dark"] .sky-lvl-medium .search-overlay,
+[data-theme="dark"] .sky-lvl-dark .search-overlay,
+[data-theme="dark"] .sky-lvl-darkest .search-overlay { background: var(--card-bg); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .sky-lvl-slight .search-overlay,
+  :root:not([data-theme="light"]) .sky-lvl-medium .search-overlay,
+  :root:not([data-theme="light"]) .sky-lvl-dark .search-overlay,
+  :root:not([data-theme="light"]) .sky-lvl-darkest .search-overlay { background: var(--card-bg); }
+}
+
+/* Radar floating buttons + search follow sky-level card styling */
+.sky-lvl-slight .radar-zoom-btn,
+.sky-lvl-slight .radar-locate-btn,
+.sky-lvl-slight .radar-expand-btn--floating  { background: #5a6d85; color: rgba(255,255,255,0.80); }
+.sky-lvl-medium .radar-zoom-btn,
+.sky-lvl-medium .radar-locate-btn,
+.sky-lvl-medium .radar-expand-btn--floating  { background: #4d6078; color: rgba(255,255,255,0.80); }
+.sky-lvl-dark .radar-zoom-btn,
+.sky-lvl-dark .radar-locate-btn,
+.sky-lvl-dark .radar-expand-btn--floating    { background: #3e5068; color: rgba(255,255,255,0.80); }
+.sky-lvl-darkest .radar-zoom-btn,
+.sky-lvl-darkest .radar-locate-btn,
+.sky-lvl-darkest .radar-expand-btn--floating { background: #324055; color: rgba(255,255,255,0.80); }
+
+/* Radar ticks: boost visibility against dark sky-level backgrounds */
+.sky-lvl-slight .radar-tick,
+.sky-lvl-medium .radar-tick,
+.sky-lvl-dark .radar-tick,
+.sky-lvl-darkest .radar-tick { background: rgba(255,255,255,0.30); }
+
+.sky-lvl-slight .radar-tick--hour,
+.sky-lvl-medium .radar-tick--hour,
+.sky-lvl-dark .radar-tick--hour,
+.sky-lvl-darkest .radar-tick--hour { background: rgba(255,255,255,0.65); }
+
+.sky-lvl-slight .radar-tick-label,
+.sky-lvl-medium .radar-tick-label,
+.sky-lvl-dark .radar-tick-label,
+.sky-lvl-darkest .radar-tick-label { color: rgba(255,255,255,0.65); }
+
+/* Search bar pill slightly lighter than overlay for contrast */
+.sky-lvl-slight .search-overlay .search-bar,
+.sky-lvl-slight .search-dropdown  { background: #6a7d95; --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; border-color: transparent; }
+.sky-lvl-medium .search-overlay .search-bar,
+.sky-lvl-medium .search-dropdown  { background: #5d7088; --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; border-color: transparent; }
+.sky-lvl-dark .search-overlay .search-bar,
+.sky-lvl-dark .search-dropdown    { background: #4e6078; --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; border-color: transparent; }
+.sky-lvl-darkest .search-overlay .search-bar,
+.sky-lvl-darkest .search-dropdown { background: #425065; --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; border-color: transparent; }
+
+[data-theme="dark"] .radar-zoom-btn,   [data-theme="dark"] .radar-locate-btn,   [data-theme="dark"] .radar-expand-btn--floating,
+[data-theme="dark"] .search-bar,       [data-theme="dark"] .search-dropdown,
+[data-theme="dark"] .sky-lvl-slight .radar-zoom-btn,   [data-theme="dark"] .sky-lvl-slight .radar-locate-btn,   [data-theme="dark"] .sky-lvl-slight .radar-expand-btn--floating,
+[data-theme="dark"] .sky-lvl-medium .radar-zoom-btn,   [data-theme="dark"] .sky-lvl-medium .radar-locate-btn,   [data-theme="dark"] .sky-lvl-medium .radar-expand-btn--floating,
+[data-theme="dark"] .sky-lvl-dark .radar-zoom-btn,     [data-theme="dark"] .sky-lvl-dark .radar-locate-btn,     [data-theme="dark"] .sky-lvl-dark .radar-expand-btn--floating,
+[data-theme="dark"] .sky-lvl-darkest .radar-zoom-btn,  [data-theme="dark"] .sky-lvl-darkest .radar-locate-btn,  [data-theme="dark"] .sky-lvl-darkest .radar-expand-btn--floating,
+[data-theme="dark"] .sky-lvl-slight .search-overlay .search-bar,   [data-theme="dark"] .sky-lvl-slight .search-dropdown,
+[data-theme="dark"] .sky-lvl-medium .search-overlay .search-bar,   [data-theme="dark"] .sky-lvl-medium .search-dropdown,
+[data-theme="dark"] .sky-lvl-dark .search-overlay .search-bar,     [data-theme="dark"] .sky-lvl-dark .search-dropdown,
+[data-theme="dark"] .sky-lvl-darkest .search-overlay .search-bar,  [data-theme="dark"] .sky-lvl-darkest .search-dropdown { background: var(--card-bg); color: var(--text-secondary); }
 
 /* ── Alert dialog on desktop ── */
 /* Must live AFTER the base .alert-sheet rule to win the cascade. */

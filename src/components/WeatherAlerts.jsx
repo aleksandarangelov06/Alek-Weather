@@ -158,7 +158,7 @@ export function WeatherAlerts({ alerts }) {
 
       {selectedAlert && createPortal(
         <AlertModal alert={selectedAlert} onClose={() => setSelected(null)} />,
-        document.body
+        document.getElementById('alert-portal-root') ?? document.body
       )}
     </>
   )

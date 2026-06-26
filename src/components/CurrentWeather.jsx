@@ -17,9 +17,6 @@ export function CurrentWeather({ current, minutely, daily, location, timezone, u
     weekday: 'long', month: 'long', day: 'numeric', ...tzOpts,
   })
 
-  // Derive the condition from the live 15-min nowcast rather than the raw
-  // weather_code, which lags after a brief downpour (e.g. reads "Violent Showers"
-  // while only light rain is actually falling).
   const info = getWeatherInfo(liveWeatherCode(current, minutely), !current.is_day)
   const temp = toTemp(current.temperature_2m, unit)
 

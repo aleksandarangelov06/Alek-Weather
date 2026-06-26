@@ -247,13 +247,114 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ha
     return { level: 'info', text: `${cap(noun)} expected to continue.` }
   })()
 
+  // ── Day-arc narrative ─────────────────────────────────────────────────────
+  // Generates sentences like "Some sun this morning, then a thunderstorm this
+  // afternoon." Fires when the remaining day transitions between meaningfully
+  // different weather categories.
+  const dayArcInsight = (() => {
+    const currentHour = parseInt(currentHourStr, 10)
+    if (currentHour >= 18) return null
+
+    const todayStr = now.toLocaleDateString('en-CA', { timeZone: timezone })
+
+    const classifyExt = (code) => {
+      const base = classify(code)
+      if (base !== 'clear') return base
+      if (code === 3) return 'overcast'
+      if (code === 2) return 'pcloudy'
+      return 'sunny'
+    }
+    const RANK = { severe: 0, heavy: 1, moderate: 2, light: 3, fog: 4, overcast: 5, pcloudy: 6, sunny: 7 }
+    const isPrecipCat = (cat) => RANK[cat] <= RANK.light
+    const isGoodCat   = (cat) => cat === 'sunny' || cat === 'pcloudy'
+    const worstOf     = (list) => list.reduce((acc, c) => {
+      const cat = classifyExt(c); return RANK[cat] < RANK[acc] ? cat : acc
+    }, 'sunny')
+    const worstCodeOf = (list) => list.reduce(
+      (acc, c) => RANK[classifyExt(c)] < RANK[classifyExt(acc)] ? c : acc, list[0]
+    )
+
+    const PERIODS = [
+      { lo: 6,  hi: 11, label: 'this morning'  },
+      { lo: 12, hi: 16, label: 'this afternoon' },
+      { lo: 17, hi: 20, label: 'this evening'   },
+    ]
+
+    const periods = PERIODS.map(p => {
+      const slots = []
+      for (let i = 1; i < codes.length; i++) {
+        const t = hourly.time?.[start + i]
+        if (!t || !t.startsWith(todayStr)) break
+        const h = parseInt(t.slice(11, 13), 10)
+        if (h >= p.lo && h <= p.hi && h > currentHour) slots.push(codes[i])
+      }
+      if (!slots.length) return null
+      return { ...p, cat: worstOf(slots), repCode: worstCodeOf(slots) }
+    }).filter(Boolean)
+
+    if (periods.length < 2) return null
+    const first = periods[0]
+    const last  = periods[periods.length - 1]
+    const mid   = periods.length >= 3 ? periods[1] : null
+
+    const precipPhrase = (cat, code) => {
+      if (cat === 'severe')   return [95, 96, 99].includes(code) ? 'a thunderstorm' : 'violent showers'
+      if (cat === 'heavy')    return SNOW_CODES.has(code) ? 'heavy snow' : 'heavy rain'
+      if (cat === 'moderate') return SNOW_CODES.has(code) ? 'moderate snow' : 'rain'
+      if (cat === 'light')    return SNOW_CODES.has(code) ? 'light snow' : 'showers'
+      return 'rain'
+    }
+
+    let text = null
+
+    // Three-period patterns take priority (more specific)
+    if (mid) {
+      if (isGoodCat(first.cat) && isPrecipCat(mid.cat) && isGoodCat(last.cat)) {
+        text = `Sunny ${first.label}, then ${precipPhrase(mid.cat, mid.repCode)} ${mid.label}, clearing ${last.label}.`
+      } else if (isPrecipCat(first.cat) && isGoodCat(mid.cat) && isPrecipCat(last.cat)) {
+        const noun = SNOW_CODES.has(first.repCode) ? 'snow' : 'rain'
+        text = `${cap(noun)} ${first.label} with a break ${mid.label}, then more ${noun} ${last.label}.`
+      } else if (isGoodCat(first.cat) && mid.cat === 'overcast' && isPrecipCat(last.cat)) {
+        text = `Sunny ${first.label}, clouding over ${mid.label}, then ${precipPhrase(last.cat, last.repCode)} ${last.label}.`
+      }
+    }
+
+    if (!text && first.cat !== last.cat) {
+      if (isGoodCat(first.cat) && isPrecipCat(last.cat)) {
+        const open = first.cat === 'sunny' ? 'Some sun' : 'Partly cloudy'
+        text = last.cat === 'severe'
+          ? `${open} ${first.label}, then turning stormy ${last.label}.`
+          : `${open} ${first.label}, then ${precipPhrase(last.cat, last.repCode)} developing ${last.label}.`
+      } else if (isPrecipCat(first.cat) && isGoodCat(last.cat)) {
+        const noun = [95, 96, 99].includes(first.repCode) ? 'Storms'
+          : SNOW_CODES.has(first.repCode) ? 'Snow' : 'Rain'
+        const clearing = last.cat === 'sunny' ? 'clearing to sunshine' : 'improving to partly cloudy'
+        text = `${noun} ${first.label}, then ${clearing} ${last.label}.`
+      } else if (first.cat === 'overcast' && isGoodCat(last.cat)) {
+        const ending = last.cat === 'sunny' ? 'sunshine breaking through' : 'some clearing'
+        text = `Overcast ${first.label} with ${ending} ${last.label}.`
+      } else if (isGoodCat(first.cat) && last.cat === 'overcast') {
+        const open = first.cat === 'sunny' ? 'Sunny' : 'Partly cloudy'
+        text = `${open} ${first.label}, then increasing clouds ${last.label}.`
+      }
+    }
+
+    return text ? { level: 'neutral', text } : null
+  })()
+
   const insights = []
 
-  // Returns the display probability for a future slot, null for slot 0 ("right now")
-  // or when no probability data exists. Used to build probability-first strings.
-  const pctOf = (slotIndex) => {
-    const p = probAt(slotIndex)
-    return slotIndex > 0 && p != null ? p : null
+  // Max display probability across all future slots matching a given category.
+  // Mirrors daily.precipitation_probability_max: reports the peak chance for
+  // the look-ahead window instead of the probability of the first occurrence.
+  const maxProbFor = (cat) => {
+    let max = null
+    for (let i = 1; i < codes.length; i++) {
+      if (classify(codes[i]) !== cat) continue
+      const p = probAt(i)
+      if (p != null) max = max == null ? p : Math.max(max, p)
+    }
+    return max
   }
 
   // Suppress alarming insights for future slots whose probability is too low.
@@ -268,7 +369,7 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ha
 
   // Compute severe show-ccondition up front so the else-if chain falls through to
   // nowcastInsight when a severe code exists but the probability threshold isn't met.
-  const severeP = firstSevere !== -1 ? pctOf(firstSevere) : null
+  const severeP = firstSevere > 0 ? maxProbFor('severe') : null
   const showSevere = firstSevere !== -1 &&
     (hasActiveAlert || firstSevere === 0 || aboveThreshold(firstSevere, 30))
 
@@ -292,7 +393,7 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ha
   } else if (firstHeavy !== -1 && aboveThreshold(firstHeavy, 50)) {
     const when = timeDesc(firstHeavy, currentMinute, hourly.time, start, timezone)
     const isSnow = [75, 86].includes(codes[firstHeavy])
-    const p = pctOf(firstHeavy)
+    const p = maxProbFor('heavy')
     insights.push({
       level: 'warning',
       text: isSnow
@@ -302,7 +403,7 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ha
   } else if (firstModerate !== -1 && aboveThreshold(firstModerate, 40)) {
     const when = timeDesc(firstModerate, currentMinute, hourly.time, start, timezone)
     const isSnow = codes[firstModerate] === 73
-    const p = pctOf(firstModerate)
+    const p = maxProbFor('moderate')
     insights.push({
       level: 'info',
       text: isSnow
@@ -312,13 +413,13 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ha
   } else if (firstLight !== -1) {
     const info = getWeatherInfo(codes[firstLight])
     const when = timeDesc(firstLight, currentMinute, hourly.time, start, timezone)
-    const prob = probAt(firstLight)
+    const prob = firstLight > 0 ? maxProbFor('light') : null
     const label = info.label.toLowerCase()
     // Phrase upcoming light precip as a chance, e.g. "30% chance of a light drizzle
     // within the hour."; keep the plain label when it's already happening now.
     insights.push({
       level: 'notice',
-      text: prob != null && firstLight > 0
+      text: prob != null
         ? `${prob}% chance of ${article(label)}${label} ${when}.`
         : `${info.label} ${when}.`,
     })
@@ -330,17 +431,39 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ha
     insights.push({ level: 'notice', text: `Foggy conditions expected ${when}.` })
   }
 
+  // Day-arc narrative: on dry days it replaces the generic "mostly sunny" fallback;
+  // on precipitation days it prepends the morning-context ("some sun this morning, then...").
+  if (dayArcInsight) {
+    if (insights.length === 0) {
+      insights.push(dayArcInsight)
+    } else if (insights.length === 1 && insights[0].level !== 'severe') {
+      insights.unshift(dayArcInsight)
+    }
+  }
+
   if (insights.length === 0) {
     const allClear = codes.every(c => classify(c) === 'clear')
+    const currentHour = parseInt(currentHourStr, 10)
     let noWeatherText
     if (allClear) {
-      noWeatherText = 'Clear skies for the rest of the day.'
+      if (currentHour < 10)      noWeatherText = 'Clear skies all day — a great day to be outside.'
+      else if (currentHour < 16) noWeatherText = 'Clear skies for the rest of the day.'
+      else                       noWeatherText = 'Clear and calm for the rest of the evening.'
     } else {
       const cc = current?.cloud_cover ?? 50
-      if (cc <= 25)      noWeatherText = 'Mostly sunny with dry conditions.'
-      else if (cc <= 50) noWeatherText = 'Partly cloudy, staying dry.'
-      else if (cc <= 75) noWeatherText = 'Mostly cloudy, but dry for the rest of the day.'
-      else               noWeatherText = 'Overcast but dry for the rest of the day.'
+      if (cc <= 25) {
+        noWeatherText = currentHour < 12
+          ? 'A sunny morning with no rain expected.'
+          : 'Mostly sunny and staying dry.'
+      } else if (cc <= 50) {
+        noWeatherText = currentHour < 14
+          ? 'Partly cloudy this afternoon, staying dry.'
+          : 'Partly cloudy, staying dry.'
+      } else if (cc <= 75) {
+        noWeatherText = 'Mostly cloudy, but dry for the rest of the day.'
+      } else {
+        noWeatherText = 'Overcast but dry for the rest of the day.'
+      }
     }
     insights.push({ level: 'good', text: noWeatherText })
   }
@@ -410,7 +533,8 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ha
     if (baseIdx === 1 && daily?.weather_code?.[1] != null) {
       const tCode = daily.weather_code[1]
       const tCat = classify(tCode)
-      const tProb = daily.precipitation_probability_max?.[1]
+      const tRawProb = daily.precipitation_probability_max?.[1]
+      const tProb = tRawProb != null ? displayPrecipChance(tCode, tRawProb) : null
       const isSnow = SNOW_CODES.has(tCode)
       const isThunder = [95, 96, 99].includes(tCode)
 

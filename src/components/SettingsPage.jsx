@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ArrowLeft, ChevronRight, ChevronDown, X } from 'lucide-react'
+import { APP_VERSION } from '../utils/version'
 
 function SettingRow({ label, children }) {
   return (
@@ -172,7 +173,7 @@ function ColorCodingView({ colorCoding, onToggle, onBack }) {
   )
 }
 
-function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, showOverview, onShowOverviewChange, nowcastMode, onNowcastModeChange, onColorCodingOpen, installPrompt, onInstall }) {
+function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, showOverview, onShowOverviewChange, nowcastMode, onNowcastModeChange, onColorCodingOpen, weatherAnimations, onWeatherAnimationsChange, installPrompt, onInstall }) {
   return (
     <>
       <div className="settings-group-label">Appearance</div>
@@ -192,6 +193,9 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, showOver
           <div className="settings-row-label">Color Coding</div>
           <ChevronRight size={16} className="about-chevron" />
         </button>
+        <SettingRow label="Weather Effects">
+          <Toggle id="toggle-weather-anim" checked={weatherAnimations} onChange={onWeatherAnimationsChange} />
+        </SettingRow>
       </div>
 
       <div className="settings-group-label">Units</div>
@@ -232,7 +236,7 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, showOver
       <AboutSection />
 
       <div className="settings-footer">
-        <p className="settings-version">Version 2.4</p>
+        <p className="settings-version">Version {APP_VERSION}</p>
         <p className="settings-studio">Alek Studios&#8482;</p>
       </div>
     </>

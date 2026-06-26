@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <radialGradient id="sunG" cx="38%" cy="38%" r="62%">
+      <stop offset="0%"   stop-color="#FFF9C4"/>
+      <stop offset="45%"  stop-color="#FFD600"/>
+      <stop offset="100%" stop-color="#F57C00"/>
+    </radialGradient>
+    <filter id="sunGlow" x="-22%" y="-22%" width="144%" height="144%">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <g transform="translate(197,197)" fill="#FFAB00">
+    <rect x="-11" y="-152" width="22" height="48" rx="11" transform="rotate(0)"/>
+    <rect x="-11" y="-152" width="22" height="48" rx="11" transform="rotate(45)"/>
+    <rect x="-11" y="-152" width="22" height="48" rx="11" transform="rotate(90)"/>
+    <rect x="-11" y="-152" width="22" height="48" rx="11" transform="rotate(135)"/>
+    <rect x="-11" y="-152" width="22" height="48" rx="11" transform="rotate(180)"/>
+    <rect x="-11" y="-152" width="22" height="48" rx="11" transform="rotate(225)"/>
+    <rect x="-11" y="-152" width="22" height="48" rx="11" transform="rotate(270)"/>
+    <rect x="-11" y="-152" width="22" height="48" rx="11" transform="rotate(315)"/>
+  </g>
+
+  <circle cx="197" cy="197" r="90" fill="url(#sunG)" filter="url(#sunGlow)"/>
+
+  <text x="348" y="470" font-size="310" text-anchor="middle"
+        font-family="Segoe UI Emoji, Apple Color Emoji, Noto Color Emoji">☁️</text>
+</svg>

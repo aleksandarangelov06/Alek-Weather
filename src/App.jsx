@@ -1,5 +1,30 @@
 import { useState, useEffect, useRef } from 'react'
 
+function skyClass(code, isDay) {
+  if (code == null) return ''
+  if (code === 95 || code === 96 || code === 99) return 'sky-storm'
+  if ((code >= 51 && code <= 65) || (code >= 80 && code <= 82)) return isDay ? 'sky-rain-day' : 'sky-rain-night'
+  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return isDay ? 'sky-snow-day' : 'sky-snow-night'
+  if (code === 45 || code === 48) return 'sky-fog'
+  if (code === 3) return isDay ? 'sky-overcast-day' : 'sky-overcast-night'
+  if (code === 2) return isDay ? 'sky-partly-day' : 'sky-partly-night'
+  return isDay ? 'sky-clear-day' : 'sky-clear-night'
+}
+
+const SKY_LEVEL = {
+  'sky-clear-night':   'sky-lvl-darkest',
+  'sky-partly-day':    'sky-lvl-slight',
+  'sky-partly-night':  'sky-lvl-dark',
+  'sky-overcast-day':  'sky-lvl-medium',
+  'sky-overcast-night':'sky-lvl-darkest',
+  'sky-fog':           'sky-lvl-slight',
+  'sky-rain-day':      'sky-lvl-dark',
+  'sky-rain-night':    'sky-lvl-darkest',
+  'sky-snow-day':      'sky-lvl-slight',
+  'sky-snow-night':    'sky-lvl-dark',
+  'sky-storm':         'sky-lvl-darkest',
+}
+
 const STARS = Array.from({ length: 40 }, () => ({
   top:   `${Math.random() * 88 + 4}%`,
   left:  `${Math.random() * 92 + 2}%`,
@@ -21,10 +46,13 @@ import { HourlyForecast } from './components/HourlyForecast'
 import { DailyForecast } from './components/DailyForecast'
 import { WeatherDetails } from './components/WeatherDetails'
 import { WeatherRadar } from './components/WeatherRadar'
+import { WeatherCanvas } from './components/WeatherCanvas'
 import { PrecipNowcast } from './components/PrecipNowcast'
 import { WeatherAlerts } from './components/WeatherAlerts'
 import { WeatherOverview } from './components/WeatherOverview'
-import { SettingsPage, SettingsPill } from './components/SettingsPage'
+import { SettingsPage } from './components/SettingsPage'
+import { liveWeatherCode } from './utils/weatherCodes'
+import { APP_VERSION } from './utils/version'
 import './App.css'
 
 const THEME_KEY = 'alek-weather-theme'
@@ -63,6 +91,7 @@ function App() {
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem(THEME_KEY) ?? 'system')
   const [showOverview, setShowOverview] = useState(() => localStorage.getItem(SHOW_OVERVIEW_KEY) !== 'false')
   const [nowcastMode, setNowcastMode] = useState(() => localStorage.getItem(NOWCAST_MODE_KEY) ?? 'auto')
+  const [weatherAnimations, setWeatherAnimations] = useState(() => localStorage.getItem('alek-weather-animations') !== 'false')
   const [colorCoding, setColorCoding] = useState(() => {
     const saved = JSON.parse(localStorage.getItem(COLOR_CODING_KEY) ?? 'null')
     return saved ? { ...DEFAULT_COLOR_CODING, ...saved } : DEFAULT_COLOR_CODING
@@ -72,7 +101,7 @@ function App() {
   const [settingsClosing, setSettingsClosing] = useState(false)
   const [colorCodingOpen, setColorCodingOpen] = useState(false)
   const [isDesktop, setIsDesktop] = useState(() => window.matchMedia('(min-width: 1100px)').matches)
-  const [desktopSettingsOpen, setDesktopSettingsOpen] = useState(false)
+
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchClosing, setSearchClosing] = useState(false)
   const [searchInitialQuery, setSearchInitialQuery] = useState('')
@@ -227,6 +256,11 @@ function App() {
     })
   }
 
+  const changeWeatherAnimations = (val) => {
+    setWeatherAnimations(val)
+    localStorage.setItem('alek-weather-animations', String(val))
+  }
+
   const changeDarkMode = (mode) => {
     setDarkMode(mode)
     localStorage.setItem(THEME_KEY, mode)
@@ -251,11 +285,6 @@ function App() {
   }
 
   const closeColorCoding = () => history.back()
-
-  const toggleDesktopSettings = () => {
-    setColorCodingOpen(false)
-    setDesktopSettingsOpen(v => !v)
-  }
 
   const openSearch = () => {
     history.pushState({ overlay: 'search' }, '')
@@ -349,6 +378,10 @@ function App() {
     a.properties?.severity === 'Extreme' || a.properties?.severity === 'Severe'
   )
 
+  const liveCode = weather ? liveWeatherCode(weather.current, weather.minutely_15) : null
+  const skyC     = weather ? skyClass(liveCode, weather.current.is_day) : ''
+  const levelC   = SKY_LEVEL[skyC] ?? ''
+
   const blockComponents = weather && !loading ? {
     overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} minutely={weather.minutely_15} timezone={weather.timezone} hasActiveAlert={hasActiveAlert} />,
     hourly:  <HourlyForecast hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.hourly} glow={colorCoding.glow} current={weather.current} minutely={weather.minutely_15} />,
@@ -382,32 +415,12 @@ function App() {
             weather instead of stretching the wide right column. On mobile it
             stays in the draggable block list below. */}
         {isDesktop && blockComponents.nowcast}
-        {isDesktop && (
-          <SettingsPill
-            expanded={desktopSettingsOpen}
-            onToggle={toggleDesktopSettings}
-            colorCodingOpen={colorCodingOpen}
-            onColorCodingOpen={openColorCoding}
-            onColorCodingBack={closeColorCoding}
-            darkMode={darkMode}
-            onDarkModeChange={changeDarkMode}
-            unit={unit}
-            onUnitChange={changeUnit}
-            showOverview={showOverview}
-            onShowOverviewChange={changeShowOverview}
-            nowcastMode={nowcastMode}
-            onNowcastModeChange={changeNowcastMode}
-            colorCoding={colorCoding}
-            onColorCodingToggle={toggleColorCoding}
-            installPrompt={installPrompt}
-            onInstall={handleInstall}
-          />
-        )}
+        {isDesktop && showOverview && blockComponents.overview}
       </div>
       <div className="weather-right">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={blockOrder} strategy={verticalListSortingStrategy}>
-            {blockOrder.filter(id => id !== 'aqi' && (id !== 'overview' || showOverview) && !(isDesktop && id === 'nowcast')).map(id => (
+            {blockOrder.filter(id => id !== 'aqi' && (id !== 'overview' || showOverview) && !(isDesktop && id === 'nowcast') && !(isDesktop && id === 'overview')).map(id => (
               <SortableBlock key={id} id={id}>
                 {blockComponents[id]}
               </SortableBlock>
@@ -419,7 +432,10 @@ function App() {
   )
 
   return (
-    <div className="app">
+    <>
+      {weather && weatherAnimations && <div className={`sky-bg ${skyC}`} aria-hidden="true" />}
+      {weather && weatherAnimations && <WeatherCanvas code={liveCode} />}
+    <div className={`app${weatherAnimations && levelC ? ` ${levelC}` : ''}${!weatherAnimations ? ' no-effects' : ''}${weather && weatherAnimations ? ' sky-active' : ''}`}>
       <header className={`app-header${!weather ? ' app-header--no-city' : ''}`}>
         <button
           className={`header-icon-btn${searchHolding ? ' header-icon-btn--holding' : ''}`}
@@ -437,13 +453,15 @@ function App() {
             <MapPin  size={24} style={{ opacity: splashPhase === 'done' ? 1 : 0, pointerEvents: splashPhase === 'done' ? undefined : 'none' }} />
           </span>
         </button>
-        <span
-          className={`app-title${splashPhase === 'visible' ? ' app-title--splash' : ''}${splashPhase === 'exit' ? ' app-title--splash-exit' : ''}${splashPhase === 'done' && weather ? ' app-title--home' : ''}`}
-          onClick={handleLogoClick}
-          role={splashPhase === 'done' && weather ? 'button' : undefined}
-          aria-label={splashPhase === 'done' && weather ? 'Go to home' : undefined}
-        >Alek Weather</span>
-        <button className="settings-btn" onClick={isDesktop && weather && !loading ? toggleDesktopSettings : (showSettings ? closeSettings : openSettings)} aria-label="Settings">
+        <div className="app-title-wrapper">
+          <span
+            className={`app-title${splashPhase === 'visible' ? ' app-title--splash' : ''}${splashPhase === 'exit' ? ' app-title--splash-exit' : ''}${splashPhase === 'done' && weather ? ' app-title--home' : ''}`}
+            onClick={handleLogoClick}
+            role={splashPhase === 'done' && weather ? 'button' : undefined}
+            aria-label={splashPhase === 'done' && weather ? 'Go to home' : undefined}
+          >Alek Weather</span>
+        </div>
+        <button className="settings-btn" onClick={showSettings ? closeSettings : openSettings} aria-label="Settings">
           <SlidersHorizontal size={22} />
         </button>
       </header>
@@ -483,27 +501,40 @@ function App() {
       {splashPhase !== 'done' && (
         <>
           <div className="splash-bg" aria-hidden="true">
+            <img
+              src="/logo-transparent.svg"
+              alt=""
+              className={`splash-logo-img splash-logo-img-light${splashPhase === 'exit' ? ' splash-logo-img--exit' : ''}`}
+              aria-hidden="true"
+            />
+            <img
+              src="/logo-dark.svg"
+              alt=""
+              className={`splash-logo-img splash-logo-img-dark${splashPhase === 'exit' ? ' splash-logo-img--exit' : ''}`}
+              aria-hidden="true"
+            />
             <div className="splash-clouds">
               <div className="splash-el e1" /><div className="splash-el e2" /><div className="splash-el e3" />
               <div className="splash-el e4" /><div className="splash-el e5" /><div className="splash-el e6" />
+            </div>
+            <div className={`splash-logo${splashPhase === 'exit' ? ' splash-logo--exit' : ''}`}>
+              <span className="splash-logo-text">Alek Weather</span>
+              {splashPhase === 'visible' && (
+                <p className="splash-hint">
+                  {isDesktop ? 'Click or type anywhere to search for a location' : 'Tap anywhere to find a location'}
+                </p>
+              )}
             </div>
             <div className="splash-stars">
               {STARS.map((s, i) => (
                 <div key={i} className="splash-star" style={{ top: s.top, left: s.left, animationDuration: s.dur, animationDelay: s.delay }} />
               ))}
             </div>
+            <p className="splash-version">Version {APP_VERSION}</p>
           </div>
           {splashPhase === 'visible' && (
             <div className="splash-overlay" onClick={openSearch} aria-label="Search for a city" role="button" />
           )}
-          <div className={`splash-logo${splashPhase === 'exit' ? ' splash-logo--exit' : ''}`}>
-            <span className="splash-logo-text">Alek Weather</span>
-            {splashPhase === 'visible' && (
-              <p className="splash-hint">
-                {isDesktop ? 'Click or type anywhere to search for a location' : 'Tap anywhere to find a location'}
-              </p>
-            )}
-          </div>
         </>
       )}
 
@@ -555,7 +586,7 @@ function App() {
         />
       )}
 
-      {showSettings && (!isDesktop || !weather || loading) && (
+      {showSettings && (
         <SettingsPage
           onBack={closeSettings}
           colorCodingOpen={colorCodingOpen}
@@ -571,12 +602,16 @@ function App() {
           onNowcastModeChange={changeNowcastMode}
           colorCoding={colorCoding}
           onColorCodingToggle={toggleColorCoding}
+          weatherAnimations={weatherAnimations}
+          onWeatherAnimationsChange={changeWeatherAnimations}
           installPrompt={installPrompt}
           onInstall={handleInstall}
           closing={settingsClosing}
         />
       )}
+      <div id="alert-portal-root" />
     </div>
+    </>
   )
 }
 
