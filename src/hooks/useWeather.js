@@ -396,17 +396,25 @@ export function useWeather() {
     }, 15000)
 
     navigator.geolocation.getCurrentPosition(
-      (pos) => {
+      async (pos) => {
         clearTimeout(watchdog)
         if (!geoActiveRef.current) return
         geoActiveRef.current = false
-        fetchWeather({
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          name: 'My Location',
-          country: '',
-          admin1: '',
-        })
+        const { latitude, longitude } = pos.coords
+        let name = 'My Location', admin1 = '', country = '', country_code = ''
+        try {
+          const r = await fetch(
+            `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`
+          )
+          if (r.ok) {
+            const d = await r.json()
+            name = d.city || d.locality || d.principalSubdivision || 'My Location'
+            admin1 = d.principalSubdivision || ''
+            country = d.countryCode || ''
+            country_code = d.countryCode || ''
+          }
+        } catch { /* fall through to defaults */ }
+        fetchWeather({ latitude, longitude, name, country, country_code, admin1 })
       },
       (err) => {
         clearTimeout(watchdog)

@@ -446,7 +446,7 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ha
     const currentHour = parseInt(currentHourStr, 10)
     let noWeatherText
     if (allClear) {
-      if (currentHour < 10)      noWeatherText = 'Clear skies all day — a great day to be outside.'
+      if (currentHour < 10)      noWeatherText = 'Clear skies all day, a great day to be outside.'
       else if (currentHour < 16) noWeatherText = 'Clear skies for the rest of the day.'
       else                       noWeatherText = 'Clear and calm for the rest of the evening.'
     } else {
