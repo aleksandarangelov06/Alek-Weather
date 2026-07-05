@@ -55,9 +55,12 @@ export function WeatherRadar({ location, timezone }) {
       .catch(() => {})
   }, [])
 
+  const hasFrames = frames.length > 0
+
   // Init Leaflet map (without base tile — handled separately so it can swap on theme change)
   useEffect(() => {
-    if (!mapRef.current || mapInst.current || frames.length === 0) return
+    if (!mapRef.current || mapInst.current || !hasFrames) return
+    const cache = layerCache.current
     const map = L.map(mapRef.current, {
       zoomControl: false,
       attributionControl: false,
@@ -85,12 +88,11 @@ export function WeatherRadar({ location, timezone }) {
       map.remove()
       mapInst.current = null
       baseTileRef.current = null
-      layerCache.current.clear()
+      cache.clear()
       activeKey.current = null
       setMapReady(false)
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [frames.length > 0, location.latitude, location.longitude])
+  }, [hasFrames, location.latitude, location.longitude])
 
   // Add base tile layer once map is ready
   useEffect(() => {

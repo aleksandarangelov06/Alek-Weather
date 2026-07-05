@@ -25,6 +25,26 @@ const SKY_LEVEL = {
   'sky-storm':         'sky-lvl-darkest',
 }
 
+// Card tint per sky theme: a darkened mid-tone of that sky's gradient, so
+// cards blend with the backdrop instead of the one-size slate blue. `card` is
+// the surface color, `deep` the nested/darker variant (detail subcards, search
+// overlay). Every value keeps white text at ≥ ~4.2:1 contrast. App.css falls
+// back to the old slate palette when these vars are absent.
+const SKY_CARD_VARS = {
+  'sky-clear-day':      { '--sky-card': '#2a6cb4', '--sky-card-deep': '#235d9e' },
+  'sky-clear-night':    { '--sky-card': '#182452', '--sky-card-deep': '#111a3e' },
+  'sky-partly-day':     { '--sky-card': '#3d6f9f', '--sky-card-deep': '#335f8a' },
+  'sky-partly-night':   { '--sky-card': '#243447', '--sky-card-deep': '#1b2838' },
+  'sky-overcast-day':   { '--sky-card': '#4e6572', '--sky-card-deep': '#41545f' },
+  'sky-overcast-night': { '--sky-card': '#23343c', '--sky-card-deep': '#1a282e' },
+  'sky-fog':            { '--sky-card': '#6b7f8a', '--sky-card-deep': '#5b6d77' },
+  'sky-rain-day':       { '--sky-card': '#40535e', '--sky-card-deep': '#34454e' },
+  'sky-rain-night':     { '--sky-card': '#1c2930', '--sky-card-deep': '#151f25' },
+  'sky-snow-day':       { '--sky-card': '#647a89', '--sky-card-deep': '#556876' },
+  'sky-snow-night':     { '--sky-card': '#2a3a42', '--sky-card-deep': '#202d34' },
+  'sky-storm':          { '--sky-card': '#1a2038', '--sky-card-deep': '#12172a' },
+}
+
 const STARS = Array.from({ length: 40 }, () => ({
   top:   `${Math.random() * 88 + 4}%`,
   left:  `${Math.random() * 92 + 2}%`,
@@ -51,6 +71,7 @@ import { PrecipNowcast } from './components/PrecipNowcast'
 import { WeatherAlerts } from './components/WeatherAlerts'
 import { WeatherOverview } from './components/WeatherOverview'
 import { SettingsPage } from './components/SettingsPage'
+import { LoadingScreen } from './components/LoadingScreen'
 import { liveWeatherCode } from './utils/weatherCodes'
 import { APP_VERSION } from './utils/version'
 import './App.css'
@@ -62,6 +83,21 @@ const SEARCH_CLOSE_MS = 220
 // Passed to App.css as the --long-press-ms custom property so the fill animation
 // always matches this value.
 const LONG_PRESS_MS = 2000
+
+// Corrupted localStorage (partial write, manual edit) must never crash the app
+// during the initial render — fall back to defaults instead.
+function loadJSON(key) {
+  try { return JSON.parse(localStorage.getItem(key) ?? 'null') }
+  catch { return null }
+}
+
+// True when a saved city will auto-load on mount: the app then skips the
+// splash "home" screen (whose tap-to-search hint would be wrong) and opens
+// straight into the loading skeleton → weather.
+const HAS_SAVED_CITY = (() => {
+  try { return (JSON.parse(localStorage.getItem('alek-weather-saved')) ?? []).length > 0 }
+  catch { return false }
+})()
 
 const BLOCK_ORDER_KEY = 'alek-weather-block-order'
 const DEFAULT_BLOCK_ORDER = ['overview', 'nowcast', 'hourly', 'daily', 'details', 'radar']
@@ -93,7 +129,7 @@ function App() {
   const [nowcastMode, setNowcastMode] = useState(() => localStorage.getItem(NOWCAST_MODE_KEY) ?? 'auto')
   const [weatherAnimations, setWeatherAnimations] = useState(() => localStorage.getItem('alek-weather-animations') !== 'false')
   const [colorCoding, setColorCoding] = useState(() => {
-    const saved = JSON.parse(localStorage.getItem(COLOR_CODING_KEY) ?? 'null')
+    const saved = loadJSON(COLOR_CODING_KEY)
     return saved ? { ...DEFAULT_COLOR_CODING, ...saved } : DEFAULT_COLOR_CODING
   })
   const [installPrompt, setInstallPrompt] = useState(null)
@@ -107,13 +143,13 @@ function App() {
   const [searchInitialQuery, setSearchInitialQuery] = useState('')
   const [savedOpen, setSavedOpen] = useState(false)
   const [savedClosing, setSavedClosing] = useState(false)
-  const [splashPhase, setSplashPhase] = useState('visible') // 'visible' | 'exit' | 'done'
+  const [splashPhase, setSplashPhase] = useState(HAS_SAVED_CITY ? 'done' : 'visible') // 'visible' | 'exit' | 'done'
   const searchAreaRef = useRef(null)
   const searchHoldTimer = useRef(null)
   const searchLongPressed = useRef(false)
   const [searchHolding, setSearchHolding] = useState(false)
   const [blockOrder, setBlockOrder] = useState(() => {
-    const saved = JSON.parse(localStorage.getItem(BLOCK_ORDER_KEY) ?? 'null')
+    const saved = loadJSON(BLOCK_ORDER_KEY)
     if (!saved) return DEFAULT_BLOCK_ORDER
     const merged = DEFAULT_BLOCK_ORDER.filter(id => !saved.includes(id))
     return merged.length ? [...merged, ...saved] : saved
@@ -136,7 +172,7 @@ function App() {
   const {
     location, weather, airQuality, alerts, lastUpdated, searchResults, loading, error,
     searchCity, selectCity, useMyLocation, setSearchResults, fetchWeather, reset,
-  } = useWeather()
+  } = useWeather(HAS_SAVED_CITY)
 
   const { cities, save, remove, isSaved } = useSavedCities()
   const { recents, addRecent, removeRecent } = useRecentSearches()
@@ -398,7 +434,6 @@ function App() {
         <CurrentWeather
           current={weather.current}
           minutely={weather.minutely_15}
-          daily={weather.daily}
           location={location}
           timezone={weather.timezone}
           unit={unit}
@@ -435,7 +470,10 @@ function App() {
     <>
       {weather && weatherAnimations && <div className={`sky-bg ${skyC}`} aria-hidden="true" />}
       {weather && weatherAnimations && <WeatherCanvas code={liveCode} />}
-    <div className={`app${weatherAnimations && levelC ? ` ${levelC}` : ''}${!weatherAnimations ? ' no-effects' : ''}${weather && weatherAnimations ? ' sky-active' : ''}`}>
+    <div
+      className={`app${weatherAnimations && levelC ? ` ${levelC}` : ''}${!weatherAnimations ? ' no-effects' : ''}${weather && weatherAnimations ? ' sky-active' : ''}`}
+      style={weather && weatherAnimations ? SKY_CARD_VARS[skyC] : undefined}
+    >
       <header className={`app-header${!weather ? ' app-header--no-city' : ''}`}>
         <button
           className={`header-icon-btn${searchHolding ? ' header-icon-btn--holding' : ''}`}
@@ -468,12 +506,7 @@ function App() {
 
       <div className="app-grid">
         <main className="main-content">
-          {loading && (
-            <div className="status-message">
-              <div className="spinner" />
-              <span>Fetching weather...</span>
-            </div>
-          )}
+          {loading && <LoadingScreen />}
           {error && !loading && (
             error.startsWith('geo:') ? (
               <div className="location-error-card">
@@ -564,7 +597,7 @@ function App() {
                     cities={cities}
                     onSelect={handleSavedCitySelect}
                     onRemove={remove}
-                    currentLatitude={location?.latitude}
+                    currentLocation={location}
                   />
                 )}
               </SearchBar>
@@ -579,7 +612,7 @@ function App() {
           onSelect={handleSavedPageSelect}
           onRemove={remove}
           onBack={closeSaved}
-          currentLatitude={location?.latitude}
+          currentLocation={location}
           closing={savedClosing}
           recents={recents}
           onRemoveRecent={removeRecent}

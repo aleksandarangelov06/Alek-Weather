@@ -1,6 +1,7 @@
 import { ArrowLeft, Bookmark, Clock, MapPin, X } from 'lucide-react'
+import { sameCity } from '../utils/location'
 
-export function SavedCitiesPage({ cities, onSelect, onRemove, onBack, currentLatitude, closing, recents, onRemoveRecent }) {
+export function SavedCitiesPage({ cities, onSelect, onRemove, onBack, currentLocation, closing, recents, onRemoveRecent }) {
   const hasRecents = recents?.length > 0
   const hasCities = cities.length > 0
 
@@ -41,7 +42,7 @@ export function SavedCitiesPage({ cities, onSelect, onRemove, onBack, currentLat
             {hasRecents && <div className="recent-header">Saved</div>}
             <div className="saved-list">
               {cities.map((city, i) => (
-                <div key={i} className={`saved-row ${currentLatitude === city.latitude ? 'active' : ''}`}>
+                <div key={i} className={`saved-row ${sameCity(currentLocation, city) ? 'active' : ''}`}>
                   <button className="saved-city-btn" onClick={() => onSelect(city)}>
                     <MapPin size={13} />
                     <span className="saved-name">{city.name}{city.admin1 && city.admin1 !== city.name && `, ${city.admin1}`}</span>

@@ -13,3 +13,45 @@ body {
 #root {
   width: 100%;
 }
+
+/* Error boundary fallback (root-level crash recovery card) */
+.error-boundary {
+  max-width: 420px;
+  margin: 20vh auto 0;
+  padding: 28px 24px;
+  background: var(--card-bg, #ffffff);
+  border: 1px solid var(--border, rgba(0, 0, 0, 0.06));
+  border-radius: 16px;
+  text-align: center;
+}
+.error-boundary-title {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary, #1a1a2e);
+}
+.error-boundary-text {
+  margin: 0 0 20px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--text-secondary, #64748b);
+}
+.error-boundary-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+.error-boundary-btn {
+  padding: 9px 20px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent, #3b82f6);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+.error-boundary-btn--secondary {
+  background: var(--accent-light, rgba(59, 130, 246, 0.1));
+  color: var(--accent, #3b82f6);
+}

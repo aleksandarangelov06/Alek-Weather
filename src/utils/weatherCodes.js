@@ -11,6 +11,8 @@ const codes = {
   61: { label: 'Slight Rain',            icon: 'rain'                              },
   63: { label: 'Moderate Rain',          icon: 'rain'                              },
   65: { label: 'Heavy Rain',             icon: 'rain'                              },
+  66: { label: 'Light Freezing Rain',    icon: 'rain'                              },
+  67: { label: 'Freezing Rain',          icon: 'rain'                              },
   71: { label: 'Slight Snow',            icon: 'snow'                              },
   73: { label: 'Moderate Snow',          icon: 'snowflake'                         },
   75: { label: 'Heavy Snow',             icon: 'snowflake'                         },
@@ -38,12 +40,12 @@ export function getWeatherInfo(code, isNight = false) {
 // contradictory 0%. precipTier gives the code's intensity; displayPrecipChance
 // floors the shown chance to an intensity-based minimum (a display guard, not a
 // real probability — it only ever raises the number, never lowers it).
-export const RAIN_CODES = new Set([51, 53, 55, 61, 63, 65, 80, 81, 82, 95, 96, 99])
+export const RAIN_CODES = new Set([51, 53, 55, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99])
 export const SNOW_CODES = new Set([71, 73, 75, 77, 85, 86])
 
 // 0 none · 1 light · 2 moderate · 3 heavy · 4 severe
 const PRECIP_TIER = {
-  51: 1, 53: 2, 55: 2, 61: 1, 63: 2, 65: 3, 71: 1, 73: 2, 75: 3, 77: 1,
+  51: 1, 53: 2, 55: 2, 61: 1, 63: 2, 65: 3, 66: 1, 67: 2, 71: 1, 73: 2, 75: 3, 77: 1,
   80: 1, 81: 2, 82: 4, 85: 1, 86: 3, 95: 4, 96: 4, 99: 4,
 }
 export function precipTier(code) { return PRECIP_TIER[code] ?? 0 }
@@ -129,6 +131,10 @@ export function nowcastHourlyCode(code, minutely, slotTimeStr, cloudCover) {
 export function liveWeatherCode(current, minutely) {
   const code = current?.weather_code
   if (code == null || NO_RATE_OVERRIDE.has(code)) return code
+  // Set by useWeather when an active severe warning corroborates this code.
+  // The minutely nowcast is model-driven and routinely blind to convective
+  // storms, so it must not "correct" a warning-confirmed condition to clear.
+  if (current.weather_code_confirmed) return code
   const rate = livePrecipRate(current, minutely)
   if (rate == null) return code
   // Thunderstorm codes: show sky condition when nothing is measurably falling.
@@ -230,5 +236,5 @@ export function formatDay(dateString) {
   tomorrow.setDate(today.getDate() + 1)
   if (date.toDateString() === today.toDateString()) return 'Today'
   if (date.toDateString() === tomorrow.toDateString()) return 'Tomorrow'
-  return date.toLocaleDateString('en-US', { weekday: 'short' })
+  return date.toLocaleDateString('en-US', { weekday: 'long' })
 }

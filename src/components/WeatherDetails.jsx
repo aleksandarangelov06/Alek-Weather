@@ -83,7 +83,7 @@ function DetailCard({ icon, label, value, sub, color, onClick, isExpanded, onDra
   )
 }
 
-export function WeatherDetails({ current, daily, hourly, timezone, unit, airQuality }) {
+export function WeatherDetails({ current, daily, hourly, timezone, airQuality }) {
   const [expanded, setExpanded] = useState(null)
   const toggle = (key) => setExpanded(v => v === key ? null : key)
 

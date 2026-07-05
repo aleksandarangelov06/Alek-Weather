@@ -1,12 +1,14 @@
 import { useState, useCallback, useRef } from 'react'
-import { nowcastHourlyCode, precipTier } from '../utils/weatherCodes'
+import { nowcastHourlyCode, precipTier, livePrecipRate } from '../utils/weatherCodes'
 
 const GEO_URL = 'https://geocoding-api.open-meteo.com/v1/search'
 const WEATHER_URL = 'https://api.open-meteo.com/v1/forecast'
 const AQI_URL = 'https://air-quality-api.open-meteo.com/v1/air-quality'
 const NOAA_ALERTS_URL = 'https://api.weather.gov/alerts/active'
 const NWS_POINTS_URL = 'https://api.weather.gov/points'
-const NWS_HEADERS = { 'User-Agent': 'AlekWeatherApp/1.0 (angelov6@terpmail.umd.edu)' }
+// NWS requires contact info in the User-Agent. Plus-addressed so scraped spam
+// is filterable and the address is identifiable as coming from this app.
+const NWS_HEADERS = { 'User-Agent': 'AlekWeatherApp/1.0 (angelov6+alekweather@terpmail.umd.edu)' }
 
 // NWS icon code → WMO weather code
 const NWS_ICON_TO_WMO = {
@@ -213,6 +215,156 @@ function mergeNWSDaily(daily, periods, timezone) {
   }
 }
 
+// NWS /alerts/active often returns an alert AND the update that supersedes it
+// (msgType "Update" lists the originals under `references`) while both are
+// still technically active — the UI would show the same event twice. Drop
+// anything referenced by a newer alert, then collapse remaining duplicates of
+// the same event + area down to the most recently sent one.
+function dedupeAlerts(features) {
+  const superseded = new Set()
+  for (const f of features) {
+    for (const ref of f.properties?.references ?? []) {
+      if (ref.identifier) superseded.add(ref.identifier)
+    }
+  }
+  const sorted = [...features].sort((a, b) =>
+    new Date(b.properties?.sent ?? 0) - new Date(a.properties?.sent ?? 0)
+  )
+  const seen = new Set()
+  return sorted.filter(f => {
+    const p = f.properties ?? {}
+    if (superseded.has(p.id) || superseded.has(f.id)) return false
+    const key = `${p.event}|${p.areaDesc}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+// Collapse multiple alerts for the same hazard — e.g. Severe Thunderstorm
+// Warnings for two neighboring counties plus a Watch for a third — down to the
+// single most urgent one, so the alert list shows each distinct hazard once.
+// "Most urgent" = highest message level (Warning > Watch > Advisory >
+// Statement), then highest severity, then most recently sent. Distinct
+// hazards (e.g. a Flood Warning alongside a Tornado Warning) stay separate.
+const LEVEL_RANK    = { Warning: 3, Watch: 2, Advisory: 1, Statement: 0 }
+const SEVERITY_RANK = { Extreme: 4, Severe: 3, Moderate: 2, Minor: 1, Unknown: 0 }
+
+// "Severe Thunderstorm Warning" and "Severe Thunderstorm Watch" both group
+// under "Severe Thunderstorm".
+function hazardFamily(event = '') {
+  return event.replace(/\s+(Warning|Watch|Advisory|Statement)$/i, '').toLowerCase()
+}
+
+function alertUrgency(p = {}) {
+  const level = Object.keys(LEVEL_RANK).find(s => p.event?.endsWith(s))
+  return [
+    level ? LEVEL_RANK[level] : 0,
+    SEVERITY_RANK[p.severity] ?? 0,
+    new Date(p.sent ?? 0).getTime(),
+  ]
+}
+
+function collapseAlerts(features) {
+  const byHazard = new Map()
+  for (const f of features) {
+    const key = hazardFamily(f.properties?.event)
+    const current = byHazard.get(key)
+    if (!current) { byHazard.set(key, f); continue }
+    const a = alertUrgency(f.properties)
+    const b = alertUrgency(current.properties)
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] === b[i]) continue
+      if (a[i] > b[i]) byHazard.set(key, f)
+      break
+    }
+  }
+  return [...byHazard.values()]
+}
+
+// Map a NWS station observation (METAR) to a WMO weather code. This is the
+// only *measured* current-weather source in the pipeline — everything else is
+// model output, which routinely trails radar in convective weather. Only
+// reports from the last 75 min count (stations report hourly, plus special
+// reports during storms). Sky-cover-only observations return null so the model
+// pipeline keeps handling clear/cloudy — the station can be far enough away
+// that its cloud deck differs from the user's.
+function obsToWmoCode(obs) {
+  if (!obs?.timestamp) return null
+  const age = Date.now() - new Date(obs.timestamp).getTime()
+  if (!(age >= 0 && age <= 75 * 60 * 1000)) return null
+
+  // Substring matching: the API uses plural/compound values ("thunderstorms",
+  // "snow_showers", "freezing_rain" — verified live against KMTN during a
+  // storm), so exact equality would silently miss them.
+  const pw = obs.presentWeather ?? []
+  const has = (w) => pw.some(x => x.weather?.includes(w))
+  const intensityOf = (w) => pw.find(x => x.weather?.includes(w))?.intensity
+  if (has('thunder')) return 95
+  if (has('freezing_rain') || has('freezing_drizzle')) return 67
+  if (has('snow')) {
+    const i = intensityOf('snow')
+    return i === 'heavy' ? 75 : i === 'light' ? 71 : 73
+  }
+  if (has('rain')) {
+    const i = intensityOf('rain')
+    return i === 'heavy' ? 65 : i === 'light' ? 61 : 63
+  }
+  if (has('drizzle')) return 53
+  if (has('fog')) return 45
+
+  // presentWeather is often empty; fall back to the text summary.
+  const txt = (obs.textDescription ?? '').toLowerCase()
+  if (txt.includes('thunderstorm')) return 95
+  if (txt.includes('freezing')) return 67
+  if (txt.includes('snow')) return txt.includes('heavy') ? 75 : txt.includes('light') ? 71 : 73
+  if (txt.includes('rain') || txt.includes('shower')) return txt.includes('heavy') ? 65 : txt.includes('light') ? 61 : 63
+  if (txt.includes('drizzle')) return 53
+  if (txt.includes('fog') || txt.includes('mist')) return 45
+  return null
+}
+
+// Open-Meteo's model-driven current conditions can miss convective storms
+// entirely — a clear-sky reading while radar shows an active thunderstorm
+// overhead. When an active Severe/Extreme *warning* corroborates it, trust
+// the most severe of the model's current code and the (NWS-merged) forecast
+// code for this hour, and flag it so liveWeatherCode doesn't "correct" it
+// back to a sky condition using the equally storm-blind minutely nowcast.
+function confirmCurrentCode(data, alerts) {
+  const now = new Date()
+  const warning = alerts.find(a => {
+    const p = a.properties ?? {}
+    if (p.severity !== 'Severe' && p.severity !== 'Extreme') return false
+    if (!/warning/i.test(p.event ?? '')) return false
+    const started    = !p.onset   || new Date(p.onset) <= now
+    const notExpired = !p.expires || new Date(p.expires) > now
+    return started && notExpired
+  })
+  if (!warning) return
+
+  const local = now.toLocaleString('sv', { timeZone: data.timezone })
+  const hourKey = `${local.slice(0, 10)}T${local.slice(11, 13)}:00`
+  const idx = data.hourly?.time?.indexOf(hourKey) ?? -1
+  const hourCode = idx !== -1 ? data.hourly.weather_code?.[idx] : null
+
+  const currentCode = data.current?.weather_code
+  const best = precipTier(hourCode ?? -1) >= precipTier(currentCode ?? -1) ? hourCode : currentCode
+  if (best != null && precipTier(best) > 0) {
+    data.current.weather_code = best
+    data.current.weather_code_confirmed = true
+    return
+  }
+
+  // No forecast source admits precipitation, but the warning plus ANY
+  // measurable nowcast precip is corroboration enough — trace level, well
+  // below the display threshold, since the nowcast under-reports convection.
+  const rate = livePrecipRate(data.current, data.minutely_15) ?? 0
+  if (rate >= 0.004) { // TRACE in weatherCodes.js
+    data.current.weather_code = /thunderstorm/i.test(warning.properties?.event ?? '') ? 95 : 65
+    data.current.weather_code_confirmed = true
+  }
+}
+
 const PARAMS = [
   'current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,surface_pressure,wind_speed_10m,wind_direction_10m,uv_index,visibility',
   'hourly=temperature_2m,precipitation_probability,weather_code,is_day,uv_index,wind_speed_10m,wind_direction_10m,relative_humidity_2m,surface_pressure,visibility',
@@ -228,7 +380,10 @@ const PARAMS = [
 
 const AQI_PARAMS = 'current=us_aqi,pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone'
 
-export function useWeather() {
+// `initialLoading` lets the app start in the loading state when it knows a
+// fetch fires on mount (saved-city auto-load), so the empty state never
+// flashes for the frame before that effect runs.
+export function useWeather(initialLoading = false) {
   const [location, setLocation] = useState(null)
   const [weather, setWeather] = useState(null)
   const [airQuality, setAirQuality] = useState(null)
@@ -236,7 +391,7 @@ export function useWeather() {
   const [lastUpdated, setLastUpdated] = useState(null)
   const [searchResults, setSearchResults] = useState([])
   const searchAbortRef = useRef(null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(!!initialLoading)
   const [error, setError] = useState(null)
   const geoActiveRef = useRef(false)
   const fetchIdRef = useRef(0)
@@ -272,6 +427,16 @@ export function useWeather() {
       if (weatherResult.status === 'rejected' || !weatherResult.value.ok) throw new Error()
       const data = await weatherResult.value.json()
 
+      // Parse alerts up front: an active warning corroborates the
+      // current-condition cross-check after the NWS merge below.
+      let alertFeatures = []
+      if (alertsResult.status === 'fulfilled' && alertsResult.value.ok) {
+        try {
+          const alertsData = await alertsResult.value.json()
+          alertFeatures = collapseAlerts(dedupeAlerts(alertsData.features ?? []))
+        } catch { /* non-fatal */ }
+      }
+
       // Slice daily from today so existing components are unaffected.
       const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: data.timezone })
       const todayIdx = data.daily.time.indexOf(todayStr)
@@ -291,6 +456,32 @@ export function useWeather() {
           const pointsData = await nwsPointsResult.value.json()
           const hourlyUrl   = pointsData.properties?.forecastHourly
           const forecastUrl = pointsData.properties?.forecast
+
+          // Latest real observation from nearby stations, fetched in parallel
+          // with the forecast calls; failures fall through to the model
+          // pipeline (obsToWmoCode returns null). Small AWOS fields often
+          // report nothing (verified: K0W3 near Bel Air MD was empty during an
+          // active thunderstorm while KMTN two entries later reported +TS +RA),
+          // so walk the list until a station actually reports weather.
+          const obsPromise = (async () => {
+            const stationsUrl = pointsData.properties?.observationStations
+            if (!stationsUrl) return null
+            const sRes = await fetch(`${stationsUrl}?limit=4`, { headers: NWS_HEADERS })
+            if (!sRes.ok) return null
+            const stations = (await sRes.json()).features ?? []
+            for (const s of stations) {
+              const id = s.properties?.stationIdentifier
+              if (!id) continue
+              try {
+                const oRes = await fetch(`https://api.weather.gov/stations/${id}/observations/latest`, { headers: NWS_HEADERS })
+                if (!oRes.ok) continue
+                const obs = (await oRes.json()).properties
+                if (obs?.presentWeather?.length || obs?.textDescription) return obs
+              } catch { /* try the next station */ }
+            }
+            return null
+          })().catch(() => null)
+
           const [nwsHourlyRes, nwsForecastRes] = await Promise.allSettled([
             hourlyUrl   ? fetch(hourlyUrl,   { headers: NWS_HEADERS }) : Promise.reject(),
             forecastUrl ? fetch(forecastUrl, { headers: NWS_HEADERS }) : Promise.reject(),
@@ -308,23 +499,32 @@ export function useWeather() {
           // Re-derive daily code + probability from the merged hourly data so
           // all three forecast views (daily, hourly, overview) agree.
           if (nwsHourlyMerged) alignDailyWithHourly(data.daily, data.hourly, data.minutely_15, data.current, data.timezone)
-        } catch {} // non-fatal
+
+          // A station actually observing precipitation overrides the model's
+          // current condition outright — measured beats predicted.
+          const obsCode = obsToWmoCode(await obsPromise)
+          if (obsCode != null) {
+            data.current.weather_code = obsCode
+            data.current.weather_code_confirmed = true
+          }
+        } catch { /* non-fatal */ }
       }
+
+      // Cross-check the current condition against active warnings + NWS hourly
+      // so a storm the Open-Meteo model missed still shows as one.
+      confirmCurrentCode(data, alertFeatures)
 
       if (fetchIdRef.current !== fetchId) return
       setWeather(data)
       setLocation(loc)
       setLastUpdated(new Date())
+      setAlerts(alertFeatures)
 
       if (aqiResult.status === 'fulfilled' && aqiResult.value.ok) {
         const aqiData = await aqiResult.value.json()
         if (fetchIdRef.current === fetchId && aqiData.current?.us_aqi != null) setAirQuality(aqiData.current)
       }
 
-      if (alertsResult.status === 'fulfilled' && alertsResult.value.ok) {
-        const alertsData = await alertsResult.value.json()
-        if (fetchIdRef.current === fetchId) setAlerts(alertsData.features ?? [])
-      }
     } catch {
       if (fetchIdRef.current === fetchId) setError('Failed to fetch weather data. Please try again.')
     } finally {
@@ -403,8 +603,11 @@ export function useWeather() {
         const { latitude, longitude } = pos.coords
         let name = 'My Location', admin1 = '', country = '', country_code = ''
         try {
+          // Privacy: round to 2 decimals (~1 km) before sending coordinates to
+          // the third-party reverse geocoder — city-level accuracy is all it
+          // needs. The weather APIs still get full precision.
           const r = await fetch(
-            `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`
+            `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude.toFixed(2)}&longitude=${longitude.toFixed(2)}&localityLanguage=en`
           )
           if (r.ok) {
             const d = await r.json()

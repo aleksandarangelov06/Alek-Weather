@@ -1,12 +1,49 @@
+import process from 'node:process'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 
 const base = process.env.VITE_BASE_PATH ?? '/'
 
+// Defense-in-depth: restrict every resource type to the exact origins the app
+// uses, so injected or compromised code can't call out anywhere else.
+// Injected only on build — the dev server needs inline scripts and a
+// websocket for HMR, which this policy would block.
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  // 'unsafe-inline' is required: React inline style props and Leaflet's
+  // positioning both set style attributes.
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src https://fonts.gstatic.com",
+  "img-src 'self' data: blob: https://tilecache.rainviewer.com https://*.basemaps.cartocdn.com https://cdn.jsdelivr.net",
+  "connect-src 'self' https://api.open-meteo.com https://geocoding-api.open-meteo.com https://air-quality-api.open-meteo.com https://api.weather.gov https://api.rainviewer.com https://api.bigdatacloud.net",
+  "worker-src 'self'",
+  "manifest-src 'self'",
+  "object-src 'none'",
+  "base-uri 'self'",
+  "form-action 'none'",
+].join('; ')
+
+const cspPlugin = {
+  name: 'inject-csp',
+  apply: 'build',
+  transformIndexHtml(html) {
+    return {
+      html,
+      tags: [{
+        tag: 'meta',
+        attrs: { 'http-equiv': 'Content-Security-Policy', content: CSP },
+        injectTo: 'head-prepend',
+      }],
+    }
+  },
+}
+
 export default defineConfig({
   base,
   plugins: [
+    cspPlugin,
     react(),
     VitePWA({
       registerType: 'autoUpdate',

@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react'
+import { sameCity } from '../utils/location'
 
 const KEY = 'alek-weather-recent-searches'
 const MAX = 7
@@ -11,7 +12,7 @@ export function useRecentSearches() {
 
   const addRecent = useCallback((city) => {
     setRecents(prev => {
-      const filtered = prev.filter(c => c.latitude !== city.latitude)
+      const filtered = prev.filter(c => !sameCity(c, city))
       const next = [city, ...filtered].slice(0, MAX)
       localStorage.setItem(KEY, JSON.stringify(next))
       return next
@@ -20,7 +21,7 @@ export function useRecentSearches() {
 
   const removeRecent = useCallback((city) => {
     setRecents(prev => {
-      const next = prev.filter(c => c.latitude !== city.latitude)
+      const next = prev.filter(c => !sameCity(c, city))
       localStorage.setItem(KEY, JSON.stringify(next))
       return next
     })

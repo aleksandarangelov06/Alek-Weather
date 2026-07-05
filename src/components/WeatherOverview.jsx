@@ -521,7 +521,6 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ha
     if (tempText) {
       if (insights.length === 1 && insights[0].level !== 'severe') {
         const base = insights[0].text.replace(/\.$/, '')
-        const lower = tempText.charAt(0).toLowerCase() + tempText.slice(1)
         insights[0] = { ...insights[0], text: `${base}. ${tempText}` }
       } else {
         insights.push({ level: 'neutral', text: tempText })
@@ -579,11 +578,100 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ha
     }
   }
 
+  // ── Week ahead ────────────────────────────────────────────────────────────
+  // Look past tomorrow for anything worth planning around: the most severe
+  // precipitation event of the week and any large temperature swing. Days that
+  // far out get weekday names — exact hours would be false precision. Today
+  // and tomorrow are already covered by the hourly insights above.
+  if (daily?.time?.length > 2 && daily.weather_code) {
+    const dayName = (i) =>
+      new Date(`${daily.time[i]}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' })
+
+    const EVENT_RANK = { severe: 3, heavy: 2, moderate: 1 }
+    let evDay = -1, evRank = 0
+    for (let i = 2; i < daily.time.length; i++) {
+      const rank = EVENT_RANK[classify(daily.weather_code[i])] ?? 0
+      if (rank === 0) continue
+      const raw = daily.precipitation_probability_max?.[i]
+      if (raw != null && raw < 30) continue // too unlikely to plan around
+      if (rank > evRank) { evRank = rank; evDay = i }
+    }
+
+    if (evDay !== -1 && insights.length < 4) {
+      const code = daily.weather_code[evDay]
+      const raw = daily.precipitation_probability_max?.[evDay]
+      const p = raw != null ? displayPrecipChance(code, raw) : null
+      const day = dayName(evDay)
+      const isSnow = SNOW_CODES.has(code)
+      const isThunder = [95, 96, 99].includes(code)
+
+      if (evRank === 3) {
+        insights.push({
+          level: 'warning',
+          text: isThunder
+            ? (p != null ? `${p}% chance of thunderstorms ${day}.` : `Thunderstorms possible ${day}.`)
+            : (p != null ? `${p}% chance of violent showers ${day}.` : `Violent showers possible ${day}.`),
+        })
+      } else if (evRank === 2) {
+        insights.push({
+          level: 'info',
+          text: isSnow
+            ? (p != null ? `${p}% chance of heavy snow ${day}.` : `Heavy snow possible ${day}.`)
+            : (p != null ? `${p}% chance of heavy rain ${day}.` : `Heavy rain possible ${day}.`),
+        })
+      } else {
+        insights.push({
+          level: 'notice',
+          text: isSnow
+            ? (p != null ? `${p}% chance of snow ${day}.` : `Snow possible ${day}.`)
+            : (p != null ? `${p}% chance of rain ${day}.` : `Rain expected ${day}.`),
+        })
+      }
+    }
+
+    // Largest temperature swing versus today. Phrased without numbers since
+    // this component doesn't know the user's display unit.
+    if (daily.temperature_2m_max?.[0] != null && daily.temperature_2m_min?.[0] != null && insights.length < 4) {
+      const dayAvg = (i) => (daily.temperature_2m_max[i] + daily.temperature_2m_min[i]) / 2
+      const todayAvg = dayAvg(0)
+      let swingDay = -1, swingDiff = 0
+      for (let i = 2; i < daily.temperature_2m_max.length; i++) {
+        const diff = dayAvg(i) - todayAvg // °F
+        if (Math.abs(diff) >= 10 && Math.abs(diff) > Math.abs(swingDiff)) {
+          swingDay = i
+          swingDiff = diff
+        }
+      }
+      if (swingDay !== -1) {
+        const much = Math.abs(swingDiff) >= 15 ? 'much ' : ''
+        insights.push({
+          level: 'neutral',
+          text: swingDiff > 0
+            ? `Turning ${much}warmer by ${dayName(swingDay)}.`
+            : `Turning ${much}cooler by ${dayName(swingDay)}.`,
+        })
+      }
+    }
+  }
+
+  // ── Declutter by priority ─────────────────────────────────────────────────
+  // A major event should own the card: context lines like "warmer than the
+  // rest of the week" or "thunderstorms Monday" only earn a slot when nothing
+  // urgent is happening. Order within the array already puts "now" first.
+  let visible
+  if (insights.some(i => i.level === 'severe')) {
+    visible = insights.filter(i => i.level === 'severe').slice(0, 2)
+  } else if (insights.some(i => i.level === 'warning')) {
+    visible = insights.filter(i => i.level === 'warning' || i.level === 'info').slice(0, 2)
+  } else {
+    visible = insights.slice(0, 3)
+  }
+
   return (
     <div className="card">
       <div className="section-label">WEATHER OVERVIEW</div>
       <div className="overview-list">
-        {insights.map((item, i) => (
+        {visible.map((item, i) => (
           <div key={i} className={`overview-item overview-${item.level}`}>
             <span className={`overview-dot${hasActiveAlert && item.level === 'severe' ? ' overview-dot--alert' : ''}`} />
             <span className="overview-text">{item.text}</span>

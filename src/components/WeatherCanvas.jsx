@@ -10,8 +10,10 @@ function sceneFor(code) {
 }
 
 const CFG = {
-  rain:  { count: 120, color: [90, 130, 190],  alpha: 0.55, speed: [5, 10],  angle: 12, len: [12, 22] },
-  storm: { count: 260, color: [70, 110, 175],  alpha: 0.70, speed: [15, 24], angle: 20, len: [16, 32] },
+  // Counts include headroom for drops that sit off-screen left in the widened
+  // spawn range (see driftX below), so on-screen density matches the old look.
+  rain:  { count: 140, color: [90, 130, 190],  alpha: 0.55, speed: [5, 10],  angle: 12, len: [12, 22] },
+  storm: { count: 325, color: [70, 110, 175],  alpha: 0.70, speed: [15, 24], angle: 20, len: [16, 32] },
   snow:  { count: 70,  color: [180, 210, 240], alpha: 0.75, speed: [0.5, 1.6] },
   fog:   { count: 16,  color: [140, 160, 180], alpha: 0.18, speed: 0.4, size: [70, 140] },
 }
@@ -35,11 +37,18 @@ export function WeatherCanvas({ code }) {
     const W = () => canvas.width
     const H = () => canvas.height
 
+    // Angled rain drifts sideways by height·tan(angle) as it falls, so drops
+    // spawned across just [-100, W+100] all shift right on the way down and
+    // leave the bottom-left corner dry. Extend the spawn range left by the
+    // full-fall drift so coverage stays uniform at every height.
+    const angleRad = (cfg.angle ?? 0) * Math.PI / 180
+    const driftX = () => (H() + 20) * Math.tan(angleRad)
+
     let particles
     if (scene === 'rain' || scene === 'storm') {
-      const a = cfg.angle * Math.PI / 180
+      const a = angleRad
       particles = Array.from({ length: cfg.count }, () => ({
-        x: rand(-100, W() + 100), y: rand(0, H()),
+        x: rand(-100 - driftX(), W() + 100), y: rand(0, H()),
         len: rand(cfg.len[0], cfg.len[1]),
         spd: rand(cfg.speed[0], cfg.speed[1]),
         vx: Math.sin(a), vy: Math.cos(a),
@@ -80,7 +89,7 @@ export function WeatherCanvas({ code }) {
         ctx.lineWidth = 1.5
         for (const p of particles) {
           p.x += p.vx * p.spd; p.y += p.vy * p.spd
-          if (p.y > H()) { p.y = -20; p.x = rand(-100, W() + 100) }
+          if (p.y > H()) { p.y = -20; p.x = rand(-100 - driftX(), W() + 100) }
           ctx.beginPath()
           ctx.moveTo(p.x, p.y)
           ctx.lineTo(p.x - p.vx * p.len, p.y - p.vy * p.len)

@@ -77,7 +77,7 @@ function markNotifiedDate(type, date) {
     const dates = JSON.parse(localStorage.getItem(NOTIFIED_DATES_KEY) ?? '{}')
     dates[type] = date
     localStorage.setItem(NOTIFIED_DATES_KEY, JSON.stringify(dates))
-  } catch {}
+  } catch { /* storage unavailable */ }
 }
 
 // ── Rain / Storm ──────────────────────────────────────────────────────────────
@@ -98,7 +98,10 @@ export function fireRainNotification(hourly, timezone) {
   const currentHourStr = new Date().toLocaleString('en-CA', {
     hour: '2-digit', hour12: false, timeZone: timezone,
   })
-  const start = Math.max(0, hourly.time.findIndex(t => t.startsWith(`${today}T${currentHourStr}`)))
+  // If the current hour isn't in the array, bail — falling back to index 0
+  // would scan yesterday's hours (past_days=1) and notify about past weather.
+  const start = hourly.time.findIndex(t => t.startsWith(`${today}T${currentHourStr}`))
+  if (start === -1) return
   const codes = hourly.weather_code.slice(start, start + 12)
 
   let worstLevel = 'clear', worstCode = null
