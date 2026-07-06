@@ -1,13 +1,22 @@
-import { MapPin, X } from 'lucide-react'
+import { MapPin, House, X } from 'lucide-react'
 import { sameCity } from '../utils/location'
 
-export function SavedCities({ cities, onSelect, onRemove, currentLocation }) {
-  if (cities.length === 0) return null
+export function SavedCities({ cities, onSelect, onRemove, currentLocation, home }) {
+  if (cities.length === 0 && !home) return null
 
   return (
     <div className="saved-cities">
       <div className="section-label">SAVED CITIES</div>
       <div className="saved-list">
+        {home && (
+          <div className={`saved-row ${sameCity(currentLocation, home) ? 'active' : ''}`}>
+            <button className="saved-city-btn" onClick={() => onSelect(home)}>
+              <House size={13} />
+              <span className="place-tag">Home</span>
+              <span className="saved-name">{home.name}{home.admin1 && home.admin1 !== home.name && `, ${home.admin1}`}</span>
+            </button>
+          </div>
+        )}
         {cities.map((city, i) => (
           <div key={i} className={`saved-row ${sameCity(currentLocation, city) ? 'active' : ''}`}>
             <button className="saved-city-btn" onClick={() => onSelect(city)}>

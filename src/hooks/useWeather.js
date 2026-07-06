@@ -611,7 +611,12 @@ export function useWeather(initialLoading = false) {
           )
           if (r.ok) {
             const d = await r.json()
-            name = d.city || d.locality || d.principalSubdivision || 'My Location'
+            // Most-specific administrative level with a name (city/town/suburb),
+            // used when the top-level `city` field comes back empty for some
+            // coordinates so we still show a real place rather than "My Location".
+            const admin = d.localityInfo?.administrative ?? []
+            const adminName = admin.length ? admin[admin.length - 1]?.name : ''
+            name = d.city || d.locality || adminName || d.principalSubdivision || 'My Location'
             admin1 = d.principalSubdivision || ''
             country = d.countryCode || ''
             country_code = d.countryCode || ''
@@ -635,8 +640,12 @@ export function useWeather(initialLoading = false) {
     )
   }, [fetchWeather])
 
+  // Dismiss the current error without touching loaded weather (so closing the
+  // "location not found / denied" card leaves the existing forecast in place).
+  const clearError = useCallback(() => setError(null), [])
+
   return {
     location, weather, airQuality, alerts, lastUpdated, searchResults, loading, error,
-    searchCity, selectCity, useMyLocation, setSearchResults, fetchWeather, reset,
+    searchCity, selectCity, useMyLocation, setSearchResults, fetchWeather, reset, clearError,
   }
 }

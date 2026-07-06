@@ -51,7 +51,7 @@ const STARS = Array.from({ length: 40 }, () => ({
   dur:   `${(Math.random() * 3 + 2).toFixed(1)}s`,
   delay: `${-(Math.random() * 4).toFixed(1)}s`,
 }))
-import { SlidersHorizontal, MapPin, MapPinOff, ArrowLeft, GripHorizontal, Library } from 'lucide-react'
+import { SlidersHorizontal, MapPin, MapPinOff, ArrowLeft, GripHorizontal, Library, X } from 'lucide-react'
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -94,10 +94,17 @@ function loadJSON(key) {
 // True when a saved city will auto-load on mount: the app then skips the
 // splash "home" screen (whose tap-to-search hint would be wrong) and opens
 // straight into the loading skeleton → weather.
-const HAS_SAVED_CITY = (() => {
-  try { return (JSON.parse(localStorage.getItem('alek-weather-saved')) ?? []).length > 0 }
-  catch { return false }
+// The city to auto-load on launch: the set home takes priority, then the first
+// saved city. Reading it here (module scope) lets the app skip the splash and
+// start in the loading state when it knows a fetch will fire on mount.
+const INITIAL_CITY = (() => {
+  try {
+    const homeCity = JSON.parse(localStorage.getItem('alek-weather-home'))
+    if (homeCity) return homeCity
+    return (JSON.parse(localStorage.getItem('alek-weather-saved')) ?? [])[0] ?? null
+  } catch { return null }
 })()
+const HAS_SAVED_CITY = !!INITIAL_CITY
 
 const BLOCK_ORDER_KEY = 'alek-weather-block-order'
 const DEFAULT_BLOCK_ORDER = ['overview', 'nowcast', 'hourly', 'daily', 'details', 'radar']
@@ -171,10 +178,10 @@ function App() {
 
   const {
     location, weather, airQuality, alerts, lastUpdated, searchResults, loading, error,
-    searchCity, selectCity, useMyLocation, setSearchResults, fetchWeather, reset,
+    searchCity, selectCity, useMyLocation, setSearchResults, fetchWeather, reset, clearError,
   } = useWeather(HAS_SAVED_CITY)
 
-  const { cities, save, remove, isSaved } = useSavedCities()
+  const { cities, save, remove, isSaved, home, setHome, isHome } = useSavedCities()
   const { recents, addRecent, removeRecent } = useRecentSearches()
   useEffect(() => {
     const handler = (e) => { e.preventDefault(); setInstallPrompt(e) }
@@ -219,9 +226,9 @@ function App() {
     return () => mq.removeEventListener('change', handler)
   }, [darkMode])
 
-  // Auto-load first saved city on mount
+  // Auto-load the home city on mount (falling back to the first saved city).
   useEffect(() => {
-    if (cities.length > 0) fetchWeather(cities[0])
+    if (INITIAL_CITY) fetchWeather(INITIAL_CITY)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close search overlay on Escape key
@@ -339,10 +346,9 @@ function App() {
 
   const closeSearch = () => history.back()
 
-  // Press-and-hold the header search button to open saved cities without going
-  // through the search overlay; a normal tap still opens search. The fill
-  // animation under the icon (App.css) signals progress toward the LONG_PRESS_MS
-  // threshold.
+  // Press-and-hold the header location button to detect your location via GPS;
+  // a normal tap still opens search. The fill animation under the icon
+  // (App.css) signals progress toward the LONG_PRESS_MS threshold.
   const startSearchHold = () => {
     if (splashPhase !== 'done') return
     searchLongPressed.current = false
@@ -351,7 +357,7 @@ function App() {
       searchLongPressed.current = true
       setSearchHolding(false)
       navigator.vibrate?.(40)
-      openSaved()
+      useMyLocation()
     }, LONG_PRESS_MS)
   }
 
@@ -419,7 +425,7 @@ function App() {
   const levelC   = SKY_LEVEL[skyC] ?? ''
 
   const blockComponents = weather && !loading ? {
-    overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} minutely={weather.minutely_15} timezone={weather.timezone} hasActiveAlert={hasActiveAlert} />,
+    overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} minutely={weather.minutely_15} timezone={weather.timezone} hasActiveAlert={hasActiveAlert} unit={unit} />,
     hourly:  <HourlyForecast hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.hourly} glow={colorCoding.glow} current={weather.current} minutely={weather.minutely_15} />,
     daily:   <DailyForecast daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.daily} glow={colorCoding.glow} current={weather.current} minutely={weather.minutely_15} />,
     details: <WeatherDetails current={weather.current} daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} airQuality={airQuality} />,
@@ -440,6 +446,8 @@ function App() {
           saved={isSaved(location)}
           onSave={() => save(location)}
           onRemove={() => remove(location)}
+          isHome={isHome(location)}
+          onToggleHome={() => setHome(isHome(location) ? null : location)}
           lastUpdated={lastUpdated}
           onRefresh={() => fetchWeather(location)}
           loading={loading}
@@ -510,6 +518,9 @@ function App() {
           {error && !loading && (
             error.startsWith('geo:') ? (
               <div className="location-error-card">
+                <button className="location-error-close" onClick={clearError} aria-label="Dismiss">
+                  <X size={18} />
+                </button>
                 <MapPinOff size={32} className="location-error-icon" />
                 <p className="location-error-msg">{error.slice(4)}</p>
                 <button className="location-error-search" onClick={openSearch}>Search for a city instead</button>
@@ -592,12 +603,13 @@ function App() {
                 recents={recents}
                 onRemoveRecent={removeRecent}
               >
-                {cities.length > 0 && (
+                {(cities.length > 0 || home) && (
                   <SavedCities
                     cities={cities}
                     onSelect={handleSavedCitySelect}
                     onRemove={remove}
                     currentLocation={location}
+                    home={home}
                   />
                 )}
               </SearchBar>
@@ -616,6 +628,8 @@ function App() {
           closing={savedClosing}
           recents={recents}
           onRemoveRecent={removeRecent}
+          home={home}
+          onRemoveHome={() => setHome(null)}
         />
       )}
 

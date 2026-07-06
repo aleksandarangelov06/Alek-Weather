@@ -10,6 +10,42 @@ const SEVERITY_CONFIG = {
   Unknown:  { color: '#8b949e', bg: 'rgba(139,148,158,0.10)', label: 'Alert'    },
 }
 
+// Air Quality "Code <colour>" levels, matching the US AQI scale.
+const AQI_CODE_COLORS = {
+  green: '#22c55e', yellow: '#eab308', orange: '#f97316',
+  red: '#ef4444', purple: '#a855f7', maroon: '#7c3aed',
+}
+
+function withAlpha(hex, a) {
+  const n = parseInt(hex.slice(1), 16)
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`
+}
+
+// Colour an alert by the action it demands rather than by NWS severity alone:
+// Warnings (hazard happening/imminent) are red, Watches (be prepared) orange,
+// Advisories yellow. Air Quality Alerts are coloured by their announced
+// "Code <colour>" level, so a Code Red shows red, Code Orange orange, etc.
+// Falls back to the severity palette for anything that fits none of these.
+function resolveStyle(props) {
+  const base = SEVERITY_CONFIG[props.severity] ?? SEVERITY_CONFIG.Unknown
+  const event = (props.event ?? '').trim()
+
+  if (/air quality/i.test(event)) {
+    const haystack = `${event} ${props.headline ?? ''} ${props.description ?? ''}`
+    const m = haystack.match(/code\s+(green|yellow|orange|red|purple|maroon)/i)
+    if (m) {
+      const color = AQI_CODE_COLORS[m[1].toLowerCase()]
+      return { ...base, color, bg: withAlpha(color, 0.12) }
+    }
+  }
+
+  let color
+  if (/warning$/i.test(event))       color = '#ef4444'
+  else if (/watch$/i.test(event))    color = '#f97316'
+  else if (/advisory$/i.test(event)) color = '#eab308'
+  return color ? { ...base, color, bg: withAlpha(color, 0.12) } : base
+}
+
 function formatExpires(iso) {
   if (!iso) return null
   return new Date(iso).toLocaleString(undefined, {
@@ -50,7 +86,7 @@ function AlertModal({ alert, onClose }) {
   }
 
   const props = alert.properties
-  const cfg = SEVERITY_CONFIG[props.severity] ?? SEVERITY_CONFIG.Unknown
+  const cfg = resolveStyle(props)
 
   return (
     <div className="alert-backdrop" onClick={onClose}>
@@ -130,14 +166,18 @@ export function WeatherAlerts({ alerts }) {
         <div className="alerts-list">
           {alerts.map(alert => {
             const props = alert.properties
-            const cfg = SEVERITY_CONFIG[props.severity] ?? SEVERITY_CONFIG.Unknown
+            const cfg = resolveStyle(props)
+            const critical = props.severity === 'Extreme'
             return (
               <button
                 key={alert.id}
                 className="alert-row"
                 onClick={() => setSelected(alert.id)}
               >
-                <div className="alert-row-icon" style={{ background: cfg.bg }}>
+                <div
+                  className={`alert-row-icon${critical ? ' alert-row-icon--critical' : ''}`}
+                  style={{ background: cfg.bg }}
+                >
                   <TriangleAlert size={14} style={{ color: cfg.color }} />
                 </div>
                 <div className="alert-row-text">

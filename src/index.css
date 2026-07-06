@@ -23,6 +23,8 @@ body {
   border: 1px solid var(--border, rgba(0, 0, 0, 0.06));
   border-radius: 16px;
   text-align: center;
+  /* Match the app's typeface instead of the browser default serif. */
+  font-family: var(--font, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
 }
 .error-boundary-title {
   margin: 0 0 8px;
@@ -49,6 +51,7 @@ body {
   color: #fff;
   font-size: 0.9rem;
   font-weight: 500;
+  font-family: inherit;
   cursor: pointer;
 }
 .error-boundary-btn--secondary {

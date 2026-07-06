@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { createPortal } from 'react-dom'
 import { Minimize2, Play, Pause, Navigation, ZoomIn, ZoomOut } from 'lucide-react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -11,7 +10,22 @@ const MAP_MAX_ZOOM     = 12
 const RADAR_NATIVE_MAX = 7 // RainViewer's 512px radar tiles cap here; higher returns "zoom level not supported"
 const RADAR_OPACITY     = 0.65
 const RADAR_WINDOW      = 2 // frames either side of current kept attached to the map
-const LEGEND_COLORS = ['#43a4c3', '#326985', '#ffff00', '#ff3300', '#d193c9']
+const LEGEND_COLORS = ['#43a4c3', '#326985', '#ffd900', '#ff3300', '#d193c9']
+
+// Scroll pixels needed per zoom level, tuned separately per input device: a
+// mouse wheel fires big discrete notches (needs a large value or it races),
+// while a trackpad streams many tiny deltas (needs a smaller value or it crawls).
+const WHEEL_PX_MOUSE    = 150
+const WHEEL_PX_TRACKPAD = 10
+
+// Classify a wheel event as coming from a physical mouse vs a trackpad.
+// Firefox reports line/page mode (deltaMode !== 0) only for mouse wheels; on
+// Chromium a mouse wheel yields wheelDeltaY in whole multiples of 120 with a
+// sizable deltaY, whereas a trackpad produces small, often fractional deltas.
+function isMouseWheel(e) {
+  if (e.deltaMode !== 0) return true
+  return e.wheelDeltaY != null && Math.abs(e.wheelDeltaY) % 120 === 0 && Math.abs(e.deltaY) >= 100
+}
 
 delete L.Icon.Default.prototype._getIconUrl
 L.Icon.Default.mergeOptions({ iconUrl: '', shadowUrl: '' })
@@ -72,12 +86,32 @@ export function WeatherRadar({ location, timezone }) {
       keyboard: false,
       minZoom: MAP_MIN_ZOOM,
       maxZoom: MAP_MAX_ZOOM,
-      // Perf on low-end laptops: skip Leaflet's per-frame repaint work.
+      // Smooth wheel/trackpad zoom: allow fractional zoom levels (zoomSnap 0)
+      // and animate the transition so scrolling glides continuously instead of
+      // snapping a whole level at a time. wheelPxPerZoomLevel is set per-device
+      // by the wheel listener below. zoomDelta stays 1 so the +/- buttons and
+      // arrow keys still step by a full level.
+      zoomSnap: 0,
+      zoomDelta: 1,
+      wheelPxPerZoomLevel: WHEEL_PX_MOUSE,
+      wheelDebounceTime: 40,
+      zoomAnimation: true,
+      markerZoomAnimation: true,
+      // Perf on low-end laptops: still skip the tile cross-fade and mid-zoom
+      // grid refreshes — the expensive per-frame repaints — during zoom.
       fadeAnimation: false,       // no tile cross-fade (composites every tile load)
-      zoomAnimation: false,       // no animated zoom re-raster
-      markerZoomAnimation: false,
       updateWhenZooming: false,   // don't refresh the tile grid mid-zoom
     })
+
+    // Pick the zoom sensitivity to match the device on each scroll. Capture
+    // phase so it runs before Leaflet's own wheel handler, which reads the
+    // option when it performs the (debounced) zoom.
+    const onWheel = (e) => {
+      map.options.wheelPxPerZoomLevel = isMouseWheel(e) ? WHEEL_PX_MOUSE : WHEEL_PX_TRACKPAD
+    }
+    const wheelEl = mapRef.current
+    wheelEl.addEventListener('wheel', onWheel, { capture: true, passive: true })
+
     map.setView([location.latitude, location.longitude], 10)
     L.circleMarker([location.latitude, location.longitude], {
       radius: 5, fillColor: '#3b82f6', color: '#fff', weight: 2, fillOpacity: 1,
@@ -85,6 +119,7 @@ export function WeatherRadar({ location, timezone }) {
     mapInst.current = map
     setMapReady(true)
     return () => {
+      wheelEl.removeEventListener('wheel', onWheel, { capture: true })
       map.remove()
       mapInst.current = null
       baseTileRef.current = null
@@ -143,9 +178,14 @@ export function WeatherRadar({ location, timezone }) {
       return layer
     }
 
+    // During playback widen the window by one frame: prefetch lead time is
+    // what prevents load-aware playback from pausing, and nobody is panning
+    // mid-playback so the extra attached grid costs nothing noticeable.
+    const win = playing ? RADAR_WINDOW + 1 : RADAR_WINDOW
+
     // Detach layers outside the window so the map isn't dragging 13 tile grids.
     const inWindow = new Set()
-    for (let d = -RADAR_WINDOW; d <= RADAR_WINDOW; d++) {
+    for (let d = -win; d <= win; d++) {
       inWindow.add(frames[((idx + d) % frames.length + frames.length) % frames.length].path)
     }
     layerCache.current.forEach((layer, path) => {
@@ -180,17 +220,27 @@ export function WeatherRadar({ location, timezone }) {
     else layer.once('load', show)
 
     // Prefetch the full forward window so playback never waits on cold layers.
-    for (let d = 1; d <= RADAR_WINDOW; d++) {
+    for (let d = 1; d <= win; d++) {
       getLayer(frames[(idx + d) % frames.length], true)
     }
-  }, [mapReady, host, frames, idx])
+  }, [mapReady, host, frames, idx, playing])
 
-  // Animation playback
+  // Animation playback. Load-aware: if the next frame's tiles aren't in yet,
+  // hold the current frame for another tick instead of advancing past it —
+  // a brief pause reads as smooth, a skipped frame reads as a glitch. The
+  // holds cap forces an advance anyway so a frame whose tiles never load
+  // (e.g. all requests error) can't stall the loop. Depending on `idx` means
+  // the interval restarts each advance, which also resets the holds count.
   useEffect(() => {
     if (!playing || frames.length === 0) return
-    const id = setInterval(() => setIdx(i => (i + 1) % frames.length), 450)
+    let holds = 0
+    const id = setInterval(() => {
+      const next = (idx + 1) % frames.length
+      const layer = layerCache.current.get(frames[next].path)
+      if (layer?._radarLoaded || ++holds >= 4) setIdx(next)
+    }, 450)
     return () => clearInterval(id)
-  }, [playing, frames.length])
+  }, [playing, frames, idx])
 
   const expand = () => {
     history.pushState({ overlay: 'radar' }, '')
@@ -368,13 +418,6 @@ export function WeatherRadar({ location, timezone }) {
           <span className="radar-legend-lbl">Heavy</span>
         </div>
       </div>
-      {expanded && createPortal(
-        <div className="radar-loading-overlay">
-          <div className="spinner" />
-          <span className="radar-loading-text">Loading radar...</span>
-        </div>,
-        document.body
-      )}
     </div>
   )
 }
