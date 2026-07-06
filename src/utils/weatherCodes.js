@@ -128,13 +128,24 @@ export function nowcastHourlyCode(code, minutely, slotTimeStr, cloudCover) {
 
 // Best estimate of the current weather code, corrected against the live nowcast.
 // Falls back to the API's weather_code whenever minutely data is unavailable.
-export function liveWeatherCode(current, minutely) {
+// `radarClear` (from the optional "Radar enhanced accuracy" setting) is a real
+// radar observation of whether anything is echoing over the location: true =
+// nothing overhead, false = echo present, null = unknown/off.
+export function liveWeatherCode(current, minutely, radarClear = null) {
   const code = current?.weather_code
   if (code == null || NO_RATE_OVERRIDE.has(code)) return code
   // Set by useWeather when an active severe warning corroborates this code.
   // The minutely nowcast is model-driven and routinely blind to convective
   // storms, so it must not "correct" a warning-confirmed condition to clear.
   if (current.weather_code_confirmed) return code
+  // Radar enhanced accuracy: the radar sees nothing over the location, so no
+  // precipitation is reaching the ground here. Downgrade a precip code to the
+  // sky condition, and don't let the nowcast upgrade a clear code either.
+  // Confirmed codes (warning/station observation) are already exempt above —
+  // those are stronger signals than a radar beam that can overshoot low precip.
+  if (radarClear === true) {
+    return precipTier(code) > 0 ? skyCode(current.cloud_cover) : code
+  }
   const rate = livePrecipRate(current, minutely)
   if (rate == null) return code
   // Thunderstorm codes: show sky condition when nothing is measurably falling.

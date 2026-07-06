@@ -23,7 +23,7 @@ function smoothPath(pts) {
   return d
 }
 
-export function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glow = true, current, minutely }) {
+export function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glow = true, current, minutely, radarClear = null }) {
   const scrollRef = useRef(null)
   const rowRef = useRef(null)
   const gradId = useId()
@@ -111,7 +111,7 @@ export function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glo
           // check — if nothing is forecast to fall during that hour's window, the
           // NWS code is premature and gets downgraded to a sky condition.
           const displayCode = i === 0 && current
-            ? (liveWeatherCode(current, minutely) ?? codes[i])
+            ? (liveWeatherCode(current, minutely, radarClear) ?? codes[i])
             : nowcastHourlyCode(codes[i], minutely, hours[i], current?.cloud_cover)
           const info = getWeatherInfo(displayCode, !isDay[i])
           // When the corrected code carries no precipitation, zero out the chance

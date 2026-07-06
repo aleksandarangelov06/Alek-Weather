@@ -56,6 +56,7 @@ import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSe
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useWeather } from './hooks/useWeather'
+import { useRadarPrecip } from './hooks/useRadarPrecip'
 import { useSavedCities } from './hooks/useSavedCities'
 import { useRecentSearches } from './hooks/useRecentSearches'
 import { SearchBar } from './components/SearchBar'
@@ -112,6 +113,7 @@ const SHOW_OVERVIEW_KEY = 'alek-weather-show-overview'
 const NOWCAST_MODE_KEY  = 'alek-weather-nowcast-mode'
 const COLOR_CODING_KEY  = 'alek-weather-color-coding'
 const DEFAULT_COLOR_CODING = { current: true, hourly: true, daily: true, glow: true }
+const RADAR_ENHANCED_KEY = 'alek-weather-radar-enhanced'
 
 function SortableBlock({ id, children }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
@@ -135,6 +137,7 @@ function App() {
   const [showOverview, setShowOverview] = useState(() => localStorage.getItem(SHOW_OVERVIEW_KEY) !== 'false')
   const [nowcastMode, setNowcastMode] = useState(() => localStorage.getItem(NOWCAST_MODE_KEY) ?? 'auto')
   const [weatherAnimations, setWeatherAnimations] = useState(() => localStorage.getItem('alek-weather-animations') !== 'false')
+  const [radarEnhanced, setRadarEnhanced] = useState(() => localStorage.getItem(RADAR_ENHANCED_KEY) === 'true')
   const [colorCoding, setColorCoding] = useState(() => {
     const saved = loadJSON(COLOR_CODING_KEY)
     return saved ? { ...DEFAULT_COLOR_CODING, ...saved } : DEFAULT_COLOR_CODING
@@ -180,6 +183,9 @@ function App() {
     location, weather, airQuality, alerts, lastUpdated, searchResults, loading, error,
     searchCity, selectCity, useMyLocation, setSearchResults, fetchWeather, reset, clearError,
   } = useWeather(HAS_SAVED_CITY)
+
+  // Radar cross-check for the current condition (opt-in "Radar enhanced accuracy").
+  const radarClear = useRadarPrecip(location, radarEnhanced)
 
   const { cities, save, remove, isSaved, home, setHome, isHome } = useSavedCities()
   const { recents, addRecent, removeRecent } = useRecentSearches()
@@ -304,6 +310,11 @@ function App() {
     localStorage.setItem('alek-weather-animations', String(val))
   }
 
+  const changeRadarEnhanced = (val) => {
+    setRadarEnhanced(val)
+    localStorage.setItem(RADAR_ENHANCED_KEY, String(val))
+  }
+
   const changeDarkMode = (mode) => {
     setDarkMode(mode)
     localStorage.setItem(THEME_KEY, mode)
@@ -420,14 +431,15 @@ function App() {
     a.properties?.severity === 'Extreme' || a.properties?.severity === 'Severe'
   )
 
-  const liveCode = weather ? liveWeatherCode(weather.current, weather.minutely_15) : null
+  const liveCode = weather ? liveWeatherCode(weather.current, weather.minutely_15, radarClear) : null
+  if (weather) console.log('[radar-enh] decision', { radarEnhanced, radarClear, rawCode: weather.current.weather_code, confirmed: weather.current.weather_code_confirmed, liveCode })
   const skyC     = weather ? skyClass(liveCode, weather.current.is_day) : ''
   const levelC   = SKY_LEVEL[skyC] ?? ''
 
   const blockComponents = weather && !loading ? {
-    overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} minutely={weather.minutely_15} timezone={weather.timezone} hasActiveAlert={hasActiveAlert} unit={unit} />,
-    hourly:  <HourlyForecast hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.hourly} glow={colorCoding.glow} current={weather.current} minutely={weather.minutely_15} />,
-    daily:   <DailyForecast daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.daily} glow={colorCoding.glow} current={weather.current} minutely={weather.minutely_15} />,
+    overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} timezone={weather.timezone} hasActiveAlert={hasActiveAlert} unit={unit} />,
+    hourly:  <HourlyForecast hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.hourly} glow={colorCoding.glow} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
+    daily:   <DailyForecast daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.daily} glow={colorCoding.glow} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
     details: <WeatherDetails current={weather.current} daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} airQuality={airQuality} />,
     radar:   <WeatherRadar location={location} timezone={weather.timezone} />,
     nowcast: <PrecipNowcast minutely={weather.minutely_15} currentTime={weather.current.time} mode={nowcastMode} />,
@@ -440,6 +452,7 @@ function App() {
         <CurrentWeather
           current={weather.current}
           minutely={weather.minutely_15}
+          radarClear={radarClear}
           location={location}
           timezone={weather.timezone}
           unit={unit}
@@ -651,6 +664,8 @@ function App() {
           onColorCodingToggle={toggleColorCoding}
           weatherAnimations={weatherAnimations}
           onWeatherAnimationsChange={changeWeatherAnimations}
+          radarEnhanced={radarEnhanced}
+          onRadarEnhancedChange={changeRadarEnhanced}
           installPrompt={installPrompt}
           onInstall={handleInstall}
           closing={settingsClosing}

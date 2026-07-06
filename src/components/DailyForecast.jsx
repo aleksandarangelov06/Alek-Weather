@@ -2,7 +2,7 @@ import { useState, useRef, useCallback } from 'react'
 import { getWeatherInfo, formatDay, liveWeatherCode, nowcastHourlyCode, precipTier, toTemp, tempColor, tempStyle, displayPrecipChance } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
 
-export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = true, glow = true, current, minutely }) {
+export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = true, glow = true, current, minutely, radarClear = null }) {
   const [expanded, setExpanded] = useState(null)
   const toggle = (date) => setExpanded(v => v === date ? null : date)
 
@@ -48,7 +48,7 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
       const rawCode = hourly.weather_code[i]
       let code
       if (slotTime === currentHourStr && current) {
-        code = liveWeatherCode(current, minutely) ?? rawCode
+        code = liveWeatherCode(current, minutely, radarClear) ?? rawCode
       } else if (slotTime > currentHourStr) {
         code = nowcastHourlyCode(rawCode, minutely, slotTime, current?.cloud_cover)
       } else {

@@ -7,7 +7,6 @@ const MODERATE_CODES = new Set([63, 73, 81, 55])
 const LIGHT_CODES    = new Set([51, 53, 61, 71, 77, 80, 85])
 const FOG_CODES      = new Set([45, 48])
 const SNOW_CODES     = new Set([71, 73, 75, 77, 85, 86])
-const RAIN_CODES     = new Set([51, 53, 55, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99])
 
 function classify(code) {
   if (SEVERE_CODES.has(code))   return 'severe'
@@ -48,53 +47,33 @@ function precipPhrase(cat, code) {
   return 'rain'
 }
 
+// Clock label for a 0–23 hour, e.g. 19 → "7pm". Noon/midnight get names.
+function fmtClock(hour) {
+  if (hour === 0)  return 'midnight'
+  if (hour === 12) return 'noon'
+  return hour < 12 ? `${hour}am` : `${hour - 12}pm`
+}
+
 function timeDesc(slotIndex, currentMinute, hourlyTimes, start, timezone) {
   if (slotIndex === 0) return 'right now'
   const slotTimeStr = hourlyTimes?.[start + slotIndex]
   const slotHour = slotTimeStr ? parseInt(slotTimeStr.slice(11, 13), 10) : -1
 
-  if (slotTimeStr) {
-    const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: timezone })
-    if (!slotTimeStr.startsWith(todayStr)) {
-      if (slotHour < 6)  return 'overnight'
-      if (slotHour < 12) return 'tomorrow morning'
-      if (slotHour < 17) return 'tomorrow afternoon'
-      if (slotHour < 21) return 'tomorrow evening'
-      return 'tomorrow night'
-    }
-  }
-
   const mins = (60 - currentMinute) + (slotIndex - 1) * 60
+  // Imminent events keep urgency phrasing; anything further out gets a concrete
+  // clock time ("around 7pm") so the user knows exactly when to expect it.
   if (mins < 25) return 'in a few minutes'
   if (mins < 70) return 'within the hour'
-  const hours = Math.round(mins / 60)
-  if (hours <= 1) return 'in about 1 hour'
-  if (hours <= 5) return `in about ${hours} hours`
-  if (slotHour >= 0 && slotHour < 6) return 'tonight'
-  return 'later today'
+  if (slotHour < 0) return `in about ${Math.round(mins / 60)} hours` // no slot time; best effort
+
+  const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: timezone })
+  // Only tag "tomorrow" once the date has clearly turned (>6h out); a bare clock
+  // time reads naturally for anything sooner, even just past midnight.
+  if (!slotTimeStr.startsWith(todayStr) && mins >= 360) return `tomorrow around ${fmtClock(slotHour)}`
+  return `around ${fmtClock(slotHour)}`
 }
 
-function clothingAdvice(apparentTempF, codes) {
-  const hasRain = codes.some(c => RAIN_CODES.has(c))
-  const hasSnow = codes.some(c => SNOW_CODES.has(c))
-
-  let base
-  if (apparentTempF >= 85)      base = 'Wear shorts and a t-shirt'
-  else if (apparentTempF >= 75) base = 'Wear light, breathable clothing'
-  else if (apparentTempF >= 65) base = 'Light layers are perfect'
-  else if (apparentTempF >= 55) base = 'Wear a light jacket'
-  else if (apparentTempF >= 45) base = 'Wear a jacket'
-  else if (apparentTempF >= 35) base = 'Wear a warm coat'
-  else if (apparentTempF >= 20) base = 'Wear a heavy coat, hat, and gloves'
-  else                           base = 'Bundle up'
-
-  if (hasSnow && hasRain) return `${base} and bring waterproof boots and an umbrella`
-  if (hasSnow)            return `${base} and bring waterproof boots`
-  if (hasRain)            return `${base} and bring an umbrella`
-  return base
-}
-
-export function WeatherOverview({ hourly, daily, current, minutely, timezone, hasActiveAlert, unit }) {
+export function WeatherOverview({ hourly, daily, current, minutely, radarClear = null, timezone, hasActiveAlert, unit }) {
   const now = new Date()
   const currentMinute = parseInt(
     now.toLocaleString('en-CA', { minute: '2-digit', timeZone: timezone }),
@@ -116,8 +95,11 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ha
   // wasn't already precipitation (minutely under-reports at the very start of rain).
   const rawNowIsPrecip = codes.length > 0 && precipTier(codes[0]) > 0
   if (codes.length > 0) {
-    const live = liveWeatherCode(current, minutely)
-    if (live != null && (precipTier(live) > 0 || !rawNowIsPrecip)) codes[0] = live
+    const live = liveWeatherCode(current, minutely, radarClear)
+    // Normally we don't let the nowcast erase forecast-asserted precip (it
+    // under-reports at onset). But a positive radar-clear reading is a real
+    // observation of nothing overhead, so it's allowed to downgrade slot 0.
+    if (live != null && (radarClear === true || precipTier(live) > 0 || !rawNowIsPrecip)) codes[0] = live
   }
 
   // Slots 1+ (future hours): apply the same nowcast correction used by HourlyForecast
@@ -169,7 +151,9 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ha
   // but not-yet-started events. precipMeasuredNow checks both current.precipitation
   // (last-hour total) and the live minutely rate, covering the brief window where
   // minutely underreports at the very start of a storm.
-  const precipNow = precipMeasuredNow
+  // Radar enhanced accuracy: if the radar sees nothing over the location, don't
+  // claim precipitation is falling right now even when a lagging total suggests it.
+  const precipNow = precipMeasuredNow && radarClear !== true
 
   let firstSevere = -1, firstIce = -1, firstHeavy = -1, firstModerate = -1, firstLight = -1, firstFog = -1
   for (let i = 0; i < codes.length; i++) {
@@ -376,6 +360,144 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ha
     return text ? { level: 'neutral', text } : null
   })()
 
+  // ── Compound conditions summary ────────────────────────────────────────────
+  // One prose sentence combining sky, humidity, and every precipitation type in
+  // the window, e.g. "Cloudy and humid with a couple of showers and a heavy
+  // thunderstorm." Gives the overall character of the period, complementing the
+  // time-specific headline. Fires whenever the window holds precipitation (or
+  // notably humid air); when it names two or more distinct events it's "rich"
+  // and outranks the temporal day-arc narrative.
+  const conditionsSummary = (() => {
+    if (!codes.length) return null
+
+    // Window: the rest of today (incl. the current hour), or the next 8 hours
+    // when little of today is left.
+    const win = []
+    for (let i = 0; i < codes.length; i++) {
+      const t = hourly.time?.[start + i]
+      if (!t) break
+      if (i > 0 && !t.startsWith(todayStr)) break
+      win.push(i)
+    }
+    if (win.length < 4) {
+      win.length = 0
+      for (let i = 0; i < Math.min(8, codes.length); i++) win.push(i)
+    }
+
+    // Sky tally (precip and fog count as cloud) plus humidity/temp averages.
+    let clear = 0, partly = 0, cloud = 0, fogHours = 0
+    let rhSum = 0, rhN = 0, tSum = 0, tN = 0
+    const rain = { hours: 0, showery: 0, steady: 0, maxTier: 0 }
+    const snow = { hours: 0, maxTier: 0 }
+    let iceHours = 0, thunderHours = 0, thunderHeavy = false
+
+    for (const i of win) {
+      const c = codes[i]
+      const rh = hourly.relative_humidity_2m?.[start + i]
+      const tp = hourly.temperature_2m?.[start + i]
+      if (rh != null) { rhSum += rh; rhN++ }
+      if (tp != null) { tSum += tp; tN++ }
+
+      const tier = precipTier(c)
+      if (tier === 0) {
+        if (FOG_CODES.has(c)) { fogHours++; cloud++ }
+        else if (c === 3) cloud++
+        else if (c === 2) partly++
+        else clear++
+        continue
+      }
+      cloud++ // any precipitation implies cloudy skies
+      if ([95, 96, 99].includes(c)) { thunderHours++; if (c === 96 || c === 99) thunderHeavy = true }
+      else if (SNOW_CODES.has(c)) { snow.hours++; snow.maxTier = Math.max(snow.maxTier, tier) }
+      else if (ICE_CODES.has(c)) iceHours++
+      else {
+        rain.hours++
+        rain.maxTier = Math.max(rain.maxTier, tier)
+        if ([51, 53, 80, 81, 82].includes(c)) rain.showery++; else rain.steady++
+      }
+    }
+
+    const avgRh = rhN ? rhSum / rhN : null
+    const avgT  = tN ? tSum / tN : null
+    const humid = avgRh != null && avgT != null && avgRh >= 70 && avgT >= 68
+
+    // Quantifier for countable events (showers, thunderstorms).
+    const many = (n) => n <= 1 ? 'a' : n === 2 ? 'a couple of' : n <= 4 ? 'a few' : 'several'
+
+    // Each event carries a severity rank so the sentence lists them worst-last.
+    const events = []
+
+    if (fogHours >= 2 && rain.hours === 0 && snow.hours === 0 && thunderHours === 0)
+      events.push({ rank: 0, text: 'areas of fog' })
+
+    if (rain.hours > 0) {
+      const heavy = rain.maxTier >= 3
+      if (rain.showery >= rain.steady) {
+        events.push({
+          rank: 1 + rain.maxTier,
+          text: rain.hours === 1
+            ? (heavy ? 'a heavy shower' : 'a shower')
+            : `${many(rain.hours)} ${heavy ? 'heavy showers' : 'showers'}`,
+        })
+      } else {
+        events.push({
+          rank: 1 + rain.maxTier,
+          text: heavy
+            ? (rain.hours >= 3 ? 'periods of heavy rain' : 'heavy rain')
+            : (rain.hours >= 3 ? 'periods of rain' : rain.maxTier <= 1 ? 'a little rain' : 'some rain'),
+        })
+      }
+    }
+
+    if (snow.hours > 0) {
+      const heavy = snow.maxTier >= 3
+      events.push({
+        rank: 2 + snow.maxTier,
+        text: snow.hours >= 3
+          ? (heavy ? 'periods of heavy snow' : 'periods of snow')
+          : heavy ? 'heavy snow' : snow.maxTier <= 1 ? 'a little snow' : 'some snow',
+      })
+    }
+
+    if (iceHours > 0)
+      events.push({ rank: 6, text: iceHours >= 2 ? 'freezing rain' : 'a bit of freezing rain' })
+
+    if (thunderHours > 0)
+      events.push({
+        rank: 8,
+        text: thunderHeavy ? 'a heavy thunderstorm'
+          : thunderHours === 1 ? 'a thunderstorm'
+          : `${many(thunderHours)} thunderstorms`,
+      })
+
+    if (events.length === 0 && !humid) return null
+
+    // Base sky descriptor from the dominant tally.
+    const isDay = current?.is_day !== 0
+    let base
+    if (cloud >= partly && cloud >= clear) base = 'Cloudy'
+    else if (partly >= clear) base = isDay ? 'Partly cloudy' : 'Partly cloudy'
+    else base = (cloud === 0 && partly === 0)
+      ? (isDay ? 'Sunny' : 'Clear')
+      : (isDay ? 'Mostly sunny' : 'Mostly clear')
+
+    const head = humid ? `${base} and humid` : base
+
+    events.sort((a, b) => a.rank - b.rank)
+    const list = events.map(e => e.text)
+    const tail = list.length === 0 ? ''
+      : list.length === 1 ? ` with ${list[0]}`
+      : ` with ${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`
+
+    return { level: 'neutral', text: `${head}${tail}.`, rich: events.length >= 2 }
+  })()
+
+  // A rich multi-event summary beats the temporal arc; otherwise prefer the arc
+  // and fall back to the summary (which also covers evenings the arc skips).
+  const narrativeInsight = (conditionsSummary && conditionsSummary.rich)
+    ? conditionsSummary
+    : (dayArcInsight ?? conditionsSummary)
+
   const insights = []
 
   // Max display probability across all future slots matching a given category.
@@ -421,16 +543,14 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ha
       immediate: firstSevere === 0 || slotDateStr(firstSevere) === todayStr,
       dedupeKey: `severe:${slotDateStr(firstSevere)}`,
       text: stormSpan
-        ? (hasActiveAlert
-            ? `${stormNoun} continuing ${stormSpan}. Stay indoors!`
-            : `${stormNoun} continuing ${stormSpan}, take precautions.`)
+        ? `${stormNoun} continuing ${stormSpan}.`
         : hasActiveAlert
         ? (isThunder
-            ? (severeP != null ? `${severeP}% chance of a thunderstorm ${when}. Stay indoors!` : `Thunderstorm ${when}. Stay indoors!`)
-            : (severeP != null ? `${severeP}% chance of violent rain showers ${when}. Stay indoors!` : `Violent rain showers ${when}. Stay indoors!`))
+            ? (severeP != null ? `${severeP}% chance of a thunderstorm ${when}.` : `Thunderstorm ${when}.`)
+            : (severeP != null ? `${severeP}% chance of violent rain showers ${when}.` : `Violent rain showers ${when}.`))
         : (isThunder
-            ? (severeP != null ? `${severeP}% chance of a possible thunderstorm ${when}, take precautions.` : `Possible thunderstorm ${when}, take precautions.`)
-            : (severeP != null ? `${severeP}% chance of possible violent rain showers ${when}, take precautions.` : `Possible violent rain showers ${when}, take precautions.`)),
+            ? (severeP != null ? `${severeP}% chance of a possible thunderstorm ${when}.` : `Possible thunderstorm ${when}.`)
+            : (severeP != null ? `${severeP}% chance of possible violent rain showers ${when}.` : `Possible violent rain showers ${when}.`)),
     })
   } else if (precipNowInsight) {
     insights.push(precipNowInsight)
@@ -445,8 +565,8 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ha
       level: 'warning',
       dedupeKey: `ice:${slotDateStr(firstIce)}`,
       text: p != null
-        ? `${p}% chance of freezing rain ${when} — roads may be icy.`
-        : `Freezing rain expected ${when} — roads may be icy.`,
+        ? `${p}% chance of freezing rain ${when}.`
+        : `Freezing rain expected ${when}.`,
     })
   } else if (firstHeavy !== -1 && aboveThreshold(firstHeavy, 50)) {
     const when = timeDesc(firstHeavy, currentMinute, hourly.time, start, timezone)
@@ -560,24 +680,10 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ha
     else if (diffWeek !== null && diffWeek < -3)
       comparison = 'cooler than the rest of the week'
 
-    // Skip clothing advice during severe weather: the headline insight tells the
-    // user to seek shelter, so "wear a t-shirt" would be tone-deaf and unsafe.
-    const clothing = (current?.apparent_temperature != null && firstSevere === -1)
-      ? clothingAdvice(current.apparent_temperature, codes)
-      : null
-
-    // Build the temperature/clothing text, then either merge it into the single
-    // precipitation insight already in the list (so the user sees one combined
-    // bullet instead of two) or push it as its own neutral insight.
-    let tempText = null
-    if (comparison && clothing) {
-      const lower = clothing.charAt(0).toLowerCase() + clothing.slice(1)
-      tempText = `${dayLabel} will be ${comparison}, ${lower}.`
-    } else if (comparison) {
-      tempText = `${dayLabel} will be ${comparison}.`
-    } else if (clothing) {
-      tempText = `${clothing}.`
-    }
+    // Temperature-trend text, then either merge it into the single precipitation
+    // insight already in the list (so the user sees one combined bullet instead
+    // of two) or push it as its own neutral insight.
+    const tempText = comparison ? `${dayLabel} will be ${comparison}.` : null
 
     if (tempText) {
       if (insights.length === 1 && insights[0].level !== 'severe') {
@@ -678,35 +784,35 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ha
           dedupeKey: tKey('severe'),
           text: hasActiveAlert
             ? (isThunder
-                ? (tProb != null ? `${tProb}% chance of thunderstorms tomorrow. Plan to avoid open areas.` : `Thunderstorms forecast tomorrow. Plan to avoid open areas.`)
-                : (tProb != null ? `${tProb}% chance of severe weather tomorrow. Plan ahead and check forecasts frequently.` : `Severe weather tomorrow. Plan ahead and check forecasts frequently.`))
+                ? (tProb != null ? `${tProb}% chance of thunderstorms tomorrow.` : `Thunderstorms forecast tomorrow.`)
+                : (tProb != null ? `${tProb}% chance of severe weather tomorrow.` : `Severe weather tomorrow.`))
             : (isThunder
-                ? (tProb != null ? `${tProb}% chance of possible thunderstorms tomorrow, take precautions.` : `Possible thunderstorms tomorrow, take precautions.`)
-                : (tProb != null ? `${tProb}% chance of possible severe weather tomorrow, take precautions.` : `Possible severe weather tomorrow, take precautions.`)),
+                ? (tProb != null ? `${tProb}% chance of possible thunderstorms tomorrow.` : `Possible thunderstorms tomorrow.`)
+                : (tProb != null ? `${tProb}% chance of possible severe weather tomorrow.` : `Possible severe weather tomorrow.`)),
         })
       } else if (tCat === 'ice') {
         insights.push({
           level: 'warning',
           dedupeKey: tKey('ice'),
           text: tProb != null
-            ? `${tProb}% chance of freezing rain tomorrow — roads may be icy.`
-            : `Freezing rain tomorrow — roads may be icy.`,
+            ? `${tProb}% chance of freezing rain tomorrow.`
+            : `Freezing rain tomorrow.`,
         })
       } else if (tCat === 'heavy') {
         insights.push({
           level: 'warning',
           dedupeKey: tKey('heavy'),
           text: isSnow
-            ? (tProb != null ? `${tProb}% chance of heavy snow tomorrow. Avoid travelling and dress warmly.` : `Heavy snow tomorrow. Avoid travelling and dress warmly.`)
-            : (tProb != null ? `${tProb}% chance of heavy rain tomorrow. Bring a waterproof jacket and umbrella.` : `Heavy rain tomorrow. Bring a waterproof jacket and umbrella.`),
+            ? (tProb != null ? `${tProb}% chance of heavy snow tomorrow.` : `Heavy snow tomorrow.`)
+            : (tProb != null ? `${tProb}% chance of heavy rain tomorrow.` : `Heavy rain tomorrow.`),
         })
       } else if (tCat === 'moderate') {
         insights.push({
           level: 'info',
           dedupeKey: tKey('moderate'),
           text: isSnow
-            ? (tProb != null ? `${tProb}% chance of moderate snow tomorrow. Pack boots and a warm coat, avoid travel if possible.` : `Moderate snow tomorrow. Pack boots and a warm coat, avoid travel if possible.`)
-            : (tProb != null ? `${tProb}% chance of rain tomorrow. Don't forget an umbrella.` : `Rain expected tomorrow. Don't forget an umbrella.`),
+            ? (tProb != null ? `${tProb}% chance of moderate snow tomorrow.` : `Moderate snow tomorrow.`)
+            : (tProb != null ? `${tProb}% chance of rain tomorrow.` : `Rain expected tomorrow.`),
         })
       } else if (tCat === 'light') {
         insights.push({
@@ -745,7 +851,7 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ha
         const mph = Math.round(peak / 5) * 5
         insights.push(peak >= 35
           ? { level: 'warning', text: `Very windy ${when}, with winds up to ${mph} mph.` }
-          : { level: 'notice',  text: `Windy ${when}, with winds around ${mph} mph.` })
+          : { level: 'notice',  text: `Windy ${when}, with winds reaching ${mph} mph.` })
       }
     }
 
@@ -773,15 +879,15 @@ export function WeatherOverview({ hourly, daily, current, minutely, timezone, ha
     if (hr < 15 && uv != null && uv >= 8 && insights.length < 4) {
       insights.push({
         level: 'notice',
-        text: uv >= 11 ? 'Extreme UV today — avoid the midday sun.' : 'Very high UV today — wear sunscreen.',
+        text: uv >= 11 ? 'Extreme UV levels today.' : 'Very high UV today.',
       })
     }
 
     // Extreme heat (thresholds in °F; wording stays unit-free).
     const hi = daily?.temperature_2m_max?.[0]
     if (hr < 18 && hi != null && insights.length < 4) {
-      if (hi >= 100)     insights.push({ level: 'warning', text: 'Dangerous heat today — limit time outside and stay hydrated.' })
-      else if (hi >= 95) insights.push({ level: 'notice',  text: 'Very hot today — stay hydrated.' })
+      if (hi >= 100)     insights.push({ level: 'warning', text: 'Dangerous heat today.' })
+      else if (hi >= 95) insights.push({ level: 'notice',  text: 'Very hot today.' })
     }
   }
 

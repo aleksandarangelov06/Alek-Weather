@@ -25,13 +25,13 @@ function formatUpdated(date) {
   return `Updated at ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
 }
 
-export function CurrentWeather({ current, minutely, location, timezone, unit, saved, onSave, onRemove, isHome, onToggleHome, lastUpdated, onRefresh, loading, colorCoding = true, glow = true }) {
+export function CurrentWeather({ current, minutely, radarClear = null, location, timezone, unit, saved, onSave, onRemove, isHome, onToggleHome, lastUpdated, onRefresh, loading, colorCoding = true, glow = true }) {
   const tzOpts = timezone ? { timeZone: timezone } : {}
   const dateStr = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric', ...tzOpts,
   })
 
-  const info = getWeatherInfo(liveWeatherCode(current, minutely), !current.is_day)
+  const info = getWeatherInfo(liveWeatherCode(current, minutely, radarClear), !current.is_day)
   const temp = toTemp(current.temperature_2m, unit)
 
   const currentTempStyle = tempStyle(current.temperature_2m, colorCoding, 1, glow)

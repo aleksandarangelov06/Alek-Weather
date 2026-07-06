@@ -173,7 +173,7 @@ function ColorCodingView({ colorCoding, onToggle, onBack }) {
   )
 }
 
-function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, showOverview, onShowOverviewChange, nowcastMode, onNowcastModeChange, onColorCodingOpen, weatherAnimations, onWeatherAnimationsChange, installPrompt, onInstall }) {
+function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, showOverview, onShowOverviewChange, nowcastMode, onNowcastModeChange, onColorCodingOpen, weatherAnimations, onWeatherAnimationsChange, radarEnhanced, onRadarEnhancedChange, installPrompt, onInstall }) {
   return (
     <>
       <div className="settings-group-label">Appearance</div>
@@ -227,6 +227,13 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, showOver
               { value: 'off',  label: 'Off'  },
             ]}
           />
+        </SettingRow>
+      </div>
+
+      <div className="settings-group-label">Accuracy</div>
+      <div className="card settings-card">
+        <SettingRow label="Radar enhanced accuracy">
+          <Toggle id="toggle-radar-enhanced" checked={radarEnhanced} onChange={onRadarEnhancedChange} />
         </SettingRow>
       </div>
 
