@@ -1,6 +1,10 @@
+import { useRef, useState } from 'react'
 import { Bookmark, RefreshCw, House } from 'lucide-react'
 import { getWeatherInfo, liveWeatherCode, toTemp, tempStyle } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
+
+// Hold time to set the current location as home (matched by the CSS fill).
+const HOME_HOLD_MS = 700
 
 // Filled version of lucide's House: a solid house silhouette with the door cut
 // out as a hole (fill-rule: evenodd) so only the inside is marked. No stroke —
@@ -25,7 +29,37 @@ function formatUpdated(date) {
   return `Updated at ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
 }
 
-export function CurrentWeather({ current, minutely, radarClear = null, location, timezone, unit, saved, onSave, onRemove, isHome, onToggleHome, lastUpdated, onRefresh, loading, colorCoding = true, glow = true }) {
+export function CurrentWeather({ current, minutely, radarClear = null, location, timezone, unit, saved, onSave, onRemove, isHome, hasHome, onGoHome, onSetHome, onUnsetHome, lastUpdated, onRefresh, loading, colorCoding = true, glow = true, frost = true }) {
+  // Home button: tapping toggles this location as home (set if it isn't, unset
+  // if it is); holding navigates to the saved home — or, when no home exists
+  // yet, sets this one (there's nowhere to go). A timer started on pointer-down
+  // fires the hold action; if it fires, the subsequent click is suppressed so a
+  // hold doesn't also tap.
+  const holdTimer = useRef(null)
+  const didHold   = useRef(false)
+  const [holding, setHolding] = useState(false)
+
+  const startHold = () => {
+    didHold.current = false
+    setHolding(true)
+    holdTimer.current = setTimeout(() => {
+      didHold.current = true
+      setHolding(false)
+      if (hasHome) onGoHome()
+      else onSetHome()
+      navigator.vibrate?.(15)
+    }, HOME_HOLD_MS)
+  }
+  const cancelHold = () => {
+    clearTimeout(holdTimer.current)
+    setHolding(false)
+  }
+  const handleHomeClick = () => {
+    if (didHold.current) { didHold.current = false; return } // hold already handled it
+    if (isHome) onUnsetHome()
+    else onSetHome()
+  }
+
   const tzOpts = timezone ? { timeZone: timezone } : {}
   const dateStr = new Date().toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric', ...tzOpts,
@@ -34,7 +68,7 @@ export function CurrentWeather({ current, minutely, radarClear = null, location,
   const info = getWeatherInfo(liveWeatherCode(current, minutely, radarClear), !current.is_day)
   const temp = toTemp(current.temperature_2m, unit)
 
-  const currentTempStyle = tempStyle(current.temperature_2m, colorCoding, 1, glow)
+  const currentTempStyle = tempStyle(current.temperature_2m, colorCoding, 1, glow, frost)
   const feelsLike = toTemp(current.apparent_temperature, unit)
   const locationLine = [
     location.name,
@@ -46,10 +80,18 @@ export function CurrentWeather({ current, minutely, radarClear = null, location,
       <div className="current-header">
         <div className="current-fav-group">
           <button
-            className={`fav-btn ${isHome ? 'active' : ''}`}
-            onClick={onToggleHome}
+            className={`fav-btn ${isHome ? 'active' : ''}${holding ? ' fav-btn--holding' : ''}`}
+            style={{ '--fav-hold-ms': `${HOME_HOLD_MS}ms` }}
+            onClick={handleHomeClick}
+            onPointerDown={startHold}
+            onPointerUp={cancelHold}
+            onPointerLeave={cancelHold}
+            onPointerCancel={cancelHold}
+            onContextMenu={(e) => e.preventDefault()}
             aria-label={isHome ? 'Remove home location' : 'Set as home'}
-            title={isHome ? 'Remove home' : 'Set as home'}
+            title={isHome ? 'Tap to unset home · hold to reload home'
+              : hasHome ? 'Tap to set as home · hold to go home'
+              : 'Set as home'}
           >
             {isHome ? <HouseFilled size={17} /> : <House size={17} />}
           </button>

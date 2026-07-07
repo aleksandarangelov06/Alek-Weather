@@ -352,6 +352,7 @@ function confirmCurrentCode(data, alerts) {
   if (best != null && precipTier(best) > 0) {
     data.current.weather_code = best
     data.current.weather_code_confirmed = true
+    data.current.weather_code_source = 'warning'
     return
   }
 
@@ -362,6 +363,7 @@ function confirmCurrentCode(data, alerts) {
   if (rate >= 0.004) { // TRACE in weatherCodes.js
     data.current.weather_code = /thunderstorm/i.test(warning.properties?.event ?? '') ? 95 : 65
     data.current.weather_code_confirmed = true
+    data.current.weather_code_source = 'warning'
   }
 }
 
@@ -506,6 +508,7 @@ export function useWeather(initialLoading = false) {
           if (obsCode != null) {
             data.current.weather_code = obsCode
             data.current.weather_code_confirmed = true
+            data.current.weather_code_source = 'station'
           }
         } catch { /* non-fatal */ }
       }
@@ -606,8 +609,12 @@ export function useWeather(initialLoading = false) {
           // Privacy: round to 2 decimals (~1 km) before sending coordinates to
           // the third-party reverse geocoder — city-level accuracy is all it
           // needs. The weather APIs still get full precision.
+          // Use BigDataCloud's canonical host (api-bdc.io) directly: the old
+          // api.bigdatacloud.net now 307-redirects here, and a cross-origin
+          // redirect to a host not in the build CSP's connect-src is blocked,
+          // which silently failed the lookup and left the name as "My Location".
           const r = await fetch(
-            `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude.toFixed(2)}&longitude=${longitude.toFixed(2)}&localityLanguage=en`
+            `https://api-bdc.io/data/reverse-geocode-client?latitude=${latitude.toFixed(2)}&longitude=${longitude.toFixed(2)}&localityLanguage=en`
           )
           if (r.ok) {
             const d = await r.json()

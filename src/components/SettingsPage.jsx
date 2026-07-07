@@ -72,6 +72,8 @@ function InstallSection({ installPrompt, onInstall }) {
 
 function ClearStorageSection() {
   const [cleared, setCleared] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   async function handleClear() {
     // Only clear the service-worker app-shell cache, not localStorage —
@@ -88,10 +90,39 @@ function ClearStorageSection() {
     setTimeout(() => window.location.reload(), 600)
   }
 
+  // Destructive: wipes every stored preference and saved place. First tap arms
+  // the confirm (auto-disarms after a few seconds); the second tap deletes.
+  async function handleDelete() {
+    if (!confirmDelete) {
+      setConfirmDelete(true)
+      setTimeout(() => setConfirmDelete(false), 3500)
+      return
+    }
+    setDeleting(true)
+    // Full factory reset: saved cities, home, recent searches, unit, theme,
+    // color coding, tile order, nowcast/radar prefs — all live in localStorage.
+    localStorage.clear()
+    if ('caches' in window) {
+      const keys = await caches.keys()
+      await Promise.all(keys.map(k => caches.delete(k)))
+    }
+    setTimeout(() => window.location.reload(), 500)
+  }
+
   return (
     <div className="card settings-card">
-      <button className="settings-row clear-cache-btn" onClick={handleClear} disabled={cleared}>
+      <button className="settings-row clear-cache-btn" onClick={handleClear} disabled={cleared || deleting}>
         <div className="settings-row-label">{cleared ? 'Refreshing…' : 'Refresh app'}</div>
+      </button>
+      <button
+        className={`settings-row clear-cache-btn delete-data-btn${confirmDelete ? ' confirming' : ''}`}
+        onClick={handleDelete}
+        onBlur={() => setConfirmDelete(false)}
+        disabled={deleting || cleared}
+      >
+        <div className="settings-row-label">
+          {deleting ? 'Deleting…' : confirmDelete ? 'Tap again to delete all data' : 'Delete data'}
+        </div>
       </button>
     </div>
   )
@@ -141,9 +172,10 @@ function AboutSection() {
 
 
 const COLOR_CODING_TILES = [
-  { key: 'current', label: 'Current Weather' },
-  { key: 'hourly',  label: 'Hourly Forecast' },
-  { key: 'daily',   label: '7-Day Forecast'  },
+  { key: 'current',  label: 'Current Weather'  },
+  { key: 'hourly',   label: 'Hourly Forecast'  },
+  { key: 'daily',    label: '7-Day Forecast'   },
+  { key: 'overview', label: 'Weather Overview' },
 ]
 
 function ColorCodingView({ colorCoding, onToggle, onBack }) {
@@ -163,17 +195,55 @@ function ColorCodingView({ colorCoding, onToggle, onBack }) {
           </SettingRow>
         ))}
       </div>
-      <p className="color-coding-desc">Add a glow to color-coded temperatures when it gets very hot.</p>
+      <p className="color-coding-desc">Add a glow to color-coded temperatures at the extremes: a warm glow when it's very hot, a frosty one when it's freezing.</p>
       <div className="card settings-card">
         <SettingRow label="Heat Glow">
           <Toggle id="toggle-cc-glow" checked={colorCoding.glow} onChange={() => onToggle('glow')} />
+        </SettingRow>
+        <SettingRow label="Frozen Effect">
+          <Toggle id="toggle-cc-frost" checked={colorCoding.frost} onChange={() => onToggle('frost')} />
         </SettingRow>
       </div>
     </>
   )
 }
 
-function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, showOverview, onShowOverviewChange, nowcastMode, onNowcastModeChange, onColorCodingOpen, weatherAnimations, onWeatherAnimationsChange, radarEnhanced, onRadarEnhancedChange, installPrompt, onInstall }) {
+function OverviewSettingsView({ showOverview, onShowOverviewChange, overviewParts, onToggle, onBack }) {
+  const disabled = !showOverview
+  return (
+    <>
+      {onBack && (
+        <button className="back-btn color-coding-back" onClick={onBack} aria-label="Back to settings">
+          <ArrowLeft size={18} />
+          <span>Back</span>
+        </button>
+      )}
+      <p className="color-coding-desc">Show the Weather Overview tile — an at-a-glance summary with insights and recommendations.</p>
+      <div className="card settings-card">
+        <SettingRow label="Show Weather Overview">
+          <Toggle id="toggle-overview" checked={showOverview} onChange={onShowOverviewChange} />
+        </SettingRow>
+      </div>
+      <p className="color-coding-desc">Choose what the overview includes.</p>
+      <div className={`card settings-card${disabled ? ' settings-card--disabled' : ''}`}>
+        <SettingRow label="Current Conditions">
+          <Toggle id="toggle-ov-conditions" checked={overviewParts.conditions} onChange={() => onToggle('conditions')} />
+        </SettingRow>
+      </div>
+      <p className="color-coding-desc">Recommendations</p>
+      <div className={`card settings-card${disabled ? ' settings-card--disabled' : ''}`}>
+        <SettingRow label="Air Quality Warnings">
+          <Toggle id="toggle-ov-aqi" checked={overviewParts.airQuality} onChange={() => onToggle('airQuality')} />
+        </SettingRow>
+        <SettingRow label="Clothing Suggestions">
+          <Toggle id="toggle-ov-clothing" checked={overviewParts.clothing} onChange={() => onToggle('clothing')} />
+        </SettingRow>
+      </div>
+    </>
+  )
+}
+
+function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastMode, onNowcastModeChange, onColorCodingOpen, onOverviewOpen, weatherAnimations, onWeatherAnimationsChange, gyroscope, onGyroscopeChange, radarEnhanced, onRadarEnhancedChange, installPrompt, onInstall }) {
   return (
     <>
       <div className="settings-group-label">Appearance</div>
@@ -196,6 +266,15 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, showOver
         <SettingRow label="Weather Effects">
           <Toggle id="toggle-weather-anim" checked={weatherAnimations} onChange={onWeatherAnimationsChange} />
         </SettingRow>
+        {/* Gyroscope tilt only matters where there's a motion sensor and the
+            effects are actually drawn, so it's mobile-only and nested under
+            Weather Effects (dimmed when effects are off). */}
+        {isMobileDevice() && (
+          <div className={`settings-row settings-row--nested${weatherAnimations ? '' : ' settings-row--nested-off'}`}>
+            <div className="settings-row-label">Gyroscope Tilt</div>
+            <Toggle id="toggle-gyroscope" checked={gyroscope} onChange={onGyroscopeChange} />
+          </div>
+        )}
       </div>
 
       <div className="settings-group-label">Units</div>
@@ -214,9 +293,10 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, showOver
 
       <div className="settings-group-label">Tiles</div>
       <div className="card settings-card">
-        <SettingRow label="Weather Overview">
-          <Toggle id="toggle-overview" checked={showOverview} onChange={onShowOverviewChange} />
-        </SettingRow>
+        <button className="settings-row about-row" onClick={onOverviewOpen}>
+          <div className="settings-row-label">Weather Overview</div>
+          <ChevronRight size={16} className="about-chevron" />
+        </button>
         <SettingRow label="Precipitation">
           <SegmentedControl
             value={nowcastMode}
@@ -250,17 +330,31 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, showOver
   )
 }
 
-export function SettingsPage({ onBack, inline, closing, colorCodingOpen, onColorCodingOpen, onColorCodingBack, colorCoding, onColorCodingToggle, ...bodyProps }) {
-  const body = colorCodingOpen
-    ? <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} />
-    : <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} />
+const SUB_VIEW_TITLES = { colorcoding: 'Color Coding', overview: 'Weather Overview' }
+
+export function SettingsPage({ onBack, inline, closing, subView, onColorCodingOpen, onOverviewOpen, onSubViewBack, colorCoding, onColorCodingToggle, overviewParts, onOverviewPartToggle, ...bodyProps }) {
+  let body
+  if (subView === 'colorcoding') {
+    body = <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} />
+  } else if (subView === 'overview') {
+    body = (
+      <OverviewSettingsView
+        showOverview={bodyProps.showOverview}
+        onShowOverviewChange={bodyProps.onShowOverviewChange}
+        overviewParts={overviewParts}
+        onToggle={onOverviewPartToggle}
+      />
+    )
+  } else {
+    body = <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} onOverviewOpen={onOverviewOpen} />
+  }
 
   if (inline) {
     return (
       <div className="card settings-inline">
         <div className="settings-inline-header">
-          {colorCodingOpen ? (
-            <button className="back-btn settings-inline-back" onClick={onColorCodingBack} aria-label="Back to settings">
+          {subView ? (
+            <button className="back-btn settings-inline-back" onClick={onSubViewBack} aria-label="Back to settings">
               <ArrowLeft size={16} />
               <span>Back</span>
             </button>
@@ -281,11 +375,11 @@ export function SettingsPage({ onBack, inline, closing, colorCodingOpen, onColor
   return (
     <div className={`settings-page${closing ? ' closing' : ''}`}>
       <header className="settings-page-header">
-        <button className="back-btn" onClick={colorCodingOpen ? onColorCodingBack : onBack} aria-label="Back">
+        <button className="back-btn" onClick={subView ? onSubViewBack : onBack} aria-label="Back">
           <ArrowLeft size={18} />
           <span>Back</span>
         </button>
-        <span className="settings-page-title">{colorCodingOpen ? 'Color Coding' : 'Settings'}</span>
+        <span className="settings-page-title">{SUB_VIEW_TITLES[subView] ?? 'Settings'}</span>
       </header>
       <div className="settings-body">
         {body}
@@ -294,7 +388,24 @@ export function SettingsPage({ onBack, inline, closing, colorCodingOpen, onColor
   )
 }
 
-export function SettingsPill({ expanded, onToggle, colorCodingOpen, onColorCodingOpen, onColorCodingBack, colorCoding, onColorCodingToggle, ...bodyProps }) {
+export function SettingsPill({ expanded, onToggle, subView, onColorCodingOpen, onOverviewOpen, onSubViewBack, colorCoding, onColorCodingToggle, overviewParts, onOverviewPartToggle, ...bodyProps }) {
+  let body
+  if (subView === 'colorcoding') {
+    body = <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} onBack={onSubViewBack} />
+  } else if (subView === 'overview') {
+    body = (
+      <OverviewSettingsView
+        showOverview={bodyProps.showOverview}
+        onShowOverviewChange={bodyProps.onShowOverviewChange}
+        overviewParts={overviewParts}
+        onToggle={onOverviewPartToggle}
+        onBack={onSubViewBack}
+      />
+    )
+  } else {
+    body = <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} onOverviewOpen={onOverviewOpen} />
+  }
+
   return (
     <div className="card settings-pill">
       <button className="settings-pill-bar" onClick={onToggle} aria-expanded={expanded}>
@@ -303,9 +414,7 @@ export function SettingsPill({ expanded, onToggle, colorCodingOpen, onColorCodin
       </button>
       {expanded && (
         <div className="settings-inline-body">
-          {colorCodingOpen
-            ? <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} onBack={onColorCodingBack} />
-            : <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} />}
+          {body}
         </div>
       )}
     </div>

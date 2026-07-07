@@ -18,9 +18,42 @@ const CFG = {
   fog:   { count: 16,  color: [140, 160, 180], alpha: 0.18, speed: 0.4, size: [70, 140] },
 }
 
-export function WeatherCanvas({ code }) {
+// How far (deg) we let the gyroscope lean the weather, and how strongly. The
+// clamp keeps a hard tilt from throwing every particle off-screen sideways.
+const TILT_CLAMP = 35
+const TILT_GAIN  = 0.8
+
+export function WeatherCanvas({ code, gyro = true }) {
   const scene = sceneFor(code)
   const ref = useRef(null)
+  // Tilt in radians: `target` is set by the gyroscope listener, `cur` eases
+  // toward it each frame so the lean glides instead of snapping. A ref (not
+  // state) so updates never re-render or rebuild the particle field.
+  const tilt = useRef({ target: 0, cur: 0 })
+
+  // Gyroscope listener lives in its own effect so toggling it — or losing the
+  // sensor — doesn't tear down and re-seed the animation. When off, target
+  // returns to 0 and the draw loop eases the weather back to its rest angle.
+  useEffect(() => {
+    tilt.current.target = 0
+    if (!scene || !gyro || typeof window.DeviceOrientationEvent === 'undefined') return
+
+    const onOrient = (e) => {
+      // gamma is left-right tilt in portrait; in landscape that axis becomes
+      // beta, and the sign flips depending on which way the phone was turned.
+      const landscape = Math.abs(window.orientation ?? 0) === 90
+      let deg = landscape ? (e.beta ?? 0) : (e.gamma ?? 0)
+      if (landscape && window.orientation === -90) deg = -deg
+      if (deg == null || Number.isNaN(deg)) return
+      const clamped = Math.max(-TILT_CLAMP, Math.min(TILT_CLAMP, deg))
+      tilt.current.target = clamped * Math.PI / 180 * TILT_GAIN
+    }
+    window.addEventListener('deviceorientation', onOrient)
+    return () => {
+      window.removeEventListener('deviceorientation', onOrient)
+      tilt.current.target = 0
+    }
+  }, [scene, gyro])
 
   useEffect(() => {
     if (!scene) return
@@ -46,12 +79,12 @@ export function WeatherCanvas({ code }) {
 
     let particles
     if (scene === 'rain' || scene === 'storm') {
-      const a = angleRad
+      // Direction (vx/vy) is derived per-frame from the base angle + live tilt,
+      // so it isn't stored on the particle — only its speed and length are.
       particles = Array.from({ length: cfg.count }, () => ({
         x: rand(-100 - driftX(), W() + 100), y: rand(0, H()),
         len: rand(cfg.len[0], cfg.len[1]),
         spd: rand(cfg.speed[0], cfg.speed[1]),
-        vx: Math.sin(a), vy: Math.cos(a),
         alpha: rand(0.4, 1) * cfg.alpha,
       }))
     } else if (scene === 'snow') {
@@ -75,6 +108,11 @@ export function WeatherCanvas({ code }) {
     function draw() {
       ctx.clearRect(0, 0, W(), H())
 
+      // Ease the tilt toward its target once per frame; every scene reads this.
+      const t = tilt.current
+      t.cur += (t.target - t.cur) * 0.08
+      const windX = Math.sin(t.cur) // sideways push from the current lean
+
       if (scene === 'storm') {
         if (flash > 0) {
           ctx.fillStyle = `rgba(255,255,255,${flash * 0.12})`
@@ -86,20 +124,33 @@ export function WeatherCanvas({ code }) {
       }
 
       if (scene === 'rain' || scene === 'storm') {
+        // Whole sheet leans with the phone: one shared direction from the base
+        // fall angle plus the live tilt.
+        const a = angleRad + t.cur
+        const vx = Math.sin(a), vy = Math.cos(a)
         ctx.lineWidth = 1.5
         for (const p of particles) {
-          p.x += p.vx * p.spd; p.y += p.vy * p.spd
-          if (p.y > H()) { p.y = -20; p.x = rand(-100 - driftX(), W() + 100) }
+          p.x += vx * p.spd; p.y += vy * p.spd
+          // Respawn off the top once a drop exits the bottom or, under a strong
+          // lean, slides past either side — keeps coverage gap-free.
+          if (p.y > H() || p.x < -200 - driftX() || p.x > W() + 200) {
+            p.y = -20; p.x = rand(-100 - driftX(), W() + 100)
+          }
           ctx.beginPath()
           ctx.moveTo(p.x, p.y)
-          ctx.lineTo(p.x - p.vx * p.len, p.y - p.vy * p.len)
+          ctx.lineTo(p.x - vx * p.len, p.y - vy * p.len)
           ctx.strokeStyle = `rgba(${r},${g},${b},${p.alpha})`
           ctx.stroke()
         }
       } else if (scene === 'snow') {
         for (const p of particles) {
-          p.drift += p.ds; p.x += Math.sin(p.drift) * 0.4; p.y += p.vy
+          p.drift += p.ds
+          // Faster-falling flakes get carried further by the tilt, like real wind.
+          p.x += Math.sin(p.drift) * 0.4 + windX * (p.vy + 1) * 1.5
+          p.y += p.vy
           if (p.y > H()) { p.y = -p.r; p.x = rand(0, W()) }
+          if (p.x < -p.r) p.x = W() + p.r
+          if (p.x > W() + p.r) p.x = -p.r
           ctx.beginPath()
           ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2)
           ctx.fillStyle = `rgba(${r},${g},${b},${p.alpha})`
@@ -107,7 +158,7 @@ export function WeatherCanvas({ code }) {
         }
       } else {
         for (const p of particles) {
-          p.x += p.vx; p.y += p.vy
+          p.x += p.vx + windX * 0.6; p.y += p.vy
           if (p.x < -p.r) p.x = W() + p.r
           if (p.x > W() + p.r) p.x = -p.r
           if (p.y < -p.r) p.y = H() + p.r

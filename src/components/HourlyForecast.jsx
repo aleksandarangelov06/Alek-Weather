@@ -23,7 +23,7 @@ function smoothPath(pts) {
   return d
 }
 
-export function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glow = true, current, minutely, radarClear = null }) {
+export function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glow = true, frost = true, current, minutely, radarClear = null }) {
   const scrollRef = useRef(null)
   const rowRef = useRef(null)
   const gradId = useId()
@@ -123,7 +123,7 @@ export function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glo
             <div key={i} className="hourly-item">
               <span className="hourly-time">{label}</span>
               <span className="hourly-icon"><WeatherIcon id={info.icon} alt={info.label} /></span>
-              <span className="hourly-temp" style={tempStyle(temps[i], colorCoding, 0.4, glow)}>{toTemp(temps[i], unit)}°</span>
+              <span className="hourly-temp" style={tempStyle(temps[i], colorCoding, 0.4, glow, frost)}>{toTemp(temps[i], unit)}°</span>
               <span className={precipClass}>{p}%</span>
             </div>
           )

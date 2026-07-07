@@ -2,7 +2,7 @@ import { useState, useRef, useCallback } from 'react'
 import { getWeatherInfo, formatDay, liveWeatherCode, nowcastHourlyCode, precipTier, toTemp, tempColor, tempStyle, displayPrecipChance } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
 
-export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = true, glow = true, current, minutely, radarClear = null }) {
+export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = true, glow = true, frost = true, current, minutely, radarClear = null }) {
   const [expanded, setExpanded] = useState(null)
   const toggle = (date) => setExpanded(v => v === date ? null : date)
 
@@ -106,7 +106,7 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
                 </div>
                 <div className="daily-range">
                   <div className="daily-range-inner">
-                    <span className="daily-low" style={{ ...tempStyle(minTemps[i], colorCoding, 0.4, glow), left: `${pillLeft}%` }}>{low}°</span>
+                    <span className="daily-low" style={{ ...tempStyle(minTemps[i], colorCoding, 0.4, glow, frost), left: `${pillLeft}%` }}>{low}°</span>
                     <div className="bar-fill" style={{
                       left: `${pillLeft}%`,
                       width: `${pillWidth}%`,
@@ -114,7 +114,7 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
                         ? `linear-gradient(90deg, ${tempColor(minTemps[i])}, ${tempColor(maxTemps[i])})`
                         : 'var(--bar-track-bg)',
                     }} />
-                    <span className="daily-high" style={{ ...tempStyle(maxTemps[i], colorCoding, 0.4, glow), left: `${pillRight}%` }}>{high}°</span>
+                    <span className="daily-high" style={{ ...tempStyle(maxTemps[i], colorCoding, 0.4, glow, frost), left: `${pillRight}%` }}>{high}°</span>
                   </div>
                 </div>
               </div>
@@ -139,7 +139,7 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
                         <div key={hi} className="hourly-item">
                           <span className="hourly-time">{label}</span>
                           <span className="hourly-icon"><WeatherIcon id={hInfo.icon} alt={hInfo.label} /></span>
-                          <span className="hourly-temp" style={tempStyle(h.temp, colorCoding, 0.4, glow)}>{toTemp(h.temp, unit)}°</span>
+                          <span className="hourly-temp" style={tempStyle(h.temp, colorCoding, 0.4, glow, frost)}>{toTemp(h.temp, unit)}°</span>
                           <span className={precipClass}>{h.precip}%</span>
                         </div>
                       )

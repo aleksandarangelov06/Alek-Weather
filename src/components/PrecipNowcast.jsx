@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { liveWeatherCode, precipTier } from '../utils/weatherCodes'
 
 // Thresholds in inches/15min (precipitation_unit=inch in API params)
 const MAX_P   = 0.12   // ~12mm/hr ceiling
@@ -34,7 +35,7 @@ function buildPath(pts) {
   }
 }
 
-export function PrecipNowcast({ minutely, currentTime, mode = 'auto' }) {
+export function PrecipNowcast({ minutely, currentTime, mode = 'auto', current = null, radarClear = null }) {
   const data = useMemo(() => {
     const times = minutely?.time
     const precip = minutely?.precipitation
@@ -58,14 +59,25 @@ export function PrecipNowcast({ minutely, currentTime, mode = 'auto' }) {
     })
 
     const allDry = pts.every(p => p.p < 0.001)
-    return { pts, allDry }
+    // Meaningful rain in the next hour = the nowcast reaches at least the LIGHT
+    // band. A flat trace of drizzle (below LIGHT_P) doesn't count as "it'll rain".
+    const willRain = pts.some(p => p.p >= LIGHT_P)
+    return { pts, allDry, willRain }
   }, [minutely, currentTime])
 
   if (!data) return null
   if (mode === 'off') return null
 
-  const { pts, allDry } = data
-  if (mode === 'auto' && allDry) return null
+  const { pts, allDry, willRain } = data
+
+  // On auto, only surface the card when it's actually raining now or rain of at
+  // least light intensity is coming within the hour — otherwise an overcast-but-
+  // dry hour would still show an empty-looking chart.
+  if (mode === 'auto') {
+    const rainingNow = precipTier(liveWeatherCode(current, minutely, radarClear)) > 0
+    if (!rainingNow && !willRain) return null
+  }
+
   const { line, area } = buildPath(pts)
 
   const xLabels = pts.slice(1).map(p => ({

@@ -1,4 +1,16 @@
-import { getWeatherInfo, liveWeatherCode, nowcastHourlyCode, displayPrecipChance, precipTier } from '../utils/weatherCodes'
+import { Sun, Moon, Cloud, CloudSun, CloudFog, CloudRain, CloudSnow, CloudLightning, CloudSunRain, Thermometer, Shirt, Wind, Snowflake, Umbrella, Footprints } from 'lucide-react'
+import { getWeatherInfo, liveWeatherCode, nowcastHourlyCode, displayPrecipChance, precipTier, tempColor } from '../utils/weatherCodes'
+
+// Maps the emoji icon key from getWeatherInfo() to a tintable lucide line icon,
+// so the current-conditions line can share the clothing line's look and take a
+// temperature color when color coding is on.
+const LUCIDE_FOR_ICON = {
+  sun: Sun, moon: Moon, sunSmall: Sun, sunCloud: CloudSun, cloud: Cloud,
+  fog: CloudFog, sunRain: CloudSunRain, rain: CloudRain, snow: CloudSnow,
+  snowflake: Snowflake, storm: CloudLightning, therm: Thermometer,
+}
+const lucideForCode = (code, isNight) =>
+  LUCIDE_FOR_ICON[getWeatherInfo(code, isNight).icon] ?? Thermometer
 
 const SEVERE_CODES   = new Set([95, 96, 99, 82])
 const ICE_CODES      = new Set([66, 67]) // freezing rain/drizzle — hazardous at any intensity
@@ -54,6 +66,21 @@ function fmtClock(hour) {
   return hour < 12 ? `${hour}am` : `${hour - 12}pm`
 }
 
+// 16-point compass label for a bearing in degrees (0 = N, 90 = E).
+const COMPASS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW']
+const compassDir = (deg) => COMPASS[Math.round((((deg % 360) + 360) % 360) / 22.5) % 16]
+
+// One-word feel-of-the-air descriptor from a temperature in °F. Physical, so it
+// stays keyed to °F even when the card renders °C.
+const tempWord = (f) =>
+  f >= 88 ? 'Hot'
+  : f >= 80 ? 'Warm'
+  : f >= 68 ? 'Mild'
+  : f >= 52 ? 'Cool'
+  : f >= 38 ? 'Chilly'
+  : f >= 20 ? 'Cold'
+  : 'Frigid'
+
 function timeDesc(slotIndex, currentMinute, hourlyTimes, start, timezone) {
   if (slotIndex === 0) return 'right now'
   const slotTimeStr = hourlyTimes?.[start + slotIndex]
@@ -73,7 +100,7 @@ function timeDesc(slotIndex, currentMinute, hourlyTimes, start, timezone) {
   return `around ${fmtClock(slotHour)}`
 }
 
-export function WeatherOverview({ hourly, daily, current, minutely, radarClear = null, timezone, hasActiveAlert, unit }) {
+export function WeatherOverview({ hourly, daily, current, minutely, radarClear = null, timezone, hasActiveAlert, unit, airQuality = null, showConditions = true, showAirQuality = true, showClothing = true, colorCode = true }) {
   const now = new Date()
   const currentMinute = parseInt(
     now.toLocaleString('en-CA', { minute: '2-digit', timeZone: timezone }),
@@ -612,13 +639,35 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
     insights.push({ level: 'notice', dedupeKey: `fog:${slotDateStr(firstFog)}`, text: `Foggy conditions expected ${when}.` })
   }
 
-  // Day-arc narrative: on dry days it replaces the generic "mostly sunny" fallback;
-  // on precipitation days it prepends the morning-context ("some sun this morning, then...").
-  if (dayArcInsight) {
+  // Dangerous air quality is a health hazard on par with a weather warning, so
+  // it earns a prominent insight (US AQI: Very Unhealthy 201–300, Hazardous 301+).
+  // Placed high in the list so it survives the declutter pass below.
+  if (showAirQuality && airQuality?.us_aqi != null) {
+    const aqi = airQuality.us_aqi
+    if (aqi > 300) {
+      insights.push({
+        level: 'severe',
+        immediate: true,
+        dedupeKey: 'aqi',
+        text: 'Air quality is hazardous. Avoid all outdoor activity and keep windows closed.',
+      })
+    } else if (aqi > 200) {
+      insights.push({
+        level: 'warning',
+        dedupeKey: 'aqi',
+        text: 'Air quality is very unhealthy. Limit time outdoors and wear a mask if you go out.',
+      })
+    }
+  }
+
+  // Narrative line (compound conditions summary, else the temporal day-arc):
+  // on dry days it replaces the generic "mostly sunny" fallback; on precipitation
+  // days it prepends the overall picture ahead of the time-specific headline.
+  if (narrativeInsight) {
     if (insights.length === 0) {
-      insights.push(dayArcInsight)
+      insights.push(narrativeInsight)
     } else if (insights.length === 1 && insights[0].level !== 'severe') {
-      insights.unshift(dayArcInsight)
+      insights.unshift(narrativeInsight)
     }
   }
 
@@ -994,9 +1043,115 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
     visible = deduped.slice(0, 3)
   }
 
+  // ── Detail line ───────────────────────────────────────────────────────────
+  // An NWS zone-forecast-style summary of the day's raw numbers, e.g.
+  // "Hot. High near 90°F. Winds SSW at 10 to 20 mph. Chance of rain 30%."
+  // Complements the narrative insights above with concrete temperature, wind,
+  // and precipitation figures for the current day (or tonight's low after dark).
+  const detailLine = (() => {
+    const currentHour = parseInt(currentHourStr, 10)
+    const showLow = current?.is_day === 0 || currentHour >= 20
+
+    // Temperature: today's high by day; the coming overnight low after dark.
+    let tempF
+    if (showLow) {
+      for (let i = 0; i < codes.length; i++) {
+        const t = hourly.time?.[start + i]
+        if (!t) break
+        const h = parseInt(t.slice(11, 13), 10)
+        if (!t.startsWith(todayStr) && h > 9) break // stop past tomorrow morning
+        const tp = hourly.temperature_2m?.[start + i]
+        if (tp != null) tempF = tempF == null ? tp : Math.min(tempF, tp)
+      }
+    } else {
+      tempF = daily?.temperature_2m_max?.[0]
+    }
+    if (tempF == null) return null
+
+    const toDisplay = (f) => Math.round(unit === 'C' ? (f - 32) * 5 / 9 : f)
+    const degUnit = `°${unit}`
+    const tempPhrase = `${showLow ? 'Low' : 'High'} near ${toDisplay(tempF)}${degUnit}`
+
+    // Wind: prevailing direction (circular mean) and a 5-mph-rounded range over
+    // the next 12 hours. Speeds stay in mph, matching the other wind insights.
+    let windPhrase = ''
+    let wlo = Infinity, whi = 0, sx = 0, sy = 0, n = 0
+    for (let i = 0; i < Math.min(12, codes.length); i++) {
+      const s = hourly.wind_speed_10m?.[start + i]
+      if (s == null) continue
+      wlo = Math.min(wlo, s); whi = Math.max(whi, s)
+      const d = hourly.wind_direction_10m?.[start + i]
+      if (d != null) { sx += Math.cos(d * Math.PI / 180); sy += Math.sin(d * Math.PI / 180); n++ }
+    }
+    if (whi >= 1) {
+      if (whi < 8) {
+        windPhrase = ' Winds light and variable.'
+      } else {
+        const dir = n ? compassDir(Math.atan2(sy, sx) * 180 / Math.PI) : null
+        const lo5 = Math.max(5, Math.round(wlo / 5) * 5)
+        const hi5 = Math.round(whi / 5) * 5
+        const range = hi5 <= lo5 ? `${hi5}` : `${lo5} to ${hi5}`
+        windPhrase = dir ? ` Winds ${dir} at ${range} mph.` : ` Winds at ${range} mph.`
+      }
+    }
+
+    // Chance of precipitation: today's peak, floored to the day's condition so
+    // it never contradicts a rain/snow code. Shown only when worth noting.
+    let precipPhraseTxt = ''
+    const rawP = daily?.precipitation_probability_max?.[0]
+    if (rawP != null) {
+      const dCode = daily?.weather_code?.[0]
+      const p = dCode != null ? displayPrecipChance(dCode, rawP) : rawP
+      if (p >= 20) {
+        const kind = dCode != null && SNOW_CODES.has(dCode) ? 'snow' : 'rain'
+        precipPhraseTxt = ` Chance of ${kind} ${p}%.`
+      }
+    }
+
+    return `${tempWord(tempF)}. ${tempPhrase}.${windPhrase}${precipPhraseTxt}`
+  })()
+
+  // ── Clothing suggestion ───────────────────────────────────────────────────
+  // A plain-language "what to wear" line driven by the feels-like temperature,
+  // with a rain/snow add-on when precipitation is likely enough to plan around.
+  const clothingLine = (() => {
+    const feels = current?.apparent_temperature ?? current?.temperature_2m
+    if (feels == null) return null
+
+    // Icon reflects the primary garment for the temperature; a meaningful chance
+    // of rain/snow overrides it with the accessory the text tells you to grab.
+    let advice, Icon
+    if (feels >= 95)      { advice = 'Dress light and stay hydrated — it feels dangerously hot.'; Icon = Sun }
+    else if (feels >= 85) { advice = 'Shorts-and-a-t-shirt weather; keep water on hand.';         Icon = Shirt }
+    else if (feels >= 70) { advice = 'Light clothing is plenty comfortable.';                      Icon = Shirt }
+    else if (feels >= 58) { advice = 'A light layer or long sleeves is about right.';              Icon = Shirt }
+    else if (feels >= 45) { advice = 'Bring a jacket or a sweater.';                               Icon = Wind }
+    else if (feels >= 32) { advice = 'Bundle up — a warm coat is a good idea.';                    Icon = Wind }
+    else if (feels >= 20) { advice = 'Heavy coat, hat, and gloves for the cold.';                  Icon = Snowflake }
+    else                  { advice = 'Bitterly cold — dress in heavy winter layers.';             Icon = Snowflake }
+
+    const rawP = daily?.precipitation_probability_max?.[0]
+    const dCode = daily?.weather_code?.[0]
+    if (rawP != null) {
+      const p = dCode != null ? displayPrecipChance(dCode, rawP) : rawP
+      if (p >= 40) {
+        if (dCode != null && SNOW_CODES.has(dCode)) { advice += ' Wear boots for the snow.'; Icon = Footprints }
+        else                                        { advice += ' Bring an umbrella.';        Icon = Umbrella }
+      }
+    }
+    return { text: advice, Icon, feels }
+  })()
+
+  // Live current-conditions icon + color: the sky icon comes from the "right now"
+  // code (slot 0), the color from the actual current temperature.
+  const conditions = (() => {
+    if (current?.temperature_2m == null) return null
+    return { Icon: lucideForCode(codes[0], current.is_day === 0), temp: current.temperature_2m }
+  })()
+
   return (
     <div className="card">
-      <div className="section-label">WEATHER OVERVIEW</div>
+      <div className="section-label">WEATHER INSIGHT</div>
       <div className="overview-list">
         {visible.map((item, i) => (
           <div key={i} className={`overview-item overview-${item.level}`}>
@@ -1005,6 +1160,36 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
           </div>
         ))}
       </div>
+      {showConditions && detailLine && (
+        <div className="overview-detail">
+          <div className="overview-detail-label">CURRENT CONDITIONS</div>
+          <div className="overview-detail-row">
+            {conditions && (
+              <conditions.Icon
+                size={18}
+                className="overview-detail-icon"
+                style={colorCode ? { color: tempColor(conditions.temp) } : undefined}
+                aria-hidden="true"
+              />
+            )}
+            <span>{detailLine}</span>
+          </div>
+        </div>
+      )}
+      {showClothing && clothingLine && (
+        <div className="overview-detail">
+          <div className="overview-detail-label">CLOTHING</div>
+          <div className="overview-detail-row">
+            <clothingLine.Icon
+              size={18}
+              className="overview-detail-icon"
+              style={colorCode ? { color: tempColor(clothingLine.feels) } : undefined}
+              aria-hidden="true"
+            />
+            <span>{clothingLine.text}</span>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

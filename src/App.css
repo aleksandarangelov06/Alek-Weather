@@ -977,6 +977,7 @@ body {
 }
 
 .fav-btn {
+  position: relative;
   background: none;
   border: none;
   cursor: pointer;
@@ -986,6 +987,10 @@ body {
   align-items: center;
   border-radius: 10px;
   transition: color 0.15s, background 0.15s;
+  touch-action: manipulation; /* no text selection / callout while holding */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .fav-btn:hover {
@@ -995,6 +1000,32 @@ body {
 
 .fav-btn.active {
   color: var(--accent);
+}
+
+/* Hold-to-set-home: a circle grows from the button center over the hold
+   duration (--fav-hold-ms, set inline to match the JS timer). currentColor so
+   it reads on both the sky-tinted current card and the plain light theme. */
+.fav-btn svg { position: relative; z-index: 1; }
+.fav-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0;
+  transform: scale(0);
+  pointer-events: none;
+  z-index: 0;
+}
+.fav-btn--holding::before {
+  animation: fav-hold-fill var(--fav-hold-ms, 700ms) linear forwards;
+}
+@keyframes fav-hold-fill {
+  from { transform: scale(0.2); opacity: 0.12; }
+  to   { transform: scale(1.4); opacity: 0.40; }
 }
 
 .current-date {
@@ -1010,6 +1041,16 @@ body {
   margin: 16px 0 16px;
   user-select: none;
 }
+
+/* Inline fog icon (WeatherIcon) — currentColor is set to a mid-tone that keeps
+   the mist legible against light, dark, and sky-tinted card backgrounds. */
+.weather-icon-fog { color: #5b6672; }
+[data-theme="dark"] .weather-icon-fog { color: #b8c2cf; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .weather-icon-fog { color: #b8c2cf; }
+}
+/* On sky-tinted cards the text is white on a colored surface, so a bright mist reads best. */
+.app.sky-active .weather-icon-fog { color: rgba(255, 255, 255, 0.9); }
 
 
 .current-temp {
@@ -1847,6 +1888,13 @@ body {
   line-height: 1.45;
 }
 
+/* When the Weather Overview tile is hidden, its sub-option cards read as
+   inactive: dimmed and non-interactive until the master toggle is back on. */
+.settings-card--disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
 .settings-body {
   padding: 16px 16px 48px;
   max-width: 480px;
@@ -1884,6 +1932,50 @@ body {
   font-weight: 500;
   color: var(--text-primary);
   flex-shrink: 0;
+}
+
+/* A setting nested under the row above it (e.g. Gyroscope under Weather
+   Effects): indented with an L-connector, lighter label, no divider so it
+   reads as belonging to its parent. */
+.settings-row--nested {
+  position: relative;
+  padding-top: 10px;
+  padding-bottom: 12px;
+  padding-left: 40px;
+  border-top: none !important;
+}
+
+.settings-row--nested::before {
+  content: '';
+  position: absolute;
+  left: 24px;
+  top: -6px;
+  bottom: 50%;
+  width: 1px;
+  background: var(--border);
+}
+
+.settings-row--nested::after {
+  content: '';
+  position: absolute;
+  left: 24px;
+  top: 50%;
+  width: 9px;
+  height: 1px;
+  background: var(--border);
+}
+
+.settings-row--nested .settings-row-label {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+/* Parent (Weather Effects) is off — the nested control does nothing, so dim
+   and disable it. */
+.settings-row--nested-off {
+  opacity: 0.4;
+  pointer-events: none;
 }
 
 .settings-options {
@@ -1945,6 +2037,12 @@ body {
 
 .clear-cache-btn:hover { background: var(--hover-subtle); }
 .clear-cache-btn:disabled { opacity: 0.45; cursor: default; }
+
+/* Destructive "Delete data" action: red label, and a filled red state once armed. */
+.delete-data-btn .settings-row-label { color: #ef4444; }
+.delete-data-btn.confirming { background: rgba(239, 68, 68, 0.12); }
+.delete-data-btn.confirming:hover { background: rgba(239, 68, 68, 0.18); }
+.delete-data-btn.confirming .settings-row-label { font-weight: 600; }
 
 .install-ios-hint {
   font-size: 13px;
@@ -2448,10 +2546,40 @@ body {
   image-rendering: auto;
 }
 
-/* ── Weather Overview ── */
+/* ── Weather Insight ── */
 .overview-list {
   display: flex;
   flex-direction: column;
+}
+
+/* NWS-style numeric detail line under the narrative insights. */
+.overview-detail {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.overview-detail-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  color: var(--text-tertiary);
+  margin-bottom: 6px;
+}
+
+.overview-detail-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.overview-detail-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--accent);
 }
 
 .overview-item {

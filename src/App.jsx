@@ -51,7 +51,7 @@ const STARS = Array.from({ length: 40 }, () => ({
   dur:   `${(Math.random() * 3 + 2).toFixed(1)}s`,
   delay: `${-(Math.random() * 4).toFixed(1)}s`,
 }))
-import { SlidersHorizontal, MapPin, MapPinOff, ArrowLeft, GripHorizontal, Library, X } from 'lucide-react'
+import { SlidersHorizontal, MapPin, MapPinOff, ArrowLeft, GripHorizontal, Building2, X } from 'lucide-react'
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -112,7 +112,9 @@ const DEFAULT_BLOCK_ORDER = ['overview', 'nowcast', 'hourly', 'daily', 'details'
 const SHOW_OVERVIEW_KEY = 'alek-weather-show-overview'
 const NOWCAST_MODE_KEY  = 'alek-weather-nowcast-mode'
 const COLOR_CODING_KEY  = 'alek-weather-color-coding'
-const DEFAULT_COLOR_CODING = { current: true, hourly: true, daily: true, glow: true }
+const DEFAULT_COLOR_CODING = { current: true, hourly: true, daily: true, overview: true, glow: true, frost: true }
+const OVERVIEW_PARTS_KEY = 'alek-weather-overview-parts'
+const DEFAULT_OVERVIEW_PARTS = { conditions: true, airQuality: true, clothing: true }
 const RADAR_ENHANCED_KEY = 'alek-weather-radar-enhanced'
 
 function SortableBlock({ id, children }) {
@@ -137,15 +139,20 @@ function App() {
   const [showOverview, setShowOverview] = useState(() => localStorage.getItem(SHOW_OVERVIEW_KEY) !== 'false')
   const [nowcastMode, setNowcastMode] = useState(() => localStorage.getItem(NOWCAST_MODE_KEY) ?? 'auto')
   const [weatherAnimations, setWeatherAnimations] = useState(() => localStorage.getItem('alek-weather-animations') !== 'false')
+  const [gyroscope, setGyroscope] = useState(() => localStorage.getItem('alek-weather-gyroscope') !== 'false')
   const [radarEnhanced, setRadarEnhanced] = useState(() => localStorage.getItem(RADAR_ENHANCED_KEY) === 'true')
   const [colorCoding, setColorCoding] = useState(() => {
     const saved = loadJSON(COLOR_CODING_KEY)
     return saved ? { ...DEFAULT_COLOR_CODING, ...saved } : DEFAULT_COLOR_CODING
   })
+  const [overviewParts, setOverviewParts] = useState(() => {
+    const saved = loadJSON(OVERVIEW_PARTS_KEY)
+    return saved ? { ...DEFAULT_OVERVIEW_PARTS, ...saved } : DEFAULT_OVERVIEW_PARTS
+  })
   const [installPrompt, setInstallPrompt] = useState(null)
   const [showSettings, setShowSettings] = useState(false)
   const [settingsClosing, setSettingsClosing] = useState(false)
-  const [colorCodingOpen, setColorCodingOpen] = useState(false)
+  const [subView, setSubView] = useState(null) // null | 'colorcoding' | 'overview'
   const [isDesktop, setIsDesktop] = useState(() => window.matchMedia('(min-width: 1100px)').matches)
 
   const [searchOpen, setSearchOpen] = useState(false)
@@ -187,7 +194,7 @@ function App() {
   // Radar cross-check for the current condition (opt-in "Radar enhanced accuracy").
   const radarClear = useRadarPrecip(location, radarEnhanced)
 
-  const { cities, save, remove, isSaved, home, setHome, isHome } = useSavedCities()
+  const { cities, save, remove, isSaved, home, setHome, unsetHome, isHome } = useSavedCities()
   const { recents, addRecent, removeRecent } = useRecentSearches()
   useEffect(() => {
     const handler = (e) => { e.preventDefault(); setInstallPrompt(e) }
@@ -273,14 +280,14 @@ function App() {
   // Hardware back button / Android back gesture
   useEffect(() => {
     const handler = () => {
-      if (colorCodingOpen) setColorCodingOpen(false)
+      if (subView) setSubView(null)
       else if (showSettings) doCloseSettings()
       else if (searchOpen) doCloseSearch()
       else if (savedOpen) doCloseSaved()
     }
     window.addEventListener('popstate', handler)
     return () => window.removeEventListener('popstate', handler)
-  }, [colorCodingOpen, showSettings, searchOpen, savedOpen]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [subView, showSettings, searchOpen, savedOpen]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const changeUnit = (u) => {
     setUnit(u)
@@ -305,9 +312,28 @@ function App() {
     })
   }
 
+  const toggleOverviewPart = (key) => {
+    setOverviewParts(prev => {
+      const next = { ...prev, [key]: !prev[key] }
+      localStorage.setItem(OVERVIEW_PARTS_KEY, JSON.stringify(next))
+      return next
+    })
+  }
+
   const changeWeatherAnimations = (val) => {
     setWeatherAnimations(val)
     localStorage.setItem('alek-weather-animations', String(val))
+  }
+
+  const changeGyroscope = (val) => {
+    setGyroscope(val)
+    localStorage.setItem('alek-weather-gyroscope', String(val))
+    // iOS 13+ gates motion sensors behind a permission prompt that must be
+    // requested from a user gesture — flipping this toggle on is one.
+    if (val && typeof DeviceOrientationEvent !== 'undefined'
+        && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      DeviceOrientationEvent.requestPermission().catch(() => {})
+    }
   }
 
   const changeRadarEnhanced = (val) => {
@@ -321,24 +347,24 @@ function App() {
   }
 
   const openSettings = () => {
-    setColorCodingOpen(false)
+    setSubView(null)
     history.pushState({ overlay: 'settings' }, '')
     setShowSettings(true)
   }
 
   const doCloseSettings = () => {
     setSettingsClosing(true)
-    setTimeout(() => { setShowSettings(false); setSettingsClosing(false); setColorCodingOpen(false) }, SETTINGS_CLOSE_MS)
+    setTimeout(() => { setShowSettings(false); setSettingsClosing(false); setSubView(null) }, SETTINGS_CLOSE_MS)
   }
 
   const closeSettings = () => history.back()
 
-  const openColorCoding = () => {
-    history.pushState({ overlay: 'colorcoding' }, '')
-    setColorCodingOpen(true)
+  const openSubView = (view) => {
+    history.pushState({ overlay: 'subview' }, '')
+    setSubView(view)
   }
 
-  const closeColorCoding = () => history.back()
+  const closeSubView = () => history.back()
 
   const openSearch = () => {
     history.pushState({ overlay: 'search' }, '')
@@ -437,12 +463,12 @@ function App() {
   const levelC   = SKY_LEVEL[skyC] ?? ''
 
   const blockComponents = weather && !loading ? {
-    overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} timezone={weather.timezone} hasActiveAlert={hasActiveAlert} unit={unit} />,
-    hourly:  <HourlyForecast hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.hourly} glow={colorCoding.glow} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
-    daily:   <DailyForecast daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.daily} glow={colorCoding.glow} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
+    overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} timezone={weather.timezone} hasActiveAlert={hasActiveAlert} unit={unit} airQuality={airQuality} showConditions={overviewParts.conditions} showAirQuality={overviewParts.airQuality} showClothing={overviewParts.clothing} colorCode={colorCoding.overview} />,
+    hourly:  <HourlyForecast hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.hourly} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
+    daily:   <DailyForecast daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.daily} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
     details: <WeatherDetails current={weather.current} daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} airQuality={airQuality} />,
     radar:   <WeatherRadar location={location} timezone={weather.timezone} />,
-    nowcast: <PrecipNowcast minutely={weather.minutely_15} currentTime={weather.current.time} mode={nowcastMode} />,
+    nowcast: <PrecipNowcast minutely={weather.minutely_15} currentTime={weather.current.time} mode={nowcastMode} current={weather.current} radarClear={radarClear} />,
   } : null
 
   const weatherPanel = weather && !loading && (
@@ -460,12 +486,16 @@ function App() {
           onSave={() => save(location)}
           onRemove={() => remove(location)}
           isHome={isHome(location)}
-          onToggleHome={() => setHome(isHome(location) ? null : location)}
+          hasHome={!!home}
+          onGoHome={() => { if (home) fetchWeather(home) }}
+          onSetHome={() => setHome(location)}
+          onUnsetHome={unsetHome}
           lastUpdated={lastUpdated}
           onRefresh={() => fetchWeather(location)}
           loading={loading}
           colorCoding={colorCoding.current}
           glow={colorCoding.glow}
+          frost={colorCoding.frost}
         />
         {/* On desktop the compact precipitation chart sits under the current
             weather instead of stretching the wide right column. On mobile it
@@ -490,7 +520,7 @@ function App() {
   return (
     <>
       {weather && weatherAnimations && <div className={`sky-bg ${skyC}`} aria-hidden="true" />}
-      {weather && weatherAnimations && <WeatherCanvas code={liveCode} />}
+      {weather && weatherAnimations && <WeatherCanvas code={liveCode} gyro={gyroscope} />}
     <div
       className={`app${weatherAnimations && levelC ? ` ${levelC}` : ''}${!weatherAnimations ? ' no-effects' : ''}${weather && weatherAnimations ? ' sky-active' : ''}`}
       style={weather && weatherAnimations ? SKY_CARD_VARS[skyC] : undefined}
@@ -508,7 +538,7 @@ function App() {
           aria-label="Search — hold to use my location"
         >
           <span className="header-loc-icons">
-            <Library size={24} style={{ opacity: splashPhase !== 'done' ? 1 : 0, pointerEvents: splashPhase !== 'done' ? undefined : 'none' }} />
+            <Building2 size={24} style={{ opacity: splashPhase !== 'done' ? 1 : 0, pointerEvents: splashPhase !== 'done' ? undefined : 'none' }} />
             <MapPin  size={24} style={{ opacity: splashPhase === 'done' ? 1 : 0, pointerEvents: splashPhase === 'done' ? undefined : 'none' }} />
           </span>
         </button>
@@ -623,6 +653,7 @@ function App() {
                     onRemove={remove}
                     currentLocation={location}
                     home={home}
+                    onRemoveHome={() => setHome(null)}
                   />
                 )}
               </SearchBar>
@@ -649,9 +680,10 @@ function App() {
       {showSettings && (
         <SettingsPage
           onBack={closeSettings}
-          colorCodingOpen={colorCodingOpen}
-          onColorCodingOpen={openColorCoding}
-          onColorCodingBack={closeColorCoding}
+          subView={subView}
+          onColorCodingOpen={() => openSubView('colorcoding')}
+          onOverviewOpen={() => openSubView('overview')}
+          onSubViewBack={closeSubView}
           darkMode={darkMode}
           onDarkModeChange={changeDarkMode}
           unit={unit}
@@ -662,8 +694,12 @@ function App() {
           onNowcastModeChange={changeNowcastMode}
           colorCoding={colorCoding}
           onColorCodingToggle={toggleColorCoding}
+          overviewParts={overviewParts}
+          onOverviewPartToggle={toggleOverviewPart}
           weatherAnimations={weatherAnimations}
           onWeatherAnimationsChange={changeWeatherAnimations}
+          gyroscope={gyroscope}
+          onGyroscopeChange={changeGyroscope}
           radarEnhanced={radarEnhanced}
           onRadarEnhancedChange={changeRadarEnhanced}
           installPrompt={installPrompt}

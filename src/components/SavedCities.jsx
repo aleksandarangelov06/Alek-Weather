@@ -1,7 +1,7 @@
 import { MapPin, House, X } from 'lucide-react'
 import { sameCity } from '../utils/location'
 
-export function SavedCities({ cities, onSelect, onRemove, currentLocation, home }) {
+export function SavedCities({ cities, onSelect, onRemove, currentLocation, home, onRemoveHome }) {
   if (cities.length === 0 && !home) return null
 
   return (
@@ -12,8 +12,10 @@ export function SavedCities({ cities, onSelect, onRemove, currentLocation, home 
           <div className={`saved-row ${sameCity(currentLocation, home) ? 'active' : ''}`}>
             <button className="saved-city-btn" onClick={() => onSelect(home)}>
               <House size={13} />
-              <span className="place-tag">Home</span>
               <span className="saved-name">{home.name}{home.admin1 && home.admin1 !== home.name && `, ${home.admin1}`}</span>
+            </button>
+            <button className="saved-remove" onClick={() => onRemoveHome?.()} aria-label="Remove home">
+              <X size={13} />
             </button>
           </div>
         )}

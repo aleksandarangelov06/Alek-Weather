@@ -17,7 +17,9 @@ const CSP = [
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src https://fonts.gstatic.com",
   "img-src 'self' data: blob: https://tilecache.rainviewer.com https://*.basemaps.cartocdn.com https://cdn.jsdelivr.net",
-  "connect-src 'self' https://api.open-meteo.com https://geocoding-api.open-meteo.com https://air-quality-api.open-meteo.com https://api.weather.gov https://api.rainviewer.com https://api.bigdatacloud.net",
+  // api-bdc.io is BigDataCloud's canonical reverse-geocode host; api.bigdatacloud.net
+  // 307-redirects to it, so both are allowed (the redirect target must be permitted too).
+  "connect-src 'self' https://api.open-meteo.com https://geocoding-api.open-meteo.com https://air-quality-api.open-meteo.com https://api.weather.gov https://api.rainviewer.com https://api.bigdatacloud.net https://api-bdc.io",
   "worker-src 'self'",
   "manifest-src 'self'",
   "object-src 'none'",

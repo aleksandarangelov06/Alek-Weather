@@ -134,18 +134,24 @@ export function nowcastHourlyCode(code, minutely, slotTimeStr, cloudCover) {
 export function liveWeatherCode(current, minutely, radarClear = null) {
   const code = current?.weather_code
   if (code == null || NO_RATE_OVERRIDE.has(code)) return code
-  // Set by useWeather when an active severe warning corroborates this code.
-  // The minutely nowcast is model-driven and routinely blind to convective
-  // storms, so it must not "correct" a warning-confirmed condition to clear.
-  if (current.weather_code_confirmed) return code
   // Radar enhanced accuracy: the radar sees nothing over the location, so no
   // precipitation is reaching the ground here. Downgrade a precip code to the
   // sky condition, and don't let the nowcast upgrade a clear code either.
-  // Confirmed codes (warning/station observation) are already exempt above —
-  // those are stronger signals than a radar beam that can overshoot low precip.
-  if (radarClear === true) {
+  //
+  // A live radar sweep is a stronger "is it precipitating right here, right now"
+  // signal than a routine station report, which can be up to ~75 min old or come
+  // from a station miles away — so when the user has opted into radar-enhanced
+  // accuracy, a clear radar overrides even a station-confirmed code (this is the
+  // drizzle case: the METAR says drizzle, radar is empty, we trust the radar).
+  // An active severe *warning* still wins: it's an authoritative alert and radar
+  // can briefly show gaps between sweeps or convective cells.
+  if (radarClear === true && current.weather_code_source !== 'warning') {
     return precipTier(code) > 0 ? skyCode(current.cloud_cover) : code
   }
+  // Confirmed by an active warning (or a station obs when radar isn't clearing
+  // it): trust it over the model-driven minutely nowcast, which is routinely
+  // blind to convective storms and must not "correct" it back to clear.
+  if (current.weather_code_confirmed) return code
   const rate = livePrecipRate(current, minutely)
   if (rate == null) return code
   // Thunderstorm codes: show sky condition when nothing is measurably falling.
@@ -226,16 +232,25 @@ export function tempColor(fahrenheit) {
   }
 }
 
-// Color-coded temperature style: the text color plus a heat glow that starts
-// subtly at 90°F and intensifies up to 110°F. `scale` tunes the glow's blur
-// radius so it fits smaller temperature elements (hourly/daily) as well as the
-// large current temperature. Returns undefined when color coding is off.
-export function tempStyle(fahrenheit, colorCoding, scale = 1, glow = true) {
+// Color-coded temperature style: the text color plus optional effects — a heat
+// glow that starts subtly at 90°F and intensifies up to 110°F, and a frosty
+// glow that starts at 32°F and intensifies down to 0°F. `scale` tunes the blur
+// radius so effects fit smaller temperature elements (hourly/daily) as well as
+// the large current temperature. Returns undefined when color coding is off.
+export function tempStyle(fahrenheit, colorCoding, scale = 1, glow = true, frost = true) {
   if (!colorCoding) return undefined
   const style = { color: tempColor(fahrenheit) }
   if (glow && fahrenheit >= 90) {
     const t = Math.min((fahrenheit - 90) / 20, 1)
     style.textShadow = `0 0 ${(8 + t * 24) * scale}px currentColor`
+  } else if (frost && fahrenheit <= 32) {
+    // Icy halo: a bright white core wrapped in a cold blue bloom, deepening as
+    // the temperature drops toward 0°F.
+    const t = Math.min((32 - fahrenheit) / 32, 1)
+    const blur = (6 + t * 16) * scale
+    style.textShadow =
+      `0 0 ${blur * 0.5}px rgba(255,255,255,${0.35 + t * 0.4}), ` +
+      `0 0 ${blur}px rgba(130,200,255,${0.5 + t * 0.5})`
   }
   return style
 }
