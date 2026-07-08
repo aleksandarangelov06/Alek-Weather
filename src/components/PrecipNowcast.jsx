@@ -1,11 +1,16 @@
 import { useMemo } from 'react'
-import { liveWeatherCode, precipTier } from '../utils/weatherCodes'
+import { liveWeatherCode, precipTier, SNOW_CODES } from '../utils/weatherCodes'
 
 // Thresholds in inches/15min (precipitation_unit=inch in API params)
 const MAX_P   = 0.12   // ~12mm/hr ceiling
 const MED_P   = 0.08   // ~8mm/hr
 const LIGHT_P = 0.02   // ~2mm/hr
 const SPAN_MIN = 60    // minutes to display on X axis
+
+// Representative in/15min rate for a weather-code intensity tier (1 light …
+// 4 severe). Used to place the "now" point on the chart when it's raining but the
+// model reports no measured amount — the weather code is the only signal.
+const TIER_RATE = { 1: LIGHT_P, 2: MED_P, 3: MAX_P, 4: MAX_P }
 
 // SVG layout
 const VW = 300, VH = 90
@@ -36,6 +41,13 @@ function buildPath(pts) {
 }
 
 export function PrecipNowcast({ minutely, currentTime, mode = 'auto', current = null, radarClear = null }) {
+  // Live, observation-corrected current condition. The minutely_15 trace can read
+  // flat/zero at onset while a station already observes rain (the nowcast lag
+  // handled in liveWeatherCode), so this — not the forward trace — is the source
+  // of truth for whether it's precipitating right now.
+  const liveCode = liveWeatherCode(current, minutely, radarClear)
+  const rainingNow = precipTier(liveCode) > 0
+
   const data = useMemo(() => {
     const times = minutely?.time
     const precip = minutely?.precipitation
@@ -58,12 +70,26 @@ export function PrecipNowcast({ minutely, currentTime, mode = 'auto', current = 
       }
     })
 
+    // Seed the "now" point so the chart reflects rain that's actually falling
+    // instead of the lagging flat trace. Take the stronger of two observed
+    // signals: the measured preceding-hour total (current.precipitation, inch;
+    // ÷4 → in/15min), and the intensity implied by the live weather code when the
+    // model reports no amount at all — this location's case, where the code says
+    // Heavy Rain while every precip figure reads 0. Gated on rainingNow so a
+    // just-ended shower's lingering hourly total doesn't fabricate a spike.
+    if (rainingNow) {
+      const measured = (current?.precipitation ?? 0) / 4
+      const fromCode = TIER_RATE[precipTier(liveCode)] ?? 0
+      const observedNow = Math.max(measured, fromCode)
+      if (observedNow > pts[0].p) pts[0] = { ...pts[0], p: observedNow, y: toY(observedNow) }
+    }
+
     const allDry = pts.every(p => p.p < 0.001)
     // Meaningful rain in the next hour = the nowcast reaches at least the LIGHT
     // band. A flat trace of drizzle (below LIGHT_P) doesn't count as "it'll rain".
     const willRain = pts.some(p => p.p >= LIGHT_P)
     return { pts, allDry, willRain }
-  }, [minutely, currentTime])
+  }, [minutely, currentTime, rainingNow, liveCode, current?.precipitation])
 
   if (!data) return null
   if (mode === 'off') return null
@@ -74,7 +100,6 @@ export function PrecipNowcast({ minutely, currentTime, mode = 'auto', current = 
   // least light intensity is coming within the hour — otherwise an overcast-but-
   // dry hour would still show an empty-looking chart.
   if (mode === 'auto') {
-    const rainingNow = precipTier(liveWeatherCode(current, minutely, radarClear)) > 0
     if (!rainingNow && !willRain) return null
   }
 
@@ -93,7 +118,9 @@ export function PrecipNowcast({ minutely, currentTime, mode = 'auto', current = 
     <div className="card nowcast-card">
       <div className="nowcast-header">
         <span className="section-label" style={{ margin: 0 }}>PRECIPITATION</span>
-        {allDry && <span className="nowcast-dry">None expected</span>}
+        {rainingNow
+          ? <span className="nowcast-now">{SNOW_CODES.has(liveCode) ? 'Snowing now' : 'Raining now'}</span>
+          : allDry && <span className="nowcast-dry">None expected</span>}
       </div>
       <svg
         viewBox={`0 0 ${VW} ${VH}`}

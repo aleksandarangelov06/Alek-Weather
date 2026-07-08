@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
-import { Search, MapPin, X, Clock } from 'lucide-react'
+import { Search, MapPin, X, Clock, Bookmark, House } from 'lucide-react'
+import { sameCity } from '../utils/location'
 
-export function SearchBar({ onSearch, results, onSelect, onUseLocation, onClear, onActivate, autoFocus, initialQuery, recents, onRemoveRecent, children }) {
+export function SearchBar({ onSearch, results, onSelect, onUseLocation, onClear, onActivate, autoFocus, initialQuery, recents, onRemoveRecent, isSaved, isHome, children }) {
   const [query, setQuery] = useState(initialQuery ?? '')
   const [open, setOpen] = useState(!!initialQuery)
   const [pendingSearch, setPendingSearch] = useState(false)
@@ -44,6 +45,14 @@ export function SearchBar({ onSearch, results, onSelect, onUseLocation, onClear,
 
   const hasQuery = query.trim().length > 0
   const showDropdown = open
+
+  // The geocoding API often returns the same city several times (administrative
+  // variants at near-identical coordinates). Collapse them so each city appears
+  // once, keeping the first (highest-ranked) hit.
+  const dedupedResults = results.reduce((acc, city) => {
+    if (!acc.some(c => sameCity(c, city))) acc.push(city)
+    return acc
+  }, [])
 
   return (
     <div className="search-wrapper">
@@ -97,14 +106,20 @@ export function SearchBar({ onSearch, results, onSelect, onUseLocation, onClear,
 
           {!hasQuery && children}
 
-          {hasQuery && results.map((city, i) => (
-            <button key={i} className="dropdown-item" onMouseDown={() => handleSelect(city)}>
-              <span className="city-name">{city.name}</span>
-              <span className="city-sub">
-                {[city.admin1, city.country].filter(Boolean).join(', ')}
-              </span>
-            </button>
-          ))}
+          {hasQuery && dedupedResults.map((city, i) => {
+            const home = isHome?.(city)
+            const saved = !home && isSaved?.(city)
+            return (
+              <button key={i} className="dropdown-item" onMouseDown={() => handleSelect(city)}>
+                <span className="city-name">{city.name}</span>
+                <span className="city-sub">
+                  {[city.admin1, city.country].filter(Boolean).join(', ')}
+                </span>
+                {home && <House size={14} className="dropdown-saved-icon" aria-label="Home" />}
+                {saved && <Bookmark size={14} className="dropdown-saved-icon" aria-label="Saved" />}
+              </button>
+            )
+          })}
           {hasQuery && results.length === 0 && !pendingSearch && (
             <div className="dropdown-empty">No results found</div>
           )}

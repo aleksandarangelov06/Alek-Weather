@@ -553,6 +553,13 @@ body {
   margin-left: auto;
 }
 
+/* Marks a search result that's already saved / set as home, so it reads as
+   already-added instead of prompting a duplicate save. */
+.dropdown-saved-icon {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
 .recent-header {
   padding: 10px 18px 4px;
   font-size: 11px;
@@ -1051,6 +1058,16 @@ body {
 }
 /* On sky-tinted cards the text is white on a colored surface, so a bright mist reads best. */
 .app.sky-active .weather-icon-fog { color: rgba(255, 255, 255, 0.9); }
+
+/* Exception: the current-weather icon sits over the transparent current-card —
+   i.e. the raw sky backdrop, which for fog is LIGHT in light mode, so the white
+   mist above vanishes. Keep it theme-aware here: dark mist on the light backdrop,
+   light mist on the dark one. */
+.app.sky-active .current-icon .weather-icon-fog { color: #5b6672; }
+[data-theme="dark"] .app.sky-active .current-icon .weather-icon-fog { color: #b8c2cf; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .app.sky-active .current-icon .weather-icon-fog { color: #b8c2cf; }
+}
 
 
 .current-temp {
@@ -2627,10 +2644,10 @@ body {
 }
 
 .overview-text {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 400;
-  line-height: 1.4;
-  color: var(--text-primary);
+  line-height: 1.5;
+  color: var(--text-secondary);
 }
 
 /* ── Toggle switch ── */
@@ -2766,7 +2783,15 @@ body {
 
 .radar-tick--hour    { height: 20px; background: var(--text-tertiary); }
 .radar-tick--forecast { background: var(--accent-light); }
-.radar-tick--active  { height: 26px; background: var(--accent); }
+/* Current frame: the same accent blue as the play button, set apart from the
+   paler forecast ticks by extra width, height, and a glow. */
+.radar-tick--active  {
+  width: 4px;
+  height: 30px;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 70%, transparent);
+}
 
 .radar-tick-label {
   position: absolute;
@@ -3187,6 +3212,13 @@ body {
 .sky-lvl-dark .radar-tick--hour,
 .sky-lvl-darkest .radar-tick--hour { background: rgba(255,255,255,0.65); }
 
+/* Keep the active tick the accent blue over sky backgrounds too — the generic
+   sky tick override above would otherwise repaint it translucent white. */
+.sky-lvl-slight .radar-tick--active,
+.sky-lvl-medium .radar-tick--active,
+.sky-lvl-dark .radar-tick--active,
+.sky-lvl-darkest .radar-tick--active { background: var(--accent); }
+
 .sky-lvl-slight .radar-tick-label,
 .sky-lvl-medium .radar-tick-label,
 .sky-lvl-dark .radar-tick-label,
@@ -3277,6 +3309,14 @@ body {
 .nowcast-dry {
   font-size: 11px;
   color: var(--text-secondary);
+}
+
+/* Active-precipitation counterpart to .nowcast-dry: shown when rain/snow is
+   falling now even if the forward nowcast trace reads flat. */
+.nowcast-now {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
 }
 
 

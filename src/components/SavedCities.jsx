@@ -4,6 +4,11 @@ import { sameCity } from '../utils/location'
 export function SavedCities({ cities, onSelect, onRemove, currentLocation, home, onRemoveHome }) {
   if (cities.length === 0 && !home) return null
 
+  // A city can be both Home and saved. Show it as a single row (with both
+  // icons) rather than once per list, so drop it from the saved list below.
+  const homeAlsoSaved = home && cities.some(c => sameCity(c, home))
+  const listCities = home ? cities.filter(c => !sameCity(c, home)) : cities
+
   return (
     <div className="saved-cities">
       <div className="section-label">SAVED CITIES</div>
@@ -12,6 +17,7 @@ export function SavedCities({ cities, onSelect, onRemove, currentLocation, home,
           <div className={`saved-row ${sameCity(currentLocation, home) ? 'active' : ''}`}>
             <button className="saved-city-btn" onClick={() => onSelect(home)}>
               <House size={13} />
+              {homeAlsoSaved && <MapPin size={13} />}
               <span className="saved-name">{home.name}{home.admin1 && home.admin1 !== home.name && `, ${home.admin1}`}</span>
             </button>
             <button className="saved-remove" onClick={() => onRemoveHome?.()} aria-label="Remove home">
@@ -19,7 +25,7 @@ export function SavedCities({ cities, onSelect, onRemove, currentLocation, home,
             </button>
           </div>
         )}
-        {cities.map((city, i) => (
+        {listCities.map((city, i) => (
           <div key={i} className={`saved-row ${sameCity(currentLocation, city) ? 'active' : ''}`}>
             <button className="saved-city-btn" onClick={() => onSelect(city)}>
               <MapPin size={13} />

@@ -18,7 +18,9 @@ const URLS = {
 // Fog is drawn inline (not as a Fluent emoji) because the 🌫️ asset is fixed
 // pale-gray mist lines: an invisible smudge on light backgrounds and a white
 // blob on dark. This version uses currentColor so it can be given a theme-aware
-// mid-tone (see .weather-icon-fog in App.css) that reads clearly in both.
+// mid-tone (see .weather-icon-fog in App.css) that reads clearly in both. The
+// glyph is straight mist lines with drifting dots, alternating dot–line and
+// line–dot per row to read as haze rather than water.
 function FogIcon({ alt }) {
   return (
     <svg
@@ -27,10 +29,14 @@ function FogIcon({ alt }) {
       fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"
       style={{ width: '1em', height: '1em', verticalAlign: 'middle' }}
     >
-      <path d="M8 8 q4 -2.6 8 0 t8 0"   opacity="0.85" />
-      <path d="M6 14 q4.5 2.6 9 0 t9 0" opacity="1" />
-      <path d="M8 20 q4 -2.6 8 0 t8 0"  opacity="0.8" />
-      <path d="M5 26 q4.5 2.6 9 0 t9 0" opacity="0.95" />
+      <line x1="11" y1="7"  x2="26" y2="7"  opacity="0.85" />
+      <circle cx="6"  cy="7"  r="1.4" fill="currentColor" stroke="none" opacity="0.85" />
+      <line x1="6"  y1="13" x2="21" y2="13" />
+      <circle cx="26" cy="13" r="1.4" fill="currentColor" stroke="none" />
+      <line x1="11" y1="19" x2="26" y2="19" opacity="0.9" />
+      <circle cx="6"  cy="19" r="1.4" fill="currentColor" stroke="none" opacity="0.9" />
+      <line x1="6"  y1="25" x2="21" y2="25" opacity="0.95" />
+      <circle cx="26" cy="25" r="1.4" fill="currentColor" stroke="none" opacity="0.95" />
     </svg>
   )
 }

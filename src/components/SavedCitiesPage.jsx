@@ -7,8 +7,11 @@ function cityLabel(city) {
 
 export function SavedCitiesPage({ cities, onSelect, onRemove, onBack, currentLocation, closing, recents, onRemoveRecent, home, onRemoveHome }) {
   const hasRecents = recents?.length > 0
-  const hasCities = cities.length > 0
   const hasPlaces = !!home
+  // Home lives in its own slot and is shown under "Places". If that same city
+  // is also in the saved list, drop it here so it isn't listed twice.
+  const savedCities = home ? cities.filter(c => !sameCity(c, home)) : cities
+  const hasCities = savedCities.length > 0
 
   const places = [
     home && { key: 'home', label: 'Home', Icon: House, city: home, onRemove: onRemoveHome },
@@ -70,7 +73,7 @@ export function SavedCitiesPage({ cities, onSelect, onRemove, onBack, currentLoc
           <div className="saved-section">
             {(hasRecents || hasPlaces) && <div className="recent-header">Saved</div>}
             <div className="saved-list">
-              {cities.map((city, i) => (
+              {savedCities.map((city, i) => (
                 <div key={i} className={`saved-row ${sameCity(currentLocation, city) ? 'active' : ''}`}>
                   <button className="saved-city-btn" onClick={() => onSelect(city)}>
                     <MapPin size={13} />

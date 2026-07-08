@@ -645,6 +645,8 @@ function App() {
                 onActivate={() => {}}
                 recents={recents}
                 onRemoveRecent={removeRecent}
+                isSaved={isSaved}
+                isHome={isHome}
               >
                 {(cities.length > 0 || home) && (
                   <SavedCities
