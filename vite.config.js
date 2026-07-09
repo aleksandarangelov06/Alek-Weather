@@ -16,10 +16,12 @@ const CSP = [
   // positioning both set style attributes.
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src https://fonts.gstatic.com",
-  "img-src 'self' data: blob: https://tilecache.rainviewer.com https://*.basemaps.cartocdn.com https://cdn.jsdelivr.net",
+  // mesonet.agron.iastate.edu serves the HRRR futurecast radar tiles.
+  "img-src 'self' data: blob: https://tilecache.rainviewer.com https://*.basemaps.cartocdn.com https://cdn.jsdelivr.net https://mesonet.agron.iastate.edu",
   // api-bdc.io is BigDataCloud's canonical reverse-geocode host; api.bigdatacloud.net
   // 307-redirects to it, so both are allowed (the redirect target must be permitted too).
-  "connect-src 'self' https://api.open-meteo.com https://geocoding-api.open-meteo.com https://air-quality-api.open-meteo.com https://api.weather.gov https://api.rainviewer.com https://api.bigdatacloud.net https://api-bdc.io",
+  // mesonet.agron.iastate.edu also provides the HRRR run metadata JSON (fetch).
+  "connect-src 'self' https://api.open-meteo.com https://geocoding-api.open-meteo.com https://air-quality-api.open-meteo.com https://api.weather.gov https://api.rainviewer.com https://api.bigdatacloud.net https://api-bdc.io https://mesonet.agron.iastate.edu",
   "worker-src 'self'",
   "manifest-src 'self'",
   "object-src 'none'",
