@@ -45,6 +45,26 @@ const SKY_CARD_VARS = {
   'sky-storm':          { '--sky-card': '#1a2038', '--sky-card-deep': '#12172a' },
 }
 
+// Color the mobile system bars (Android status/nav bar, via the theme-color
+// metas) to match the sky backdrop behind the header when weather effects are
+// active, so the bars stay consistent with the background. Each value is the
+// top gradient stop of the matching sky in App.css: [lightTheme, darkTheme].
+// Night skies and storm have no dark-theme override, so both entries are equal.
+const SKY_THEME_COLOR = {
+  'sky-clear-day':      ['#1565c0', '#081627'],
+  'sky-clear-night':    ['#050d1f', '#050d1f'],
+  'sky-partly-day':     ['#2e6da4', '#0d1926'],
+  'sky-partly-night':   ['#0d1520', '#0d1520'],
+  'sky-overcast-day':   ['#455a64', '#11181c'],
+  'sky-overcast-night': ['#121a1d', '#121a1d'],
+  'sky-fog':            ['#90a4ae', '#222b30'],
+  'sky-rain-day':       ['#263238', '#0d1316'],
+  'sky-rain-night':     ['#0d1418', '#0d1418'],
+  'sky-snow-day':       ['#78909c', '#161e23'],
+  'sky-snow-night':     ['#1c2529', '#1c2529'],
+  'sky-storm':          ['#0a0c14', '#0a0c14'],
+}
+
 const STARS = Array.from({ length: 40 }, () => ({
   top:   `${Math.random() * 88 + 4}%`,
   left:  `${Math.random() * 92 + 2}%`,
@@ -453,6 +473,25 @@ function App() {
   if (weather) console.log('[radar-enh] decision', { radarEnhanced, radarClear, rawCode: weather.current.weather_code, confirmed: weather.current.weather_code_confirmed, liveCode })
   const skyC     = weather ? skyClass(liveCode, weather.current.is_day) : ''
   const levelC   = SKY_LEVEL[skyC] ?? ''
+
+  // Keep the theme-color metas matched to the sky (or the flat app background
+  // when effects are off) so the Android status/nav bars stay consistent.
+  useEffect(() => {
+    const metas = document.querySelectorAll('meta[name="theme-color"]')
+    if (!metas.length) return
+    const skyActive = weather && weatherAnimations && skyC && SKY_THEME_COLOR[skyC]
+    const apply = (dark) => {
+      const color = skyActive ? SKY_THEME_COLOR[skyC][dark ? 1 : 0] : (dark ? '#000000' : '#f0f2f5')
+      metas.forEach(m => { m.content = color })
+    }
+    if (darkMode === 'on')  { apply(true);  return }
+    if (darkMode === 'off') { apply(false); return }
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    apply(mq.matches)
+    const handler = (e) => apply(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [darkMode, skyC, weather, weatherAnimations])
 
   const blockComponents = weather && !loading ? {
     overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} timezone={weather.timezone} hasActiveAlert={hasActiveAlert} unit={unit} airQuality={airQuality} showConditions={overviewParts.conditions} showAirQuality={overviewParts.airQuality} showClothing={overviewParts.clothing} colorCode={colorCoding.overview} />,

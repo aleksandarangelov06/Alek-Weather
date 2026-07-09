@@ -56,6 +56,7 @@ export default defineConfig({
         name: 'Alek Weather',
         short_name: 'Alek Weather',
         description: 'Real-time weather forecasts',
+        theme_color: '#f0f2f5',
         background_color: '#f0f2f5',
         display: 'standalone',
         orientation: 'portrait',
