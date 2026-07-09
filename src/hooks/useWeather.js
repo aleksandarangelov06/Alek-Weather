@@ -342,6 +342,14 @@ function confirmCurrentCode(data, alerts) {
   })
   if (!warning) return
 
+  // A Severe Thunderstorm Warning is the authoritative "heavy storm" signal the
+  // WMO code can't express (95 = slight *or* moderate). Flag it so the current
+  // condition can show the strong-storm icon even when the code stays 95. Set
+  // independently of the code-correction below, which may return early.
+  if (/thunderstorm/i.test(warning.properties?.event ?? '')) {
+    data.current.severe_storm = true
+  }
+
   const local = now.toLocaleString('sv', { timeZone: data.timezone })
   const hourKey = `${local.slice(0, 10)}T${local.slice(11, 13)}:00`
   const idx = data.hourly?.time?.indexOf(hourKey) ?? -1

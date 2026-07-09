@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowLeft, ChevronRight, ChevronDown, X } from 'lucide-react'
+import { ArrowLeft, ChevronRight, ChevronDown, X, Info } from 'lucide-react'
 import { APP_VERSION } from '../utils/version'
 
 function SettingRow({ label, children }) {
@@ -33,6 +33,34 @@ function Toggle({ id, checked, onChange }) {
       <input id={id} type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} />
       <span className="toggle-track" />
     </label>
+  )
+}
+
+// A toggle row with an inline (i) button that reveals a short explanation below.
+function RadarEnhancedRow({ checked, onChange }) {
+  const [info, setInfo] = useState(false)
+  return (
+    <>
+      <div className="settings-row">
+        <div className="settings-row-labelwrap">
+          <span className="settings-row-label">Enhanced accuracy</span>
+          <button
+            className={`settings-info-btn${info ? ' open' : ''}`}
+            onClick={() => setInfo(v => !v)}
+            aria-label="About enhanced accuracy"
+            aria-expanded={info}
+          >
+            <Info size={15} />
+          </button>
+        </div>
+        <Toggle id="toggle-radar-enhanced" checked={checked} onChange={onChange} />
+      </div>
+      {info && (
+        <p className="settings-row-info">
+          Cross-checks live rain radar against the forecast for your exact location, so the
+          current conditions reflect what's actually falling overhead. </p>
+      )}
+    </>
   )
 }
 
@@ -208,6 +236,37 @@ function ColorCodingView({ colorCoding, onToggle, onBack }) {
   )
 }
 
+function WeatherEffectsView({ weatherAnimations, onWeatherAnimationsChange, gyroscope, onGyroscopeChange, onBack }) {
+  return (
+    <>
+      {onBack && (
+        <button className="back-btn color-coding-back" onClick={onBack} aria-label="Back to settings">
+          <ArrowLeft size={18} />
+          <span>Back</span>
+        </button>
+      )}
+      <p className="color-coding-desc">Animate the background with the current conditions: rain, snow, clouds, and more.</p>
+      <div className="card settings-card">
+        <SettingRow label="Weather Effects">
+          <Toggle id="toggle-weather-anim" checked={weatherAnimations} onChange={onWeatherAnimationsChange} />
+        </SettingRow>
+      </div>
+      {/* Gyroscope tilt only matters where there's a motion sensor and the
+          effects are actually drawn, so it's mobile-only. */}
+      {isMobileDevice() && (
+        <>
+          <p className="color-coding-desc">Tilt the effects with your device's motion for a sense of depth.</p>
+          <div className={`card settings-card${weatherAnimations ? '' : ' settings-card--disabled'}`}>
+            <SettingRow label="Gyroscope Tilt">
+              <Toggle id="toggle-gyroscope" checked={gyroscope} onChange={onGyroscopeChange} />
+            </SettingRow>
+          </div>
+        </>
+      )}
+    </>
+  )
+}
+
 function OverviewSettingsView({ showOverview, onShowOverviewChange, overviewParts, onToggle, onBack }) {
   const disabled = !showOverview
   return (
@@ -243,7 +302,7 @@ function OverviewSettingsView({ showOverview, onShowOverviewChange, overviewPart
   )
 }
 
-function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastMode, onNowcastModeChange, onColorCodingOpen, onOverviewOpen, weatherAnimations, onWeatherAnimationsChange, gyroscope, onGyroscopeChange, radarEnhanced, onRadarEnhancedChange, installPrompt, onInstall }) {
+function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastMode, onNowcastModeChange, radarMode, onRadarModeChange, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, radarEnhanced, onRadarEnhancedChange, installPrompt, onInstall }) {
   return (
     <>
       <div className="settings-group-label">Appearance</div>
@@ -263,18 +322,10 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastM
           <div className="settings-row-label">Color Coding</div>
           <ChevronRight size={16} className="about-chevron" />
         </button>
-        <SettingRow label="Weather Effects">
-          <Toggle id="toggle-weather-anim" checked={weatherAnimations} onChange={onWeatherAnimationsChange} />
-        </SettingRow>
-        {/* Gyroscope tilt only matters where there's a motion sensor and the
-            effects are actually drawn, so it's mobile-only and nested under
-            Weather Effects (dimmed when effects are off). */}
-        {isMobileDevice() && (
-          <div className={`settings-row settings-row--nested${weatherAnimations ? '' : ' settings-row--nested-off'}`}>
-            <div className="settings-row-label">Gyroscope Tilt</div>
-            <Toggle id="toggle-gyroscope" checked={gyroscope} onChange={onGyroscopeChange} />
-          </div>
-        )}
+        <button className="settings-row about-row" onClick={onWeatherEffectsOpen}>
+          <div className="settings-row-label">Weather Effects</div>
+          <ChevronRight size={16} className="about-chevron" />
+        </button>
       </div>
 
       <div className="settings-group-label">Units</div>
@@ -310,11 +361,20 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastM
         </SettingRow>
       </div>
 
-      <div className="settings-group-label">Accuracy</div>
+      <div className="settings-group-label">Radar</div>
       <div className="card settings-card">
-        <SettingRow label="Radar enhanced accuracy">
-          <Toggle id="toggle-radar-enhanced" checked={radarEnhanced} onChange={onRadarEnhancedChange} />
+        <SettingRow label="Mode">
+          <SegmentedControl
+            value={radarMode}
+            onChange={onRadarModeChange}
+            options={[
+              { value: 'nowcast', label: 'Nowcast' },
+              { value: 'both',    label: 'Both'    },
+              { value: 'future',  label: 'Future'  },
+            ]}
+          />
         </SettingRow>
+        <RadarEnhancedRow checked={radarEnhanced} onChange={onRadarEnhancedChange} />
       </div>
 
       <div className="settings-group-label">Other</div>
@@ -330,9 +390,9 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastM
   )
 }
 
-const SUB_VIEW_TITLES = { colorcoding: 'Color Coding', overview: 'Weather Overview' }
+const SUB_VIEW_TITLES = { colorcoding: 'Color Coding', overview: 'Weather Overview', effects: 'Weather Effects' }
 
-export function SettingsPage({ onBack, inline, closing, subView, onColorCodingOpen, onOverviewOpen, onSubViewBack, colorCoding, onColorCodingToggle, overviewParts, onOverviewPartToggle, ...bodyProps }) {
+export function SettingsPage({ onBack, inline, closing, subView, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onSubViewBack, colorCoding, onColorCodingToggle, overviewParts, onOverviewPartToggle, ...bodyProps }) {
   let body
   if (subView === 'colorcoding') {
     body = <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} />
@@ -345,8 +405,17 @@ export function SettingsPage({ onBack, inline, closing, subView, onColorCodingOp
         onToggle={onOverviewPartToggle}
       />
     )
+  } else if (subView === 'effects') {
+    body = (
+      <WeatherEffectsView
+        weatherAnimations={bodyProps.weatherAnimations}
+        onWeatherAnimationsChange={bodyProps.onWeatherAnimationsChange}
+        gyroscope={bodyProps.gyroscope}
+        onGyroscopeChange={bodyProps.onGyroscopeChange}
+      />
+    )
   } else {
-    body = <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} onOverviewOpen={onOverviewOpen} />
+    body = <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} onOverviewOpen={onOverviewOpen} onWeatherEffectsOpen={onWeatherEffectsOpen} />
   }
 
   if (inline) {
@@ -388,7 +457,7 @@ export function SettingsPage({ onBack, inline, closing, subView, onColorCodingOp
   )
 }
 
-export function SettingsPill({ expanded, onToggle, subView, onColorCodingOpen, onOverviewOpen, onSubViewBack, colorCoding, onColorCodingToggle, overviewParts, onOverviewPartToggle, ...bodyProps }) {
+export function SettingsPill({ expanded, onToggle, subView, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onSubViewBack, colorCoding, onColorCodingToggle, overviewParts, onOverviewPartToggle, ...bodyProps }) {
   let body
   if (subView === 'colorcoding') {
     body = <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} onBack={onSubViewBack} />
@@ -402,8 +471,18 @@ export function SettingsPill({ expanded, onToggle, subView, onColorCodingOpen, o
         onBack={onSubViewBack}
       />
     )
+  } else if (subView === 'effects') {
+    body = (
+      <WeatherEffectsView
+        weatherAnimations={bodyProps.weatherAnimations}
+        onWeatherAnimationsChange={bodyProps.onWeatherAnimationsChange}
+        gyroscope={bodyProps.gyroscope}
+        onGyroscopeChange={bodyProps.onGyroscopeChange}
+        onBack={onSubViewBack}
+      />
+    )
   } else {
-    body = <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} onOverviewOpen={onOverviewOpen} />
+    body = <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} onOverviewOpen={onOverviewOpen} onWeatherEffectsOpen={onWeatherEffectsOpen} />
   }
 
   return (

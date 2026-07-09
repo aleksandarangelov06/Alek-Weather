@@ -65,7 +65,7 @@ export function CurrentWeather({ current, minutely, radarClear = null, location,
     weekday: 'long', month: 'long', day: 'numeric', ...tzOpts,
   })
 
-  const info = getWeatherInfo(liveWeatherCode(current, minutely, radarClear), !current.is_day)
+  const info = getWeatherInfo(liveWeatherCode(current, minutely, radarClear), !current.is_day, current.severe_storm)
   const temp = toTemp(current.temperature_2m, unit)
 
   const currentTempStyle = tempStyle(current.temperature_2m, colorCoding, 1, glow, frost)

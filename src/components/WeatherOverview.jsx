@@ -7,10 +7,41 @@ import { getWeatherInfo, liveWeatherCode, nowcastHourlyCode, displayPrecipChance
 const LUCIDE_FOR_ICON = {
   sun: Sun, moon: Moon, sunSmall: Sun, sunCloud: CloudSun, cloud: Cloud,
   fog: CloudFog, sunRain: CloudSunRain, rain: CloudRain, snow: CloudSnow,
-  snowflake: Snowflake, storm: CloudLightning, therm: Thermometer,
+  snowflake: Snowflake, storm: CloudLightning, stormStrong: CloudLightning, therm: Thermometer,
 }
 const lucideForCode = (code, isNight) =>
   LUCIDE_FOR_ICON[getWeatherInfo(code, isNight).icon] ?? Thermometer
+
+// Picks a tintable line icon for an insight from its wording, so each insight
+// line reads at a glance the way the current-conditions and clothing lines do.
+// Ordered most-specific first (e.g. "freezing rain" before "rain").
+function iconForInsight(text, isDay) {
+  const t = text.toLowerCase()
+  if (/thunder|stormy|storms/.test(t))          return CloudLightning
+  if (/freezing rain|sleet|freezing drizzle/.test(t)) return CloudSnow
+  if (/snow/.test(t))                           return CloudSnow
+  if (/air quality/.test(t))                    return Wind
+  if (/freezing/.test(t))                       return Snowflake
+  if (/rain|shower|drizzle/.test(t))            return CloudRain
+  if (/fog/.test(t))                            return CloudFog
+  if (/wind/.test(t))                           return Wind
+  if (/\buv\b/.test(t))                         return Sun
+  if (/hot|heat/.test(t))                       return Thermometer
+  if (/warmer|cooler|degrees|temperature/.test(t)) return Thermometer
+  if (/overcast|cloud/.test(t))                 return Cloud
+  if (/clear|sunny|sunshine|\bsun\b/.test(t))   return isDay ? Sun : Moon
+  return isDay ? CloudSun : Cloud
+}
+
+// Level colors mirror the dot backgrounds in App.css so a tinted icon carries
+// the same severity signal the colored dot used to.
+const LEVEL_COLOR = {
+  severe: '#ef4444', warning: '#f97316', info: '#3b82f6',
+  notice: '#8b949e', good: '#22c55e', neutral: 'var(--text-tertiary)',
+}
+const insightColor = (item) =>
+  item.level === 'severe' && !item.immediate ? '#f4602d'
+    : LEVEL_COLOR[item.level] ?? 'var(--text-tertiary)'
 
 const SEVERE_CODES   = new Set([95, 96, 99, 82])
 const ICE_CODES      = new Set([66, 67]) // freezing rain/drizzle — hazardous at any intensity
@@ -556,14 +587,20 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
   const showSevere = firstSevere !== -1 &&
     (hasActiveAlert || firstSevere === 0 || aboveThreshold(firstSevere, 30))
 
-  if (showSevere) {
+  // Build the severe headline (if any) up front so it can be slotted by urgency
+  // rather than always leading. A storm happening now or later today owns the top
+  // slot; one that's still a day or more out (immediate === false) is lowered so
+  // precipitation falling right now or arriving within the hour takes priority —
+  // the deferred storm is appended just below the headline instead.
+  const severeInsight = (() => {
+    if (!showSevere) return null
     const when = timeDesc(firstSevere, currentMinute, hourly.time, start, timezone)
     const isThunder = [95, 96, 99].includes(codes[firstSevere])
     // A storm already overhead that the forecast keeps going for hours reads
     // better as a duration ("continuing through the night") than as "right now".
     const stormSpan = firstSevere === 0 ? spanPhrase(c => SEVERE_CODES.has(c)) : null
     const stormNoun = isThunder ? 'Thunderstorms' : 'Violent showers'
-    insights.push({
+    return {
       level: 'severe',
       // Only a severe event happening today earns the pulsing dot; a storm that's
       // still a day out (e.g. "tomorrow morning") shows a steady dot instead.
@@ -578,11 +615,19 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
         : (isThunder
             ? (severeP != null ? `${severeP}% chance of a possible thunderstorm ${when}.` : `Possible thunderstorm ${when}.`)
             : (severeP != null ? `${severeP}% chance of possible violent rain showers ${when}.` : `Possible violent rain showers ${when}.`)),
-    })
+    }
+  })()
+
+  // Only a same-day severe event leads. A later-date storm yields the top slot to
+  // "now" / "within the hour" precipitation and is re-added afterward.
+  if (severeInsight?.immediate) {
+    insights.push(severeInsight)
   } else if (precipNowInsight) {
     insights.push(precipNowInsight)
   } else if (nowcastInsight) {
     insights.push(nowcastInsight)
+  } else if (severeInsight) {
+    insights.push(severeInsight)
   } else if (firstIce !== -1 && aboveThreshold(firstIce, 30)) {
     // Freezing rain outranks heavy rain: even light glaze ices roads. Lower
     // probability threshold for the same reason.
@@ -631,6 +676,12 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
         ? `${prob}% chance of ${article(label)}${label} ${when}.`
         : `${info.label} ${when}.`,
     })
+  }
+
+  // A later-date severe storm that yielded the headline to now/within-the-hour
+  // precipitation still earns a slot — just below it, not at the top.
+  if (severeInsight && !insights.includes(severeInsight)) {
+    insights.push(severeInsight)
   }
 
   // Fog is independent of rain, so it can accompany a precipitation insight.
@@ -1035,8 +1086,18 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
   // rest of the week" or "thunderstorms Monday" only earn a slot when nothing
   // urgent is happening. Order within the array already puts "now" first.
   let visible
-  if (deduped.some(i => i.level === 'severe')) {
+  if (deduped.some(i => i.level === 'severe' && i.immediate)) {
+    // An immediate (same-day) severe event owns the card.
     visible = deduped.filter(i => i.level === 'severe').slice(0, 2)
+  } else if (deduped[0]?.level === 'severe') {
+    // A later-date severe storm that still leads (nothing is happening now) keeps
+    // the card to itself, same as an immediate one.
+    visible = deduped.filter(i => i.level === 'severe').slice(0, 2)
+  } else if (deduped.some(i => i.level === 'severe')) {
+    // A later-date severe storm that yielded the headline to now/within-the-hour
+    // weather: keep that leading line and the storm, rather than collapsing to
+    // the storm alone.
+    visible = [deduped[0], ...deduped.filter(i => i.level === 'severe')].slice(0, 2)
   } else if (deduped.some(i => i.level === 'warning')) {
     visible = deduped.filter(i => i.level === 'warning' || i.level === 'info').slice(0, 2)
   } else {
@@ -1149,16 +1210,27 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
     return { Icon: lucideForCode(codes[0], current.is_day === 0), temp: current.temperature_2m }
   })()
 
+  // Day/night bias for insight icons that swap sun for moon after dark.
+  const isDay = current?.is_day !== 0
+
   return (
     <div className="card">
       <div className="section-label">WEATHER INSIGHT</div>
       <div className="overview-list">
-        {visible.map((item, i) => (
-          <div key={i} className={`overview-item overview-${item.level}`}>
-            <span className={`overview-dot${hasActiveAlert && item.level === 'severe' && item.immediate ? ' overview-dot--alert' : ''}${item.level === 'severe' && !item.immediate ? ' overview-dot--soft' : ''}`} />
-            <span className="overview-text">{item.text}</span>
-          </div>
-        ))}
+        {visible.map((item, i) => {
+          // Live severe alerts keep the pulsing red dot so they still read as an
+          // urgent, active warning; every other insight gets a tinted line icon.
+          const isLiveAlert = hasActiveAlert && item.level === 'severe' && item.immediate
+          const Icon = iconForInsight(item.text, isDay)
+          return (
+            <div key={i} className={`overview-item overview-${item.level}`}>
+              {isLiveAlert
+                ? <span className="overview-dot-slot"><span className="overview-dot overview-dot--alert" /></span>
+                : <Icon size={18} className="overview-item-icon" style={{ color: insightColor(item) }} aria-hidden="true" />}
+              <span className="overview-text">{item.text}</span>
+            </div>
+          )
+        })}
       </div>
       {showConditions && detailLine && (
         <div className="overview-detail">

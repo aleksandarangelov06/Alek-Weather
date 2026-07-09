@@ -10,10 +10,11 @@ function sceneFor(code) {
 }
 
 const CFG = {
-  // Counts include headroom for drops that sit off-screen left in the widened
-  // spawn range (see driftX below), so on-screen density matches the old look.
-  rain:  { count: 140, color: [90, 130, 190],  alpha: 0.55, speed: [5, 10],  angle: 12, len: [12, 22] },
-  storm: { count: 325, color: [70, 110, 175],  alpha: 0.70, speed: [15, 24], angle: 20, len: [16, 32] },
+  // `angle` is the rest fall angle (deg from vertical). Rain falls straight down
+  // when the phone is level; the gyroscope tilt is what leans it. Storms keep a
+  // slight wind-driven lean at rest.
+  rain:  { count: 140, color: [90, 130, 190],  alpha: 0.55, speed: [5, 10],  angle: 0,  len: [12, 22] },
+  storm: { count: 325, color: [70, 110, 175],  alpha: 0.70, speed: [15, 24], angle: 12, len: [16, 32] },
   snow:  { count: 70,  color: [180, 210, 240], alpha: 0.75, speed: [0.5, 1.6] },
   fog:   { count: 16,  color: [140, 160, 180], alpha: 0.18, speed: 0.4, size: [70, 140] },
 }
@@ -70,19 +71,16 @@ export function WeatherCanvas({ code, gyro = true }) {
     const W = () => canvas.width
     const H = () => canvas.height
 
-    // Angled rain drifts sideways by height·tan(angle) as it falls, so drops
-    // spawned across just [-100, W+100] all shift right on the way down and
-    // leave the bottom-left corner dry. Extend the spawn range left by the
-    // full-fall drift so coverage stays uniform at every height.
     const angleRad = (cfg.angle ?? 0) * Math.PI / 180
-    const driftX = () => (H() + 20) * Math.tan(angleRad)
 
     let particles
     if (scene === 'rain' || scene === 'storm') {
       // Direction (vx/vy) is derived per-frame from the base angle + live tilt,
       // so it isn't stored on the particle — only its speed and length are.
+      // Seeded across the whole screen; the draw loop refills from the correct
+      // inflow edges so coverage stays gap-free at any lean (see respawn below).
       particles = Array.from({ length: cfg.count }, () => ({
-        x: rand(-100 - driftX(), W() + 100), y: rand(0, H()),
+        x: rand(0, W()), y: rand(0, H()),
         len: rand(cfg.len[0], cfg.len[1]),
         spd: rand(cfg.speed[0], cfg.speed[1]),
         alpha: rand(0.4, 1) * cfg.alpha,
@@ -128,14 +126,24 @@ export function WeatherCanvas({ code, gyro = true }) {
         // fall angle plus the live tilt.
         const a = angleRad + t.cur
         const vx = Math.sin(a), vy = Math.cos(a)
+        // A leaning sheet is fed by two edges: the top and the upwind side. Refill
+        // exited drops across both in proportion to each edge's inflow width (its
+        // flux), so density stays uniform and no corner goes dry at any lean. With
+        // no lean (vx≈0) the side flux vanishes and it's plain top-down rain.
+        const topFlux = W() * vy
+        const sideFlux = H() * Math.abs(vx)
+        const respawn = (p) => {
+          if (Math.random() * (topFlux + sideFlux) < topFlux) {
+            p.y = -20; p.x = rand(0, W())          // enter from the top
+          } else {
+            p.y = rand(-20, H()); p.x = vx >= 0 ? -20 : W() + 20  // from the upwind side
+          }
+        }
         ctx.lineWidth = 1.5
         for (const p of particles) {
           p.x += vx * p.spd; p.y += vy * p.spd
-          // Respawn off the top once a drop exits the bottom or, under a strong
-          // lean, slides past either side — keeps coverage gap-free.
-          if (p.y > H() || p.x < -200 - driftX() || p.x > W() + 200) {
-            p.y = -20; p.x = rand(-100 - driftX(), W() + 100)
-          }
+          // Refill once a drop leaves the bottom or slides off the downwind side.
+          if (p.y > H() + 20 || p.x < -40 || p.x > W() + 40) respawn(p)
           ctx.beginPath()
           ctx.moveTo(p.x, p.y)
           ctx.lineTo(p.x - vx * p.len, p.y - vy * p.len)

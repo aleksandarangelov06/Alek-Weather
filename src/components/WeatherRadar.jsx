@@ -5,12 +5,29 @@ import 'leaflet/dist/leaflet.css'
 
 const FRAMES_URL = 'https://api.rainviewer.com/public/weather-maps.json'
 const TILE_URL   = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
+
+// Future radar: NOAA HRRR forecast reflectivity served as free XYZ tiles by the
+// Iowa Environmental Mesonet (CORS-enabled, no key). RainViewer's free nowcast
+// array is unreliable (frequently empty), so HRRR provides the forecast frames.
+// The model run can be 1–3h old; refd_0000.json carries model_init_utc, from
+// which each 15-min step gets its real valid time. CONUS coverage only.
+const HRRR_META_URL = 'https://mesonet.agron.iastate.edu/data/gis/images/4326/hrrr/refd_0000.json'
+const HRRR_TILE_URL = (min) =>
+  `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/hrrr::REFD-F${String(min).padStart(4, '0')}-0/{z}/{x}/{y}.png`
+const HRRR_STEP_MIN    = 15         // model output cadence
+const HRRR_MAX_MIN     = 360        // last step we'll ever request from a run
+const HRRR_HORIZON_SEC = 3 * 3600   // don't extend the timeline past now + 3h
+// HRRR domain (approximate CONUS bounds); outside it the tiles are blank.
+const inHrrrDomain = (lat, lon) => lat >= 21 && lat <= 53 && lon >= -134 && lon <= -60
 const MAP_MIN_ZOOM     = 4
 const MAP_MAX_ZOOM     = 12
 const RADAR_NATIVE_MAX = 7 // RainViewer's 512px radar tiles cap here; higher returns "zoom level not supported"
 const RADAR_OPACITY     = 0.65
 const RADAR_WINDOW      = 2 // frames either side of current kept attached to the map
 const LEGEND_COLORS = ['#43a4c3', '#326985', '#ffd900', '#ff3300', '#d193c9']
+// HRRR futurecast tiles use the standard NWS reflectivity ramp (green → yellow
+// → orange → red), not RainViewer's palette, so the legend swaps with the frames.
+const LEGEND_COLORS_FUTURE = ['#02fd02', '#0173c5', '#fdf802', '#fd9500', '#fd0000']
 
 // Scroll pixels needed per zoom level, tuned separately per input device: a
 // mouse wheel fires big discrete notches (needs a large value or it races),
@@ -36,17 +53,18 @@ function fmtTime(unixSec, timezone) {
   })
 }
 
-export function WeatherRadar({ location, timezone }) {
+// mode: 'nowcast' (observed frames only) | 'future' (live frame + forecast only)
+// | 'both' (full timeline, default).
+export function WeatherRadar({ location, timezone, mode = 'both' }) {
   const mapRef      = useRef(null)
   const mapInst     = useRef(null)
   const baseTileRef = useRef(null)
-  const layerCache  = useRef(new Map()) // frame.path -> L.TileLayer (kept alive for smooth playback)
+  const layerCache  = useRef(new Map()) // frame.key -> L.TileLayer (kept alive for smooth playback)
   const activeKey   = useRef(null)
   const wantedKey   = useRef(null) // latest frame requested; guards stale async loads
   const trackRef    = useRef(null)
   const isDragging  = useRef(false)
 
-  const [host, setHost]           = useState('')
   const [frames, setFrames]       = useState([])
   const [pastCount, setPastCount] = useState(0)
   const [idx, setIdx]             = useState(0)
@@ -54,20 +72,66 @@ export function WeatherRadar({ location, timezone }) {
   const [expanded, setExpanded]   = useState(false)
   const [mapReady, setMapReady]   = useState(false)
 
-  // Fetch RainViewer frame list once
+  // Fetch the frame list once: RainViewer for observed (+ its nowcast when the
+  // free API bothers to include one), then HRRR forecast steps appended after
+  // the last RainViewer frame. Each frame carries its own tile URL template so
+  // the layer code doesn't care which source it came from.
   useEffect(() => {
-    fetch(FRAMES_URL)
-      .then(r => r.json())
-      .then(data => {
+    let cancelled = false
+    ;(async () => {
+      let rvFrames = [], pastLen = 0
+      try {
+        const data = await fetch(FRAMES_URL).then(r => r.json())
         const past = data.radar.past ?? []
         const cast = data.radar.nowcast ?? []
-        setHost(data.host)
-        setFrames([...past, ...cast])
-        setPastCount(past.length)
-        setIdx(Math.max(0, past.length - 1))
-      })
-      .catch(() => {})
-  }, [])
+        pastLen = past.length
+        // URL is /{size}/{z}/{x}/{y}/{color}/{smooth}_{snow}.png. RainViewer's
+        // free API ignores the color and snow flags, but smoothing works.
+        rvFrames = [...past, ...cast].map(f => ({
+          key: f.path,
+          time: f.time,
+          url: `${data.host}${f.path}/512/{z}/{x}/{y}/2/1_0.png`,
+        }))
+      } catch {}
+
+      const futFrames = []
+      if (mode !== 'nowcast' && inHrrrDomain(location.latitude, location.longitude)) {
+        try {
+          const meta = await fetch(HRRR_META_URL).then(r => r.json())
+          const init = Date.parse(meta.model_init_utc) / 1000
+          const nowSec = Date.now() / 1000
+          const lastRv = rvFrames.length ? rvFrames[rvFrames.length - 1].time : nowSec
+          if (Number.isFinite(init)) {
+            for (let m = HRRR_STEP_MIN; m <= HRRR_MAX_MIN; m += HRRR_STEP_MIN) {
+              const t = init + m * 60
+              if (t <= lastRv + 60) continue          // already covered by RainViewer
+              if (t > nowSec + HRRR_HORIZON_SEC) break // keep the timeline short
+              futFrames.push({ key: `hrrr:${m}`, time: t, url: HRRR_TILE_URL(m) })
+            }
+          }
+        } catch {}
+      }
+
+      // Apply the radar mode: 'nowcast' keeps only observed frames, 'future'
+      // keeps the live frame (so the map still shows "now") plus everything
+      // after it, and 'both' keeps the full timeline.
+      let all = [...rvFrames, ...futFrames]
+      let observed = pastLen
+      if (mode === 'nowcast') {
+        all = rvFrames.slice(0, pastLen)
+      } else if (mode === 'future') {
+        const live = pastLen > 0 ? [rvFrames[pastLen - 1]] : []
+        all = [...live, ...rvFrames.slice(pastLen), ...futFrames]
+        observed = live.length
+      }
+
+      if (cancelled || all.length === 0) return
+      setFrames(all)
+      setPastCount(observed)
+      setIdx(Math.max(0, observed - 1))
+    })()
+    return () => { cancelled = true }
+  }, [location.latitude, location.longitude, mode])
 
   const hasFrames = frames.length > 0
 
@@ -153,11 +217,9 @@ export function WeatherRadar({ location, timezone }) {
   // visible until the new one finishes loading,
   // which prevents the blank-frame flash on slow devices/connections. We also prefetch
   // one frame ahead so the next frame is ready before playback reaches it.
-  // URL is /{size}/{z}/{x}/{y}/{color}/{smooth}_{snow}.png. RainViewer's free API
-  // ignores the color and snow flags (always one fixed palette), but smoothing works.
   useEffect(() => {
     const map = mapInst.current
-    if (!map || !mapReady || !host || frames.length === 0) return
+    if (!map || !mapReady || frames.length === 0) return
 
     // Build/return a layer (cached), but only ATTACH it to the map when it's
     // within the active window. Attached layers reposition & reload tiles on
@@ -165,14 +227,14 @@ export function WeatherRadar({ location, timezone }) {
     // map drag laggy. We keep them in the cache (no recreate churn) but detach
     // the far ones so pan/zoom only moves a handful of grids.
     const getLayer = (frame, attach) => {
-      let layer = layerCache.current.get(frame.path)
+      let layer = layerCache.current.get(frame.key)
       if (!layer) {
         layer = L.tileLayer(
-          `${host}${frame.path}/512/{z}/{x}/{y}/2/1_0.png`,
+          frame.url,
           { opacity: 0, zIndex: 200, maxZoom: MAP_MAX_ZOOM, maxNativeZoom: RADAR_NATIVE_MAX, crossOrigin: true, className: 'radar-tiles' }
         )
         layer.on('load', () => { layer._radarLoaded = true })
-        layerCache.current.set(frame.path, layer)
+        layerCache.current.set(frame.key, layer)
       }
       if (attach && !map.hasLayer(layer)) layer.addTo(map)
       return layer
@@ -186,12 +248,12 @@ export function WeatherRadar({ location, timezone }) {
     // Detach layers outside the window so the map isn't dragging 13 tile grids.
     const inWindow = new Set()
     for (let d = -win; d <= win; d++) {
-      inWindow.add(frames[((idx + d) % frames.length + frames.length) % frames.length].path)
+      inWindow.add(frames[((idx + d) % frames.length + frames.length) % frames.length].key)
     }
-    layerCache.current.forEach((layer, path) => {
+    layerCache.current.forEach((layer, key) => {
       // Never detach the active layer — it's the fallback display until the next frame loads.
       // Detaching it before a replacement shows causes a blank map.
-      if (!inWindow.has(path) && map.hasLayer(layer) && layer._radarLoaded && path !== activeKey.current) {
+      if (!inWindow.has(key) && map.hasLayer(layer) && layer._radarLoaded && key !== activeKey.current) {
         layer.setOpacity(0)
         layer._radarLoaded = false // tiles get unloaded on detach; wait for reload next time
         map.removeLayer(layer)
@@ -200,18 +262,18 @@ export function WeatherRadar({ location, timezone }) {
 
     const frame = frames[idx]
     if (!frame) return
-    wantedKey.current = frame.path
+    wantedKey.current = frame.key
     const layer = getLayer(frame, true)
 
     const show = () => {
-      if (wantedKey.current !== frame.path) return // user moved on before this loaded
+      if (wantedKey.current !== frame.key) return // user moved on before this loaded
       const prev = activeKey.current
-      if (prev && prev !== frame.path) {
+      if (prev && prev !== frame.key) {
         const prevLayer = layerCache.current.get(prev)
         if (prevLayer) prevLayer.setOpacity(0)
       }
       layer.setOpacity(RADAR_OPACITY)
-      activeKey.current = frame.path
+      activeKey.current = frame.key
     }
 
     // Show immediately if tiles are already cached; otherwise keep the old frame
@@ -223,7 +285,7 @@ export function WeatherRadar({ location, timezone }) {
     for (let d = 1; d <= win; d++) {
       getLayer(frames[(idx + d) % frames.length], true)
     }
-  }, [mapReady, host, frames, idx, playing])
+  }, [mapReady, frames, idx, playing])
 
   // Animation playback. Load-aware: if the next frame's tiles aren't in yet,
   // hold the current frame for another tick instead of advancing past it —
@@ -236,7 +298,7 @@ export function WeatherRadar({ location, timezone }) {
     let holds = 0
     const id = setInterval(() => {
       const next = (idx + 1) % frames.length
-      const layer = layerCache.current.get(frames[next].path)
+      const layer = layerCache.current.get(frames[next].key)
       if (layer?._radarLoaded || ++holds >= 4) setIdx(next)
     }, 450)
     return () => clearInterval(id)
@@ -330,6 +392,12 @@ export function WeatherRadar({ location, timezone }) {
 
   if (frames.length === 0) return null
 
+  const isFuture = idx >= pastCount
+  // The legend tracks the tiles actually on screen: HRRR frames draw with the
+  // NWS reflectivity ramp, while RainViewer frames (past and any nowcast) keep
+  // RainViewer's palette.
+  const legendColors = frames[idx]?.key?.startsWith('hrrr:') ? LEGEND_COLORS_FUTURE : LEGEND_COLORS
+
   return (
     <div className={`card radar-card${expanded ? ' radar-expanded' : ''}`}>
       {!expanded && (
@@ -372,6 +440,8 @@ export function WeatherRadar({ location, timezone }) {
         <div className="radar-main-row">
           <div className="radar-big-time">
             {frames[idx] ? fmtTime(frames[idx].time, timezone) : ''}
+            {idx === pastCount - 1 && <span className="radar-live-badge">LIVE</span>}
+            {isFuture && <span className="radar-live-badge radar-live-badge--future">FUTURECAST</span>}
           </div>
           <button className="radar-play-circle" onClick={() => setPlaying(v => !v)} aria-label={playing ? 'Pause' : 'Play'}>
             {playing ? <Pause size={22} /> : <Play size={22} />}
@@ -411,7 +481,7 @@ export function WeatherRadar({ location, timezone }) {
         <div className="radar-legend">
           <span className="radar-legend-lbl">Light</span>
           <div className="radar-legend-blocks">
-            {LEGEND_COLORS.map((color, i) => (
+            {legendColors.map((color, i) => (
               <div key={i} className="radar-legend-block" style={{ background: color }} />
             ))}
           </div>

@@ -1951,6 +1951,45 @@ body {
   flex-shrink: 0;
 }
 
+/* Label paired with an inline (i) info button. */
+.settings-row-labelwrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.settings-info-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: none;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  border-radius: 50%;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.settings-info-btn:hover { color: var(--text-secondary); }
+
+.settings-info-btn.open {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+/* Explanation revealed under a row by its (i) button. Sits inside the card,
+   indented to the row padding, no divider so it reads as part of the row. */
+.settings-row-info {
+  padding: 0 18px 14px;
+  margin: -4px 0 0;
+  font-size: 13px;
+  color: var(--text-tertiary);
+  line-height: 1.45;
+  animation: dropIn 0.18s ease;
+}
+
 /* A setting nested under the row above it (e.g. Gyroscope under Weather
    Effects): indented with an L-connector, lighter label, no divider so it
    reads as belonging to its parent. */
@@ -2623,6 +2662,19 @@ body {
   flex-shrink: 0;
 }
 
+.overview-item-icon {
+  flex-shrink: 0;
+}
+
+/* Keeps a live-alert pulsing dot in the same 18px footprint as the icons, so
+   text stays left-aligned across every insight row. */
+.overview-dot-slot {
+  flex-shrink: 0;
+  width: 18px;
+  display: flex;
+  justify-content: center;
+}
+
 .overview-severe  .overview-dot { background: #ef4444; }
 /* Non-immediate severe events (e.g. tomorrow's forecast): red-orange, between
    the immediate-severe red and the warning orange. */
@@ -2728,11 +2780,55 @@ body {
 }
 
 .radar-big-time {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-size: 30px;
   font-weight: 600;
   color: var(--text-primary);
   letter-spacing: -0.5px;
   line-height: 1;
+}
+
+/* Shown only when the tick sits on the most recent observed frame ("now"). */
+.radar-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #e5484d 15%, transparent);
+  color: #e5484d;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  line-height: 1;
+}
+
+.radar-live-badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #e5484d;
+  animation: radar-live-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes radar-live-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.25; }
+}
+
+/* Futurecast variant: accent blue with a steady dot — it's a forecast, not a
+   live signal, so no pulse. */
+.radar-live-badge--future {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
+
+.radar-live-badge--future::before {
+  background: var(--accent);
+  animation: none;
 }
 
 .radar-play-circle {

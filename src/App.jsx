@@ -116,6 +116,7 @@ const DEFAULT_COLOR_CODING = { current: true, hourly: true, daily: true, overvie
 const OVERVIEW_PARTS_KEY = 'alek-weather-overview-parts'
 const DEFAULT_OVERVIEW_PARTS = { conditions: true, airQuality: true, clothing: true }
 const RADAR_ENHANCED_KEY = 'alek-weather-radar-enhanced'
+const RADAR_MODE_KEY = 'alek-weather-radar-mode' // 'nowcast' | 'both' | 'future'
 
 function SortableBlock({ id, children }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
@@ -141,6 +142,7 @@ function App() {
   const [weatherAnimations, setWeatherAnimations] = useState(() => localStorage.getItem('alek-weather-animations') !== 'false')
   const [gyroscope, setGyroscope] = useState(() => localStorage.getItem('alek-weather-gyroscope') !== 'false')
   const [radarEnhanced, setRadarEnhanced] = useState(() => localStorage.getItem(RADAR_ENHANCED_KEY) === 'true')
+  const [radarMode, setRadarMode] = useState(() => localStorage.getItem(RADAR_MODE_KEY) ?? 'both')
   const [colorCoding, setColorCoding] = useState(() => {
     const saved = loadJSON(COLOR_CODING_KEY)
     return saved ? { ...DEFAULT_COLOR_CODING, ...saved } : DEFAULT_COLOR_CODING
@@ -341,6 +343,11 @@ function App() {
     localStorage.setItem(RADAR_ENHANCED_KEY, String(val))
   }
 
+  const changeRadarMode = (mode) => {
+    setRadarMode(mode)
+    localStorage.setItem(RADAR_MODE_KEY, mode)
+  }
+
   const changeDarkMode = (mode) => {
     setDarkMode(mode)
     localStorage.setItem(THEME_KEY, mode)
@@ -467,7 +474,7 @@ function App() {
     hourly:  <HourlyForecast hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.hourly} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
     daily:   <DailyForecast daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.daily} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
     details: <WeatherDetails current={weather.current} daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} airQuality={airQuality} />,
-    radar:   <WeatherRadar location={location} timezone={weather.timezone} />,
+    radar:   <WeatherRadar location={location} timezone={weather.timezone} mode={radarMode} />,
     nowcast: <PrecipNowcast minutely={weather.minutely_15} currentTime={weather.current.time} mode={nowcastMode} current={weather.current} radarClear={radarClear} />,
   } : null
 
@@ -685,6 +692,7 @@ function App() {
           subView={subView}
           onColorCodingOpen={() => openSubView('colorcoding')}
           onOverviewOpen={() => openSubView('overview')}
+          onWeatherEffectsOpen={() => openSubView('effects')}
           onSubViewBack={closeSubView}
           darkMode={darkMode}
           onDarkModeChange={changeDarkMode}
@@ -704,6 +712,8 @@ function App() {
           onGyroscopeChange={changeGyroscope}
           radarEnhanced={radarEnhanced}
           onRadarEnhancedChange={changeRadarEnhanced}
+          radarMode={radarMode}
+          onRadarModeChange={changeRadarMode}
           installPrompt={installPrompt}
           onInstall={handleInstall}
           closing={settingsClosing}
