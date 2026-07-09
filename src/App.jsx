@@ -226,21 +226,6 @@ function App() {
     else root.removeAttribute('data-theme')
   }, [darkMode])
 
-  // Keep theme-color metas in sync so the Android status bar and navigation bar match the app background
-  useEffect(() => {
-    const metas = document.querySelectorAll('meta[name="theme-color"]')
-    if (!metas.length) return
-    const apply = (dark) => { metas.forEach(m => { m.content = dark ? '#000000' : '#f0f2f5' }) }
-    if (darkMode === 'on')  { apply(true);  return }
-    if (darkMode === 'off') { apply(false); return }
-    // system mode: follow OS and keep listening for changes
-    const mq = window.matchMedia('(prefers-color-scheme: dark)')
-    apply(mq.matches)
-    const handler = (e) => apply(e.matches)
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
-  }, [darkMode])
-
   // Auto-load the home city on mount (falling back to the first saved city).
   useEffect(() => {
     if (INITIAL_CITY) fetchWeather(INITIAL_CITY)
