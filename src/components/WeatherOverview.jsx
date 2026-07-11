@@ -608,7 +608,7 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
       dedupeKey: `severe:${slotDateStr(firstSevere)}`,
       text: stormSpan
         ? `${stormNoun} continuing ${stormSpan}.`
-        : hasActiveAlert
+        : (hasActiveAlert || firstSevere === 0)
         ? (isThunder
             ? (severeP != null ? `${severeP}% chance of a thunderstorm ${when}.` : `Thunderstorm ${when}.`)
             : (severeP != null ? `${severeP}% chance of violent rain showers ${when}.` : `Violent rain showers ${when}.`))
@@ -1182,14 +1182,14 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
     // Icon reflects the primary garment for the temperature; a meaningful chance
     // of rain/snow overrides it with the accessory the text tells you to grab.
     let advice, Icon
-    if (feels >= 95)      { advice = 'Dress light and stay hydrated — it feels dangerously hot.'; Icon = Sun }
+    if (feels >= 95)      { advice = 'Dress light and stay hydrated; it feels dangerously hot.'; Icon = Sun }
     else if (feels >= 85) { advice = 'Shorts-and-a-t-shirt weather; keep water on hand.';         Icon = Shirt }
     else if (feels >= 70) { advice = 'Light clothing is plenty comfortable.';                      Icon = Shirt }
     else if (feels >= 58) { advice = 'A light layer or long sleeves is about right.';              Icon = Shirt }
     else if (feels >= 45) { advice = 'Bring a jacket or a sweater.';                               Icon = Wind }
-    else if (feels >= 32) { advice = 'Bundle up — a warm coat is a good idea.';                    Icon = Wind }
+    else if (feels >= 32) { advice = 'Bundle up; a warm coat is a good idea.';                    Icon = Wind }
     else if (feels >= 20) { advice = 'Heavy coat, hat, and gloves for the cold.';                  Icon = Snowflake }
-    else                  { advice = 'Bitterly cold — dress in heavy winter layers.';             Icon = Snowflake }
+    else                  { advice = 'Bitterly cold; dress in heavy winter layers.';             Icon = Snowflake }
 
     const rawP = daily?.precipitation_probability_max?.[0]
     const dCode = daily?.weather_code?.[0]

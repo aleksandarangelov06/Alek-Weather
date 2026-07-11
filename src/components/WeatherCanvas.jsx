@@ -3,7 +3,8 @@ import { useEffect, useRef } from 'react'
 function sceneFor(code) {
   if (code == null) return null
   if (code === 95 || code === 96 || code === 99) return 'storm'
-  if ((code >= 51 && code <= 65) || (code >= 80 && code <= 82)) return 'rain'
+  if (code === 65 || code === 82) return 'downpour'
+  if ((code >= 51 && code <= 63) || code === 80 || code === 81) return 'rain'
   if ((code >= 71 && code <= 77) || code === 85 || code === 86) return 'snow'
   if (code === 45 || code === 48) return 'fog'
   return null
@@ -13,8 +14,11 @@ const CFG = {
   // `angle` is the rest fall angle (deg from vertical). Rain falls straight down
   // when the phone is level; the gyroscope tilt is what leans it. Storms keep a
   // slight wind-driven lean at rest.
-  rain:  { count: 140, color: [90, 130, 190],  alpha: 0.55, speed: [5, 10],  angle: 0,  len: [12, 22] },
-  storm: { count: 325, color: [70, 110, 175],  alpha: 0.70, speed: [15, 24], angle: 12, len: [16, 32] },
+  rain:     { count: 140, color: [90, 130, 190],  alpha: 0.55, speed: [5, 10],  angle: 0,  len: [12, 22] },
+  // Heavy rain / violent showers: storm-level density and speed, but no
+  // lightning and only a modest rest lean — it's a downpour, not a tempest.
+  downpour: { count: 340, color: [80, 120, 185],  alpha: 0.65, speed: [14, 22], angle: 6,  len: [16, 30] },
+  storm:    { count: 325, color: [70, 110, 175],  alpha: 0.70, speed: [15, 24], angle: 12, len: [16, 32] },
   snow:  { count: 70,  color: [180, 210, 240], alpha: 0.75, speed: [0.5, 1.6] },
   fog:   { count: 16,  color: [140, 160, 180], alpha: 0.18, speed: 0.4, size: [70, 140] },
 }
@@ -74,7 +78,7 @@ export function WeatherCanvas({ code, gyro = true }) {
     const angleRad = (cfg.angle ?? 0) * Math.PI / 180
 
     let particles
-    if (scene === 'rain' || scene === 'storm') {
+    if (scene === 'rain' || scene === 'downpour' || scene === 'storm') {
       // Direction (vx/vy) is derived per-frame from the base angle + live tilt,
       // so it isn't stored on the particle — only its speed and length are.
       // Seeded across the whole screen; the draw loop refills from the correct
@@ -121,7 +125,7 @@ export function WeatherCanvas({ code, gyro = true }) {
         }
       }
 
-      if (scene === 'rain' || scene === 'storm') {
+      if (scene === 'rain' || scene === 'downpour' || scene === 'storm') {
         // Whole sheet leans with the phone: one shared direction from the base
         // fall angle plus the live tilt.
         const a = angleRad + t.cur
