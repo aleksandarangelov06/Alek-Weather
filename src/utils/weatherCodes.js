@@ -266,9 +266,6 @@ export function tempStyle(fahrenheit, colorCoding, scale = 1, glow = true, frost
 export function formatDay(dateString) {
   const date = new Date(dateString + 'T12:00:00')
   const today = new Date()
-  const tomorrow = new Date(today)
-  tomorrow.setDate(today.getDate() + 1)
   if (date.toDateString() === today.toDateString()) return 'Today'
-  if (date.toDateString() === tomorrow.toDateString()) return 'Tomorrow'
   return date.toLocaleDateString('en-US', { weekday: 'short' })
 }

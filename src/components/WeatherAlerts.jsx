@@ -53,6 +53,39 @@ function formatExpires(iso) {
   })
 }
 
+// NWS alert bodies embed links as bare text: full http(s) URLs, www. hosts, or
+// protocol-less domains like "weather.gov/safety". Match all three so they can
+// render as anchors.
+const URL_RE = /((?:https?:\/\/|www\.)[^\s]+|[a-z0-9][a-z0-9.-]*\.(?:gov|org|com|net|edu|us|mil)(?:\/[^\s]*)?)/gi
+
+// Split a run of text into strings and <a> nodes so URLs become clickable.
+// Returns the original string untouched when it holds no links.
+function linkify(text) {
+  const nodes = []
+  let last = 0
+  let m
+  URL_RE.lastIndex = 0
+  while ((m = URL_RE.exec(text)) !== null) {
+    let url = m[0]
+    // Don't let sentence punctuation ("...visit weather.gov.") ride along into
+    // the href; peel it back off and keep it as trailing text.
+    const trail = url.match(/[.,;:!?)\]]+$/)?.[0] ?? ''
+    url = url.slice(0, url.length - trail.length)
+    if (m.index > last) nodes.push(text.slice(last, m.index))
+    const href = /^https?:\/\//i.test(url) ? url : `https://${url}`
+    nodes.push(
+      <a key={m.index} href={href} target="_blank" rel="noopener noreferrer" className="alert-link">
+        {url}
+      </a>
+    )
+    if (trail) nodes.push(trail)
+    last = m.index + m[0].length
+  }
+  if (!nodes.length) return text
+  if (last < text.length) nodes.push(text.slice(last))
+  return nodes
+}
+
 function AlertModal({ alert, onClose }) {
   const [dragOffset, setDragOffset] = useState(0)
   const dragStartY = useRef(null)
@@ -130,16 +163,16 @@ function AlertModal({ alert, onClose }) {
 
         <div className="alert-sheet-scroll">
           {props.headline && (
-            <p className="alert-sheet-headline">{props.headline}</p>
+            <p className="alert-sheet-headline">{linkify(props.headline)}</p>
           )}
           {props.description && props.description.split('\n\n').map((para, i) => (
-            <p key={i} className="alert-sheet-description">{para.replace(/\n/g, ' ')}</p>
+            <p key={i} className="alert-sheet-description">{linkify(para.replace(/\n/g, ' '))}</p>
           ))}
           {props.instruction && (
             <div className="alert-sheet-instruction">
               <strong>Instructions</strong>
               {props.instruction.split('\n\n').map((para, i) => (
-                <p key={i}>{para.replace(/\n/g, ' ')}</p>
+                <p key={i}>{linkify(para.replace(/\n/g, ' '))}</p>
               ))}
             </div>
           )}

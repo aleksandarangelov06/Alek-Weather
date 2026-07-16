@@ -12,6 +12,7 @@ function skyClass(code, isDay) {
 }
 
 const SKY_LEVEL = {
+  'sky-clear-day':     'sky-lvl-slight',
   'sky-clear-night':   'sky-lvl-darkest',
   'sky-partly-day':    'sky-lvl-slight',
   'sky-partly-night':  'sky-lvl-dark',
@@ -45,11 +46,11 @@ const SKY_CARD_VARS = {
   'sky-storm':          { '--sky-card': '#1a2038', '--sky-card-deep': '#12172a' },
 }
 
-// Color the mobile system bars (Android status/nav bar, via the theme-color
-// metas) to match the sky backdrop behind the header when weather effects are
-// active, so the bars stay consistent with the background. Each value is the
-// top gradient stop of the matching sky in App.css: [lightTheme, darkTheme].
-// Night skies and storm have no dark-theme override, so both entries are equal.
+// Color the Android status bar (via the theme-color metas) to match the sky
+// backdrop behind the header when weather effects are active, so the bar stays
+// consistent with the background. Each value is the top gradient stop of the
+// matching sky in App.css: [lightTheme, darkTheme]. Night skies and storm have
+// no dark-theme override, so both entries are equal.
 const SKY_THEME_COLOR = {
   'sky-clear-day':      ['#1565c0', '#081627'],
   'sky-clear-night':    ['#050d1f', '#050d1f'],
@@ -63,6 +64,27 @@ const SKY_THEME_COLOR = {
   'sky-snow-day':       ['#78909c', '#161e23'],
   'sky-snow-night':     ['#1c2529', '#1c2529'],
   'sky-storm':          ['#0a0c14', '#0a0c14'],
+}
+
+// The Android navigation bar ignores theme-color; Chrome paints it with the
+// document's base background color, which propagates from <body>. The sky is a
+// separate fixed layer, so body keeps var(--bg) and the bar stays flat unless
+// we track it here. Each value is the *bottom* gradient stop of the matching
+// sky in App.css, since that is the part of the backdrop the bar sits against:
+// [lightTheme, darkTheme].
+const SKY_NAV_COLOR = {
+  'sky-clear-day':      ['#81d4fa', '#174a7c'],
+  'sky-clear-night':    ['#1a237e', '#1a237e'],
+  'sky-partly-day':     ['#a8cce8', '#2e4d63'],
+  'sky-partly-night':   ['#243040', '#243040'],
+  'sky-overcast-day':   ['#90a4ae', '#2d3e47'],
+  'sky-overcast-night': ['#243038', '#243038'],
+  'sky-fog':            ['#cfd8dc', '#4a575f'],
+  'sky-rain-day':       ['#546e7a', '#23323b'],
+  'sky-rain-night':     ['#1c272d', '#1c272d'],
+  'sky-snow-day':       ['#b0bec5', '#32424b'],
+  'sky-snow-night':     ['#2e3d44', '#2e3d44'],
+  'sky-storm':          ['#1a1f38', '#1a1f38'],
 }
 
 const STARS = Array.from({ length: 40 }, () => ({
@@ -98,6 +120,7 @@ import { APP_VERSION } from './utils/version'
 import './App.css'
 
 const THEME_KEY = 'alek-weather-theme'
+const PLATFORM_THEME_KEY = 'alek-weather-platform-theme' // 'ios' | 'android'
 const SETTINGS_CLOSE_MS = 260
 const SEARCH_CLOSE_MS = 220
 // Hold the header search button this long to skip the overlay and geolocate.
@@ -157,6 +180,7 @@ function SortableBlock({ id, children }) {
 function App() {
   const [unit, setUnit] = useState(() => localStorage.getItem('alek-weather-unit') ?? 'F')
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem(THEME_KEY) ?? 'system')
+  const [platformTheme, setPlatformTheme] = useState(() => localStorage.getItem(PLATFORM_THEME_KEY) ?? 'ios')
   const [showOverview, setShowOverview] = useState(() => localStorage.getItem(SHOW_OVERVIEW_KEY) !== 'false')
   const [nowcastMode, setNowcastMode] = useState(() => localStorage.getItem(NOWCAST_MODE_KEY) ?? 'auto')
   const [weatherAnimations, setWeatherAnimations] = useState(() => localStorage.getItem('alek-weather-animations') !== 'false')
@@ -174,7 +198,7 @@ function App() {
   const [installPrompt, setInstallPrompt] = useState(null)
   const [showSettings, setShowSettings] = useState(false)
   const [settingsClosing, setSettingsClosing] = useState(false)
-  const [subView, setSubView] = useState(null) // null | 'colorcoding' | 'overview'
+  const [subView, setSubView] = useState(null) // null | 'colorcoding' | 'overview' | 'effects' | 'theme'
   const [isDesktop, setIsDesktop] = useState(() => window.matchMedia('(min-width: 1100px)').matches)
 
   const [searchOpen, setSearchOpen] = useState(false)
@@ -245,6 +269,14 @@ function App() {
     else if (darkMode === 'off') root.setAttribute('data-theme', 'light')
     else root.removeAttribute('data-theme')
   }, [darkMode])
+
+  // Platform style: Android mode switches the app to Google Sans and gives the
+  // settings pages a Material You look; iOS mode is the default styling.
+  useEffect(() => {
+    const root = document.documentElement
+    if (platformTheme === 'android') root.setAttribute('data-platform', 'android')
+    else root.removeAttribute('data-platform')
+  }, [platformTheme])
 
   // Auto-load the home city on mount (falling back to the first saved city).
   useEffect(() => {
@@ -371,6 +403,11 @@ function App() {
     localStorage.setItem(THEME_KEY, mode)
   }
 
+  const changePlatformTheme = (mode) => {
+    setPlatformTheme(mode)
+    localStorage.setItem(PLATFORM_THEME_KEY, mode)
+  }
+
   const openSettings = () => {
     setSubView(null)
     history.pushState({ overlay: 'settings' }, '')
@@ -487,15 +524,19 @@ function App() {
   const skyC     = weather ? skyClass(liveCode, weather.current.is_day) : ''
   const levelC   = SKY_LEVEL[skyC] ?? ''
 
-  // Keep the theme-color metas matched to the sky (or the flat app background
-  // when effects are off) so the Android status/nav bars stay consistent.
+  // Keep the theme-color metas (status bar) and the body background (navigation
+  // bar) matched to the sky, or to the flat app background when effects are
+  // off, so both Android system bars stay consistent with what is behind them.
   useEffect(() => {
     const metas = document.querySelectorAll('meta[name="theme-color"]')
-    if (!metas.length) return
     const skyActive = weather && weatherAnimations && skyC && SKY_THEME_COLOR[skyC]
     const apply = (dark) => {
       const color = skyActive ? SKY_THEME_COLOR[skyC][dark ? 1 : 0] : (dark ? '#000000' : '#f0f2f5')
       metas.forEach(m => { m.content = color })
+      // Clearing the inline style hands body back to var(--bg), which already
+      // tracks the theme. The sky layer covers the viewport, so this override
+      // is invisible to everything except the system bar.
+      document.body.style.backgroundColor = skyActive ? SKY_NAV_COLOR[skyC][dark ? 1 : 0] : ''
     }
     if (darkMode === 'on')  { apply(true);  return }
     if (darkMode === 'off') { apply(false); return }
@@ -730,9 +771,12 @@ function App() {
           onColorCodingOpen={() => openSubView('colorcoding')}
           onOverviewOpen={() => openSubView('overview')}
           onWeatherEffectsOpen={() => openSubView('effects')}
+          onThemeOpen={() => openSubView('theme')}
           onSubViewBack={closeSubView}
           darkMode={darkMode}
           onDarkModeChange={changeDarkMode}
+          platformTheme={platformTheme}
+          onPlatformThemeChange={changePlatformTheme}
           unit={unit}
           onUnitChange={changeUnit}
           showOverview={showOverview}

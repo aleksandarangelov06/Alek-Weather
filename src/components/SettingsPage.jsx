@@ -305,10 +305,16 @@ function OverviewSettingsView({ showOverview, onShowOverviewChange, overviewPart
   )
 }
 
-function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastMode, onNowcastModeChange, radarMode, onRadarModeChange, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, radarEnhanced, onRadarEnhancedChange, installPrompt, onInstall }) {
+function ThemeView({ darkMode, onDarkModeChange, platformTheme, onPlatformThemeChange, onBack }) {
   return (
     <>
-      <div className="settings-group-label">Appearance</div>
+      {onBack && (
+        <button className="back-btn color-coding-back" onClick={onBack} aria-label="Back to settings">
+          <ArrowLeft size={18} />
+          <span>Back</span>
+        </button>
+      )}
+      <p className="color-coding-desc">Choose the app's appearance.</p>
       <div className="card settings-card">
         <SettingRow label="Theme">
           <SegmentedControl
@@ -320,6 +326,49 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastM
               { value: 'system', label: 'System' },
             ]}
           />
+        </SettingRow>
+      </div>
+      <p className="color-coding-desc">Match the app to your phone. iOS uses the Apple font and look; Android uses Google Sans and a Material You style.</p>
+      <div className="card settings-card">
+        <SettingRow label="App Style">
+          <SegmentedControl
+            value={platformTheme}
+            onChange={onPlatformThemeChange}
+            options={[
+              { value: 'ios',     label: 'iOS'     },
+              { value: 'android', label: 'Android' },
+            ]}
+          />
+        </SettingRow>
+      </div>
+    </>
+  )
+}
+
+function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastMode, onNowcastModeChange, radarMode, onRadarModeChange, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onThemeOpen, radarEnhanced, onRadarEnhancedChange, installPrompt, onInstall }) {
+  return (
+    <>
+      <div className="settings-group-label">Appearance</div>
+      <div className="card settings-card">
+        <SettingRow label="Theme">
+          <div className="settings-row-controls">
+            <SegmentedControl
+              value={darkMode}
+              onChange={onDarkModeChange}
+              options={[
+                { value: 'off',    label: 'Light'  },
+                { value: 'on',     label: 'Dark'   },
+                { value: 'system', label: 'System' },
+              ]}
+            />
+            {/* Deeper theme options (platform style) live on their own page;
+                the entry point is mobile-only. */}
+            {isMobileDevice() && (
+              <button className="theme-chevron-btn" onClick={onThemeOpen} aria-label="More theme options">
+                <ChevronRight size={16} className="about-chevron" />
+              </button>
+            )}
+          </div>
         </SettingRow>
         <button className="settings-row about-row" onClick={onColorCodingOpen}>
           <div className="settings-row-label">Color Coding</div>
@@ -393,12 +442,21 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastM
   )
 }
 
-const SUB_VIEW_TITLES = { colorcoding: 'Color Coding', overview: 'Weather Overview Settings', effects: 'Weather Effects' }
+const SUB_VIEW_TITLES = { colorcoding: 'Color Coding', overview: 'Weather Overview Settings', effects: 'Weather Effects', theme: 'Theme' }
 
-export function SettingsPage({ onBack, inline, closing, subView, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onSubViewBack, colorCoding, onColorCodingToggle, overviewParts, onOverviewPartToggle, ...bodyProps }) {
+export function SettingsPage({ onBack, inline, closing, subView, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onThemeOpen, onSubViewBack, colorCoding, onColorCodingToggle, overviewParts, onOverviewPartToggle, ...bodyProps }) {
   let body
   if (subView === 'colorcoding') {
     body = <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} />
+  } else if (subView === 'theme') {
+    body = (
+      <ThemeView
+        darkMode={bodyProps.darkMode}
+        onDarkModeChange={bodyProps.onDarkModeChange}
+        platformTheme={bodyProps.platformTheme}
+        onPlatformThemeChange={bodyProps.onPlatformThemeChange}
+      />
+    )
   } else if (subView === 'overview') {
     body = (
       <OverviewSettingsView
@@ -418,7 +476,7 @@ export function SettingsPage({ onBack, inline, closing, subView, onColorCodingOp
       />
     )
   } else {
-    body = <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} onOverviewOpen={onOverviewOpen} onWeatherEffectsOpen={onWeatherEffectsOpen} />
+    body = <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} onOverviewOpen={onOverviewOpen} onWeatherEffectsOpen={onWeatherEffectsOpen} onThemeOpen={onThemeOpen} />
   }
 
   if (inline) {
@@ -460,10 +518,20 @@ export function SettingsPage({ onBack, inline, closing, subView, onColorCodingOp
   )
 }
 
-export function SettingsPill({ expanded, onToggle, subView, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onSubViewBack, colorCoding, onColorCodingToggle, overviewParts, onOverviewPartToggle, ...bodyProps }) {
+export function SettingsPill({ expanded, onToggle, subView, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onThemeOpen, onSubViewBack, colorCoding, onColorCodingToggle, overviewParts, onOverviewPartToggle, ...bodyProps }) {
   let body
   if (subView === 'colorcoding') {
     body = <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} onBack={onSubViewBack} />
+  } else if (subView === 'theme') {
+    body = (
+      <ThemeView
+        darkMode={bodyProps.darkMode}
+        onDarkModeChange={bodyProps.onDarkModeChange}
+        platformTheme={bodyProps.platformTheme}
+        onPlatformThemeChange={bodyProps.onPlatformThemeChange}
+        onBack={onSubViewBack}
+      />
+    )
   } else if (subView === 'overview') {
     body = (
       <OverviewSettingsView
@@ -485,7 +553,7 @@ export function SettingsPill({ expanded, onToggle, subView, onColorCodingOpen, o
       />
     )
   } else {
-    body = <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} onOverviewOpen={onOverviewOpen} onWeatherEffectsOpen={onWeatherEffectsOpen} />
+    body = <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} onOverviewOpen={onOverviewOpen} onWeatherEffectsOpen={onWeatherEffectsOpen} onThemeOpen={onThemeOpen} />
   }
 
   return (

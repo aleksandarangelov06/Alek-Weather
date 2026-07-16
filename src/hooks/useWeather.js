@@ -376,8 +376,8 @@ function confirmCurrentCode(data, alerts) {
 }
 
 const PARAMS = [
-  'current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,surface_pressure,wind_speed_10m,wind_direction_10m,uv_index,visibility',
-  'hourly=temperature_2m,precipitation_probability,weather_code,is_day,uv_index,wind_speed_10m,wind_direction_10m,relative_humidity_2m,surface_pressure,visibility',
+  'current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,surface_pressure,wind_speed_10m,wind_direction_10m,wind_gusts_10m,dew_point_2m,uv_index,visibility',
+  'hourly=temperature_2m,precipitation_probability,weather_code,is_day,uv_index,wind_speed_10m,wind_direction_10m,wind_gusts_10m,relative_humidity_2m,surface_pressure,visibility',
   'daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,uv_index_max,sunrise,sunset',
   'minutely_15=precipitation',
   'temperature_unit=fahrenheit',
