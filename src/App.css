@@ -1317,20 +1317,18 @@ body {
 .daily-range {
   position: relative;
   height: 28px;
-  /* Bolder than the hairline var(--border): tracks --text-primary so it also
-     flips to white on dark and sky-tinted cards. */
-  border-left: 2px solid color-mix(in srgb, var(--text-primary) 20%, transparent);
 }
 
-/* Fixed px gutters reserve room for the low/high numbers that ride the pill's
-   ends. Kept close to the numbers' actual width so the pill track keeps as much
-   room as possible — critical on narrow phones where the column is only ~150px. */
+/* Gutters reserve room for the low/high numbers that ride the pill's ends.
+   Fluid rather than fixed: they shrink with the viewport alongside the number
+   font, so ultra-narrow screens (Galaxy Z Fold cover, ~344px) keep a usable
+   pill track instead of losing it all to reserved space. */
 .daily-range-inner {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 44px;
-  right: 42px;
+  left: clamp(34px, 11.5vw, 44px);
+  right: clamp(32px, 11vw, 42px);
 }
 
 .bar-fill {
@@ -1338,28 +1336,24 @@ body {
   top: 50%;
   transform: translateY(-50%);
   height: 16px;
-  /* Trimmed from 16px: on a compressed track the min-width overshoots past the
-     pill's right anchor and slides under the high number, clipping its first
-     digit. 14px keeps the capsule visible without eating into that number. */
-  min-width: 14px;
+  /* On a compressed track a larger min-width overshoots past the pill's right
+     anchor and slides under the high number, clipping its first digit. 10px
+     keeps the capsule visible without eating into that number. */
+  min-width: 10px;
   border-radius: 999px;
 }
 
-/* Very small widths: pull the divider in tight to the day names and center it in
-   the gap between the names and the temps. Narrowing the day column moves the
-   divider left (≈12px off "Today"); the matching left gutter puts the low temp a
-   near-equal distance to the divider's right, so it reads as evenly split. */
-@media (max-width: 380px) {
-  .daily-row { grid-template-columns: 46px 48px 1fr; }
-  .daily-range-inner { left: 42px; right: 36px; }
-  .daily-low, .daily-high { font-size: 15px; }
+/* Very small widths: shave the icon/day columns and gaps to hand the pill
+   track every spare pixel. */
+@media (max-width: 400px) {
+  .daily-row { grid-template-columns: 42px 46px 1fr; gap: 8px; }
 }
 
 .daily-low,
 .daily-high {
   position: absolute;
   top: 50%;
-  font-size: 16.5px;
+  font-size: clamp(13.5px, 4.3vw, 16.5px);
   font-family: var(--font);
   white-space: nowrap;
 }
