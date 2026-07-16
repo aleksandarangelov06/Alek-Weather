@@ -99,11 +99,11 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
                 role="button"
                 aria-expanded={isExpanded}
               >
-                <span className="daily-icon"><WeatherIcon id={info.icon} alt={info.label} /></span>
-                <div className="daily-day-cell">
-                  <span className="daily-day">{formatDay(date)}</span>
-                  {p > 0 && <span className="daily-precip-label">{p}%</span>}
-                </div>
+                <span className="daily-icon">
+                  <WeatherIcon id={info.icon} alt={info.label} />
+                  {p > 0 && <span className="daily-precip-badge">{p}%</span>}
+                </span>
+                <span className="daily-day">{formatDay(date)}</span>
                 <div className="daily-range">
                   <div className="daily-range-inner">
                     <span className="daily-low" style={{ ...tempStyle(minTemps[i], colorCoding, 0.4, glow, frost), left: `${pillLeft}%` }}>{low}°</span>

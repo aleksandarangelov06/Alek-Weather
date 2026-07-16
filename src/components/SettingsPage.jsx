@@ -277,7 +277,7 @@ function OverviewSettingsView({ showOverview, onShowOverviewChange, overviewPart
           <span>Back</span>
         </button>
       )}
-      <p className="color-coding-desc">Show the Weather Overview tile — an at-a-glance summary with insights and recommendations.</p>
+      <p className="color-coding-desc">Show the Weather Overview tile and get a summary with insights and recommendations.</p>
       <div className="card settings-card">
         <SettingRow label="Show Weather Overview">
           <Toggle id="toggle-overview" checked={showOverview} onChange={onShowOverviewChange} />
@@ -285,17 +285,20 @@ function OverviewSettingsView({ showOverview, onShowOverviewChange, overviewPart
       </div>
       <p className="color-coding-desc">Choose what the overview includes.</p>
       <div className={`card settings-card${disabled ? ' settings-card--disabled' : ''}`}>
+        <SettingRow label="Weather Insight">
+          <Toggle id="toggle-ov-insight" checked={overviewParts.insight} onChange={() => onToggle('insight')} />
+        </SettingRow>
         <SettingRow label="Current Conditions">
           <Toggle id="toggle-ov-conditions" checked={overviewParts.conditions} onChange={() => onToggle('conditions')} />
+        </SettingRow>
+        <SettingRow label="Clothing Suggestions">
+          <Toggle id="toggle-ov-clothing" checked={overviewParts.clothing} onChange={() => onToggle('clothing')} />
         </SettingRow>
       </div>
       <p className="color-coding-desc">Recommendations</p>
       <div className={`card settings-card${disabled ? ' settings-card--disabled' : ''}`}>
         <SettingRow label="Air Quality Warnings">
           <Toggle id="toggle-ov-aqi" checked={overviewParts.airQuality} onChange={() => onToggle('airQuality')} />
-        </SettingRow>
-        <SettingRow label="Clothing Suggestions">
-          <Toggle id="toggle-ov-clothing" checked={overviewParts.clothing} onChange={() => onToggle('clothing')} />
         </SettingRow>
       </div>
     </>
@@ -390,7 +393,7 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastM
   )
 }
 
-const SUB_VIEW_TITLES = { colorcoding: 'Color Coding', overview: 'Weather Overview', effects: 'Weather Effects' }
+const SUB_VIEW_TITLES = { colorcoding: 'Color Coding', overview: 'Weather Overview Settings', effects: 'Weather Effects' }
 
 export function SettingsPage({ onBack, inline, closing, subView, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onSubViewBack, colorCoding, onColorCodingToggle, overviewParts, onOverviewPartToggle, ...bodyProps }) {
   let body

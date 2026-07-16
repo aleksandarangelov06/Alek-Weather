@@ -388,7 +388,15 @@ const PARAMS = [
   'past_days=1',
 ].join('&')
 
-const AQI_PARAMS = 'current=us_aqi,pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone'
+// Hourly us_aqi + pm2_5 forecast backs the multi-day air-quality insights
+// (e.g. persistent wildfire smoke "through the week"); timezone=auto keeps the
+// hourly timestamps local so they group by calendar day the same way daily does.
+const AQI_PARAMS = [
+  'current=us_aqi,pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone',
+  'hourly=us_aqi,pm2_5',
+  'timezone=auto',
+  'forecast_days=5',
+].join('&')
 
 // `initialLoading` lets the app start in the loading state when it knows a
 // fetch fires on mount (saved-city auto-load), so the empty state never
@@ -533,7 +541,10 @@ export function useWeather(initialLoading = false) {
 
       if (aqiResult.status === 'fulfilled' && aqiResult.value.ok) {
         const aqiData = await aqiResult.value.json()
-        if (fetchIdRef.current === fetchId && aqiData.current?.us_aqi != null) setAirQuality(aqiData.current)
+        // Spread current so existing consumers keep reading top-level fields
+        // (us_aqi, pm2_5, …); the hourly forecast rides along for the overview.
+        if (fetchIdRef.current === fetchId && aqiData.current?.us_aqi != null)
+          setAirQuality({ ...aqiData.current, hourly: aqiData.hourly ?? null })
       }
 
     } catch {

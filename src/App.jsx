@@ -71,7 +71,7 @@ const STARS = Array.from({ length: 40 }, () => ({
   dur:   `${(Math.random() * 3 + 2).toFixed(1)}s`,
   delay: `${-(Math.random() * 4).toFixed(1)}s`,
 }))
-import { SlidersHorizontal, MapPin, MapPinOff, ArrowLeft, GripHorizontal, Building2, X } from 'lucide-react'
+import { Settings, MapPin, MapPinOff, ArrowLeft, GripHorizontal, Building2, X } from 'lucide-react'
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -134,7 +134,7 @@ const NOWCAST_MODE_KEY  = 'alek-weather-nowcast-mode'
 const COLOR_CODING_KEY  = 'alek-weather-color-coding'
 const DEFAULT_COLOR_CODING = { current: true, hourly: true, daily: true, overview: true, glow: true, frost: true }
 const OVERVIEW_PARTS_KEY = 'alek-weather-overview-parts'
-const DEFAULT_OVERVIEW_PARTS = { conditions: true, airQuality: true, clothing: true }
+const DEFAULT_OVERVIEW_PARTS = { insight: true, conditions: true, airQuality: true, clothing: true }
 const RADAR_ENHANCED_KEY = 'alek-weather-radar-enhanced'
 const RADAR_MODE_KEY = 'alek-weather-radar-mode' // 'nowcast' | 'both' | 'future'
 
@@ -304,6 +304,13 @@ function App() {
   const changeShowOverview = (val) => {
     setShowOverview(val)
     localStorage.setItem(SHOW_OVERVIEW_KEY, String(val))
+    // Turning the overview back on while every content part is off would leave
+    // an empty card, so restore all three parts when there's nothing to show.
+    if (val && !overviewParts.insight && !overviewParts.conditions && !overviewParts.clothing) {
+      const next = { ...overviewParts, insight: true, conditions: true, clothing: true }
+      setOverviewParts(next)
+      localStorage.setItem(OVERVIEW_PARTS_KEY, JSON.stringify(next))
+    }
   }
 
   const changeNowcastMode = (mode) => {
@@ -323,6 +330,12 @@ function App() {
     setOverviewParts(prev => {
       const next = { ...prev, [key]: !prev[key] }
       localStorage.setItem(OVERVIEW_PARTS_KEY, JSON.stringify(next))
+      // With insight, conditions, and clothing all off there's nothing left to
+      // show, so switch the whole overview tile off.
+      if (!next.insight && !next.conditions && !next.clothing) {
+        setShowOverview(false)
+        localStorage.setItem(SHOW_OVERVIEW_KEY, 'false')
+      }
       return next
     })
   }
@@ -494,7 +507,7 @@ function App() {
   }, [darkMode, skyC, weather, weatherAnimations])
 
   const blockComponents = weather && !loading ? {
-    overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} timezone={weather.timezone} hasActiveAlert={hasActiveAlert} unit={unit} airQuality={airQuality} showConditions={overviewParts.conditions} showAirQuality={overviewParts.airQuality} showClothing={overviewParts.clothing} colorCode={colorCoding.overview} />,
+    overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} timezone={weather.timezone} hasActiveAlert={hasActiveAlert} unit={unit} airQuality={airQuality} showInsight={overviewParts.insight} showConditions={overviewParts.conditions} showAirQuality={overviewParts.airQuality} showClothing={overviewParts.clothing} colorCode={colorCoding.overview} />,
     hourly:  <HourlyForecast hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.hourly} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
     daily:   <DailyForecast daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.daily} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
     details: <WeatherDetails current={weather.current} daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} airQuality={airQuality} />,
@@ -582,7 +595,7 @@ function App() {
           >Alek Weather</span>
         </div>
         <button className="settings-btn" onClick={showSettings ? closeSettings : openSettings} aria-label="Settings">
-          <SlidersHorizontal size={22} />
+          <Settings size={22} />
         </button>
       </header>
 

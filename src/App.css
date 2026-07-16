@@ -146,7 +146,7 @@ body {
 }
 
 .section-label {
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 600;
   letter-spacing: 1.2px;
   color: var(--text-tertiary);
@@ -1169,7 +1169,7 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  min-width: 58px;
+  min-width: 64px;
   padding: 10px 6px;
   contain: content;
   border-radius: 12px;
@@ -1181,7 +1181,7 @@ body {
 }
 
 .hourly-time {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text-secondary);
   white-space: nowrap;
 }
@@ -1192,13 +1192,13 @@ body {
 }
 
 .hourly-temp {
-  font-size: 14px;
+  font-size: 16.5px;
   font-family: var(--font-display);
   color: var(--text-primary);
 }
 
 .hourly-precip {
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 600;
   height: 16px;
   display: flex;
@@ -1218,11 +1218,11 @@ body {
 
 .daily-row {
   display: grid;
-  grid-template-columns: 34px 72px 1fr;
+  grid-template-columns: 46px 88px 1fr;
   align-items: center;
-  gap: 8px;
-  padding: 7px 4px;
-  border-radius: 10px;
+  gap: 10px;
+  padding: 9px 6px;
+  border-radius: 12px;
   transition: background 0.15s;
 }
 
@@ -1241,35 +1241,61 @@ body {
   background: transparent;
 }
 
-.daily-day-cell {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
 .daily-day {
-  font-size: 12.5px;
-  /* Match the card label look (.section-label): same family via inherit,
-     semibold weight, a touch of tracking. */
-  font-family: var(--font);
-  font-weight: 600;
-  letter-spacing: 0.3px;
-  /* Halfway between primary and secondary: greyer than the temps, but not as
-     faded as labels. Tracks theme/sky-tint overrides of both variables. */
+  font-size: 16px;
+  /* Left-aligned so the abbreviated names share a common left edge. */
+  text-align: left;
+  /* Display face (Google Sans), same as the big temp and section headers.
+     500 is the heaviest loaded weight under bold; 600 would be synthesized. */
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: 0;
+  /* Leans toward the grey secondary so the day names sit back from the temps.
+     Tracks theme/sky-tint overrides of both variables. */
   color: color-mix(in srgb, var(--text-primary) 55%, var(--text-secondary));
   line-height: 1.2;
 }
 
-.daily-precip-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--accent);
-  line-height: 1.2;
+/* Dark mode: day names ease back to a light gray so the white high temps
+   keep the emphasis. Mixed from theme vars so sky-tinted cards track too. */
+[data-theme="dark"] .daily-day {
+  color: color-mix(in srgb, var(--text-primary) 32%, var(--text-secondary));
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .daily-day {
+    color: color-mix(in srgb, var(--text-primary) 32%, var(--text-secondary));
+  }
 }
 
 .daily-icon {
-  font-size: 30px;
+  position: relative;
+  font-size: 38px;
   user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+/* Precip chance rides the icon's lower-right corner as a frosted pill.
+   Background/blur keep it readable over any icon art; theme-variable mixes
+   keep it legible on white, dark, and sky-tinted cards alike. */
+.daily-precip-badge {
+  position: absolute;
+  right: -9px;
+  bottom: -3px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  line-height: 1;
+  padding: 3px 6px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--card-bg) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
 }
 
 /* Dark Sky–style temperature pills: a single track whose pill's left/width map
@@ -1279,24 +1305,26 @@ body {
    pill sits at the extreme cold/hot edge of the week. */
 .daily-range {
   position: relative;
-  height: 24px;
-  border-left: 1px solid var(--border);
+  height: 28px;
+  /* Bolder than the hairline var(--border): tracks --text-primary so it also
+     flips to white on dark and sky-tinted cards. */
+  border-left: 2px solid color-mix(in srgb, var(--text-primary) 20%, transparent);
 }
 
 .daily-range-inner {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 64px;
-  right: 42px;
+  left: 72px;
+  right: 50px;
 }
 
 .bar-fill {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  height: 14px;
-  min-width: 14px;
+  height: 16px;
+  min-width: 16px;
   border-radius: 999px;
 }
 
@@ -1304,20 +1332,22 @@ body {
 .daily-high {
   position: absolute;
   top: 50%;
-  font-size: 14px;
+  font-size: 16.5px;
   font-family: var(--font);
   white-space: nowrap;
 }
 
 /* Right-aligned to the pill's left edge, with a small gap */
 .daily-low {
-  transform: translate(calc(-100% - 7px), -50%);
+  transform: translate(calc(-100% - 8px), -50%);
+  font-weight: 500;
   color: var(--text-tertiary);
 }
 
 /* Left-aligned to the pill's right edge, with a small gap */
 .daily-high {
-  transform: translate(7px, -50%);
+  transform: translate(8px, -50%);
+  font-weight: 600;
   color: var(--text-primary);
 }
 
@@ -2226,7 +2256,7 @@ body {
 }
 
 .updated-text {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-tertiary);
 }
 
@@ -2279,7 +2309,7 @@ body {
 }
 
 .aqi-sublabel {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-tertiary);
   margin-top: 3px;
   font-weight: 500;
@@ -2613,13 +2643,13 @@ body {
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
   color: var(--text-secondary);
 }
 
 .overview-detail-label {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 1.2px;
   color: var(--text-tertiary);
@@ -2696,7 +2726,7 @@ body {
 }
 
 .overview-text {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 400;
   line-height: 1.5;
   color: var(--text-secondary);
@@ -2756,6 +2786,30 @@ body {
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .map-base-tiles {
+    filter: invert(1) hue-rotate(180deg);
+  }
+}
+
+/* In light mode the sky theming can still darken the whole UI (night, storm,
+   rain). Match the map to the active sky level: night-like themes get the same
+   dark invert as dark mode, mid-tone day themes (overcast, fog, snow) get a
+   subtle dim so the tiles blend with the slate cards instead of glowing white.
+   Clear day keeps the untouched light map. */
+[data-theme="light"] .sky-lvl-slight .map-base-tiles,
+[data-theme="light"] .sky-lvl-medium .map-base-tiles {
+  filter: brightness(0.85) saturate(0.9);
+}
+[data-theme="light"] .sky-lvl-dark .map-base-tiles,
+[data-theme="light"] .sky-lvl-darkest .map-base-tiles {
+  filter: invert(1) hue-rotate(180deg);
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .sky-lvl-slight .map-base-tiles,
+  :root:not([data-theme="dark"]) .sky-lvl-medium .map-base-tiles {
+    filter: brightness(0.85) saturate(0.9);
+  }
+  :root:not([data-theme="dark"]) .sky-lvl-dark .map-base-tiles,
+  :root:not([data-theme="dark"]) .sky-lvl-darkest .map-base-tiles {
     filter: invert(1) hue-rotate(180deg);
   }
 }

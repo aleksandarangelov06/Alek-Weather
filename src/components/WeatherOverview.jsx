@@ -20,14 +20,15 @@ function iconForInsight(text, isDay) {
   if (/thunder|stormy|storms/.test(t))          return CloudLightning
   if (/freezing rain|sleet|freezing drizzle/.test(t)) return CloudSnow
   if (/snow/.test(t))                           return CloudSnow
-  if (/air quality/.test(t))                    return Wind
+  if (/heat wave/.test(t))                      return Thermometer
+  if (/air quality|smoke|smog|haze/.test(t))    return Wind
   if (/freezing/.test(t))                       return Snowflake
   if (/rain|shower|drizzle/.test(t))            return CloudRain
   if (/fog/.test(t))                            return CloudFog
   if (/wind/.test(t))                           return Wind
   if (/\buv\b/.test(t))                         return Sun
   if (/hot|heat/.test(t))                       return Thermometer
-  if (/warmer|cooler|degrees|temperature/.test(t)) return Thermometer
+  if (/warmer|cooler|warming|cooling|arctic|cold (snap|spell)|degrees|temperature/.test(t)) return Thermometer
   if (/overcast|cloud/.test(t))                 return Cloud
   if (/clear|sunny|sunshine|\bsun\b/.test(t))   return isDay ? Sun : Moon
   return isDay ? CloudSun : Cloud
@@ -131,7 +132,7 @@ function timeDesc(slotIndex, currentMinute, hourlyTimes, start, timezone) {
   return `around ${fmtClock(slotHour)}`
 }
 
-export function WeatherOverview({ hourly, daily, current, minutely, radarClear = null, timezone, hasActiveAlert, unit, airQuality = null, showConditions = true, showAirQuality = true, showClothing = true, colorCode = true }) {
+export function WeatherOverview({ hourly, daily, current, minutely, radarClear = null, timezone, hasActiveAlert, unit, airQuality = null, showInsight = true, showConditions = true, showAirQuality = true, showClothing = true, colorCode = true }) {
   const now = new Date()
   const currentMinute = parseInt(
     now.toLocaleString('en-CA', { minute: '2-digit', timeZone: timezone }),
@@ -722,6 +723,165 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
     }
   }
 
+  // ── Multi-day patterns: heat wave, cold spell, temperature trend, smoke ─────
+  // Several-day stories the single-day callouts can't tell. Reads the 7-day
+  // daily arrays (highs/lows are °F from the API) plus, when present, the hourly
+  // air-quality forecast to spot persistent wildfire smoke. When a rich line
+  // fires it sets tempPatternActive / heatWaveActive so the single-day
+  // temperature and heat lines below stand down instead of repeating it.
+  let tempPatternActive = false
+  let heatWaveActive = false
+  if (daily?.temperature_2m_max?.length > 2 && daily.temperature_2m_min) {
+    const highs = daily.temperature_2m_max
+    const lows  = daily.temperature_2m_min
+    const times = daily.time ?? []
+    const nDays = highs.length
+    const patternHour = parseInt(currentHourStr, 10)
+    const toDisplay = (f) => Math.round(unit === 'C' ? (f - 32) * 5 / 9 : f)
+    const degU = `°${unit}`
+    const dayName = (i) => new Date(`${times[i]}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' })
+    // Name the last day of a run, or "the week" when it reaches the forecast end.
+    const throughPhrase = (endIdx) =>
+      endIdx >= nDays - 1 ? 'through the week' : `through ${dayName(endIdx)}`
+    const dayAvg = (i) => {
+      const h = highs[i], l = lows[i]
+      return h == null ? null : (l == null ? h : (h + l) / 2)
+    }
+
+    // Longest run of days satisfying pred that begins today or tomorrow.
+    const leadingRun = (pred) => {
+      for (const s of [0, 1]) {
+        if (s >= nDays || !pred(s)) continue
+        let end = s
+        while (end + 1 < nDays && pred(end + 1)) end++
+        return { start: s, end, len: end - s + 1 }
+      }
+      return null
+    }
+
+    // Fine-particulate pollution, the wildfire-smoke signature. Ozone smog reads
+    // a high AQI with low PM2.5, so we key off PM2.5 itself rather than the AQI
+    // number — smoke is worth flagging while the AQI still reads "moderate,"
+    // which is exactly where a smoky haze sits (AQI ~90 is only ~30 µg/m³). When
+    // the hourly AQI forecast is present, count how many days peak above the
+    // threshold so "right now" vs "at times through the week" stays truthful.
+    // Thresholds are µg/m³ and easy to retune.
+    const smoke = (() => {
+      if (!showAirQuality || !airQuality) return null
+      const SMOKE_PM = 25   // elevated particulates (upper-moderate AQI and up)
+      const NAMED_PM = 30   // high enough to name wildfire smoke with confidence
+      const POOR_PM  = 35   // "poor" rather than "reduced" air quality
+      const HEAVY_PM = 55   // unhealthy — worth a warning
+      let peakPm = airQuality.pm2_5 ?? 0
+      let smokyDays = 0
+      const aq = airQuality.hourly
+      if (aq?.time && aq?.pm2_5) {
+        const perDay = new Map()
+        for (let j = 0; j < aq.time.length; j++) {
+          const v = aq.pm2_5[j]
+          if (v == null) continue
+          const d = aq.time[j].slice(0, 10)
+          if (v > (perDay.get(d) ?? 0)) perDay.set(d, v)
+          if (v > peakPm) peakPm = v
+        }
+        for (const v of perDay.values()) if (v >= SMOKE_PM) smokyDays++
+      }
+      const smokyNow = (airQuality.pm2_5 ?? 0) >= SMOKE_PM
+      if (!smokyNow && smokyDays === 0) return null
+      const when = smokyDays >= 3 ? 'at times through the week'
+        : smokyDays === 2 ? 'over the next couple of days'
+        : smokyNow ? 'right now' : 'today'
+      // Name wildfire smoke only once PM2.5 is high enough to be confident; below
+      // that the source is ambiguous, so it reads as generic haze.
+      const named = peakPm >= NAMED_PM
+      const quality = peakPm >= POOR_PM ? 'poor air quality' : 'reduced air quality'
+      return {
+        heavy: peakPm >= HEAVY_PM,
+        named,
+        quality,
+        when,
+        // Standalone sentence; the heat-wave line composes its own phrasing.
+        standalone: named
+          ? `${cap(quality)} from wildfire smoke ${when}.`
+          : `Hazy skies and ${quality} ${when}.`,
+      }
+    })()
+
+    // A dedicated AQI-hazard line (aqi > 200) already owns air quality; if it's
+    // present, leave smoke out of the heat line and skip the standalone one.
+    const hasAqiHazard = insights.some(it => it.dedupeKey === 'aqi')
+
+    const HOT = 90, SEVERE_HEAT = 100, FREEZE_HI = 32
+    const heat = leadingRun(i => highs[i] != null && highs[i] >= HOT)
+    const cold = leadingRun(i => highs[i] != null && highs[i] <= FREEZE_HI)
+    const heatPeak = heat ? Math.max(...highs.slice(heat.start, heat.end + 1)) : null
+    const isHeatWave = heat && (heat.len >= 3 || (heat.len >= 2 && heatPeak >= SEVERE_HEAT))
+
+    // Near-term direction: daily average marching one way over ~3 days. Skips a
+    // V- or A-shape (a dip then recovery isn't a "trend"). In the evening it
+    // anchors on tomorrow, since today is nearly over.
+    const trend = (() => {
+      const base = patternHour >= 20 && nDays > 4 ? 1 : 0
+      const span = Math.min(3, nDays - 1 - base)
+      if (span < 2) return null
+      const a0 = dayAvg(base), a1 = dayAvg(base + span)
+      if (a0 == null || a1 == null) return null
+      const diff = a1 - a0
+      if (Math.abs(diff) < 8) return null
+      for (let i = base + 1; i <= base + span; i++) {
+        const step = dayAvg(i) - dayAvg(i - 1)
+        if (diff > 0 && step < -2) return null
+        if (diff < 0 && step >  2) return null
+      }
+      return { dir: diff > 0 ? 'warming' : 'cooling', span }
+    })()
+
+    if (isHeatWave) {
+      const hi = toDisplay(heatPeak)
+      const level = heatPeak >= SEVERE_HEAT || smoke?.heavy ? 'warning' : 'notice'
+      const text = smoke && !hasAqiHazard
+        ? (smoke.named
+            ? `Heat wave and ${smoke.quality} from wildfire smoke ${smoke.when}.`
+            : `Heat wave with hazy skies and ${smoke.quality} ${smoke.when}.`)
+        : heat.start === 0
+          ? `Heat wave ${throughPhrase(heat.end)}; highs near ${hi}${degU}.`
+          : `Heat wave building; highs near ${hi}${degU} ${throughPhrase(heat.end)}.`
+      insights.push({ level, dedupeKey: 'heat', text })
+      tempPatternActive = true
+      heatWaveActive = true
+    } else if (cold && cold.len >= 3) {
+      insights.push({
+        level: 'notice',
+        dedupeKey: 'temp-pattern',
+        text: cold.start === 0
+          ? `Cold spell; highs stay below freezing ${throughPhrase(cold.end)}.`
+          : `Cold snap on the way; highs below freezing ${throughPhrase(cold.end)}.`,
+      })
+      tempPatternActive = true
+    } else if (trend) {
+      const overN = trend.span >= 3 ? `over the next ${trend.span} days` : 'over the next couple of days'
+      insights.push({
+        level: 'neutral',
+        dedupeKey: 'temp-pattern',
+        text: trend.dir === 'cooling' ? `Cooling expected ${overN}.` : `Warming up ${overN}.`,
+      })
+      tempPatternActive = true
+    }
+
+    // Smoke on its own when no heat line folded it in and no hazard line owns it.
+    if (smoke && !heatWaveActive && !hasAqiHazard) {
+      insights.push({
+        level: smoke.heavy ? 'warning' : 'notice',
+        dedupeKey: 'aqi',
+        text: smoke.standalone,
+      })
+    }
+  }
+
+  // Calm-day fallback. Runs after the precipitation, air-quality, and multi-day
+  // blocks so a bland "staying dry" line never outranks present-day heat or
+  // smoke; it only speaks up when nothing else has (the week-ahead context
+  // below can still add a far-out line beside it).
   if (insights.length === 0) {
     const allClear = codes.every(c => classify(c) === 'clear')
     const currentHour = parseInt(currentHourStr, 10)
@@ -785,8 +945,11 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
     // of two) or push it as its own neutral insight.
     const tempText = comparison ? `${dayLabel} will be ${comparison}.` : null
 
-    if (tempText) {
-      if (insights.length === 1 && insights[0].level !== 'severe') {
+    // Suppressed when a multi-day pattern line above already states the direction.
+    if (tempText && !tempPatternActive) {
+      // Merge into a lone precipitation headline, but not into a smoke/air-quality
+      // line — appending a temperature aside there reads as a non sequitur.
+      if (insights.length === 1 && insights[0].level !== 'severe' && insights[0].dedupeKey !== 'aqi') {
         const base = insights[0].text.replace(/\.$/, '')
         insights[0] = { ...insights[0], text: `${base}. ${tempText}` }
       } else {
@@ -797,7 +960,7 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
     // Concrete tomorrow-vs-today change, high vs high in the display unit:
     // "10 degrees warmer tomorrow than today." Only for jumps big enough to
     // plan around (~7°F / 4°C).
-    if (daily.temperature_2m_max?.[1] != null) {
+    if (!tempPatternActive && daily.temperature_2m_max?.[1] != null) {
       const dF = daily.temperature_2m_max[1] - daily.temperature_2m_max[0]
       const deg = Math.round(unit === 'C' ? dF * 5 / 9 : dF)
       if (Math.abs(deg) >= (unit === 'C' ? 4 : 7)) {
@@ -985,24 +1148,27 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
 
     // Extreme heat (thresholds in °F; wording stays unit-free).
     const hi = daily?.temperature_2m_max?.[0]
-    if (hr < 18 && hi != null && insights.length < 4) {
+    if (!heatWaveActive && hr < 18 && hi != null && insights.length < 4) {
       if (hi >= 100)     insights.push({ level: 'warning', text: 'Dangerous heat today.' })
       else if (hi >= 95) insights.push({ level: 'notice',  text: 'Very hot today.' })
     }
   }
 
-  // ── Week ahead ────────────────────────────────────────────────────────────
-  // Look past tomorrow for anything worth planning around: the most severe
-  // precipitation event of the week and any large temperature swing. Days that
-  // far out get weekday names — exact hours would be false precision. Today
-  // and tomorrow are already covered by the hourly insights above.
+  // ── Next few days ─────────────────────────────────────────────────────────
+  // Look past tomorrow, but only through day 3: the most severe precipitation
+  // event in that window and any large temperature swing. Anything further out
+  // is too far to headline the single insight slot. Days this far out get
+  // weekday names — exact hours would be false precision. Today and tomorrow are
+  // already covered by the hourly insights above.
   if (daily?.time?.length > 2 && daily.weather_code) {
     const dayName = (i) =>
       new Date(`${daily.time[i]}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' })
 
     const EVENT_RANK = { severe: 3, ice: 2, heavy: 2, moderate: 1 }
     let evDay = -1, evRank = 0
-    for (let i = 2; i < daily.time.length; i++) {
+    // Only the next 3 days (indices 2 and 3). A discrete event further out is too
+    // far to headline and would just crowd the single insight slot.
+    for (let i = 2; i < Math.min(4, daily.time.length); i++) {
       const rank = EVENT_RANK[classify(daily.weather_code[i])] ?? 0
       if (rank === 0) continue
       const raw = daily.precipitation_probability_max?.[i]
@@ -1019,8 +1185,11 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
       const isThunder = [95, 96, 99].includes(code)
 
       if (evRank === 3) {
+        // A storm several days out is planning context, not an active hazard, so
+        // it stays 'info'. A 'warning' here would trip the declutter pass below
+        // and bury today's heat, smoke, and other present-day lines.
         insights.push({
-          level: 'warning',
+          level: 'info',
           text: isThunder
             ? (p != null ? `${p}% chance of thunderstorms ${day}.` : `Thunderstorms possible ${day}.`)
             : (p != null ? `${p}% chance of violent showers ${day}.` : `Violent showers possible ${day}.`),
@@ -1047,11 +1216,12 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
 
     // Largest temperature swing versus today. Phrased without numbers since
     // this component doesn't know the user's display unit.
-    if (daily.temperature_2m_max?.[0] != null && daily.temperature_2m_min?.[0] != null && insights.length < 4) {
+    if (!tempPatternActive && daily.temperature_2m_max?.[0] != null && daily.temperature_2m_min?.[0] != null && insights.length < 4) {
       const dayAvg = (i) => (daily.temperature_2m_max[i] + daily.temperature_2m_min[i]) / 2
       const todayAvg = dayAvg(0)
       let swingDay = -1, swingDiff = 0
-      for (let i = 2; i < daily.temperature_2m_max.length; i++) {
+      // Match the event horizon: only look 3 days out, not across the whole week.
+      for (let i = 2; i < Math.min(4, daily.temperature_2m_max.length); i++) {
         const diff = dayAvg(i) - todayAvg // °F
         if (Math.abs(diff) >= 10 && Math.abs(diff) > Math.abs(swingDiff)) {
           swingDay = i
@@ -1081,28 +1251,16 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
     return true
   })
 
-  // ── Declutter by priority ─────────────────────────────────────────────────
-  // A major event should own the card: context lines like "warmer than the
-  // rest of the week" or "thunderstorms Monday" only earn a slot when nothing
-  // urgent is happening. Order within the array already puts "now" first.
-  let visible
-  if (deduped.some(i => i.level === 'severe' && i.immediate)) {
-    // An immediate (same-day) severe event owns the card.
-    visible = deduped.filter(i => i.level === 'severe').slice(0, 2)
-  } else if (deduped[0]?.level === 'severe') {
-    // A later-date severe storm that still leads (nothing is happening now) keeps
-    // the card to itself, same as an immediate one.
-    visible = deduped.filter(i => i.level === 'severe').slice(0, 2)
-  } else if (deduped.some(i => i.level === 'severe')) {
-    // A later-date severe storm that yielded the headline to now/within-the-hour
-    // weather: keep that leading line and the storm, rather than collapsing to
-    // the storm alone.
-    visible = [deduped[0], ...deduped.filter(i => i.level === 'severe')].slice(0, 2)
-  } else if (deduped.some(i => i.level === 'warning')) {
-    visible = deduped.filter(i => i.level === 'warning' || i.level === 'info').slice(0, 2)
-  } else {
-    visible = deduped.slice(0, 3)
-  }
+  // ── Pick the single most important insight ────────────────────────────────
+  // The card shows exactly one line. A severe event wins outright, then a
+  // warning; otherwise the list is already ordered now-first, so the first entry
+  // is the most relevant present-condition line. Far-out context (temperature
+  // swings, storms more than 3 days away) is never generated, so it can't win.
+  const lead =
+    deduped.find(i => i.level === 'severe') ??
+    deduped.find(i => i.level === 'warning') ??
+    deduped[0]
+  const visible = lead ? [lead] : []
 
   // ── Detail line ───────────────────────────────────────────────────────────
   // An NWS zone-forecast-style summary of the day's raw numbers, e.g.
@@ -1182,14 +1340,17 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
     // Icon reflects the primary garment for the temperature; a meaningful chance
     // of rain/snow overrides it with the accessory the text tells you to grab.
     let advice, Icon
-    if (feels >= 95)      { advice = 'Dress light and stay hydrated; it feels dangerously hot.'; Icon = Sun }
-    else if (feels >= 85) { advice = 'Shorts-and-a-t-shirt weather; keep water on hand.';         Icon = Shirt }
-    else if (feels >= 70) { advice = 'Light clothing is plenty comfortable.';                      Icon = Shirt }
-    else if (feels >= 58) { advice = 'A light layer or long sleeves is about right.';              Icon = Shirt }
-    else if (feels >= 45) { advice = 'Bring a jacket or a sweater.';                               Icon = Wind }
-    else if (feels >= 32) { advice = 'Bundle up; a warm coat is a good idea.';                    Icon = Wind }
-    else if (feels >= 20) { advice = 'Heavy coat, hat, and gloves for the cold.';                  Icon = Snowflake }
-    else                  { advice = 'Bitterly cold; dress in heavy winter layers.';             Icon = Snowflake }
+    if (feels >= 100)     { advice = 'Dangerously hot; wear minimal, loose, light-colored clothing and keep water close.'; Icon = Sun }
+    else if (feels >= 90) { advice = 'Very warm; a t-shirt and shorts are ideal.';                     Icon = Sun }
+    else if (feels >= 80) { advice = 'Warm; a t-shirt and light bottoms are comfortable.';            Icon = Shirt }
+    else if (feels >= 70) { advice = 'Mild and pleasant; a t-shirt or light top is all you need.';    Icon = Shirt }
+    else if (feels >= 60) { advice = 'A little cool; a long-sleeve shirt or light layer works well.'; Icon = Shirt }
+    else if (feels >= 50) { advice = 'A light jacket or sweater is about right.';                      Icon = Wind }
+    else if (feels >= 40) { advice = 'Chilly; wear a warm jacket.';                                    Icon = Wind }
+    else if (feels >= 30) { advice = 'Cold; layer a coat over a sweater.';                             Icon = Wind }
+    else if (feels >= 20) { advice = 'Very cold; bundle up with a heavy coat, hat, and gloves.';       Icon = Snowflake }
+    else if (feels >= 10) { advice = 'Frigid; wear heavy winter layers with a hat, gloves, and scarf.'; Icon = Snowflake }
+    else                  { advice = 'Bitterly cold; limit time outside and wear your warmest layers.'; Icon = Snowflake }
 
     const rawP = daily?.precipitation_probability_max?.[0]
     const dCode = daily?.weather_code?.[0]
@@ -1215,8 +1376,8 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
 
   return (
     <div className="card">
-      <div className="section-label">WEATHER INSIGHT</div>
-      <div className="overview-list">
+      {showInsight && <div className="section-label">WEATHER INSIGHT</div>}
+      {showInsight && <div className="overview-list">
         {visible.map((item, i) => {
           // Live severe alerts keep the pulsing red dot so they still read as an
           // urgent, active warning; every other insight gets a tinted line icon.
@@ -1231,7 +1392,7 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
             </div>
           )
         })}
-      </div>
+      </div>}
       {showConditions && detailLine && (
         <div className="overview-detail">
           <div className="overview-detail-label">CURRENT CONDITIONS</div>
