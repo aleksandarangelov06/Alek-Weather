@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useLayoutEffect, useId } from 'react'
-import { getWeatherInfo, liveWeatherCode, nowcastHourlyCode, precipTier, toTemp, tempStyle, tempColor, displayPrecipChance } from '../utils/weatherCodes'
+import { getWeatherInfo, formatHour, liveWeatherCode, nowcastHourlyCode, precipTier, toTemp, tempStyle, tempColor, displayPrecipChance } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
 
 const GRAPH_HEIGHT = 60
@@ -101,11 +101,7 @@ export function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glo
         <div className="hourly-track">
         <div className="hourly-row" ref={rowRef}>
         {hours.map((time, i) => {
-          const label = i === 0
-            ? 'Now'
-            : new Date(time).toLocaleTimeString('en-US', {
-                hour: 'numeric', hour12: true, timeZone: timezone,
-              })
+          const label = i === 0 ? 'Now' : formatHour(time, timezone)
           // Slot 0 ("Now"): use the live rate-corrected code so it matches the
           // current conditions card. All other slots: run the minutely_15 nowcast
           // check — if nothing is forecast to fall during that hour's window, the

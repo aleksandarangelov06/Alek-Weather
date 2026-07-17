@@ -57,8 +57,7 @@ function RadarEnhancedRow({ checked, onChange }) {
       </div>
       {info && (
         <p className="settings-row-info">
-          Cross-checks live rain radar against the forecast for your exact location, so the
-          current conditions reflect what's actually falling overhead. </p>
+          Uses the radar to more accurately display data about the current conditions for your area. </p>
       )}
     </>
   )
@@ -245,7 +244,7 @@ function WeatherEffectsView({ weatherAnimations, onWeatherAnimationsChange, gyro
           <span>Back</span>
         </button>
       )}
-      <p className="color-coding-desc">Animate the background with the current conditions: rain, snow, clouds, and more.</p>
+      <p className="color-coding-desc">Color and animate the background with the current conditions: rain, snow, clouds, and more.</p>
       <div className="card settings-card">
         <SettingRow label="Weather Effects">
           <Toggle id="toggle-weather-anim" checked={weatherAnimations} onChange={onWeatherAnimationsChange} />
@@ -328,7 +327,7 @@ function ThemeView({ darkMode, onDarkModeChange, platformTheme, onPlatformThemeC
           />
         </SettingRow>
       </div>
-      <p className="color-coding-desc">Match the app to your phone. iOS uses the Apple font and look; Android uses Google Sans and a Material You style.</p>
+      <p className="color-coding-desc">Match the app to your device. iOS uses the Apple font and look; Android uses Google Sans and a Material You style.</p>
       <div className="card settings-card">
         <SettingRow label="App Style">
           <SegmentedControl
@@ -361,13 +360,10 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastM
                 { value: 'system', label: 'System' },
               ]}
             />
-            {/* Deeper theme options (platform style) live on their own page;
-                the entry point is mobile-only. */}
-            {isMobileDevice() && (
-              <button className="theme-chevron-btn" onClick={onThemeOpen} aria-label="More theme options">
-                <ChevronRight size={16} className="about-chevron" />
-              </button>
-            )}
+            {/* Deeper theme options (platform style) live on their own page. */}
+            <button className="theme-chevron-btn" onClick={onThemeOpen} aria-label="More theme options">
+              <ChevronRight size={16} className="about-chevron" />
+            </button>
           </div>
         </SettingRow>
         <button className="settings-row about-row" onClick={onColorCodingOpen}>

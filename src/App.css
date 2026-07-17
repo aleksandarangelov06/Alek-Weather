@@ -16,6 +16,33 @@
   --radius: 18px;
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-display: 'Google Sans', 'Product Sans', Roboto, sans-serif;
+  /* Condition severity palette (AQI, UV, wind, humidity, pressure, visibility,
+     alerts). These defaults are tuned for white cards; dark mode and the
+     sky-tinted card levels swap in lighter tones below so colored readings
+     stay readable on dark and slate-blue surfaces. */
+  --cond-green:  #22c55e;
+  --cond-lime:   #84cc16;
+  --cond-yellow: #eab308;
+  --cond-orange: #f97316;
+  --cond-red:    #ef4444;
+  --cond-purple: #a855f7;
+  --cond-violet: #7c3aed;
+  --cond-blue:   #60a5fa;
+  --cond-info:   #3b82f6;
+}
+
+/* Lighter condition tones for dark/tinted surfaces. One shared set: applied by
+   dark mode below and by the light-mode sky tint levels (classes on .app). */
+.sky-lvl-slight, .sky-lvl-medium, .sky-lvl-dark, .sky-lvl-darkest {
+  --cond-green:  #4ade80;
+  --cond-lime:   #a3e635;
+  --cond-yellow: #facc15;
+  --cond-orange: #fb923c;
+  --cond-red:    #ff8a8a;
+  --cond-purple: #c084fc;
+  --cond-violet: #a78bfa;
+  --cond-blue:   #93c5fd;
+  --cond-info:   #60a5fa;
 }
 
 /* On mobile and tablet, the iOS style is all-Apple: display text drops Google
@@ -44,6 +71,15 @@
     --hover-medium: rgba(255, 255, 255, 0.06);
     --hover-clear: rgba(255, 255, 255, 0.08);
     --bar-track-bg: rgba(255, 255, 255, 0.1);
+    --cond-green:  #4ade80;
+    --cond-lime:   #a3e635;
+    --cond-yellow: #facc15;
+    --cond-orange: #fb923c;
+    --cond-red:    #ff8a8a;
+    --cond-purple: #c084fc;
+    --cond-violet: #a78bfa;
+    --cond-blue:   #93c5fd;
+    --cond-info:   #60a5fa;
   }
 }
 
@@ -63,6 +99,15 @@
   --hover-medium: rgba(255, 255, 255, 0.06);
   --hover-clear: rgba(255, 255, 255, 0.08);
   --bar-track-bg: rgba(255, 255, 255, 0.1);
+  --cond-green:  #4ade80;
+  --cond-lime:   #a3e635;
+  --cond-yellow: #facc15;
+  --cond-orange: #fb923c;
+  --cond-red:    #ff8a8a;
+  --cond-purple: #c084fc;
+  --cond-violet: #a78bfa;
+  --cond-blue:   #93c5fd;
+  --cond-info:   #60a5fa;
 }
 
 /* ── Base ── */
@@ -221,7 +266,9 @@ body {
 .sky-active .settings-btn { color: rgba(255,255,255,0.70); }
 .sky-active .search-overlay { background: var(--sky-card-deep, #2d3f55); }
 .sky-active .search-overlay .search-bar { background: var(--sky-card, #3a5068); border-color: transparent; --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; }
-.sky-active .search-dropdown { background: var(--sky-card-deep, #2d3f55); --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; }
+/* Pill and dropdown use the lighter --sky-card so they read above the darker
+   --sky-card-deep overlay panel behind them. */
+.sky-active .search-dropdown { background: var(--sky-card, #3a5068); --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; }
 
 /* Dark mode: sky tinting is a light-mode device — surfaces revert to the
    standard dark palette so cards/search/radar chrome look the same under any
@@ -1190,7 +1237,7 @@ body {
 }
 
 .hourly-time {
-  font-size: 14px;
+  font-size: 15px;
   color: var(--text-secondary);
   white-space: nowrap;
 }
@@ -1201,13 +1248,13 @@ body {
 }
 
 .hourly-temp {
-  font-size: 16.5px;
+  font-size: 17px;
   font-family: var(--font-display);
   color: var(--text-primary);
 }
 
 .hourly-precip {
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
   height: 16px;
   display: flex;
@@ -1223,6 +1270,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  /* Composite the list so its glow/frost text-shadows and gradient pills
+     rasterize once instead of re-painting in tiles during touch scroll —
+     same fix as .hourly-track. */
+  will-change: transform;
 }
 
 .daily-row {
@@ -1235,7 +1286,11 @@ body {
   transition: background 0.15s;
 }
 
-.daily-row:hover { background: var(--hover-subtle); }
+/* Hover-capable pointers only: on touch, a scroll-drag would otherwise apply
+   sticky :hover to the row under the finger and force a repaint mid-scroll. */
+@media (hover: hover) {
+  .daily-row:hover { background: var(--hover-subtle); }
+}
 
 .daily-row--expand {
   cursor: pointer;
@@ -1245,8 +1300,9 @@ body {
 .daily-row--active { background: var(--accent-light); }
 .daily-row--active:hover { background: var(--accent-light); }
 
-/* Hourly strip inside an expanded day — no "Now" highlight on the first item */
-.daily-list .detail-expansion .hourly-item:first-child {
+/* Hourly strip inside an open day cover — no "Now" highlight on the first item,
+   since the strip starts at the day's first hour, not the current one. */
+.card--daily .detail-cover .hourly-item:first-child {
   background: transparent;
 }
 
@@ -1557,16 +1613,11 @@ body {
   gap: 4px;
 }
 
-.detail-expansion {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
-}
-
 /* ── Detail circular reveal ──
-   Tapping a detail tile grows a cover over the whole details card from the tap
-   point. Positioning context for .detail-cover's inset:0. */
-.card--details {
+   Tapping a detail tile or a daily row grows a cover over the whole card from
+   the tap point. Positioning context for .detail-cover's inset:0. */
+.card--details,
+.card--daily {
   position: relative;
 }
 
@@ -1586,6 +1637,10 @@ body {
   /* Resting state is fully open; the animation only plays on enter/exit. */
   clip-path: circle(var(--reveal-r) at var(--reveal-x) var(--reveal-y));
   animation: detailCoverIn 0.38s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  /* Own compositor layer: the growing circle then invalidates only this layer
+     (and runs fully on the compositor where clip-path animation is supported)
+     instead of repainting the whole details card every frame on mobile. */
+  will-change: clip-path;
 }
 
 .detail-cover--closing {
@@ -1695,6 +1750,9 @@ body {
   font-size: 17px;
   font-weight: 600;
   letter-spacing: 0.3px;
+  /* Default for callers that don't tint it (the day cover); the detail cards
+     always override this with the metric's own colour inline. */
+  color: var(--text-primary);
 }
 
 .detail-summary-note {
@@ -2666,18 +2724,18 @@ body {
   height: 8px;
   border-radius: 4px;
   background: linear-gradient(90deg,
-    #22c55e 0%,
-    #22c55e 16.7%,
-    #eab308 16.7%,
-    #eab308 33.3%,
-    #f97316 33.3%,
-    #f97316 50%,
-    #ef4444 50%,
-    #ef4444 66.7%,
-    #a855f7 66.7%,
-    #a855f7 83.3%,
-    #7c3aed 83.3%,
-    #7c3aed 100%
+    var(--cond-green) 0%,
+    var(--cond-green) 16.7%,
+    var(--cond-yellow) 16.7%,
+    var(--cond-yellow) 33.3%,
+    var(--cond-orange) 33.3%,
+    var(--cond-orange) 50%,
+    var(--cond-red) 50%,
+    var(--cond-red) 66.7%,
+    var(--cond-purple) 66.7%,
+    var(--cond-purple) 83.3%,
+    var(--cond-violet) 83.3%,
+    var(--cond-violet) 100%
   );
 }
 
@@ -3045,14 +3103,14 @@ body {
   justify-content: center;
 }
 
-.overview-severe  .overview-dot { background: #ef4444; }
+.overview-severe  .overview-dot { background: var(--cond-red); }
 /* Non-immediate severe events (e.g. tomorrow's forecast): red-orange, between
    the immediate-severe red and the warning orange. */
 .overview-severe  .overview-dot--soft { background: #f4602d; }
-.overview-warning .overview-dot { background: #f97316; }
-.overview-info    .overview-dot { background: #3b82f6; }
+.overview-warning .overview-dot { background: var(--cond-orange); }
+.overview-info    .overview-dot { background: var(--cond-info); }
 .overview-notice  .overview-dot { background: #8b949e; }
-.overview-good    .overview-dot { background: #22c55e; }
+.overview-good    .overview-dot { background: var(--cond-green); }
 .overview-neutral .overview-dot { background: var(--text-tertiary); }
 
 @keyframes overview-dot-pulse {
@@ -3138,8 +3196,8 @@ body {
 
 /* ── Platform style: Android (Material You) ──
    data-platform="android" on <html> switches the whole app to Google Sans and
-   restyles the settings surfaces with Material You tokens. The default (iOS)
-   keeps the Apple system font and the styling above untouched. */
+   restyles the settings surfaces with Material You tokens. iOS mode keeps the
+   Apple system font and gets its own grouped-list refinements further below. */
 :root[data-platform="android"] {
   --font: 'Google Sans', 'Product Sans', Roboto, 'Segoe UI', sans-serif;
   --md-primary: #6750a4;
@@ -3297,7 +3355,132 @@ body {
   color: var(--md-on-primary);
 }
 
+/* ── Platform style: iOS 26 (Liquid Glass) ──
+   data-platform="ios" restyles the settings surfaces as frosted "liquid glass":
+   translucent cards over a backdrop-blurred sky, specular top-edge highlights,
+   fully-rounded capsule controls, and green switches. The page is made slightly
+   see-through so the real sky diffuses behind the glass. */
+:root[data-platform="ios"] {
+  --ios-green: #34c759;
+  --ios-separator: rgba(60, 60, 67, 0.24);
+  /* glass fills built from the theme's card/bg so they track light & dark */
+  --ios-glass-card: color-mix(in srgb, var(--card-bg) 60%, transparent);
+  --ios-glass-track: color-mix(in srgb, var(--card-bg) 34%, transparent);
+  --ios-glass-selected: color-mix(in srgb, var(--card-bg) 88%, transparent);
+  --ios-glass-rim: rgba(255, 255, 255, 0.55);
+  --ios-glass-highlight: rgba(255, 255, 255, 0.75);
+  --ios-glass-shadow: rgba(0, 0, 0, 0.12);
+}
 
+[data-theme="dark"][data-platform="ios"] {
+  --ios-green: #30d158;
+  --ios-separator: rgba(84, 84, 88, 0.6);
+  --ios-glass-rim: rgba(255, 255, 255, 0.14);
+  --ios-glass-highlight: rgba(255, 255, 255, 0.12);
+  --ios-glass-shadow: rgba(0, 0, 0, 0.4);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-platform="ios"]:not([data-theme="light"]) {
+    --ios-green: #30d158;
+    --ios-separator: rgba(84, 84, 88, 0.6);
+    --ios-glass-rim: rgba(255, 255, 255, 0.14);
+    --ios-glass-highlight: rgba(255, 255, 255, 0.12);
+    --ios-glass-shadow: rgba(0, 0, 0, 0.4);
+  }
+}
+
+/* Opaque sky backdrop painted just below the glass page (z 499) and above the
+   app content (z 2), so only the sky shows through the glass. */
+.settings-sky {
+  position: fixed;
+  inset: 0;
+  z-index: 499;
+  pointer-events: none;
+}
+
+/* The page is opaque by default; it only goes translucent (letting the sky wash
+   through the glass) when a .settings-sky layer is painted behind it. Kept
+   mostly opaque so group labels stay legible over a bright sky. */
+[data-platform="ios"] .settings-page {
+  background: var(--bg);
+}
+
+[data-platform="ios"] .settings-sky + .settings-page {
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+}
+
+/* Frosted glass cards: translucent fill, backdrop blur, a specular highlight
+   along the top edge, a thin rim, and a soft float shadow. */
+[data-platform="ios"] :is(.settings-page, .settings-inline, .settings-pill) .settings-card {
+  background: var(--ios-glass-card);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  border-radius: 20px;
+  border: 0.5px solid var(--ios-glass-rim);
+  box-shadow: 0 6px 22px var(--ios-glass-shadow), inset 0 1px 0 var(--ios-glass-highlight);
+}
+
+/* Hairline separators inset from the left to align with the row label. */
+[data-platform="ios"] :is(.settings-page, .settings-inline, .settings-pill) .settings-row + .settings-row {
+  border-top: none;
+  position: relative;
+}
+
+[data-platform="ios"] :is(.settings-page, .settings-inline, .settings-pill) .settings-row + .settings-row::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 18px;
+  right: 0;
+  height: 1px;
+  background: var(--ios-separator);
+  transform: scaleY(0.5);
+  transform-origin: top;
+}
+
+/* Segmented control → a glass capsule with a floating glass selection. */
+[data-platform="ios"] :is(.settings-page, .settings-inline, .settings-pill) .settings-options {
+  background: var(--ios-glass-track);
+  border: 0.5px solid var(--ios-glass-rim);
+  border-radius: 999px;
+  padding: 3px;
+}
+
+[data-platform="ios"] :is(.settings-page, .settings-inline, .settings-pill) .setting-opt {
+  border-radius: 999px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+[data-platform="ios"] :is(.settings-page, .settings-inline, .settings-pill) .setting-opt.active {
+  background: var(--ios-glass-selected);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: 0 1px 3px var(--ios-glass-shadow), inset 0 1px 0 var(--ios-glass-highlight);
+}
+
+[data-platform="ios"] :is(.settings-page, .settings-inline, .settings-pill) .setting-opt:not(.active):hover {
+  background: transparent;
+  color: var(--text-primary);
+}
+
+/* Switches turn iOS green when on, with a glossy raised thumb. */
+[data-platform="ios"] :is(.settings-page, .settings-inline, .settings-pill) .toggle-track::after {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+[data-platform="ios"] :is(.settings-page, .settings-inline, .settings-pill) .toggle-switch input:checked + .toggle-track {
+  background: var(--ios-green);
+}
+
+/* Primary action (Install) → glass capsule. */
+[data-platform="ios"] :is(.settings-page, .settings-inline, .settings-pill) .install-btn {
+  border-radius: 999px;
+  box-shadow: 0 2px 8px var(--ios-glass-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.4);
+}
 
 /* Invert map tiles in dark mode — Positron's gray palette inverts cleanly to a dark map */
 [data-theme="dark"] .map-base-tiles {
@@ -3608,7 +3791,7 @@ body {
 }
 
 .alert-row-icon--critical svg {
-  color: #ef4444 !important;
+  color: var(--cond-red) !important;
 }
 
 @keyframes alert-icon-blink {
@@ -3851,11 +4034,13 @@ body {
   :root:not([data-theme="light"]) .sky-lvl-darkest .alert-sheet { background: var(--card-bg); }
 }
 
-/* Search overlay container follows sky-level card styling */
-.sky-lvl-slight .search-overlay  { background: var(--sky-card, #5a6d85); }
-.sky-lvl-medium .search-overlay  { background: var(--sky-card, #4d6078); }
-.sky-lvl-dark .search-overlay    { background: var(--sky-card, #3e5068); }
-.sky-lvl-darkest .search-overlay { background: var(--sky-card, #324055); }
+/* Search overlay container follows sky-level card styling. Uses the deeper
+   --sky-card-deep so the --sky-card pill/dropdown inside read a shade lighter
+   against it (the same figure/ground relationship as detail subcards on a card). */
+.sky-lvl-slight .search-overlay  { background: var(--sky-card-deep, #445468); }
+.sky-lvl-medium .search-overlay  { background: var(--sky-card-deep, #38495c); }
+.sky-lvl-dark .search-overlay    { background: var(--sky-card-deep, #2b3a4e); }
+.sky-lvl-darkest .search-overlay { background: var(--sky-card-deep, #1f2c3e); }
 [data-theme="dark"] .sky-lvl-slight .search-overlay,
 [data-theme="dark"] .sky-lvl-medium .search-overlay,
 [data-theme="dark"] .sky-lvl-dark .search-overlay,
@@ -3904,15 +4089,13 @@ body {
 .sky-lvl-dark .radar-tick-label,
 .sky-lvl-darkest .radar-tick-label { color: rgba(255,255,255,0.65); }
 
-/* Search bar pill slightly lighter than overlay for contrast */
-.sky-lvl-slight .search-overlay .search-bar,
-.sky-lvl-slight .search-dropdown  { background: #6a7d95; --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; border-color: transparent; }
-.sky-lvl-medium .search-overlay .search-bar,
-.sky-lvl-medium .search-dropdown  { background: #5d7088; --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; border-color: transparent; }
-.sky-lvl-dark .search-overlay .search-bar,
-.sky-lvl-dark .search-dropdown    { background: #4e6078; --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; border-color: transparent; }
-.sky-lvl-darkest .search-overlay .search-bar,
-.sky-lvl-darkest .search-dropdown { background: #425065; --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; border-color: transparent; }
+/* Search pill/dropdown are themed by the variable-based .sky-active rules near
+   the top of this file (both use --sky-card, a shade lighter than the
+   --sky-card-deep overlay panel), so they follow each sky's actual hue. The old
+   per-level rules here hardcoded a fixed slate palette that overrode those and
+   left the pill mismatched (e.g. a slate bar on a blue clear-day overlay) —
+   removed. The --sky-card remap on .app handles dark mode; see the restatement
+   below for prefers-dark. */
 
 [data-theme="dark"] .radar-zoom-btn,   [data-theme="dark"] .radar-locate-btn,   [data-theme="dark"] .radar-expand-btn--floating,
 [data-theme="dark"] .search-bar,       [data-theme="dark"] .search-dropdown,

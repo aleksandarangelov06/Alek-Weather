@@ -271,11 +271,12 @@ function App() {
   }, [darkMode])
 
   // Platform style: Android mode switches the app to Google Sans and gives the
-  // settings pages a Material You look; iOS mode is the default styling.
+  // settings pages a Material You look; iOS mode refines them toward the modern
+  // iOS Settings look. The attribute is always set (ios | android) so each has a
+  // clean selector to scope its settings re-skin.
   useEffect(() => {
     const root = document.documentElement
-    if (platformTheme === 'android') root.setAttribute('data-platform', 'android')
-    else root.removeAttribute('data-platform')
+    root.setAttribute('data-platform', platformTheme === 'android' ? 'android' : 'ios')
   }, [platformTheme])
 
   // Auto-load the home city on mount (falling back to the first saved city).
@@ -764,6 +765,12 @@ function App() {
         />
       )}
 
+      {/* Opaque sky layer behind the translucent iOS glass settings, above the
+          app content — so the glass blurs only the sky, not the weather UI.
+          Reuses the same gradient class as the main sky background. */}
+      {showSettings && platformTheme === 'ios' && weather && weatherAnimations && (
+        <div className={`settings-sky ${skyC}`} aria-hidden="true" />
+      )}
       {showSettings && (
         <SettingsPage
           onBack={closeSettings}

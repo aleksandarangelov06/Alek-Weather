@@ -2,23 +2,24 @@ import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { TriangleAlert, X, ChevronRight } from 'lucide-react'
 
+// Colors are the --cond-* variables so they lighten on dark and sky-tinted
+// surfaces; withAlpha uses color-mix because the values are no longer raw hex.
 const SEVERITY_CONFIG = {
-  Extreme:  { color: '#ef4444', bg: 'rgba(239,68,68,0.12)',   label: 'Extreme'  },
-  Severe:   { color: '#f97316', bg: 'rgba(249,115,22,0.12)',  label: 'Severe'   },
-  Moderate: { color: '#eab308', bg: 'rgba(234,179,8,0.12)',   label: 'Moderate' },
-  Minor:    { color: '#3b82f6', bg: 'rgba(59,130,246,0.10)',  label: 'Minor'    },
-  Unknown:  { color: '#8b949e', bg: 'rgba(139,148,158,0.10)', label: 'Alert'    },
+  Extreme:  { color: 'var(--cond-red)',    bg: withAlpha('var(--cond-red)', 0.12),    label: 'Extreme'  },
+  Severe:   { color: 'var(--cond-orange)', bg: withAlpha('var(--cond-orange)', 0.12), label: 'Severe'   },
+  Moderate: { color: 'var(--cond-yellow)', bg: withAlpha('var(--cond-yellow)', 0.12), label: 'Moderate' },
+  Minor:    { color: 'var(--cond-info)',   bg: withAlpha('var(--cond-info)', 0.10),   label: 'Minor'    },
+  Unknown:  { color: '#8b949e',            bg: 'rgba(139,148,158,0.10)',              label: 'Alert'    },
 }
 
 // Air Quality "Code <colour>" levels, matching the US AQI scale.
 const AQI_CODE_COLORS = {
-  green: '#22c55e', yellow: '#eab308', orange: '#f97316',
-  red: '#ef4444', purple: '#a855f7', maroon: '#7c3aed',
+  green: 'var(--cond-green)', yellow: 'var(--cond-yellow)', orange: 'var(--cond-orange)',
+  red: 'var(--cond-red)', purple: 'var(--cond-purple)', maroon: 'var(--cond-violet)',
 }
 
-function withAlpha(hex, a) {
-  const n = parseInt(hex.slice(1), 16)
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`
+function withAlpha(color, a) {
+  return `color-mix(in srgb, ${color} ${a * 100}%, transparent)`
 }
 
 // Colour an alert by the action it demands rather than by NWS severity alone:
@@ -40,9 +41,9 @@ function resolveStyle(props) {
   }
 
   let color
-  if (/warning$/i.test(event))       color = '#ef4444'
-  else if (/watch$/i.test(event))    color = '#f97316'
-  else if (/advisory$/i.test(event)) color = '#eab308'
+  if (/warning$/i.test(event))       color = 'var(--cond-red)'
+  else if (/watch$/i.test(event))    color = 'var(--cond-orange)'
+  else if (/advisory$/i.test(event)) color = 'var(--cond-yellow)'
   return color ? { ...base, color, bg: withAlpha(color, 0.12) } : base
 }
 

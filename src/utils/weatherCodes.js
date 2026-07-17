@@ -189,20 +189,41 @@ export function getWindDirection(degrees) {
 }
 
 export function getUVLabel(uv) {
-  if (uv <= 2)  return { label: 'Low',       color: '#22c55e' }
-  if (uv <= 5)  return { label: 'Moderate',  color: '#eab308' }
-  if (uv <= 7)  return { label: 'High',      color: '#f97316' }
-  if (uv <= 10) return { label: 'Very High', color: '#ef4444' }
-  return              { label: 'Extreme',   color: '#a855f7' }
+  if (uv <= 2)  return { label: 'Low',       color: 'var(--cond-green)' }
+  if (uv <= 5)  return { label: 'Moderate',  color: 'var(--cond-yellow)' }
+  if (uv <= 7)  return { label: 'High',      color: 'var(--cond-orange)' }
+  if (uv <= 10) return { label: 'Very High', color: 'var(--cond-red)' }
+  return              { label: 'Extreme',   color: 'var(--cond-purple)' }
+}
+
+// toLocaleTimeString builds a fresh Intl.DateTimeFormat on every call — about a
+// millisecond each on a mid-range phone. The hourly strips format dozens of
+// labels per render, right as an expansion mounts, so those milliseconds land
+// exactly where a dropped frame is most visible. One reusable formatter per
+// timezone makes each label a cheap .format() call instead.
+const timeFmtCache = new Map()
+function cachedTimeFormatter(timezone, withMinutes) {
+  const key = `${timezone}|${withMinutes}`
+  let fmt = timeFmtCache.get(key)
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-US', {
+      hour: 'numeric',
+      ...(withMinutes ? { minute: '2-digit' } : {}),
+      timeZone: timezone,
+      hour12: true,
+    })
+    timeFmtCache.set(key, fmt)
+  }
+  return fmt
 }
 
 export function formatTime(isoString, timezone) {
-  return new Date(isoString).toLocaleTimeString('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-    timeZone: timezone,
-    hour12: true,
-  })
+  return cachedTimeFormatter(timezone, true).format(new Date(isoString))
+}
+
+// Hour-only label for strip/timeline items, e.g. "3 PM".
+export function formatHour(isoString, timezone) {
+  return cachedTimeFormatter(timezone, false).format(new Date(isoString))
 }
 
 export function toTemp(fahrenheit, unit) {

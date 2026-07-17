@@ -1,10 +1,11 @@
+// --cond-* variables lighten automatically on dark and sky-tinted cards.
 function getAQIInfo(aqi) {
-  if (aqi <= 50)  return { label: 'Good',                          color: '#22c55e' }
-  if (aqi <= 100) return { label: 'Moderate',                      color: '#eab308' }
-  if (aqi <= 150) return { label: 'Unhealthy for Sensitive Groups', color: '#f97316' }
-  if (aqi <= 200) return { label: 'Unhealthy',                     color: '#ef4444' }
-  if (aqi <= 300) return { label: 'Very Unhealthy',                color: '#a855f7' }
-  return                 { label: 'Hazardous',                     color: '#7c3aed' }
+  if (aqi <= 50)  return { label: 'Good',                          color: 'var(--cond-green)' }
+  if (aqi <= 100) return { label: 'Moderate',                      color: 'var(--cond-yellow)' }
+  if (aqi <= 150) return { label: 'Unhealthy for Sensitive Groups', color: 'var(--cond-orange)' }
+  if (aqi <= 200) return { label: 'Unhealthy',                     color: 'var(--cond-red)' }
+  if (aqi <= 300) return { label: 'Very Unhealthy',                color: 'var(--cond-purple)' }
+  return                 { label: 'Hazardous',                     color: 'var(--cond-violet)' }
 }
 
 function Pollutant({ name, value, unit }) {

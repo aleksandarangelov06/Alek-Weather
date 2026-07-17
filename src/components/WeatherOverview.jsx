@@ -1,4 +1,5 @@
 import { Sun, Moon, Cloud, CloudSun, CloudFog, CloudRain, CloudSnow, CloudLightning, CloudSunRain, Thermometer, Shirt, Wind, Snowflake, Umbrella, Footprints } from 'lucide-react'
+import { WindTurbine } from './WindTurbine'
 import { getWeatherInfo, liveWeatherCode, nowcastHourlyCode, displayPrecipChance, precipTier, tempColor } from '../utils/weatherCodes'
 
 // Maps the emoji icon key from getWeatherInfo() to a tintable lucide line icon,
@@ -25,7 +26,7 @@ function iconForInsight(text, isDay) {
   if (/freezing/.test(t))                       return Snowflake
   if (/rain|shower|drizzle/.test(t))            return CloudRain
   if (/fog/.test(t))                            return CloudFog
-  if (/wind/.test(t))                           return Wind
+  if (/wind/.test(t))                           return WindTurbine
   if (/\buv\b/.test(t))                         return Sun
   if (/hot|heat/.test(t))                       return Thermometer
   if (/warmer|cooler|warming|cooling|arctic|cold (snap|spell)|degrees|temperature/.test(t)) return Thermometer
@@ -37,8 +38,8 @@ function iconForInsight(text, isDay) {
 // Level colors mirror the dot backgrounds in App.css so a tinted icon carries
 // the same severity signal the colored dot used to.
 const LEVEL_COLOR = {
-  severe: '#ef4444', warning: '#f97316', info: '#3b82f6',
-  notice: '#8b949e', good: '#22c55e', neutral: 'var(--text-tertiary)',
+  severe: 'var(--cond-red)', warning: 'var(--cond-orange)', info: 'var(--cond-info)',
+  notice: '#8b949e', good: 'var(--cond-green)', neutral: 'var(--text-tertiary)',
 }
 const insightColor = (item) =>
   item.level === 'severe' && !item.immediate ? '#f4602d'

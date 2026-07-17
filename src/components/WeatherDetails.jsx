@@ -1,52 +1,56 @@
 import { useState, useRef, useEffect } from 'react'
-import { Wind, Droplets, Eye, Gauge, Sun, Sunrise, Sunset, Leaf, AlertTriangle, ShieldAlert, ChevronDown, ChevronUp, Navigation2, X } from 'lucide-react'
-import { getWindDirection, getUVLabel, formatTime, toTemp } from '../utils/weatherCodes'
+import { Droplets, Eye, Gauge, Sun, Sunrise, Sunset, Leaf, AlertTriangle, ShieldAlert, ChevronDown, ChevronUp, Navigation2, X } from 'lucide-react'
+import { WindTurbine } from './WindTurbine'
+import { getWindDirection, getUVLabel, formatTime, formatHour, toTemp } from '../utils/weatherCodes'
 
 // The API reports surface pressure in hPa; US convention displays inHg.
 // Thresholds below stay in hPa so they keep comparing against the raw values.
 const HPA_PER_INHG = 33.8639
 const toInHg = (hpa) => (hpa / HPA_PER_INHG).toFixed(2)
 
+// Condition colors are the --cond-* variables from App.css, which swap to
+// lighter tones on dark and sky-tinted card surfaces so the readings stay
+// legible there (e.g. red on a slate-blue card).
 function getAQIInfo(aqi) {
-  if (aqi <= 50)  return { label: 'Good',                          color: '#22c55e' }
-  if (aqi <= 100) return { label: 'Moderate',                      color: '#eab308' }
-  if (aqi <= 150) return { label: 'Unhealthy for Sensitive Groups', color: '#f97316' }
-  if (aqi <= 200) return { label: 'Unhealthy',                     color: '#ef4444' }
-  if (aqi <= 300) return { label: 'Very Unhealthy',                color: '#a855f7' }
-  return                 { label: 'Hazardous',                     color: '#7c3aed' }
+  if (aqi <= 50)  return { label: 'Good',                          color: 'var(--cond-green)' }
+  if (aqi <= 100) return { label: 'Moderate',                      color: 'var(--cond-yellow)' }
+  if (aqi <= 150) return { label: 'Unhealthy for Sensitive Groups', color: 'var(--cond-orange)' }
+  if (aqi <= 200) return { label: 'Unhealthy',                     color: 'var(--cond-red)' }
+  if (aqi <= 300) return { label: 'Very Unhealthy',                color: 'var(--cond-purple)' }
+  return                 { label: 'Hazardous',                     color: 'var(--cond-violet)' }
 }
 
 function getWindInfo(speed) {
-  if (speed < 5)  return { color: '#22c55e', size: 13 }
-  if (speed < 15) return { color: '#84cc16', size: 15 }
-  if (speed < 25) return { color: '#eab308', size: 17 }
-  if (speed < 35) return { color: '#f97316', size: 19 }
-  if (speed < 45) return { color: '#ef4444', size: 21 }
-  return               { color: '#a855f7',  size: 23 }
+  if (speed < 5)  return { color: 'var(--cond-green)',  size: 13 }
+  if (speed < 15) return { color: 'var(--cond-lime)',   size: 15 }
+  if (speed < 25) return { color: 'var(--cond-yellow)', size: 17 }
+  if (speed < 35) return { color: 'var(--cond-orange)', size: 19 }
+  if (speed < 45) return { color: 'var(--cond-red)',    size: 21 }
+  return               { color: 'var(--cond-purple)',   size: 23 }
 }
 
 function getHumidityInfo(pct) {
-  if (pct < 25) return { color: '#60a5fa', label: 'Dry'       }
-  if (pct < 50) return { color: '#22c55e', label: 'Good'      }
-  if (pct < 65) return { color: '#eab308', label: 'Fair'      }
-  if (pct < 80) return { color: '#f97316', label: 'High'      }
-  return              { color: '#ef4444',  label: 'Very High' }
+  if (pct < 25) return { color: 'var(--cond-blue)',   label: 'Dry'       }
+  if (pct < 50) return { color: 'var(--cond-green)',  label: 'Good'      }
+  if (pct < 65) return { color: 'var(--cond-yellow)', label: 'Fair'      }
+  if (pct < 80) return { color: 'var(--cond-orange)', label: 'High'      }
+  return              { color: 'var(--cond-red)',     label: 'Very High' }
 }
 
 function getPressureInfo(hpa) {
-  if (hpa < 980)  return { color: '#ef4444', label: 'Stormy'   }
-  if (hpa < 1000) return { color: '#f97316', label: 'Low'      }
-  if (hpa < 1020) return { color: '#22c55e', label: 'Normal'   }
-  if (hpa < 1030) return { color: '#60a5fa', label: 'High'     }
-  return               { color: '#a855f7',  label: 'Very High' }
+  if (hpa < 980)  return { color: 'var(--cond-red)',    label: 'Stormy'   }
+  if (hpa < 1000) return { color: 'var(--cond-orange)', label: 'Low'      }
+  if (hpa < 1020) return { color: 'var(--cond-green)',  label: 'Normal'   }
+  if (hpa < 1030) return { color: 'var(--cond-blue)',   label: 'High'     }
+  return               { color: 'var(--cond-purple)',   label: 'Very High' }
 }
 
 function getVisibilityInfo(miles) {
-  if (miles < 0.5) return { color: '#ef4444', label: 'Dense Fog' }
-  if (miles < 2)   return { color: '#f97316', label: 'Fog'       }
-  if (miles < 5)   return { color: '#eab308', label: 'Haze'      }
-  if (miles < 10)  return { color: '#84cc16', label: 'Fair'      }
-  return                { color: '#22c55e',  label: 'Clear'     }
+  if (miles < 0.5) return { color: 'var(--cond-red)',    label: 'Dense Fog' }
+  if (miles < 2)   return { color: 'var(--cond-orange)', label: 'Fog'       }
+  if (miles < 5)   return { color: 'var(--cond-yellow)', label: 'Haze'      }
+  if (miles < 10)  return { color: 'var(--cond-lime)',   label: 'Fair'      }
+  return                { color: 'var(--cond-green)',    label: 'Clear'     }
 }
 
 // Plain-language notes explaining what each current reading actually means.
@@ -324,9 +328,7 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
   const sliceNext = (arr, n) => (arr ?? []).slice(hStart, hStart + n)
   const hourlyTimes = hourly ? sliceNext(hourly.time, 24) : []
 
-  const fmt = (time, i) => i === 0
-    ? 'Now'
-    : new Date(time).toLocaleTimeString('en-US', { hour: 'numeric', hour12: true, timeZone: timezone })
+  const fmt = (time, i) => i === 0 ? 'Now' : formatHour(time, timezone)
 
   // UV — daytime only
   const uvValues = hourly ? sliceNext(hourly.uv_index, 24) : []
@@ -369,7 +371,7 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
       onClick: (e) => openDetail('humidity', e), isExpanded: expanded === 'humidity',
     },
     wind: {
-      icon: <Wind size={19} />, label: 'Wind',
+      icon: <WindTurbine size={19} />, label: 'Wind',
       value: `${Math.round(current.wind_speed_10m)} mph`,
       sub: windDir,
       color: windInfo.color,
@@ -586,7 +588,7 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
                   const uvInfo = getUVLabel(item.uv)
                   return (
                     <div key={i} className="uv-timeline-item">
-                      <span className="uv-tl-time">{i === 0 && isCurrentDaytime ? 'Now' : new Date(item.time).toLocaleTimeString('en-US', { hour: 'numeric', hour12: true, timeZone: timezone })}</span>
+                      <span className="uv-tl-time">{i === 0 && isCurrentDaytime ? 'Now' : formatHour(item.time, timezone)}</span>
                       <span className="uv-tl-val" style={{ color: uvInfo.color }}>{Math.round(item.uv)}</span>
                       <span className="uv-tl-lbl" style={{ color: uvInfo.color }}>{uvInfo.label}</span>
                     </div>
