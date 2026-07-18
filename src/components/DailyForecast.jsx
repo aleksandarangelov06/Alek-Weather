@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { X } from 'lucide-react'
-import { getWeatherInfo, formatDay, formatHour, formatTime, getUVLabel, liveWeatherCode, nowcastHourlyCode, precipTier, toTemp, tempColor, tempStyle, displayPrecipChance } from '../utils/weatherCodes'
+import { getWeatherInfo, formatDay, formatHour, formatTime, getUVLabel, liveWeatherCode, nowcastHourlyCode, precipTier, toTemp, tempColor, tempStyle, displayPrecipChance, SUN_ORANGE } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
 
 // Keep in sync with the detail-cover animation duration in App.css — the cover
@@ -210,7 +210,7 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
                     width: `${pillWidth}%`,
                     background: colorCoding
                       ? `linear-gradient(90deg, ${tempColor(minTemps[i])}, ${tempColor(maxTemps[i])})`
-                      : 'var(--bar-track-bg)',
+                      : 'var(--daily-bar-bg)',
                   }} />
                   <span className="daily-high" style={{ ...tempStyle(maxTemps[i], colorCoding, 0.4, glow, frost), left: `${pillRight}%` }}>{high}°</span>
                 </div>
@@ -231,6 +231,7 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
           role="dialog"
           aria-label={coverTitle(expanded)}
         >
+          <div className="detail-cover-fill" />
           <div className="detail-cover-head">
             <span className="detail-cover-title">
               <span className="detail-cover-icon" style={{ fontSize: 22 }}>
@@ -272,13 +273,13 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
               {daily.sunrise?.[di] && (
                 <div className="detail-stat">
                   <span className="detail-stat-label">Sunrise</span>
-                  <span className="detail-stat-value">{formatTime(daily.sunrise[di], timezone)}</span>
+                  <span className="detail-stat-value" style={{ color: SUN_ORANGE }}>{formatTime(daily.sunrise[di], timezone)}</span>
                 </div>
               )}
               {daily.sunset?.[di] && (
                 <div className="detail-stat">
                   <span className="detail-stat-label">Sunset</span>
-                  <span className="detail-stat-value">{formatTime(daily.sunset[di], timezone)}</span>
+                  <span className="detail-stat-value" style={{ color: SUN_ORANGE }}>{formatTime(daily.sunset[di], timezone)}</span>
                 </div>
               )}
               {daily.uv_index_max?.[di] != null && (

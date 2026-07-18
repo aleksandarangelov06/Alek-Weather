@@ -284,6 +284,24 @@ export function tempStyle(fahrenheit, colorCoding, scale = 1, glow = true, frost
   return style
 }
 
+// The sun's own colour: golden-yellow when it rides high, deepening to orange
+// near the horizon at sunrise and sunset. SUN_YELLOW doubles as the plain
+// "sun" accent and SUN_ORANGE as the sunrise/sunset accent.
+export const SUN_YELLOW = '#eab308'
+export const SUN_ORANGE = '#f97316'
+
+// Interpolated sun colour for how high it sits. `progress` matches the sun-dial
+// arc: 0 at sunrise, 0.5 at solar noon, 1 at sunset. Yellow at the peak, orange
+// at either horizon (and below, where the caller dims it).
+export function sunColor(progress) {
+  const p = Math.max(0, Math.min(1, progress))
+  const alt = Math.sin(p * Math.PI) // 0 at the horizon, 1 at solar noon
+  const orange = [249, 115, 22]
+  const yellow = [234, 179, 8]
+  const c = orange.map((ch, i) => Math.round(ch + alt * (yellow[i] - ch)))
+  return `rgb(${c[0]},${c[1]},${c[2]})`
+}
+
 export function formatDay(dateString) {
   const date = new Date(dateString + 'T12:00:00')
   const today = new Date()

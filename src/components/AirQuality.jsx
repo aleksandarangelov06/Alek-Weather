@@ -43,7 +43,7 @@ export function AirQuality({ data }) {
         <div className="aqi-gradient-bar">
           <div
             className="aqi-marker"
-            style={{ left: `${markerPct}%`, borderColor: info.color }}
+            style={{ left: `${markerPct}%`, background: info.color }}
           />
         </div>
       </div>

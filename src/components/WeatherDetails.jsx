@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Droplets, Eye, Gauge, Sun, Sunrise, Sunset, Leaf, AlertTriangle, ShieldAlert, ChevronDown, ChevronUp, Navigation2, X } from 'lucide-react'
 import { WindTurbine } from './WindTurbine'
-import { getWindDirection, getUVLabel, formatTime, formatHour, toTemp } from '../utils/weatherCodes'
+import { getWindDirection, getUVLabel, formatTime, formatHour, toTemp, sunColor, SUN_ORANGE } from '../utils/weatherCodes'
 
 // The API reports surface pressure in hPa; US convention displays inHg.
 // Thresholds below stay in hPa so they keep comparing against the raw values.
@@ -149,11 +149,11 @@ function DetailStats({ items }) {
 // angle. Each size carries its own geometry in user units that land ~1:1 on CSS
 // pixels, so the stroke and dot keep their weight instead of scaling up with the
 // viewBox when the wide variant is drawn.
-function SunDial({ progress, wide = false }) {
+function SunDial({ progress, wide = false, sunFill }) {
   const t = Math.min(1, Math.max(0, progress))
   const g = wide
-    ? { w: 240, h: 76, pad: 6, base: 71, peak: -14, r: 5 }
-    : { w: 64,  h: 27, pad: 3, base: 22, peak: -6,  r: 3.5 }
+    ? { w: 480, h: 92, pad: 12, base: 84, peak: -16, r: 5 }
+    : { w: 64,  h: 27, pad: 3,  base: 22, peak: -6,  r: 3.5 }
   const x = (1 - t) ** 2 * g.pad  + 2 * (1 - t) * t * (g.w / 2) + t ** 2 * (g.w - g.pad)
   const y = (1 - t) ** 2 * g.base + 2 * (1 - t) * t * g.peak    + t ** 2 * g.base
   const isUp = progress >= 0 && progress <= 1
@@ -165,7 +165,7 @@ function SunDial({ progress, wide = false }) {
     >
       <line className="sun-dial-horizon" x1="0" y1={g.base + 0.5} x2={g.w} y2={g.base + 0.5} />
       <path className="sun-dial-arc" d={`M${g.pad} ${g.base} Q${g.w / 2} ${g.peak} ${g.w - g.pad} ${g.base}`} />
-      <circle className={`sun-dial-sun${isUp ? '' : ' sun-dial-sun--down'}`} cx={x} cy={y} r={g.r} />
+      <circle className={`sun-dial-sun${isUp ? '' : ' sun-dial-sun--down'}`} cx={x} cy={y} r={g.r} style={sunFill ? { fill: sunFill } : undefined} />
     </svg>
   )
 }
@@ -219,7 +219,7 @@ function DetailCard({ icon, label, value, sub, color, onClick, isExpanded, conte
 // stays mounted this long while the circle shrinks back into the tapped tile.
 const REVEAL_MS = 380
 
-export function WeatherDetails({ current, daily, hourly, timezone, unit, airQuality }) {
+export function WeatherDetails({ current, daily, hourly, timezone, unit, airQuality, colorCoding = true }) {
   const [expanded, setExpanded] = useState(null)
   const [closing, setClosing] = useState(false)
   // Origin + radius of the circular reveal, in px relative to the details card.
@@ -343,6 +343,12 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
   // UV > 7 is "Very High"/"Extreme" — swap the sun for a warning symbol.
   const uvHigh = uvCurrent > 7
 
+  // The sun tile paints with raw golden-hour colours that the --cond-* mono
+  // override in App.css can't reach, so neutralise them here when detail
+  // colour-coding is off. Everything else on the card already goes mono via CSS.
+  const sunTint = (p) => colorCoding ? sunColor(p) : 'var(--text-primary)'
+  const sunBase = colorCoding ? SUN_ORANGE : 'var(--text-primary)'
+
   // Wind
   const windSpeeds = hourly?.wind_speed_10m ? sliceNext(hourly.wind_speed_10m, 6) : []
   const windDirs   = hourly?.wind_direction_10m ? sliceNext(hourly.wind_direction_10m, 6) : []
@@ -404,7 +410,10 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
           {/* Same icon/label/value/sub run as every other tile, so the UV reading
               and its rating line up with their values and subs. */}
           <div className="sun-main">
-            <div className="detail-icon" style={{ color: uv.color }}>
+            {/* The sun tracks its live altitude colour — yellow high, orange near
+                the horizon — matching the dial's dot. Only the UV-warning triangle
+                keeps the severity colour. */}
+            <div className="detail-icon" style={{ color: uvHigh ? uv.color : sunTint(sunProgress) }}>
               {uvHigh ? <AlertTriangle size={19} /> : <Sun size={19} />}
             </div>
             <div className="detail-label">Sun</div>
@@ -414,13 +423,14 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
               {expanded === 'sun' ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
             </div>
           </div>
-          {/* Colour sits on the wrapper so the times and the dial's currentColor
-              strokes all pick it up. */}
-          <div className="sun-times" style={{ color: uv.color }}>
+          {/* Orange on the wrapper tints both rise/set icons and their times
+              (golden-hour colour); the dial's dot overrides to the sun's live
+              altitude colour — yellow high, orange near the horizon. */}
+          <div className="sun-times" style={{ color: sunBase }}>
             <span className="sun-time">
               <Sunrise size={13} className="sun-time-icon" />{sunrise}
             </span>
-            <SunDial progress={sunProgress} />
+            <SunDial progress={sunProgress} sunFill={sunTint(sunProgress)} />
             <span className="sun-time">
               <Sunset size={13} className="sun-time-icon" />{sunset}
             </span>
@@ -573,13 +583,14 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
               label={uv.label} color={uv.color}
               note={getUVNote(uvCurrent)}
             />
-            {/* Sits directly above the sunrise/sunset stats it illustrates. */}
-            <div className="sun-dial-wrap" style={{ color: uv.color }}>
-              <SunDial progress={sunProgress} wide />
+            {/* Sits directly above the sunrise/sunset stats it illustrates. Arc
+                in golden-hour orange; the dot tracks the sun's live altitude. */}
+            <div className="sun-dial-wrap" style={{ color: sunBase }}>
+              <SunDial progress={sunProgress} sunFill={sunTint(sunProgress)} wide />
             </div>
             <DetailStats items={[
-              { label: 'Sunrise', value: sunrise },
-              { label: 'Sunset', value: sunset },
+              { label: 'Sunrise', value: sunrise, color: sunBase },
+              { label: 'Sunset', value: sunset, color: sunBase },
               { label: 'Peak UV', value: daily.uv_index_max?.[0] != null ? Math.round(daily.uv_index_max[0]) : null },
             ]} />
             {uvDaytimeItems.length > 0 ? (
@@ -618,7 +629,7 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
             </div>
             <div className="aqi-scale">
               <div className="aqi-gradient-bar">
-                <div className="aqi-marker" style={{ left: `${markerPct}%`, borderColor: aqiInfo.color }} />
+                <div className="aqi-marker" style={{ left: `${markerPct}%`, background: aqiInfo.color }} />
               </div>
             </div>
             <div className="detail-summary-note">{getAQINote(airQuality.us_aqi)}</div>
@@ -639,7 +650,7 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
   const openDef = expanded ? cardDefs[expanded] : null
 
   return (
-    <div className="card card--details" ref={cardRef}>
+    <div className={`card card--details${colorCoding ? '' : ' card--details--mono'}`} ref={cardRef}>
       <div className="section-label">DETAILS</div>
       <div className="details-grid">
         {cardOrder
@@ -670,6 +681,7 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
           role="dialog"
           aria-label={openDef?.label}
         >
+          <div className="detail-cover-fill" />
           <div className="detail-cover-head">
             <span className="detail-cover-title">
               <span className="detail-cover-icon" style={openDef?.color ? { color: openDef.color } : undefined}>

@@ -203,6 +203,7 @@ const COLOR_CODING_TILES = [
   { key: 'hourly',   label: 'Hourly Forecast'  },
   { key: 'daily',    label: '7-Day Forecast'   },
   { key: 'overview', label: 'Weather Overview' },
+  { key: 'details',  label: 'Weather Details'  },
 ]
 
 function ColorCodingView({ colorCoding, onToggle, onBack }) {
@@ -214,7 +215,7 @@ function ColorCodingView({ colorCoding, onToggle, onBack }) {
           <span>Back</span>
         </button>
       )}
-      <p className="color-coding-desc">Choose which tiles color the temperature by how hot or cold it is.</p>
+      <p className="color-coding-desc">Choose which tiles color their readings by how hot, cold, or severe they are.</p>
       <div className="card settings-card">
         {COLOR_CODING_TILES.map(({ key, label }) => (
           <SettingRow key={key} label={label}>
@@ -344,36 +345,51 @@ function ThemeView({ darkMode, onDarkModeChange, platformTheme, onPlatformThemeC
   )
 }
 
-function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastMode, onNowcastModeChange, radarMode, onRadarModeChange, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onThemeOpen, radarEnhanced, onRadarEnhancedChange, installPrompt, onInstall }) {
+function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastMode, onNowcastModeChange, radarMode, onRadarModeChange, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onThemeOpen, weatherAnimations, onWeatherAnimationsChange, radarEnhanced, onRadarEnhancedChange, installPrompt, onInstall }) {
   return (
     <>
       <div className="settings-group-label">Appearance</div>
       <div className="card settings-card">
-        <SettingRow label="Theme">
+        {/* The whole row opens the Theme page; the inline segmented control still
+            switches Light/Dark/System without bubbling up to open the page. */}
+        <div className="settings-row settings-row--link" onClick={onThemeOpen}>
+          <div className="settings-row-label">Theme</div>
           <div className="settings-row-controls">
-            <SegmentedControl
-              value={darkMode}
-              onChange={onDarkModeChange}
-              options={[
-                { value: 'off',    label: 'Light'  },
-                { value: 'on',     label: 'Dark'   },
-                { value: 'system', label: 'System' },
-              ]}
-            />
+            <div className="theme-seg-wrap" onClick={e => e.stopPropagation()}>
+              <SegmentedControl
+                value={darkMode}
+                onChange={onDarkModeChange}
+                options={[
+                  { value: 'off',    label: 'Light'  },
+                  { value: 'on',     label: 'Dark'   },
+                  { value: 'system', label: 'System' },
+                ]}
+              />
+            </div>
             {/* Deeper theme options (platform style) live on their own page. */}
             <button className="theme-chevron-btn" onClick={onThemeOpen} aria-label="More theme options">
               <ChevronRight size={16} className="about-chevron" />
             </button>
           </div>
-        </SettingRow>
+        </div>
         <button className="settings-row about-row" onClick={onColorCodingOpen}>
           <div className="settings-row-label">Color Coding</div>
           <ChevronRight size={16} className="about-chevron" />
         </button>
-        <button className="settings-row about-row" onClick={onWeatherEffectsOpen}>
+        <div className="settings-row">
           <div className="settings-row-label">Weather Effects</div>
-          <ChevronRight size={16} className="about-chevron" />
-        </button>
+          <div className="settings-row-controls">
+            <Toggle id="toggle-weather-anim" checked={weatherAnimations} onChange={onWeatherAnimationsChange} />
+            {/* Gyroscope tilt lives on its own page and only exists on mobile, so
+                the chevron to that page shows only there; desktop gets just the
+                toggle and never reaches the (otherwise empty) page. */}
+            {isMobileDevice() && (
+              <button className="theme-chevron-btn" onClick={onWeatherEffectsOpen} aria-label="More weather effects options">
+                <ChevronRight size={16} className="about-chevron" />
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="settings-group-label">Units</div>

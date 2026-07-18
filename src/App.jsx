@@ -66,12 +66,13 @@ const SKY_THEME_COLOR = {
   'sky-storm':          ['#0a0c14', '#0a0c14'],
 }
 
-// The Android navigation bar ignores theme-color; Chrome paints it with the
-// document's base background color, which propagates from <body>. The sky is a
-// separate fixed layer, so body keeps var(--bg) and the bar stays flat unless
-// we track it here. Each value is the *bottom* gradient stop of the matching
-// sky in App.css, since that is the part of the backdrop the bar sits against:
-// [lightTheme, darkTheme].
+// The Android navigation bar ignores theme-color; in an installed PWA Chrome
+// picks its color from the document's color-scheme plus the base background
+// color, which propagates from <body>. Both must agree: without a dark
+// color-scheme Chrome assumes a light page and paints the bar white no matter
+// what body's background is. Each value is the *bottom* gradient stop of the
+// matching sky in App.css, since that is the part of the backdrop the bar sits
+// against: [lightTheme, darkTheme].
 const SKY_NAV_COLOR = {
   'sky-clear-day':      ['#81d4fa', '#174a7c'],
   'sky-clear-night':    ['#1a237e', '#1a237e'],
@@ -121,6 +122,16 @@ import './App.css'
 
 const THEME_KEY = 'alek-weather-theme'
 const PLATFORM_THEME_KEY = 'alek-weather-platform-theme' // 'ios' | 'android'
+
+// First-run platform style follows the device OS. Only Apple touch devices get
+// the iOS look; Android and desktop/web default to Android for now. Modern
+// iPads report as "Macintosh", so touch support is the tell that separates
+// them from actual Macs.
+function defaultPlatformTheme() {
+  const isApple = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+    (navigator.userAgent.includes('Macintosh') && navigator.maxTouchPoints > 1)
+  return isApple ? 'ios' : 'android'
+}
 const SETTINGS_CLOSE_MS = 260
 const SEARCH_CLOSE_MS = 220
 // Hold the header search button this long to skip the overlay and geolocate.
@@ -155,7 +166,7 @@ const DEFAULT_BLOCK_ORDER = ['overview', 'nowcast', 'hourly', 'daily', 'details'
 const SHOW_OVERVIEW_KEY = 'alek-weather-show-overview'
 const NOWCAST_MODE_KEY  = 'alek-weather-nowcast-mode'
 const COLOR_CODING_KEY  = 'alek-weather-color-coding'
-const DEFAULT_COLOR_CODING = { current: true, hourly: true, daily: true, overview: true, glow: true, frost: true }
+const DEFAULT_COLOR_CODING = { current: true, hourly: true, daily: true, overview: true, details: true, glow: true, frost: true }
 const OVERVIEW_PARTS_KEY = 'alek-weather-overview-parts'
 const DEFAULT_OVERVIEW_PARTS = { insight: true, conditions: true, airQuality: true, clothing: true }
 const RADAR_ENHANCED_KEY = 'alek-weather-radar-enhanced'
@@ -180,7 +191,7 @@ function SortableBlock({ id, children }) {
 function App() {
   const [unit, setUnit] = useState(() => localStorage.getItem('alek-weather-unit') ?? 'F')
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem(THEME_KEY) ?? 'system')
-  const [platformTheme, setPlatformTheme] = useState(() => localStorage.getItem(PLATFORM_THEME_KEY) ?? 'ios')
+  const [platformTheme, setPlatformTheme] = useState(() => localStorage.getItem(PLATFORM_THEME_KEY) ?? defaultPlatformTheme())
   const [showOverview, setShowOverview] = useState(() => localStorage.getItem(SHOW_OVERVIEW_KEY) !== 'false')
   const [nowcastMode, setNowcastMode] = useState(() => localStorage.getItem(NOWCAST_MODE_KEY) ?? 'auto')
   const [weatherAnimations, setWeatherAnimations] = useState(() => localStorage.getItem('alek-weather-animations') !== 'false')
@@ -534,6 +545,10 @@ function App() {
     const apply = (dark) => {
       const color = skyActive ? SKY_THEME_COLOR[skyC][dark ? 1 : 0] : (dark ? '#000000' : '#f0f2f5')
       metas.forEach(m => { m.content = color })
+      // The navigation bar only honors the page background when the document's
+      // color-scheme matches the effective theme; set it on the root so it also
+      // wins when the in-app theme overrides the system one.
+      document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
       // Clearing the inline style hands body back to var(--bg), which already
       // tracks the theme. The sky layer covers the viewport, so this override
       // is invisible to everything except the system bar.
@@ -552,7 +567,7 @@ function App() {
     overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} timezone={weather.timezone} hasActiveAlert={hasActiveAlert} unit={unit} airQuality={airQuality} showInsight={overviewParts.insight} showConditions={overviewParts.conditions} showAirQuality={overviewParts.airQuality} showClothing={overviewParts.clothing} colorCode={colorCoding.overview} />,
     hourly:  <HourlyForecast hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.hourly} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
     daily:   <DailyForecast daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.daily} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
-    details: <WeatherDetails current={weather.current} daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} airQuality={airQuality} />,
+    details: <WeatherDetails current={weather.current} daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} airQuality={airQuality} colorCoding={colorCoding.details} />,
     radar:   <WeatherRadar location={location} timezone={weather.timezone} mode={radarMode} />,
     nowcast: <PrecipNowcast minutely={weather.minutely_15} currentTime={weather.current.time} mode={nowcastMode} current={weather.current} radarClear={radarClear} />,
   } : null

@@ -13,8 +13,14 @@
   --hover-medium: rgba(0, 0, 0, 0.05);
   --hover-clear: rgba(0, 0, 0, 0.06);
   --bar-track-bg: rgba(0, 0, 0, 0.08);
+  /* Empty temp-range track in the 7-day forecast when colour-coding is off.
+     Lighter than --bar-track-bg so the flat capsule reads cleanly. */
+  --daily-bar-bg: rgba(0, 0, 0, 0.05);
   --radius: 18px;
-  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  /* Real SF on Apple devices; Inter (the closest web-available match to SF
+     Pro) on Android and desktop, where -apple-system has nothing to resolve
+     to and iOS mode used to fall back to Roboto / Segoe UI. */
+  --font: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
   --font-display: 'Google Sans', 'Product Sans', Roboto, sans-serif;
   /* Condition severity palette (AQI, UV, wind, humidity, pressure, visibility,
      alerts). These defaults are tuned for white cards; dark mode and the
@@ -45,13 +51,78 @@
   --cond-info:   #60a5fa;
 }
 
+/* Colour-coding off for the Weather Details card: redefine every condition
+   colour to the neutral text colour on the card itself. Because these are set on
+   a closer ancestor than :root / .sky-lvl-*, they win for the whole subtree, so
+   every `color: var(--cond-*)` reading (tiles, expanded covers, timelines) reads
+   as plain text without touching any inline styles. */
+.card--details--mono {
+  --cond-green:  var(--text-primary);
+  --cond-lime:   var(--text-primary);
+  --cond-yellow: var(--text-primary);
+  --cond-orange: var(--text-primary);
+  --cond-red:    var(--text-primary);
+  --cond-purple: var(--text-primary);
+  --cond-violet: var(--text-primary);
+  --cond-blue:   var(--text-primary);
+  --cond-info:   var(--text-primary);
+}
+
+/* The AQI scale bar is a fixed legend, not a data reading, so it stays colourful
+   even in mono mode. Restore the condition palette on just the gradient by
+   redefining the vars on it (a nearer element than the card, so it wins). The
+   two tiers mirror the light and dark/tinted palettes at the top of this file. */
+.card--details--mono .aqi-gradient-bar {
+  --cond-green:  #22c55e;
+  --cond-yellow: #eab308;
+  --cond-orange: #f97316;
+  --cond-red:    #ef4444;
+  --cond-purple: #a855f7;
+  --cond-violet: #7c3aed;
+}
+.sky-lvl-slight  .card--details--mono .aqi-gradient-bar,
+.sky-lvl-medium  .card--details--mono .aqi-gradient-bar,
+.sky-lvl-dark    .card--details--mono .aqi-gradient-bar,
+.sky-lvl-darkest .card--details--mono .aqi-gradient-bar,
+[data-theme="dark"] .card--details--mono .aqi-gradient-bar {
+  --cond-green:  #4ade80;
+  --cond-yellow: #facc15;
+  --cond-orange: #fb923c;
+  --cond-red:    #ff8a8a;
+  --cond-purple: #c084fc;
+  --cond-violet: #a78bfa;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .card--details--mono .aqi-gradient-bar {
+    --cond-green:  #4ade80;
+    --cond-yellow: #facc15;
+    --cond-orange: #fb923c;
+    --cond-red:    #ff8a8a;
+    --cond-purple: #c084fc;
+    --cond-violet: #a78bfa;
+  }
+}
+
 /* On mobile and tablet, the iOS style is all-Apple: display text drops Google
    Sans. Only desktop keeps the mixed pairing (Apple body, Google Sans
    display). Android mode switches both fonts to Google Sans instead. */
 @media (max-width: 1099px) {
   :root:not([data-platform="android"]) {
-    --font-display: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-display: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
   }
+}
+
+/* The "Alek Weather" wordmark (splash + header) tracks the platform theme on
+   every screen size, unlike the general --font-display pairing which keeps
+   Google Sans on desktop for both platforms. iOS -> San Francisco / system,
+   Android -> Google Sans, so toggling the platform visibly restyles the logo. */
+[data-platform="ios"] .app-title,
+[data-platform="ios"] .splash-logo-text {
+  font-family: var(--font);
+}
+[data-platform="android"] .app-title,
+[data-platform="android"] .splash-logo-text {
+  font-family: var(--font-display);
 }
 
 /* ── Dark mode (system preference) ── */
@@ -71,6 +142,7 @@
     --hover-medium: rgba(255, 255, 255, 0.06);
     --hover-clear: rgba(255, 255, 255, 0.08);
     --bar-track-bg: rgba(255, 255, 255, 0.1);
+    --daily-bar-bg: rgba(255, 255, 255, 0.18);
     --cond-green:  #4ade80;
     --cond-lime:   #a3e635;
     --cond-yellow: #facc15;
@@ -1562,11 +1634,14 @@ body {
   flex-shrink: 0;
 }
 
-/* Larger arc for the expanded card. Qualified with .sun-dial so it outweighs
-   that rule's max-width/aspect-ratio regardless of source order. */
+/* Spans the full width of the expanded card. A wide, flat viewBox keeps the arc
+   a sensible height at full width (uniform scaling of the narrow box would make
+   it far too tall); non-scaling-stroke below holds the line weight steady as the
+   SVG scales to fit. Qualified with .sun-dial so it outweighs that rule's
+   max-width/aspect-ratio regardless of source order. */
 .sun-dial.sun-dial--wide {
-  max-width: 240px;
-  aspect-ratio: 240 / 76;
+  max-width: 100%;
+  aspect-ratio: 480 / 92;
 }
 
 .sun-dial-wrap {
@@ -1580,6 +1655,8 @@ body {
   stroke-width: 1.5;
   stroke-linecap: round;
   opacity: 0.4;
+  /* Hold the line weight steady while the wide dial scales up to fill the card. */
+  vector-effect: non-scaling-stroke;
 }
 
 .sun-dial-horizon {
@@ -1587,6 +1664,7 @@ body {
   stroke-width: 1;
   stroke-dasharray: 2 2.5;
   opacity: 0.25;
+  vector-effect: non-scaling-stroke;
 }
 
 .sun-dial-sun {
@@ -1621,40 +1699,87 @@ body {
   position: relative;
 }
 
-/* background/border-radius inherit so the cover matches whatever surface the
-   card currently has — including the per-sky --sky-card tints. The reveal
-   origin and radius come from JS as --reveal-x/y/r (px, relative to the card). */
+/* The cover is a transparent, card-shaped clip window (overflow + border-radius)
+   that holds the content. The visible surface is painted by .detail-cover-fill,
+   a circle that scales up from the tap point. The reveal origin and radius come
+   from JS as --reveal-x/y/r (px, relative to the card).
+
+   Why not animate clip-path: circle() on the whole cover (the previous approach)?
+   That is not composited on mobile — iOS Safari especially repaints the entire
+   cover (SVG icons, the scrollable body) on the main thread every frame, which is
+   the source of the jank. transform: scale() on a plain fill and an opacity fade
+   of the content both run on the compositor, so the reveal stays at 60fps. */
 .detail-cover {
   position: absolute;
   inset: 0;
   z-index: 3;
-  background: inherit;
+  overflow: hidden;
   border-radius: inherit;
   padding: 20px;
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+/* The growing circle. Sized to a 2r box centred on the tap point (the negative
+   margins pull it back so its centre sits at the origin), then scaled 0 → 1.
+   Clipped to the card by the cover's overflow:hidden. Its background mirrors the
+   card surface — including the per-sky --sky-card tints — see the rules below. */
+.detail-cover-fill {
+  position: absolute;
+  top: var(--reveal-y);
+  left: var(--reveal-x);
+  width: calc(var(--reveal-r) * 2);
+  height: calc(var(--reveal-r) * 2);
+  margin: calc(var(--reveal-r) * -1) 0 0 calc(var(--reveal-r) * -1);
+  z-index: 0;
+  border-radius: 50%;
   /* Resting state is fully open; the animation only plays on enter/exit. */
-  clip-path: circle(var(--reveal-r) at var(--reveal-x) var(--reveal-y));
-  animation: detailCoverIn 0.38s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-  /* Own compositor layer: the growing circle then invalidates only this layer
-     (and runs fully on the compositor where clip-path animation is supported)
-     instead of repainting the whole details card every frame on mobile. */
-  will-change: clip-path;
+  transform: scale(1);
+  transform-origin: center;
+  will-change: transform;
+  animation: detailFillIn 0.38s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
-.detail-cover--closing {
-  animation: detailCoverOut 0.38s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+/* Content rides above the fill and fades in as the circle nears full coverage,
+   so it never lingers over the still-uncovered tiles behind. */
+.detail-cover-head,
+.detail-cover-body {
+  position: relative;
+  z-index: 1;
+  animation: detailContentIn 0.38s ease forwards;
 }
 
-@keyframes detailCoverIn {
-  from { clip-path: circle(0px at var(--reveal-x) var(--reveal-y)); }
-  to   { clip-path: circle(var(--reveal-r) at var(--reveal-x) var(--reveal-y)); }
+.detail-cover--closing .detail-cover-fill {
+  animation: detailFillOut 0.38s cubic-bezier(0.4, 0, 0.2, 1) forwards;
 }
 
-@keyframes detailCoverOut {
-  from { clip-path: circle(var(--reveal-r) at var(--reveal-x) var(--reveal-y)); }
-  to   { clip-path: circle(0px at var(--reveal-x) var(--reveal-y)); }
+.detail-cover--closing .detail-cover-head,
+.detail-cover--closing .detail-cover-body {
+  animation: detailContentOut 0.18s ease forwards;
+}
+
+@keyframes detailFillIn  { from { transform: scale(0); } to { transform: scale(1); } }
+@keyframes detailFillOut { from { transform: scale(1); } to { transform: scale(0); } }
+@keyframes detailContentIn  { 0%, 30% { opacity: 0; } 100% { opacity: 1; } }
+@keyframes detailContentOut { to { opacity: 0; } }
+
+/* Fill surface mirrors the card it grows over — same per-sky tints as the
+   .card background rules near the top of this file, so the reveal is seamless. */
+.detail-cover-fill { background: var(--card-bg); }
+.sky-lvl-slight  .detail-cover-fill { background: var(--sky-card, #5a6d85); }
+.sky-lvl-medium  .detail-cover-fill { background: var(--sky-card, #4d6078); }
+.sky-lvl-dark    .detail-cover-fill { background: var(--sky-card, #3e5068); }
+.sky-lvl-darkest .detail-cover-fill { background: var(--sky-card, #324055); }
+[data-theme="dark"] .sky-lvl-slight  .detail-cover-fill,
+[data-theme="dark"] .sky-lvl-medium  .detail-cover-fill,
+[data-theme="dark"] .sky-lvl-dark    .detail-cover-fill,
+[data-theme="dark"] .sky-lvl-darkest .detail-cover-fill { background: var(--card-bg); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .sky-lvl-slight  .detail-cover-fill,
+  :root:not([data-theme="light"]) .sky-lvl-medium  .detail-cover-fill,
+  :root:not([data-theme="light"]) .sky-lvl-dark    .detail-cover-fill,
+  :root:not([data-theme="light"]) .sky-lvl-darkest .detail-cover-fill { background: var(--card-bg); }
 }
 
 .detail-cover-head {
@@ -1804,11 +1929,16 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .detail-cover,
-  .detail-cover--closing {
+  .detail-cover-fill,
+  .detail-cover--closing .detail-cover-fill,
+  .detail-cover-head,
+  .detail-cover-body,
+  .detail-cover--closing .detail-cover-head,
+  .detail-cover--closing .detail-cover-body {
     animation: none;
-    clip-path: none;
   }
+  /* No grow/shrink — the fill just sits fully open behind the content. */
+  .detail-cover--closing .detail-cover-fill { transform: scale(0); }
 }
 
 .uv-timeline {
@@ -2196,11 +2326,15 @@ body {
   opacity: 0;
 }
 
+/* Anchored to the wordmark's centre (top:50%) rather than a fixed viewport
+   fraction, so the icon always clears the title text instead of overlapping it
+   on shorter screens. Bottom edge sits ~3.2rem above centre; the wordmark top
+   is at most ~2.25rem above centre, leaving a reliable gap. */
 .splash-logo-img {
   position: absolute;
   left: 50%;
-  top: 30%;
-  transform: translate(-50%, -50%);
+  bottom: calc(50% + 3.2rem);
+  transform: translateX(-50%);
   width: clamp(100px, 28vw, 180px);
   height: auto;
   pointer-events: none;
@@ -2746,8 +2880,10 @@ body {
   width: 16px;
   height: 16px;
   border-radius: 50%;
+  /* Fill is the current AQI category color, set inline from JS; the white
+     ring separates the dot from the same-colored segment beneath it. */
   background: var(--card-bg);
-  border: 3px solid;
+  border: 3px solid rgba(255, 255, 255, 0.92);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
   transition: left 0.4s ease;
 }
@@ -3194,6 +3330,16 @@ body {
   color: var(--text-tertiary);
 }
 
+/* Row that acts as a link to a sub-page — clickable across its whole width. */
+.settings-row--link {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.settings-row--link:hover {
+  background: var(--hover-subtle);
+}
+
 /* ── Platform style: Android (Material You) ──
    data-platform="android" on <html> switches the whole app to Google Sans and
    restyles the settings surfaces with Material You tokens. iOS mode keeps the
@@ -3370,6 +3516,15 @@ body {
   --ios-glass-rim: rgba(255, 255, 255, 0.55);
   --ios-glass-highlight: rgba(255, 255, 255, 0.75);
   --ios-glass-shadow: rgba(0, 0, 0, 0.12);
+  /* Peak opacity of the diagonal specular sheen on nested glass tiles. */
+  --ios-glass-sheen: rgba(255, 255, 255, 0.2);
+  /* Convex "lens" shading for tiles over an active sky: a dome highlight
+     bleeding down from above the top edge plus a cool shade pooling at the
+     bottom, so each tile reads as bulged glass instead of a flat cutout.
+     Held in one var so the tile and its hover state share the exact stack. */
+  --ios-tile-bulge:
+    radial-gradient(130% 95% at 50% -25%, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.05) 55%, transparent 72%),
+    linear-gradient(180deg, transparent 58%, rgba(8, 30, 60, 0.09) 100%);
 }
 
 [data-theme="dark"][data-platform="ios"] {
@@ -3378,6 +3533,10 @@ body {
   --ios-glass-rim: rgba(255, 255, 255, 0.14);
   --ios-glass-highlight: rgba(255, 255, 255, 0.12);
   --ios-glass-shadow: rgba(0, 0, 0, 0.4);
+  --ios-glass-sheen: rgba(255, 255, 255, 0.07);
+  --ios-tile-bulge:
+    radial-gradient(130% 95% at 50% -25%, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.02) 55%, transparent 72%),
+    linear-gradient(180deg, transparent 58%, rgba(0, 0, 0, 0.25) 100%);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -3387,6 +3546,10 @@ body {
     --ios-glass-rim: rgba(255, 255, 255, 0.14);
     --ios-glass-highlight: rgba(255, 255, 255, 0.12);
     --ios-glass-shadow: rgba(0, 0, 0, 0.4);
+    --ios-glass-sheen: rgba(255, 255, 255, 0.07);
+    --ios-tile-bulge:
+      radial-gradient(130% 95% at 50% -25%, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.02) 55%, transparent 72%),
+      linear-gradient(180deg, transparent 58%, rgba(0, 0, 0, 0.25) 100%);
   }
 }
 
@@ -3482,6 +3645,180 @@ body {
   box-shadow: 0 2px 8px var(--ios-glass-shadow), inset 0 1px 0 rgba(255, 255, 255, 0.4);
 }
 
+/* ── iOS mode: main weather cards as liquid glass ──
+   The main stack keeps its two-tier color system (card surface + deeper nested
+   surface) but swaps opaque fills for translucent glass over the backdrop-
+   blurred sky. --glass-base / --glass-deep resolve to whatever color the
+   surface would have been painted opaque (per-sky tint in light mode; dark
+   mode remaps --sky-card/--sky-card-deep back to the flat palette via the
+   .app rule above), so text contrast carries over unchanged. */
+:root[data-platform="ios"] .app {
+  --glass-base: var(--card-bg);
+  --glass-deep: var(--bg);
+}
+:root[data-platform="ios"] .app.sky-lvl-slight  { --glass-base: var(--sky-card, #5a6d85); --glass-deep: var(--sky-card-deep, #445468); }
+:root[data-platform="ios"] .app.sky-lvl-medium  { --glass-base: var(--sky-card, #4d6078); --glass-deep: var(--sky-card-deep, #38495c); }
+:root[data-platform="ios"] .app.sky-lvl-dark    { --glass-base: var(--sky-card, #3e5068); --glass-deep: var(--sky-card-deep, #2b3a4e); }
+:root[data-platform="ios"] .app.sky-lvl-darkest { --glass-base: var(--sky-card, #324055); --glass-deep: var(--sky-card-deep, #1f2c3e); }
+
+/* Settings surfaces are excluded; they already have their own glass rules.
+   Selector strength matters here: it must outrank the .sky-lvl-* tint rules
+   and their dark-mode reverts near the top of the file. */
+:root[data-platform="ios"] .app .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline) {
+  background: color-mix(in srgb, var(--glass-base) 58%, transparent);
+  /* 12px, not the settings' 24px: blur cost scales with radius × area, and
+     with the whole stack blurred over an animated sky the GPU re-blurs every
+     card every frame. Over the sky's soft gradient the two are visually
+     near-identical; only the panel transitions feel the difference. */
+  -webkit-backdrop-filter: blur(12px) saturate(180%);
+  backdrop-filter: blur(12px) saturate(180%);
+  border: 0.5px solid var(--ios-glass-rim);
+  box-shadow: 0 6px 22px var(--ios-glass-shadow), inset 0 1px 0 var(--ios-glass-highlight);
+}
+
+/* While the settings page is up, the main stack is fully covered: by the
+   opaque page itself, or by the opaque .settings-sky layer behind the
+   translucent iOS page. Its backdrop blurs are then pure compositor cost
+   fighting the open/close slide, so drop them for the duration. In the one
+   configuration where the stack peeks out mid-slide (opaque page, no sky
+   layer) the backdrop behind cards is a flat color, which blurs to itself,
+   so the suspension is invisible. */
+:root[data-platform="ios"] .app:has(.settings-page) .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline) {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* Hero card: no surface at all in iOS mode; its readouts sit directly on the
+   sky. Overrides the desktop rule that turns it into an opaque card. */
+:root[data-platform="ios"] .app .card.current-card {
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border: none;
+  box-shadow: none;
+}
+
+/* Nested tier: detail tiles and in-card controls get a translucent deep fill
+   with no blur of their own; the parent card already blurs the backdrop, so
+   another blur pass would only cost scroll performance. */
+:root[data-platform="ios"] .app .detail-card {
+  /* Gloss comes from paint-once gradients, never another backdrop-filter:
+     a diagonal specular sheen sweeping from the top-left corner over the
+     translucent fill, a bright inner top edge, and a faint lift shadow.
+     Gradients are rasterized once and cached, so unlike blur they add no
+     per-frame cost. */
+  background:
+    linear-gradient(155deg, var(--ios-glass-sheen) 0%, transparent 45%),
+    color-mix(in srgb, var(--glass-deep) 55%, transparent);
+  border: 0.5px solid var(--ios-glass-rim);
+  box-shadow: inset 0 1px 0 var(--ios-glass-highlight), 0 2px 8px var(--ios-glass-shadow);
+}
+
+/* Hover feedback (lost to the higher-specificity rule above): the same glass
+   stack with a hover wash layered on top. */
+:root[data-platform="ios"] .app .detail-card.detail-expand-tile:hover:not(.detail-expand-tile--active) {
+  background:
+    linear-gradient(var(--hover-medium), var(--hover-medium)),
+    linear-gradient(155deg, var(--ios-glass-sheen) 0%, transparent 45%),
+    color-mix(in srgb, var(--glass-deep) 55%, transparent);
+}
+
+/* Over an active sky the flat sheen washes out and every tile reads
+   identically, so swap it for the convex lens stack: dome highlight on top,
+   shade pooling below, a pinched inner bottom edge, and a slightly deeper
+   drop shadow lifting the tile off the card. All paint-once gradients and
+   inset shadows; nothing here re-renders per frame. */
+:root[data-platform="ios"] .app.sky-active .detail-card {
+  /* 40%, not the flat-background 55%: the deep tint layered over its own
+     shading read too dark against the sky; thinner glass lets the brighter
+     backdrop light the tile. */
+  background:
+    var(--ios-tile-bulge),
+    color-mix(in srgb, var(--glass-deep) 40%, transparent);
+  /* Half-strength rim: a bright uniform outline flattens the tile into a
+     sticker and drowns the dome shading; dimming it lets the inset top
+     highlight carry the curvature (bright top edge, soft sides). */
+  border-color: color-mix(in srgb, var(--ios-glass-rim) 50%, transparent);
+  box-shadow:
+    inset 0 1px 0 var(--ios-glass-highlight),
+    inset 0 -1.5px 2px rgba(0, 0, 0, 0.14),
+    0 3px 10px var(--ios-glass-shadow);
+}
+
+/* Same treatment for the outer cards; otherwise their full-strength frames
+   keep the whole stack reading as uniform outlined panels. The fill also
+   thins out here (58% is tuned for flat backgrounds) so the sky lights the
+   cards instead of the tint dimming it. */
+:root[data-platform="ios"] .app.sky-active .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline) {
+  background: color-mix(in srgb, var(--glass-base) 48%, transparent);
+  border-color: color-mix(in srgb, var(--ios-glass-rim) 50%, transparent);
+}
+
+:root[data-platform="ios"] .app.sky-active .detail-card.detail-expand-tile:hover:not(.detail-expand-tile--active) {
+  background:
+    linear-gradient(var(--hover-medium), var(--hover-medium)),
+    var(--ios-tile-bulge),
+    color-mix(in srgb, var(--glass-deep) 40%, transparent);
+}
+
+/* Keep the accent highlight on the expanded tile; the glass fills would
+   otherwise outrank it. .detail-expand-tile is included so this also beats
+   the equal-specificity sky-active bulge rule further down. */
+:root[data-platform="ios"] .app .detail-card.detail-expand-tile.detail-expand-tile--active {
+  background: var(--accent-light);
+}
+
+:root[data-platform="ios"] .app .hourly-nav,
+:root[data-platform="ios"] .app .aqi-pollutant {
+  background: color-mix(in srgb, var(--glass-deep) 45%, transparent);
+  border-color: var(--ios-glass-rim);
+}
+
+/* Restore the hover fill the rule above would otherwise outrank. */
+:root[data-platform="ios"] .app .hourly-nav:hover {
+  background: var(--accent-light);
+}
+
+/* AQI scale marker: solid category-colored dot (fill set inline from JS)
+   inside the white ring, with just an inset top light for gloss so it still
+   belongs to the glass family without reading as glass itself. */
+:root[data-platform="ios"] .app .aqi-marker {
+  border-width: 2px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25), inset 0 1px 1px rgba(255, 255, 255, 0.45);
+}
+
+/* AQI scale → a glass capsule. Same six category segments, but slightly
+   translucent so the card diffuses through, under a vertical gloss that is
+   bright along the top, clear in the middle, and shaded at the bottom edge,
+   which rounds the flat strip into a lit tube. Pure gradients; no blur. */
+:root[data-platform="ios"] .app .aqi-gradient-bar {
+  height: 10px;
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg,
+      rgba(255, 255, 255, 0.4) 0%,
+      rgba(255, 255, 255, 0.1) 40%,
+      rgba(255, 255, 255, 0) 55%,
+      rgba(0, 0, 0, 0.12) 100%
+    ),
+    linear-gradient(90deg,
+      color-mix(in srgb, var(--cond-green) 82%, transparent) 0%,
+      color-mix(in srgb, var(--cond-green) 82%, transparent) 16.7%,
+      color-mix(in srgb, var(--cond-yellow) 82%, transparent) 16.7%,
+      color-mix(in srgb, var(--cond-yellow) 82%, transparent) 33.3%,
+      color-mix(in srgb, var(--cond-orange) 82%, transparent) 33.3%,
+      color-mix(in srgb, var(--cond-orange) 82%, transparent) 50%,
+      color-mix(in srgb, var(--cond-red) 82%, transparent) 50%,
+      color-mix(in srgb, var(--cond-red) 82%, transparent) 66.7%,
+      color-mix(in srgb, var(--cond-purple) 82%, transparent) 66.7%,
+      color-mix(in srgb, var(--cond-purple) 82%, transparent) 83.3%,
+      color-mix(in srgb, var(--cond-violet) 82%, transparent) 83.3%,
+      color-mix(in srgb, var(--cond-violet) 82%, transparent) 100%
+    );
+  border: 0.5px solid rgba(255, 255, 255, 0.25);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+
 /* Invert map tiles in dark mode — Positron's gray palette inverts cleanly to a dark map */
 [data-theme="dark"] .map-base-tiles {
   filter: invert(1) hue-rotate(180deg);
@@ -3552,10 +3889,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 3px 8px 3px 7px;
-  border-radius: 999px;
-  background: color-mix(in srgb, #e5484d 15%, transparent);
-  color: #e5484d;
+  color: #ff0009;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.5px;
@@ -3567,7 +3901,7 @@ body {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #e5484d;
+  background: #e6070e;
   animation: radar-live-pulse 1.6s ease-in-out infinite;
 }
 
@@ -3579,6 +3913,10 @@ body {
 /* Futurecast variant: accent blue with a steady dot — it's a forecast, not a
    live signal, so no pulse. */
 .radar-live-badge--future {
+  /* Keeps the pill (the base LIVE badge dropped its background/padding); this is
+     a forecast label, not the live "now" marker. */
+  padding: 3px 8px 3px 7px;
+  border-radius: 999px;
   background: color-mix(in srgb, var(--accent) 15%, transparent);
   color: var(--accent);
 }
@@ -3857,27 +4195,27 @@ body {
   to   { opacity: 1; }
 }
 
+/* Centered dialog box on every screen size (desktop only widens it below). */
 .alert-sheet {
   position: fixed;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  max-width: 480px;
-  margin: 0 auto;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(440px, calc(100vw - 32px));
+  max-height: min(85vh, 720px);
   background: var(--card-bg);
-  border-radius: 24px 24px 0 0;
-  max-height: 80vh;
+  border-radius: 18px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   z-index: 601;
   font-family: var(--font);
   color: var(--text-primary);
-  animation: alertSlideUp 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  animation: alertPop 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .alert-sheet-fixed {
-  padding: 12px 20px 0;
+  padding: 18px 20px 0;
   flex-shrink: 0;
 }
 
@@ -3888,25 +4226,35 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  /* Firefox: same slim, trackless bar the WebKit rules below produce. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--bar-track-bg) transparent;
 }
 
-@keyframes alertSlideUp {
-  from { transform: translateY(40px); opacity: 0; }
-  to   { transform: translateY(0);    opacity: 1; }
+/* Slim overlay-style scrollbar; the track margin keeps the thumb clear of the
+   sheet's rounded corners. */
+.alert-sheet-scroll::-webkit-scrollbar {
+  width: 4px;
 }
 
-.alert-sheet-handle-area {
-  padding: 6px 0 10px;
-  touch-action: none;
-  cursor: grab;
+.alert-sheet-scroll::-webkit-scrollbar-track {
+  background: transparent;
+  margin: 8px 0;
 }
 
-.alert-sheet-handle {
-  width: 36px;
-  height: 4px;
-  border-radius: 2px;
+.alert-sheet-scroll::-webkit-scrollbar-thumb {
   background: var(--bar-track-bg);
-  margin: 0 auto;
+  border-radius: 2px;
+}
+
+.alert-sheet-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+}
+
+/* Keeps the centering transform while adding a subtle scale/fade pop. */
+@keyframes alertPop {
+  from { transform: translate(-50%, -50%) scale(0.96); opacity: 0; }
+  to   { transform: translate(-50%, -50%) scale(1);    opacity: 1; }
 }
 
 .alert-sheet-header {
@@ -4117,41 +4465,16 @@ body {
 }
 
 /* ── Alert dialog on desktop ── */
-/* Must live AFTER the base .alert-sheet rule to win the cascade. */
+/* Must live AFTER the base .alert-sheet rule to win the cascade. Centering and
+   the pop animation come from the base rule; desktop only widens the box. */
 @media (min-width: 1100px) {
   .alert-sheet {
-    inset: 0;
-    margin: auto;
     width: min(900px, calc(100vw - 96px));
-    max-width: none;
     max-height: min(88vh, 860px);
-    border-radius: 16px;
-    animation: alertFadeIn 0.2s ease;
-  }
-
-  .alert-sheet-handle {
-    display: none;
   }
 
   .alert-sheet-scroll {
     padding-bottom: 24px;
-  }
-
-  .alert-sheet-scroll::-webkit-scrollbar {
-    width: 4px;
-  }
-
-  .alert-sheet-scroll::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .alert-sheet-scroll::-webkit-scrollbar-thumb {
-    background: var(--bar-track-bg);
-    border-radius: 2px;
-  }
-
-  .alert-sheet-scroll::-webkit-scrollbar-thumb:hover {
-    background: var(--text-tertiary);
   }
 
   .alert-sheet-event      { font-size: 21px; }
