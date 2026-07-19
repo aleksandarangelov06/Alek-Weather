@@ -19,8 +19,11 @@ android {
         applicationId "com.alekweather.app"
         minSdk 26
         targetSdk 34
+        // versionCode must increase on every published build; versionName is
+        // the human one, kept in step with ANDROID_VERSION in
+        // src/utils/version.js, which Settings displays inside the APK.
         versionCode 1
-        versionName "1.0"
+        versionName "0.1"
     }
 
     signingConfigs {

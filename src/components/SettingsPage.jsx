@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ArrowLeft, ChevronRight, ChevronDown, X, Info } from 'lucide-react'
-import { APP_VERSION } from '../utils/version'
+import { APP_VERSION, ANDROID_VERSION, IS_ANDROID_APP } from '../utils/version'
 
 function SettingRow({ label, children }) {
   return (
@@ -448,6 +448,7 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastM
 
       <div className="settings-footer">
         <p className="settings-version">Version {APP_VERSION}</p>
+        {IS_ANDROID_APP && <p className="settings-version">Android {ANDROID_VERSION}</p>}
         <p className="settings-studio">Alek Studios&#8482;</p>
       </div>
     </>
