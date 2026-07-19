@@ -22,3 +22,12 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Android APK build
+android/local.properties
+android/.gradle
+android/build
+android/app/build
+android/app/src/main/assets
+AlekWeather*.apk
+android/keystore.properties

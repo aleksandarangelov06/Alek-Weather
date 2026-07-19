@@ -1,0 +1,65 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+// Release signing credentials, kept out of the repo (see android/README.md).
+// Absent on a fresh clone, in which case only debug builds are possible.
+def keystorePropsFile = rootProject.file('keystore.properties')
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) {
+    keystorePropsFile.withInputStream { keystoreProps.load(it) }
+}
+
+android {
+    namespace 'com.alekweather.app'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.alekweather.app"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    signingConfigs {
+        release {
+            if (keystoreProps['storeFile']) {
+                storeFile file(keystoreProps['storeFile'])
+                storePassword keystoreProps['storePassword']
+                keyAlias keystoreProps['keyAlias']
+                keyPassword keystoreProps['keyPassword']
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            // Falls back to unsigned if keystore.properties is missing, rather
+            // than silently producing a debug-signed "release".
+            signingConfig keystoreProps['storeFile'] ? signingConfigs.release : null
+            // No shrinking: the app is a WebView shell, so there is no Kotlin
+            // surface worth minifying and R8 would only risk stripping the
+            // WebView bridge. Revisit if native code grows.
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+    // DayNight theme, so the WebView reports prefers-color-scheme correctly
+    // to the app's "system" theme setting.
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    // WebViewAssetLoader: serves the bundled build over a real https origin
+    // instead of file://, which the CSP and the service worker both require.
+    implementation 'androidx.webkit:webkit:1.10.0'
+}

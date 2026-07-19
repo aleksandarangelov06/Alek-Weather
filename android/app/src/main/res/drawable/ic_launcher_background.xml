@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The sky gradient lifted from pwa-icon.svg's skyBg, as a full-bleed layer so
+     the launcher's mask (circle, squircle, teardrop) crops sky rather than art. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <gradient
+        android:type="linear"
+        android:angle="270"
+        android:startColor="#4AA8E8"
+        android:endColor="#85CCFF" />
+</shape>

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches the PWA manifest background_color. -->
+    <color name="window_bg">#f0f2f5</color>
+    <color name="icon_bg">#4AA8E8</color>
+</resources>
