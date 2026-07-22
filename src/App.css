@@ -1308,6 +1308,14 @@ body {
 .hourly-nav-left  { left: -14px; }
 .hourly-nav-right { right: -14px; }
 
+/* Inside the day cover the chevrons' -14px overhang is sliced in half by the
+   body's overflow-x:hidden (which is there to avoid a sideways scrollbar). Inset
+   the strip by the chevron's reach and sit them flush at 0, so they land in that
+   gutter inside the clip with the same ~14px item overlap as the main strip. */
+.card--daily .detail-cover .hourly-scroll-wrapper { padding-inline: 14px; }
+.card--daily .detail-cover .hourly-nav-left  { left: 0; }
+.card--daily .detail-cover .hourly-nav-right { right: 0; }
+
 @media (hover: hover) and (pointer: fine) {
   .hourly-nav { display: flex; }
   .hourly-scroll-wrapper:hover .hourly-nav { opacity: 1; }
@@ -3194,6 +3202,14 @@ body {
   z-index: 600;
   background: var(--card-bg);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+/* Full-screen radar drops the header, so the map fills to the very top and these
+   top-floating controls would sit under the status bar / cutout. Push them below
+   it. (The bottom-right locate button clears the controls row, so it's fine.) */
+.radar-expanded .radar-expand-btn--floating,
+.radar-expanded .radar-zoom-btns {
+  top: calc(12px + var(--sa-top));
 }
 
 /* Map wrapper: rounded corners + clip in compact mode */

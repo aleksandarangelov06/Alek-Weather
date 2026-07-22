@@ -470,22 +470,15 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastM
           <div className="settings-row-label">Color Coding</div>
           <ChevronRight size={16} className="about-chevron" />
         </button>
-        {/* Gyroscope tilt lives on its own page and only exists on mobile. On
-            mobile the whole row opens that page (the inline toggle still flips
-            without bubbling up); desktop has no page, so it's a plain row with
-            just the toggle. */}
+        {/* Gyroscope tilt lives on its own page and only exists on mobile, so on
+            mobile this is a plain link into that page (the on/off toggle lives
+            there, next to gyroscope — like Color Coding). Desktop has no page, so
+            it keeps the inline toggle. */}
         {isMobileDevice() ? (
-          <div className="settings-row settings-row--link" onClick={onWeatherEffectsOpen}>
+          <button className="settings-row about-row" onClick={onWeatherEffectsOpen}>
             <div className="settings-row-label">Weather Effects</div>
-            <div className="settings-row-controls">
-              <div className="theme-seg-wrap" onClick={e => e.stopPropagation()}>
-                <Toggle id="toggle-weather-anim" checked={weatherAnimations} onChange={onWeatherAnimationsChange} />
-              </div>
-              <button className="theme-chevron-btn" onClick={onWeatherEffectsOpen} aria-label="More weather effects options">
-                <ChevronRight size={16} className="about-chevron" />
-              </button>
-            </div>
-          </div>
+            <ChevronRight size={16} className="about-chevron" />
+          </button>
         ) : (
           <div className="settings-row">
             <div className="settings-row-label">Weather Effects</div>
