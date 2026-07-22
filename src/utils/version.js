@@ -4,7 +4,7 @@ export const APP_VERSION = '3.4 Beta'
 // app: the APK is a WebView shell around this same build, so a change to one
 // does not imply a release of the other. Kept in step with versionName in
 // android/app/build.gradle and with the GitHub release tag.
-export const ANDROID_VERSION = '0.1'
+export const ANDROID_VERSION = '0.2'
 
 // The APK serves the build from a WebViewAssetLoader on this host, so it is
 // also what distinguishes "running inside the APK" from the Pages site.

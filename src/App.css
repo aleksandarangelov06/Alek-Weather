@@ -1,4 +1,21 @@
 :root {
+  /* Safe-area insets, used everywhere instead of env(safe-area-inset-*) direct.
+     On the web these resolve to the browser's env() values. Inside the Android
+     APK the WebView only fills env() from a display cutout, so on a phone with
+     no notch the status/navigation bars still overlap the page while env()
+     reads 0; MainActivity feeds the real bar insets in as --android-inset-*,
+     and the max() picks whichever is larger. The --android-inset-* default to
+     0px, so browsers are unaffected. Fixed/sticky elements (search, settings,
+     radar) read these too, which body padding alone could not reach. */
+  --android-inset-top: 0px;
+  --android-inset-right: 0px;
+  --android-inset-bottom: 0px;
+  --android-inset-left: 0px;
+  --sa-top: max(env(safe-area-inset-top, 0px), var(--android-inset-top));
+  --sa-right: max(env(safe-area-inset-right, 0px), var(--android-inset-right));
+  --sa-bottom: max(env(safe-area-inset-bottom, 0px), var(--android-inset-bottom));
+  --sa-left: max(env(safe-area-inset-left, 0px), var(--android-inset-left));
+
   --bg: #f0f2f5;
   --card-bg: #ffffff;
   --text-primary: #1a1a2e;
@@ -16,6 +33,9 @@
   /* Empty temp-range track in the 7-day forecast when colour-coding is off.
      Lighter than --bar-track-bg so the flat capsule reads cleanly. */
   --daily-bar-bg: rgba(0, 0, 0, 0.05);
+  /* Hourly graph line when colour-coding is off. Accent by default; the sky
+     backgrounds below flip it to white so it doesn't vanish blue-on-blue. */
+  --graph-line: var(--accent);
   --radius: 18px;
   /* Real SF on Apple devices; Inter (the closest web-available match to SF
      Pro) on Android and desktop, where -apple-system has nothing to resolve
@@ -40,6 +60,11 @@
 /* Lighter condition tones for dark/tinted surfaces. One shared set: applied by
    dark mode below and by the light-mode sky tint levels (classes on .app). */
 .sky-lvl-slight, .sky-lvl-medium, .sky-lvl-dark, .sky-lvl-darkest {
+  /* With colour-coding off, the neutral fallbacks assume a light or dark card.
+     On a tinted sky they read as near-black / accent-blue on blue and disappear
+     (the 7-day pill fill and the hourly graph line), so flip both to white. */
+  --daily-bar-bg: rgba(255, 255, 255, 0.22);
+  --graph-line: rgba(255, 255, 255, 0.9);
   --cond-green:  #4ade80;
   --cond-lime:   #a3e635;
   --cond-yellow: #facc15;
@@ -49,6 +74,22 @@
   --cond-violet: #a78bfa;
   --cond-blue:   #93c5fd;
   --cond-info:   #60a5fa;
+}
+
+/* Colour-coded temperature labels are hued to read on a white or dark card; on a
+   tinted sky some hues sit too close to the blue — a hot coral (like a 100F day)
+   or a cool green — and the numbers wash out. A dark scrim lifts them off the
+   background at any hue. Scoped to the sky levels so the flat white-card look is
+   untouched. Two layers because tempStyle sets an inline text-shadow for the
+   heat glow / frost halo: the text-shadow below wins for the plain mid-range
+   temps but is overridden by that inline glow, so the drop-shadow — a separate
+   property that composes rather than being replaced — carries the hot/cold case. */
+.sky-lvl-slight  :is(.hourly-temp, .daily-low, .daily-high),
+.sky-lvl-medium  :is(.hourly-temp, .daily-low, .daily-high),
+.sky-lvl-dark    :is(.hourly-temp, .daily-low, .daily-high),
+.sky-lvl-darkest :is(.hourly-temp, .daily-low, .daily-high) {
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.5);
+  filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.6));
 }
 
 /* Colour-coding off for the Weather Details card: redefine every condition
@@ -284,7 +325,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: calc(16px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
+  padding: calc(16px + var(--sa-top)) max(16px, var(--sa-right)) 0 max(16px, var(--sa-left));
   position: relative;
   z-index: 6;
   max-width: 480px;
@@ -496,7 +537,7 @@ body {
 .app-grid {
   display: flex;
   flex-direction: column;
-  padding: 12px max(16px, env(safe-area-inset-right)) calc(48px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  padding: 12px max(16px, var(--sa-right)) calc(48px + var(--sa-bottom)) max(16px, var(--sa-left));
   max-width: 480px;
   margin: 0 auto;
 }
@@ -509,7 +550,7 @@ body {
 @media (min-width: 768px) {
   .app-header {
     max-width: 600px;
-    padding: calc(20px + env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) 0 max(24px, env(safe-area-inset-left));
+    padding: calc(20px + var(--sa-top)) max(24px, var(--sa-right)) 0 max(24px, var(--sa-left));
   }
 
   .app-grid {
@@ -526,6 +567,19 @@ body {
   }
 }
 
+/* Installed APK: hide scrollbars for a native feel. The WebView is Chromium, so
+   ::-webkit-scrollbar covers the page scroller and every inner one; content still
+   scrolls by touch. Scoped to data-native (set only inside the APK) so the
+   website keeps its scrollbars. The class-plus-attribute specificity here also
+   outweighs the desktop rule below, for the APK on a large screen. */
+:root[data-native="android"] { scrollbar-width: none; }
+:root[data-native="android"]::-webkit-scrollbar,
+:root[data-native="android"] ::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 /* ── Desktop layout (1100px+) ── */
 @media (min-width: 1100px) {
   html::-webkit-scrollbar       { width: 4px; }
@@ -535,7 +589,7 @@ body {
 
   .app-header {
     max-width: none;
-    padding: calc(24px + env(safe-area-inset-top)) 48px 0;
+    padding: calc(24px + var(--sa-top)) 48px 0;
   }
 
   .app-grid {
@@ -561,7 +615,7 @@ body {
 
   /* Search overlay: wider content area */
   .search-overlay {
-    padding: calc(env(safe-area-inset-top) + 14px) 48px 16px;
+    padding: calc(var(--sa-top) + 14px) 48px 16px;
     border-radius: 0;
   }
 
@@ -786,7 +840,7 @@ body {
   z-index: 300;
   background: var(--card-bg);
   border-radius: 0 0 26px 26px;
-  padding: calc(env(safe-area-inset-top) + 10px) max(16px, env(safe-area-inset-right)) 8px max(16px, env(safe-area-inset-left));
+  padding: calc(var(--sa-top) + 10px) max(16px, var(--sa-right)) 8px max(16px, var(--sa-left));
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
   animation: searchSlideDown 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
@@ -1644,6 +1698,14 @@ body {
   aspect-ratio: 480 / 92;
 }
 
+/* The expanded Sun & UV card gives the dial room, so its arc and sun read
+   heavier than the small tile's (the sun radius comes from the wide geometry in
+   SunDial). Scoped to --wide so the compact tile dial stays delicate. */
+.sun-dial--wide .sun-dial-arc {
+  stroke-width: 3;
+  opacity: 0.5;
+}
+
 .sun-dial-wrap {
   display: flex;
   justify-content: center;
@@ -1729,13 +1791,23 @@ body {
   position: absolute;
   top: var(--reveal-y);
   left: var(--reveal-x);
-  width: calc(var(--reveal-r) * 2);
-  height: calc(var(--reveal-r) * 2);
-  margin: calc(var(--reveal-r) * -1) 0 0 calc(var(--reveal-r) * -1);
+  /* Fixed 360px backing, scaled up to cover, rather than an element sized to the
+     whole card. A card-sized fill becomes a large GPU texture — a tall 7-day
+     card makes a ~1200px circle (~5MB) — and together with the card's other
+     composited layers (the inner hourly strip, the radar map) that overruns
+     Android WebView's tighter GPU-memory budget. The WebView then drops the
+     layer and re-rasterises on the main thread every frame, so the reveal skips
+     its early frames and looks sped up (desktop Chrome has the headroom to stay
+     smooth, which is why it only shows in the app). A small fixed texture scaled
+     by transform stays cheap at any card size. --fill-scale = (2·reveal-r)/360,
+     set in JS; keep the 360 here in sync with FILL_BASE in the components. */
+  width: 360px;
+  height: 360px;
+  margin: -180px 0 0 -180px;
   z-index: 0;
   border-radius: 50%;
   /* Resting state is fully open; the animation only plays on enter/exit. */
-  transform: scale(1);
+  transform: scale(var(--fill-scale, 1));
   transform-origin: center;
   will-change: transform;
   animation: detailFillIn 0.38s cubic-bezier(0.4, 0, 0.2, 1) forwards;
@@ -1759,10 +1831,15 @@ body {
   animation: detailContentOut 0.18s ease forwards;
 }
 
-@keyframes detailFillIn  { from { transform: scale(0); } to { transform: scale(1); } }
-@keyframes detailFillOut { from { transform: scale(1); } to { transform: scale(0); } }
+@keyframes detailFillIn  { from { transform: scale(0); } to { transform: scale(var(--fill-scale, 1)); } }
+@keyframes detailFillOut { from { transform: scale(var(--fill-scale, 1)); } to { transform: scale(0); } }
 @keyframes detailContentIn  { 0%, 30% { opacity: 0; } 100% { opacity: 1; } }
 @keyframes detailContentOut { to { opacity: 0; } }
+
+/* The day cover's hourly strip is mounted after the reveal finishes (see
+   DailyForecast), so it fades in on its own rather than popping. */
+.daily-hours-in { animation: dailyHoursIn 0.28s ease both; }
+@keyframes dailyHoursIn { from { opacity: 0; } to { opacity: 1; } }
 
 /* Fill surface mirrors the card it grows over — same per-sky tints as the
    .card background rules near the top of this file, so the reveal is seamless. */
@@ -1980,6 +2057,10 @@ body {
   letter-spacing: 0.3px;
   color: var(--text-secondary);
   text-align: center;
+  /* Single-word labels ("Moderate", "Extreme") have no space to wrap at, so
+     without this they overflow their narrow column and collide with the next
+     reading. Let them wrap inside the column instead. */
+  overflow-wrap: break-word;
 }
 
 .uv-no-exposure {
@@ -2284,7 +2365,7 @@ body {
 }
 
 .splash-logo--exit {
-  top: calc(env(safe-area-inset-top) + 28px);
+  top: calc(var(--sa-top) + 28px);
   transform: translate(-50%, 0);
   opacity: 0;
   cursor: default;
@@ -2350,7 +2431,7 @@ body {
 
 .splash-version {
   position: absolute;
-  bottom: calc(env(safe-area-inset-bottom) + 20px);
+  bottom: calc(var(--sa-bottom) + 20px);
   left: 50%;
   transform: translateX(-50%);
   font-size: 13px;
@@ -2420,7 +2501,7 @@ body {
 .settings-page-header {
   display: flex;
   align-items: center;
-  padding: calc(16px + env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
+  padding: calc(16px + var(--sa-top)) max(16px, var(--sa-right)) 0 max(16px, var(--sa-left));
   max-width: 480px;
   margin: 0 auto;
   position: relative;
@@ -2434,6 +2515,10 @@ body {
   font-weight: 700;
   color: var(--text-primary);
   pointer-events: none;
+  /* Centred absolutely with no width, so it shrink-wraps to ~half the header and
+     a long title ("Weather Overview Settings") wraps. Keep every title on one
+     line — the back button clears the centred text at these lengths. */
+  white-space: nowrap;
 }
 
 .back-btn {
@@ -3080,9 +3165,9 @@ body {
 }
 
 .radar-expanded .radar-header {
-  padding-top: calc(14px + env(safe-area-inset-top));
-  padding-left: max(18px, env(safe-area-inset-left));
-  padding-right: max(18px, env(safe-area-inset-right));
+  padding-top: calc(14px + var(--sa-top));
+  padding-left: max(18px, var(--sa-left));
+  padding-right: max(18px, var(--sa-right));
 }
 
 .radar-expand-btn {
@@ -3510,20 +3595,22 @@ body {
   --ios-green: #34c759;
   --ios-separator: rgba(60, 60, 67, 0.24);
   /* glass fills built from the theme's card/bg so they track light & dark */
-  --ios-glass-card: color-mix(in srgb, var(--card-bg) 60%, transparent);
+  --ios-glass-card: color-mix(in srgb, var(--card-bg) 52%, transparent);
   --ios-glass-track: color-mix(in srgb, var(--card-bg) 34%, transparent);
   --ios-glass-selected: color-mix(in srgb, var(--card-bg) 88%, transparent);
   --ios-glass-rim: rgba(255, 255, 255, 0.55);
   --ios-glass-highlight: rgba(255, 255, 255, 0.75);
   --ios-glass-shadow: rgba(0, 0, 0, 0.12);
-  /* Peak opacity of the diagonal specular sheen on nested glass tiles. */
-  --ios-glass-sheen: rgba(255, 255, 255, 0.2);
-  /* Convex "lens" shading for tiles over an active sky: a dome highlight
+  /* Peak opacity of the diagonal specular sheen on nested glass tiles. Kept
+     restrained: a stronger sheen read as over-glossy and buried the content. */
+  --ios-glass-sheen: rgba(255, 255, 255, 0.08);
+  /* Convex "lens" shading for tiles over an active sky: a faint dome highlight
      bleeding down from above the top edge plus a cool shade pooling at the
-     bottom, so each tile reads as bulged glass instead of a flat cutout.
+     bottom, so each tile reads as gently bulged glass instead of a flat cutout.
+     The dome is deliberately soft — a brighter one turned the tiles glossy.
      Held in one var so the tile and its hover state share the exact stack. */
   --ios-tile-bulge:
-    radial-gradient(130% 95% at 50% -25%, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.05) 55%, transparent 72%),
+    radial-gradient(130% 95% at 50% -25%, rgba(255, 255, 255, 0.13) 0%, rgba(255, 255, 255, 0.03) 55%, transparent 72%),
     linear-gradient(180deg, transparent 58%, rgba(8, 30, 60, 0.09) 100%);
 }
 
@@ -3533,9 +3620,9 @@ body {
   --ios-glass-rim: rgba(255, 255, 255, 0.14);
   --ios-glass-highlight: rgba(255, 255, 255, 0.12);
   --ios-glass-shadow: rgba(0, 0, 0, 0.4);
-  --ios-glass-sheen: rgba(255, 255, 255, 0.07);
+  --ios-glass-sheen: rgba(255, 255, 255, 0.035);
   --ios-tile-bulge:
-    radial-gradient(130% 95% at 50% -25%, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.02) 55%, transparent 72%),
+    radial-gradient(130% 95% at 50% -25%, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.015) 55%, transparent 72%),
     linear-gradient(180deg, transparent 58%, rgba(0, 0, 0, 0.25) 100%);
 }
 
@@ -3546,9 +3633,9 @@ body {
     --ios-glass-rim: rgba(255, 255, 255, 0.14);
     --ios-glass-highlight: rgba(255, 255, 255, 0.12);
     --ios-glass-shadow: rgba(0, 0, 0, 0.4);
-    --ios-glass-sheen: rgba(255, 255, 255, 0.07);
+    --ios-glass-sheen: rgba(255, 255, 255, 0.035);
     --ios-tile-bulge:
-      radial-gradient(130% 95% at 50% -25%, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.02) 55%, transparent 72%),
+      radial-gradient(130% 95% at 50% -25%, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.015) 55%, transparent 72%),
       linear-gradient(180deg, transparent 58%, rgba(0, 0, 0, 0.25) 100%);
   }
 }
@@ -3665,7 +3752,7 @@ body {
    Selector strength matters here: it must outrank the .sky-lvl-* tint rules
    and their dark-mode reverts near the top of the file. */
 :root[data-platform="ios"] .app .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline) {
-  background: color-mix(in srgb, var(--glass-base) 58%, transparent);
+  background: color-mix(in srgb, var(--glass-base) 50%, transparent);
   /* 12px, not the settings' 24px: blur cost scales with radius × area, and
      with the whole stack blurred over an animated sky the GPU re-blurs every
      card every frame. Over the sky's soft gradient the two are visually
@@ -3673,7 +3760,10 @@ body {
   -webkit-backdrop-filter: blur(12px) saturate(180%);
   backdrop-filter: blur(12px) saturate(180%);
   border: 0.5px solid var(--ios-glass-rim);
-  box-shadow: 0 6px 22px var(--ios-glass-shadow), inset 0 1px 0 var(--ios-glass-highlight);
+  /* Just the rim and a soft float shadow — no top-edge highlight. A specular
+     top line (static or scroll-animated) was tried and removed; it read as a
+     shine that either sat there fake or flickered while scrolling. */
+  box-shadow: 0 6px 22px var(--ios-glass-shadow);
 }
 
 /* While the settings page is up, the main stack is fully covered: by the
@@ -3709,7 +3799,7 @@ body {
      per-frame cost. */
   background:
     linear-gradient(155deg, var(--ios-glass-sheen) 0%, transparent 45%),
-    color-mix(in srgb, var(--glass-deep) 55%, transparent);
+    color-mix(in srgb, var(--glass-deep) 48%, transparent);
   border: 0.5px solid var(--ios-glass-rim);
   box-shadow: inset 0 1px 0 var(--ios-glass-highlight), 0 2px 8px var(--ios-glass-shadow);
 }
@@ -3720,7 +3810,7 @@ body {
   background:
     linear-gradient(var(--hover-medium), var(--hover-medium)),
     linear-gradient(155deg, var(--ios-glass-sheen) 0%, transparent 45%),
-    color-mix(in srgb, var(--glass-deep) 55%, transparent);
+    color-mix(in srgb, var(--glass-deep) 48%, transparent);
 }
 
 /* Over an active sky the flat sheen washes out and every tile reads
@@ -3729,12 +3819,12 @@ body {
    drop shadow lifting the tile off the card. All paint-once gradients and
    inset shadows; nothing here re-renders per frame. */
 :root[data-platform="ios"] .app.sky-active .detail-card {
-  /* 40%, not the flat-background 55%: the deep tint layered over its own
-     shading read too dark against the sky; thinner glass lets the brighter
+  /* 34%, thinner than the flat-background 48%: the deep tint layered over its
+     own shading read too dark against the sky; thinner glass lets the brighter
      backdrop light the tile. */
   background:
     var(--ios-tile-bulge),
-    color-mix(in srgb, var(--glass-deep) 40%, transparent);
+    color-mix(in srgb, var(--glass-deep) 34%, transparent);
   /* Half-strength rim: a bright uniform outline flattens the tile into a
      sticker and drowns the dome shading; dimming it lets the inset top
      highlight carry the curvature (bright top edge, soft sides). */
@@ -3747,10 +3837,10 @@ body {
 
 /* Same treatment for the outer cards; otherwise their full-strength frames
    keep the whole stack reading as uniform outlined panels. The fill also
-   thins out here (58% is tuned for flat backgrounds) so the sky lights the
+   thins out here (50% is tuned for flat backgrounds) so the sky lights the
    cards instead of the tint dimming it. */
 :root[data-platform="ios"] .app.sky-active .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline) {
-  background: color-mix(in srgb, var(--glass-base) 48%, transparent);
+  background: color-mix(in srgb, var(--glass-base) 41%, transparent);
   border-color: color-mix(in srgb, var(--ios-glass-rim) 50%, transparent);
 }
 
@@ -3758,7 +3848,7 @@ body {
   background:
     linear-gradient(var(--hover-medium), var(--hover-medium)),
     var(--ios-tile-bulge),
-    color-mix(in srgb, var(--glass-deep) 40%, transparent);
+    color-mix(in srgb, var(--glass-deep) 34%, transparent);
 }
 
 /* Keep the accent highlight on the expanded tile; the glass fills would
@@ -3860,9 +3950,9 @@ body {
 }
 
 .radar-expanded .radar-controls {
-  padding-bottom: calc(14px + env(safe-area-inset-bottom));
-  padding-left: max(18px, env(safe-area-inset-left));
-  padding-right: max(18px, env(safe-area-inset-right));
+  padding-bottom: calc(14px + var(--sa-bottom));
+  padding-left: max(18px, var(--sa-left));
+  padding-right: max(18px, var(--sa-right));
 }
 
 /* ── Radar main row (time + play button) ── */
@@ -4222,7 +4312,7 @@ body {
 .alert-sheet-scroll {
   overflow-y: auto;
   flex: 1;
-  padding: 0 20px calc(20px + env(safe-area-inset-bottom));
+  padding: 0 20px calc(20px + var(--sa-bottom));
   display: flex;
   flex-direction: column;
   gap: 12px;

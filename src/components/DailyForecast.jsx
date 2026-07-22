@@ -7,6 +7,11 @@ import { WeatherIcon } from './WeatherIcon'
 // stays mounted this long while the circle shrinks back into the tapped row.
 const REVEAL_MS = 380
 
+// Fixed backing size of the reveal circle; it is scaled up to cover instead of
+// being sized to the card, so the GPU texture stays small on a tall card (see
+// .detail-cover-fill in App.css). Must match the 360px width/height there.
+const FILL_BASE = 360
+
 // Severity colours for the day cover's stats, mirroring the app-wide --cond-*
 // scale (UV, air quality) so they track the theme in light and dark. Returned as
 // CSS var strings; only applied when the daily colour-coding setting is on.
@@ -48,11 +53,20 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
   const [closing, setClosing] = useState(false)
   // Origin + radius of the circular reveal, in px relative to the daily card.
   const [reveal, setReveal] = useState({ x: 0, y: 0, r: 0 })
+  // The day cover's hourly strip is ~24 icon items; building it synchronously on
+  // tap blocks the reveal's first frames and makes the open stutter. Hold it back
+  // until the reveal has finished, then fade it in — nothing competes with the
+  // animation. (The detail-card cover has no such strip, which is why only the
+  // 7-day open lagged.)
+  const [hoursReady, setHoursReady] = useState(false)
   const cardRef = useRef(null)
   const closeTimer = useRef(null)
+  const hoursTimer = useRef(null)
 
   const closeDay = () => {
     setClosing(true)
+    clearTimeout(hoursTimer.current)
+    setHoursReady(false)
     clearTimeout(closeTimer.current)
     closeTimer.current = setTimeout(() => { setExpanded(null); setClosing(false) }, REVEAL_MS)
   }
@@ -73,9 +87,13 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
     clearTimeout(closeTimer.current)
     setClosing(false)
     setExpanded(date)
+    // Defer the hourly strip past the reveal (see hoursReady above).
+    setHoursReady(false)
+    clearTimeout(hoursTimer.current)
+    hoursTimer.current = setTimeout(() => setHoursReady(true), REVEAL_MS)
   }
 
-  useEffect(() => () => clearTimeout(closeTimer.current), [])
+  useEffect(() => () => { clearTimeout(closeTimer.current); clearTimeout(hoursTimer.current) }, [])
 
   useEffect(() => {
     if (!expanded) return
@@ -226,7 +244,7 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
           style={{
             '--reveal-x': `${reveal.x}px`,
             '--reveal-y': `${reveal.y}px`,
-            '--reveal-r': `${reveal.r}px`,
+            '--fill-scale': (reveal.r * 2) / FILL_BASE,
           }}
           role="dialog"
           aria-label={coverTitle(expanded)}
@@ -273,13 +291,13 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
               {daily.sunrise?.[di] && (
                 <div className="detail-stat">
                   <span className="detail-stat-label">Sunrise</span>
-                  <span className="detail-stat-value" style={{ color: SUN_ORANGE }}>{formatTime(daily.sunrise[di], timezone)}</span>
+                  <span className="detail-stat-value" style={colorCoding ? { color: SUN_ORANGE } : undefined}>{formatTime(daily.sunrise[di], timezone)}</span>
                 </div>
               )}
               {daily.sunset?.[di] && (
                 <div className="detail-stat">
                   <span className="detail-stat-label">Sunset</span>
-                  <span className="detail-stat-value" style={{ color: SUN_ORANGE }}>{formatTime(daily.sunset[di], timezone)}</span>
+                  <span className="detail-stat-value" style={colorCoding ? { color: SUN_ORANGE } : undefined}>{formatTime(daily.sunset[di], timezone)}</span>
                 </div>
               )}
               {daily.uv_index_max?.[di] != null && (
@@ -289,8 +307,8 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
                 </div>
               )}
             </div>
-            {openHours.length > 0 && (
-              <div className="hourly-scroll-wrapper">
+            {hoursReady && openHours.length > 0 && (
+              <div className="hourly-scroll-wrapper daily-hours-in">
                 <button className="hourly-nav hourly-nav-left" onClick={() => scroll(-1)} aria-label="Scroll left">‹</button>
                 <div className="hourly-scroll" ref={setScrollEl}>
                   {/* .hourly-track composites the scrolled content (will-change:

@@ -117,7 +117,9 @@ import { WeatherOverview } from './components/WeatherOverview'
 import { SettingsPage } from './components/SettingsPage'
 import { LoadingScreen } from './components/LoadingScreen'
 import { liveWeatherCode } from './utils/weatherCodes'
-import { APP_VERSION } from './utils/version'
+import { APP_VERSION, IS_ANDROID_APP } from './utils/version'
+import { useNotifications } from './hooks/useNotifications'
+import { fireAlertNotifications, fireRainNotification, fireTomorrowNotification } from './utils/notifications'
 import './App.css'
 
 const THEME_KEY = 'alek-weather-theme'
@@ -253,6 +255,21 @@ function App() {
 
   const { cities, save, remove, isSaved, home, setHome, unsetHome, isHome } = useSavedCities()
   const { recents, addRecent, removeRecent } = useRecentSearches()
+  const { notifyEnabled, notifyTypes, permission: notifyPermission, toggleNotifyEnabled, toggleType } = useNotifications()
+
+  // Weather notifications are APK-only (they ride the native bridge). NOAA
+  // alerts fire as they arrive; rain and tomorrow fire when a forecast loads.
+  // Each helper de-dupes internally so a re-render won't repeat one.
+  useEffect(() => {
+    if (!IS_ANDROID_APP || !notifyEnabled || !notifyTypes.includes('alerts') || !alerts?.length) return
+    fireAlertNotifications(alerts)
+  }, [alerts, notifyEnabled, notifyTypes])
+
+  useEffect(() => {
+    if (!IS_ANDROID_APP || !notifyEnabled || !weather) return
+    if (notifyTypes.includes('rain')) fireRainNotification(weather.hourly, weather.timezone)
+    if (notifyTypes.includes('tomorrow')) fireTomorrowNotification(weather.daily, weather.timezone)
+  }, [weather, notifyEnabled, notifyTypes])
   useEffect(() => {
     const handler = (e) => { e.preventDefault(); setInstallPrompt(e) }
     window.addEventListener('beforeinstallprompt', handler)
@@ -271,6 +288,13 @@ function App() {
     const handler = (e) => setIsDesktop(e.matches)
     mq.addEventListener('change', handler)
     return () => mq.removeEventListener('change', handler)
+  }, [])
+
+  // Mark the root when running inside the installed APK (vs the website), so CSS
+  // can hide scrollbars for a native feel. Distinct from data-platform, which is
+  // a user-facing style choice rather than the actual runtime.
+  useEffect(() => {
+    if (IS_ANDROID_APP) document.documentElement.setAttribute('data-native', 'android')
   }, [])
 
   // Apply dark mode theme
@@ -819,6 +843,11 @@ function App() {
           onRadarModeChange={changeRadarMode}
           installPrompt={installPrompt}
           onInstall={handleInstall}
+          notifyEnabled={notifyEnabled}
+          notifyTypes={notifyTypes}
+          notifyPermission={notifyPermission}
+          onNotifyEnabledChange={toggleNotifyEnabled}
+          onNotifyTypeToggle={toggleType}
           closing={settingsClosing}
         />
       )}

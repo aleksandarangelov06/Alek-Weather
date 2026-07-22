@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ArrowLeft, ChevronRight, ChevronDown, X, Info } from 'lucide-react'
 import { APP_VERSION, ANDROID_VERSION, IS_ANDROID_APP } from '../utils/version'
 
@@ -197,6 +197,100 @@ function AboutSection() {
   )
 }
 
+// APK-only self-updater. The web build gates it on IS_ANDROID_APP, and all the
+// networking/install happens natively (window.AndroidUpdate, defined in
+// MainActivity); this is only the UI. Manual: nothing runs until "Check" is
+// tapped. Native reports back via `alekupdate` / `alekupdateprogress` events.
+function UpdateSection() {
+  // idle | checking | current | available | downloading | permission | error
+  const [phase, setPhase] = useState('idle')
+  const [latest, setLatest] = useState('')
+  const [pct, setPct] = useState(0)
+  const urlRef = useRef(null)
+
+  useEffect(() => {
+    const onResult = (e) => {
+      const d = e.detail || {}
+      if (d.status === 'available') { urlRef.current = d.url; setLatest(d.latest); setPhase('available') }
+      else if (d.status === 'current') { setLatest(d.latest); setPhase('current') }
+      else if (d.status === 'permission') setPhase('permission')
+      else setPhase('error')
+    }
+    const onProgress = (e) => { setPct(Number(e.detail) || 0); setPhase('downloading') }
+    window.addEventListener('alekupdate', onResult)
+    window.addEventListener('alekupdateprogress', onProgress)
+    return () => {
+      window.removeEventListener('alekupdate', onResult)
+      window.removeEventListener('alekupdateprogress', onProgress)
+    }
+  }, [])
+
+  const check = () => { setPhase('checking'); window.AndroidUpdate?.check() }
+  const install = () => { setPct(0); setPhase('downloading'); window.AndroidUpdate?.install(urlRef.current) }
+
+  const status = {
+    checking: 'Checking for updates…',
+    current: `You're on the latest version (${ANDROID_VERSION}).`,
+    downloading: `Downloading… ${pct}%`,
+    permission: 'Allow installs from Alek Weather, then tap Update again.',
+    error: "Couldn't check for updates. Try again later.",
+  }[phase]
+
+  return (
+    <div className="card settings-card">
+      <div className="settings-row">
+        <div className="settings-row-label">
+          {phase === 'available' ? `Version ${latest} available` : 'App updates'}
+        </div>
+        {phase === 'available'
+          ? <button className="install-btn" onClick={install}>Update</button>
+          : <button className="install-btn" onClick={check} disabled={phase === 'checking' || phase === 'downloading'}>Check</button>}
+      </div>
+      {status && <p className="settings-row-info">{status}</p>}
+    </div>
+  )
+}
+
+
+const NOTIFY_TYPE_LABELS = {
+  rain:     'Upcoming Rain / Storm',
+  alerts:   'Weather Alerts',
+  tomorrow: 'Weather Tomorrow',
+}
+
+// APK-only (gated by IS_ANDROID_APP where it's rendered): the toggle drives the
+// native POST_NOTIFICATIONS grant. 'default' shows an off toggle that prompts on
+// tap; 'denied' points the user to the system settings; once granted, the
+// per-type toggles appear.
+function NotificationsSection({ notifyEnabled, notifyTypes, permission, onEnabledChange, onTypeToggle }) {
+  const unsupported = permission === 'unsupported'
+  const denied = permission === 'denied'
+  const active = notifyEnabled && permission === 'granted'
+
+  return (
+    <div className="card settings-card">
+      <SettingRow label="Notifications">
+        {unsupported ? (
+          <span className="notify-status-label">Not supported</span>
+        ) : (
+          <Toggle id="toggle-notify" checked={active} onChange={onEnabledChange} />
+        )}
+      </SettingRow>
+      {denied && (
+        <p className="notify-hint">Notifications are blocked. Enable them for Alek Weather in your device's app settings.</p>
+      )}
+      {active && Object.entries(NOTIFY_TYPE_LABELS).map(([type, label]) => (
+        <SettingRow key={type} label={label}>
+          <Toggle
+            id={`toggle-notify-${type}`}
+            checked={notifyTypes.includes(type)}
+            onChange={() => onTypeToggle(type)}
+          />
+        </SettingRow>
+      ))}
+    </div>
+  )
+}
 
 const COLOR_CODING_TILES = [
   { key: 'current',  label: 'Current Weather'  },
@@ -345,7 +439,7 @@ function ThemeView({ darkMode, onDarkModeChange, platformTheme, onPlatformThemeC
   )
 }
 
-function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastMode, onNowcastModeChange, radarMode, onRadarModeChange, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onThemeOpen, weatherAnimations, onWeatherAnimationsChange, radarEnhanced, onRadarEnhancedChange, installPrompt, onInstall }) {
+function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastMode, onNowcastModeChange, radarMode, onRadarModeChange, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onThemeOpen, weatherAnimations, onWeatherAnimationsChange, radarEnhanced, onRadarEnhancedChange, installPrompt, onInstall, notifyEnabled, notifyTypes, notifyPermission, onNotifyEnabledChange, onNotifyTypeToggle }) {
   return (
     <>
       <div className="settings-group-label">Appearance</div>
@@ -376,20 +470,30 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastM
           <div className="settings-row-label">Color Coding</div>
           <ChevronRight size={16} className="about-chevron" />
         </button>
-        <div className="settings-row">
-          <div className="settings-row-label">Weather Effects</div>
-          <div className="settings-row-controls">
-            <Toggle id="toggle-weather-anim" checked={weatherAnimations} onChange={onWeatherAnimationsChange} />
-            {/* Gyroscope tilt lives on its own page and only exists on mobile, so
-                the chevron to that page shows only there; desktop gets just the
-                toggle and never reaches the (otherwise empty) page. */}
-            {isMobileDevice() && (
+        {/* Gyroscope tilt lives on its own page and only exists on mobile. On
+            mobile the whole row opens that page (the inline toggle still flips
+            without bubbling up); desktop has no page, so it's a plain row with
+            just the toggle. */}
+        {isMobileDevice() ? (
+          <div className="settings-row settings-row--link" onClick={onWeatherEffectsOpen}>
+            <div className="settings-row-label">Weather Effects</div>
+            <div className="settings-row-controls">
+              <div className="theme-seg-wrap" onClick={e => e.stopPropagation()}>
+                <Toggle id="toggle-weather-anim" checked={weatherAnimations} onChange={onWeatherAnimationsChange} />
+              </div>
               <button className="theme-chevron-btn" onClick={onWeatherEffectsOpen} aria-label="More weather effects options">
                 <ChevronRight size={16} className="about-chevron" />
               </button>
-            )}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="settings-row">
+            <div className="settings-row-label">Weather Effects</div>
+            <div className="settings-row-controls">
+              <Toggle id="toggle-weather-anim" checked={weatherAnimations} onChange={onWeatherAnimationsChange} />
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="settings-group-label">Units</div>
@@ -441,7 +545,22 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastM
         <RadarEnhancedRow checked={radarEnhanced} onChange={onRadarEnhancedChange} />
       </div>
 
+      {/* Notifications ride on a native bridge that only exists in the APK. */}
+      {IS_ANDROID_APP && (
+        <>
+          <div className="settings-group-label">Notifications</div>
+          <NotificationsSection
+            notifyEnabled={notifyEnabled}
+            notifyTypes={notifyTypes}
+            permission={notifyPermission}
+            onEnabledChange={onNotifyEnabledChange}
+            onTypeToggle={onNotifyTypeToggle}
+          />
+        </>
+      )}
+
       <div className="settings-group-label">Other</div>
+      {IS_ANDROID_APP && <UpdateSection />}
       <InstallSection installPrompt={installPrompt} onInstall={onInstall} />
       <ClearStorageSection />
       <AboutSection />

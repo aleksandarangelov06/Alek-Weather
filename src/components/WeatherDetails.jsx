@@ -152,7 +152,7 @@ function DetailStats({ items }) {
 function SunDial({ progress, wide = false, sunFill }) {
   const t = Math.min(1, Math.max(0, progress))
   const g = wide
-    ? { w: 480, h: 92, pad: 12, base: 84, peak: -16, r: 5 }
+    ? { w: 480, h: 92, pad: 12, base: 84, peak: -16, r: 8 }
     : { w: 64,  h: 27, pad: 3,  base: 22, peak: -6,  r: 3.5 }
   const x = (1 - t) ** 2 * g.pad  + 2 * (1 - t) * t * (g.w / 2) + t ** 2 * (g.w - g.pad)
   const y = (1 - t) ** 2 * g.base + 2 * (1 - t) * t * g.peak    + t ** 2 * g.base
@@ -218,6 +218,11 @@ function DetailCard({ icon, label, value, sub, color, onClick, isExpanded, conte
 // Keep in sync with the detail-cover animation duration in App.css — the cover
 // stays mounted this long while the circle shrinks back into the tapped tile.
 const REVEAL_MS = 380
+
+// Fixed backing size of the reveal circle, scaled up to cover; keeps the GPU
+// texture small regardless of card size. Must match the 360px .detail-cover-fill
+// width/height in App.css.
+const FILL_BASE = 360
 
 export function WeatherDetails({ current, daily, hourly, timezone, unit, airQuality, colorCoding = true }) {
   const [expanded, setExpanded] = useState(null)
@@ -565,7 +570,7 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
                   return (
                     <div key={i} className="uv-timeline-item">
                       <span className="uv-tl-time">{fmt(time, i)}</span>
-                      <span className="uv-tl-val" style={{ color: info.color }}>{val.toFixed(1)}</span>
+                      <span className="uv-tl-val uv-tl-val--sm" style={{ color: info.color }}>{val.toFixed(1)}</span>
                       <span className="uv-tl-lbl" style={{ color: info.color }}>{info.label}</span>
                     </div>
                   )
@@ -676,7 +681,7 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
           style={{
             '--reveal-x': `${reveal.x}px`,
             '--reveal-y': `${reveal.y}px`,
-            '--reveal-r': `${reveal.r}px`,
+            '--fill-scale': (reveal.r * 2) / FILL_BASE,
           }}
           role="dialog"
           aria-label={openDef?.label}

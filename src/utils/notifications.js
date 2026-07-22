@@ -8,28 +8,58 @@ const LIGHT_CODES    = new Set([51, 53, 61, 71, 77, 80, 85])
 const RAIN_CODES     = new Set([51, 53, 55, 61, 63, 65, 80, 81, 82, 95, 96, 99])
 const SNOW_CODES     = new Set([71, 73, 75, 77, 85, 86])
 
-export function getPermission() {
-  if (!('Notification' in window)) return 'unsupported'
-  return Notification.permission
+// Notifications are APK-only. An Android WebView exposes no Web Notifications
+// API, so the native shell (MainActivity) injects a `window.AndroidNotify`
+// bridge instead: permission() -> 'granted' | 'denied' | 'default', it opens
+// the OS prompt on requestPermission() and reports the outcome back as an
+// `aleknotifpermission` CustomEvent, and notify(tag, title, body) posts a system
+// notification. With no bridge (any plain browser) every entry point below
+// no-ops, so the feature is simply absent off-APK.
+function bridge() {
+  return (typeof window !== 'undefined' && window.AndroidNotify) || null
 }
 
-export async function requestPermission() {
-  if (!('Notification' in window)) return 'unsupported'
-  return Notification.requestPermission()
+export function getPermission() {
+  const b = bridge()
+  if (!b) return 'unsupported'
+  try { return b.permission() } catch { return 'unsupported' }
+}
+
+export function requestPermission() {
+  const b = bridge()
+  if (!b) return Promise.resolve('unsupported')
+  let current = 'default'
+  try { current = b.permission() } catch { /* treat as default */ }
+  // Already decided — nothing to prompt for.
+  if (current === 'granted' || current === 'denied') return Promise.resolve(current)
+  // 'default': the native request is async; the shell fires an
+  // aleknotifpermission event once the user answers the system dialog.
+  return new Promise((resolve) => {
+    const onResult = (e) => {
+      window.removeEventListener('aleknotifpermission', onResult)
+      resolve(typeof e.detail === 'string' ? e.detail : getPermission())
+    }
+    window.addEventListener('aleknotifpermission', onResult)
+    try {
+      b.requestPermission()
+    } catch {
+      window.removeEventListener('aleknotifpermission', onResult)
+      resolve('unsupported')
+    }
+  })
 }
 
 function canNotify() {
-  return 'Notification' in window && Notification.permission === 'granted'
+  const b = bridge()
+  if (!b) return false
+  try { return b.permission() === 'granted' } catch { return false }
 }
 
-// Android Chrome requires showNotification() via service worker — new Notification() throws there.
-async function showNotification(title, options) {
-  try {
-    new Notification(title, options)
-  } catch {
-    const reg = await navigator.serviceWorker?.ready.catch(() => null)
-    reg?.showNotification(title, options)
-  }
+function showNotification(title, options = {}) {
+  const b = bridge()
+  if (!b) return
+  // The native side supplies the app icon; only tag/title/body cross the bridge.
+  try { b.notify(options.tag || title, title, options.body || '') } catch { /* ignore */ }
 }
 
 // ── NOAA Alerts ──────────────────────────────────────────────────────────────

@@ -90,7 +90,10 @@ export function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glo
   const xMax = points.length ? points[points.length - 1][0] : 1
   const lineGradId = `hourly-line-${gradId}`
   const areaGradId = `hourly-area-${gradId}`
-  const stroke = colorCoding ? `url(#${lineGradId})` : 'var(--accent)'
+  // Colour-coding off: a single neutral line. --graph-line is the accent on a
+  // plain card but white on a sky background, where accent-blue would vanish.
+  const monoLine = 'var(--graph-line)'
+  const stroke = colorCoding ? `url(#${lineGradId})` : monoLine
 
   return (
     <div className="card">
@@ -142,14 +145,14 @@ export function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glo
                 ))}
               </linearGradient>
               <linearGradient id={areaGradId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={stroke === 'var(--accent)' ? 'var(--accent)' : tempColor(tMax)} stopOpacity="0.22" />
-                <stop offset="100%" stopColor={stroke === 'var(--accent)' ? 'var(--accent)' : tempColor(tMin)} stopOpacity="0" />
+                <stop offset="0%" stopColor={colorCoding ? tempColor(tMax) : monoLine} stopOpacity="0.22" />
+                <stop offset="100%" stopColor={colorCoding ? tempColor(tMin) : monoLine} stopOpacity="0" />
               </linearGradient>
             </defs>
             <path d={areaPath} fill={`url(#${areaGradId})`} stroke="none" />
             <path d={linePath} fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             {points.map(([x, y], i) => (
-              <circle key={i} cx={x} cy={y} r="2.5" fill={colorCoding ? tempColor(temps[i]) : 'var(--accent)'} />
+              <circle key={i} cx={x} cy={y} r="2.5" fill={colorCoding ? tempColor(temps[i]) : monoLine} />
             ))}
           </svg>
         )}
