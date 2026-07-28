@@ -83,14 +83,43 @@
    untouched. Two layers because tempStyle sets an inline text-shadow for the
    heat glow / frost halo: the text-shadow below wins for the plain mid-range
    temps but is overridden by that inline glow, so the drop-shadow — a separate
-   property that composes rather than being replaced — carries the hot/cold case. */
+   property that composes rather than being replaced — carries the hot/cold case.
+
+   Both layers are offset-only (no 0 0 blur). An omnidirectional shadow rings the
+   glyph on every side, which thickens its edges and reads as fake bold plus a
+   dark glow — the numbers looked heavier with sky effects on than off. Casting
+   downward instead still lifts the text off the tinted background but leaves the
+   letterforms their true weight. The optional heat/frost glows stay available on
+   their own toggles in Settings › Color Coding. */
 .sky-lvl-slight  :is(.hourly-temp, .daily-low, .daily-high),
 .sky-lvl-medium  :is(.hourly-temp, .daily-low, .daily-high),
 .sky-lvl-dark    :is(.hourly-temp, .daily-low, .daily-high),
 .sky-lvl-darkest :is(.hourly-temp, .daily-low, .daily-high) {
-  text-shadow: 0 0 2px rgba(0, 0, 0, 0.55), 0 1px 2px rgba(0, 0, 0, 0.5);
-  filter: drop-shadow(0 0 1.5px rgba(0, 0, 0, 0.6));
+  /* These two layers stack on ordinary temps — only the hot/cold case swaps the
+     text-shadow out for the inline glow — so their alphas compound. Kept low
+     enough that the pair together reads as a soft lift, not a dark offset copy. */
+  text-shadow: 0 1px 1.5px rgba(0, 0, 0, 0.30);
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.22));
+  /* Light-on-dark text renders heavier than the same weight dark-on-light —
+     subpixel antialiasing bleeds the glyph outward. Greyscale smoothing removes
+     that bleed so the weights below land as drawn. */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
+
+/* The daily low/high weights (500/600) are tuned for a white card. Over a tinted
+   sky the background contrast already separates them, so the extra weight only
+   reads as bold. Step both down one notch, keeping high heavier than low so the
+   hierarchy survives. Effects-off keeps the original weights. */
+.sky-lvl-slight  .daily-low,
+.sky-lvl-medium  .daily-low,
+.sky-lvl-dark    .daily-low,
+.sky-lvl-darkest .daily-low { font-weight: 400; }
+
+.sky-lvl-slight  .daily-high,
+.sky-lvl-medium  .daily-high,
+.sky-lvl-dark    .daily-high,
+.sky-lvl-darkest .daily-high { font-weight: 500; }
 
 /* Colour-coding off for the Weather Details card: redefine every condition
    colour to the neutral text colour on the card itself. Because these are set on
@@ -4090,6 +4119,21 @@ body {
   box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
+/* Observed → forecast boundary. Sits on the column's leading edge, i.e. midway
+   between the last observed tick and the first forecast one, so the scrubber
+   visibly splits into "what happened" and "what's expected". Dashed and tertiary
+   so it separates without competing with the active tick. */
+.radar-now-divider {
+  position: absolute;
+  left: 0;
+  bottom: -4px;
+  width: 0;
+  height: 36px;
+  border-left: 1px dashed var(--text-tertiary);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
 .radar-tick-label {
   position: absolute;
   bottom: -20px;
@@ -4179,10 +4223,28 @@ body {
   gap: 3px;
 }
 
+/* The two feeds use different reflectivity ramps and RainViewer's free tier
+   ignores the tile URL's colour-scheme flag, so the ramps can't be matched at
+   the source. Easing between them turns the swap into a transition rather than
+   a snap as the scrubber crosses the boundary. */
 .radar-legend-block {
   flex: 1;
   height: 8px;
   border-radius: 4px;
+  transition: background 0.28s ease;
+}
+
+/* Attribution for the frame on screen — explains the palette change. */
+.radar-source {
+  margin: 6px 0 0;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  text-align: center;
+  letter-spacing: 0.2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .radar-legend-block { transition: none; }
 }
 
 
@@ -4542,6 +4604,19 @@ body {
 .sky-lvl-medium .radar-tick-label,
 .sky-lvl-dark .radar-tick-label,
 .sky-lvl-darkest .radar-tick-label { color: rgba(255,255,255,0.65); }
+
+/* Boundary divider and feed attribution follow the same sky treatment as the
+   tick labels — both are var(--text-tertiary) by default, which goes muddy
+   against the dark sky backgrounds. */
+.sky-lvl-slight .radar-now-divider,
+.sky-lvl-medium .radar-now-divider,
+.sky-lvl-dark .radar-now-divider,
+.sky-lvl-darkest .radar-now-divider { border-left-color: rgba(255,255,255,0.65); }
+
+.sky-lvl-slight .radar-source,
+.sky-lvl-medium .radar-source,
+.sky-lvl-dark .radar-source,
+.sky-lvl-darkest .radar-source { color: rgba(255,255,255,0.60); }
 
 /* Search pill/dropdown are themed by the variable-based .sky-active rules near
    the top of this file (both use --sky-card, a shade lighter than the

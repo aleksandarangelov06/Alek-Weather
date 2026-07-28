@@ -1,4 +1,4 @@
-export const APP_VERSION = '3.5'
+export const APP_VERSION = '3.5.1'
 
 // Version of the Android wrapper, which ships on its own cadence from the web
 // app: the APK is a WebView shell around this same build, so a change to one

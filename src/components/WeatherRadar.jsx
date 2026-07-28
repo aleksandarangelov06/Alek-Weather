@@ -395,8 +395,15 @@ export function WeatherRadar({ location, timezone, mode = 'both' }) {
   const isFuture = idx >= pastCount
   // The legend tracks the tiles actually on screen: HRRR frames draw with the
   // NWS reflectivity ramp, while RainViewer frames (past and any nowcast) keep
-  // RainViewer's palette.
-  const legendColors = frames[idx]?.key?.startsWith('hrrr:') ? LEGEND_COLORS_FUTURE : LEGEND_COLORS
+  // RainViewer's palette. The palettes can't be reconciled — RainViewer's free
+  // tier ignores the colour-scheme parameter in the tile URL — so instead of
+  // hiding the switch we label it, and the legend blocks ease between ramps.
+  const isHrrrFrame  = !!frames[idx]?.key?.startsWith('hrrr:')
+  const legendColors = isHrrrFrame ? LEGEND_COLORS_FUTURE : LEGEND_COLORS
+  // Boundary between observed and forecast frames, marked on the scrubber so the
+  // palette change reads as a deliberate handoff rather than a glitch. Only
+  // meaningful when the timeline actually spans both.
+  const showDivider = pastCount > 0 && pastCount < frames.length
 
   return (
     <div className={`card radar-card${expanded ? ' radar-expanded' : ''}`}>
@@ -462,6 +469,7 @@ export function WeatherRadar({ location, timezone, mode = 'both' }) {
             const isHour = prev !== null && d.getHours() !== prev.getHours()
             return (
               <div key={i} className="radar-tick-col">
+                {showDivider && i === pastCount && <span className="radar-now-divider" aria-hidden="true" />}
                 <div className={[
                   'radar-tick',
                   i === idx      && 'radar-tick--active',
@@ -487,6 +495,12 @@ export function WeatherRadar({ location, timezone, mode = 'both' }) {
           </div>
           <span className="radar-legend-lbl">Heavy</span>
         </div>
+
+        {/* Names the feed behind the current frame. Without it the palette swap at
+            the observed/forecast boundary looks like a rendering bug. */}
+        <p className="radar-source">
+          {isHrrrFrame ? 'Forecast · NOAA HRRR model' : 'Observed · RainViewer radar'}
+        </p>
       </div>
     </div>
   )
