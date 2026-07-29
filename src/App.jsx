@@ -114,25 +114,46 @@ import { WeatherCanvas } from './components/WeatherCanvas'
 import { PrecipNowcast } from './components/PrecipNowcast'
 import { WeatherAlerts } from './components/WeatherAlerts'
 import { WeatherOverview } from './components/WeatherOverview'
-import { SettingsPage } from './components/SettingsPage'
+import { SettingsPage, MAX_CARD_TRANSPARENCY } from './components/SettingsPage'
+import { WebLayout } from './components/web/WebLayout'
+import { WebTabs } from './components/web/WebTabs'
+import { TABS as WEB_TABS, useWebTab } from './components/web/tabs'
+import { SplashHome } from './components/web/SplashHome'
 import { LoadingScreen } from './components/LoadingScreen'
 import { liveWeatherCode } from './utils/weatherCodes'
 import { APP_VERSION, IS_ANDROID_APP } from './utils/version'
+import { applyMaterialTokens, DEFAULT_SEED, isValidSeed } from './utils/materialTheme'
 import { useNotifications } from './hooks/useNotifications'
 import { fireAlertNotifications, fireRainNotification, fireTomorrowNotification } from './utils/notifications'
 import './App.css'
+// Imported after App.css so the web app's rules win the ties against the shared
+// card styles they refine.
+import './WebApp.css'
 
 const THEME_KEY = 'alek-weather-theme'
-const PLATFORM_THEME_KEY = 'alek-weather-platform-theme' // 'ios' | 'android'
+const PLATFORM_THEME_KEY = 'alek-weather-platform-theme' // 'ios' | 'android' | 'web'
+const MATERIAL_COLOR_KEY = 'alek-weather-material-color' // seed hex for the Material You palette
+const CARD_TRANSPARENCY_KEY = 'alek-weather-card-transparency' // 0–90, percent of card fill removed
 
-// First-run platform style follows the device OS. Only Apple touch devices get
-// the iOS look; Android and desktop/web default to Android for now. Modern
-// iPads report as "Macintosh", so touch support is the tell that separates
-// them from actual Macs.
+// Viewport width at which the desktop layout takes over. Shared with the
+// isDesktop media query below so the first-run default and the layout agree on
+// what counts as a desktop.
+const DESKTOP_MQ = '(min-width: 1100px)'
+
+// First-run app style, from the device. The order matters: the APK is always
+// the phone app no matter how large the tablet it runs on, so it is settled
+// first; then Apple touch devices take the iOS look (modern iPads report as
+// "Macintosh", so touch support is the tell that separates them from actual
+// Macs); then anything on a desktop-sized screen opens in the web app rather
+// than a phone design stretched across a monitor. Everything left is a
+// non-Apple phone, which gets Android. Only the default is derived this way —
+// the setting overrides it, and a real Mac can still choose the iOS look.
 function defaultPlatformTheme() {
+  if (IS_ANDROID_APP) return 'android'
   const isApple = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
     (navigator.userAgent.includes('Macintosh') && navigator.maxTouchPoints > 1)
-  return isApple ? 'ios' : 'android'
+  if (isApple) return 'ios'
+  return window.matchMedia(DESKTOP_MQ).matches ? 'web' : 'android'
 }
 const SETTINGS_CLOSE_MS = 260
 const SEARCH_CLOSE_MS = 220
@@ -194,6 +215,14 @@ function App() {
   const [unit, setUnit] = useState(() => localStorage.getItem('alek-weather-unit') ?? 'F')
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem(THEME_KEY) ?? 'system')
   const [platformTheme, setPlatformTheme] = useState(() => localStorage.getItem(PLATFORM_THEME_KEY) ?? defaultPlatformTheme())
+  const [materialColor, setMaterialColor] = useState(() => {
+    const saved = localStorage.getItem(MATERIAL_COLOR_KEY)
+    return isValidSeed(saved) ? saved.toLowerCase() : DEFAULT_SEED
+  })
+  const [cardTransparency, setCardTransparency] = useState(() => {
+    const saved = Number(localStorage.getItem(CARD_TRANSPARENCY_KEY))
+    return Number.isFinite(saved) ? Math.min(MAX_CARD_TRANSPARENCY, Math.max(0, saved)) : 0
+  })
   const [showOverview, setShowOverview] = useState(() => localStorage.getItem(SHOW_OVERVIEW_KEY) !== 'false')
   const [nowcastMode, setNowcastMode] = useState(() => localStorage.getItem(NOWCAST_MODE_KEY) ?? 'auto')
   const [weatherAnimations, setWeatherAnimations] = useState(() => localStorage.getItem('alek-weather-animations') !== 'false')
@@ -212,7 +241,14 @@ function App() {
   const [showSettings, setShowSettings] = useState(false)
   const [settingsClosing, setSettingsClosing] = useState(false)
   const [subView, setSubView] = useState(null) // null | 'colorcoding' | 'overview' | 'effects' | 'theme'
-  const [isDesktop, setIsDesktop] = useState(() => window.matchMedia('(min-width: 1100px)').matches)
+  const [isDesktop, setIsDesktop] = useState(() => window.matchMedia(DESKTOP_MQ).matches)
+  const [webTab, setWebTab] = useWebTab()
+
+  // The web app is a desktop app: it lays six pages out side by side behind a
+  // tab bar, which needs the width to work at all. Picking "Web" in Settings on
+  // a narrow window therefore still renders the stacked mobile layout rather
+  // than a tab bar with nowhere to put its tabs.
+  const webLayout = platformTheme === 'web' && isDesktop
 
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchClosing, setSearchClosing] = useState(false)
@@ -220,6 +256,13 @@ function App() {
   const [savedOpen, setSavedOpen] = useState(false)
   const [savedClosing, setSavedClosing] = useState(false)
   const [splashPhase, setSplashPhase] = useState(HAS_SAVED_CITY ? 'done' : 'visible') // 'visible' | 'exit' | 'done'
+
+  // The web app's splash doubles as its home screen (search field + the places
+  // you've been), so it replaces the phone splash's tap-anywhere-to-search
+  // overlay and hint. Every other style keeps the plain splash.
+  // Declared here rather than beside webLayout above: it reads splashPhase, so
+  // it has to come after that state is initialised.
+  const webSplash = webLayout && splashPhase !== 'done'
   const searchAreaRef = useRef(null)
   const searchHoldTimer = useRef(null)
   const searchLongPressed = useRef(false)
@@ -284,7 +327,7 @@ function App() {
   }
 
   useEffect(() => {
-    const mq = window.matchMedia('(min-width: 1100px)')
+    const mq = window.matchMedia(DESKTOP_MQ)
     const handler = (e) => setIsDesktop(e.matches)
     mq.addEventListener('change', handler)
     return () => mq.removeEventListener('change', handler)
@@ -305,14 +348,79 @@ function App() {
     else root.removeAttribute('data-theme')
   }, [darkMode])
 
-  // Platform style: Android mode switches the app to Google Sans and gives the
-  // settings pages a Material You look; iOS mode refines them toward the modern
-  // iOS Settings look. The attribute is always set (ios | android) so each has a
-  // clean selector to scope its settings re-skin.
+  // The app style setting is really two independent choices, so it is published
+  // as two attributes rather than one three-way value:
+  //
+  //   data-shell    (mobile | desktop) — which app is being rendered. Today both
+  //     shells are the same component tree and only CSS tells them apart; this
+  //     is the seam a separate desktop view tree will branch on later, so it is
+  //     deliberately not derived from the viewport. A wide window changes the
+  //     first-run default (below), never the choice itself.
+  //   data-platform (ios | android) — which design language the mobile shell is
+  //     drawn in. The desktop shell keeps a value here so it inherits the font
+  //     and the Material You settings pages, but rules meant only for the phone
+  //     look pair it with [data-shell="mobile"].
+  //
+  // Splitting them this way is what lets Web borrow most of Android without the
+  // parts that are specifically the phone app.
   useEffect(() => {
     const root = document.documentElement
-    root.setAttribute('data-platform', platformTheme === 'android' ? 'android' : 'ios')
+    root.setAttribute('data-shell', platformTheme === 'web' ? 'desktop' : 'mobile')
+    root.setAttribute('data-platform', platformTheme === 'ios' ? 'ios' : 'android')
   }, [platformTheme])
+
+  // Material You seed color (Android style only — it's the one style whose look
+  // is built out of the --md-* tokens, and the only one that offers the picker).
+  // App.css ships the baseline purple for both schemes, so a custom seed has to
+  // be generated and written inline to outrank it — which means knowing which
+  // scheme is actually on screen, including when Theme is System and the OS
+  // flips it out from under us.
+  useEffect(() => {
+    const root = document.documentElement
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const paint = () => {
+      const dark = darkMode === 'on' || (darkMode === 'system' && mq.matches)
+      const seed = platformTheme === 'android' ? materialColor : null
+      applyMaterialTokens(root, seed, dark ? 'dark' : 'light')
+    }
+    paint()
+    mq.addEventListener('change', paint)
+    return () => mq.removeEventListener('change', paint)
+  }, [materialColor, platformTheme, darkMode])
+
+  // Card transparency, the other half of that picker — one stored value, but
+  // the two styles start from opposite places, so each reads it its own way:
+  //
+  //   --md-card-alpha  (Android) is the opacity its opaque fills are mixed at,
+  //     so the slider maps straight onto it. data-card-glass turns on the
+  //     backdrop blur behind them, withheld at zero so the default look never
+  //     pays for a filter it can't show.
+  //   --ios-glass-clarity (iOS) is not an opacity at all, just how far the
+  //     thumb has been pulled, 0 → 1. Those fills are already translucent glass
+  //     at a per-surface percentage, and thinning them is only one of the three
+  //     things the slider has to do there to read as anything — App.css owns
+  //     that whole mapping, since all of it is design; this side only has to
+  //     normalise against the clamp, being the side that has it.
+  //
+  // Neither is scoped to a style in CSS — the rules that read them already are
+  // — but both come off entirely under the other styles so nothing lingers on
+  // the root.
+  useEffect(() => {
+    const root = document.documentElement
+    const thinned = cardTransparency > 0
+    if (thinned && platformTheme === 'android') {
+      root.style.setProperty('--md-card-alpha', `${100 - cardTransparency}%`)
+      root.setAttribute('data-card-glass', 'on')
+    } else {
+      root.style.removeProperty('--md-card-alpha')
+      root.removeAttribute('data-card-glass')
+    }
+    if (thinned && platformTheme === 'ios') {
+      root.style.setProperty('--ios-glass-clarity', String(cardTransparency / MAX_CARD_TRANSPARENCY))
+    } else {
+      root.style.removeProperty('--ios-glass-clarity')
+    }
+  }, [cardTransparency, platformTheme])
 
   // Auto-load the home city on mount (falling back to the first saved city).
   useEffect(() => {
@@ -339,9 +447,11 @@ function App() {
   }, [weather, error]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // On desktop with no city loaded, any printable key press opens search pre-filled
-  // with that character so the user can just start typing immediately.
+  // with that character so the user can just start typing immediately. The web
+  // splash is the exception: it carries its own search field, and seeds that
+  // instead of opening the overlay on top of it.
   useEffect(() => {
-    if (!isDesktop || weather || loading || searchOpen) return
+    if (!isDesktop || weather || loading || searchOpen || webSplash) return
     const handler = (e) => {
       if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return
       setSearchInitialQuery(e.key)
@@ -350,7 +460,7 @@ function App() {
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [isDesktop, weather, loading, searchOpen])
+  }, [isDesktop, weather, loading, searchOpen, webSplash])
 
   // Hardware back button / Android back gesture
   useEffect(() => {
@@ -442,6 +552,18 @@ function App() {
   const changePlatformTheme = (mode) => {
     setPlatformTheme(mode)
     localStorage.setItem(PLATFORM_THEME_KEY, mode)
+  }
+
+  const changeMaterialColor = (hex) => {
+    if (!isValidSeed(hex)) return
+    const seed = hex.toLowerCase()
+    setMaterialColor(seed)
+    localStorage.setItem(MATERIAL_COLOR_KEY, seed)
+  }
+
+  const changeCardTransparency = (pct) => {
+    setCardTransparency(pct)
+    localStorage.setItem(CARD_TRANSPARENCY_KEY, String(pct))
   }
 
   const openSettings = () => {
@@ -545,6 +667,19 @@ function App() {
     closeSearch()
   }
 
+  // The splash's own search field and location cards are inline rather than in
+  // the overlay, so nothing has been pushed onto the history stack and these
+  // skip the closeSearch() the overlay handlers above end with.
+  const handleSplashSearchSelect = (city) => {
+    addRecent(city)
+    selectCity(city)
+  }
+
+  const handleSplashCitySelect = (city) => {
+    addRecent(city)
+    fetchWeather(city)
+  }
+
   const handleLogoClick = () => {
     if (!weather || splashPhase !== 'done') return
     reset()
@@ -558,7 +693,16 @@ function App() {
   const liveCode = weather ? liveWeatherCode(weather.current, weather.minutely_15, radarClear) : null
   if (weather) console.log('[radar-enh] decision', { radarEnhanced, radarClear, rawCode: weather.current.weather_code, confirmed: weather.current.weather_code_confirmed, liveCode })
   const skyC     = weather ? skyClass(liveCode, weather.current.is_day) : ''
-  const levelC   = SKY_LEVEL[skyC] ?? ''
+  // The sky level class is what tints the cards toward the sky (and flips the
+  // text on them to white to match). The Android phone look keeps its cards on
+  // their own Material surface — a white or dark card with a faint purple cast
+  // — so the class is withheld there, and only there: the iOS phone look and
+  // the web app both keep the tint.
+  // Everything else about an active sky still applies, since .sky-active is
+  // unaffected — the header, hero and search chrome go on reading over the
+  // backdrop exactly as they already do on a clear day, which is the one sky
+  // with no level class of its own.
+  const levelC   = platformTheme === 'android' ? '' : (SKY_LEVEL[skyC] ?? '')
 
   // Keep the theme-color metas (status bar) and the body background (navigation
   // bar) matched to the sky, or to the flat app background when effects are
@@ -596,7 +740,41 @@ function App() {
     nowcast: <PrecipNowcast minutely={weather.minutely_15} currentTime={weather.current.time} mode={nowcastMode} current={weather.current} radarClear={radarClear} />,
   } : null
 
-  const weatherPanel = weather && !loading && (
+  // The tab bar takes the logo's place in the header, but only once there is
+  // something to navigate: with no city loaded, and while the splash logo is
+  // still flying into the header, the header keeps its wordmark.
+  const headerTabs = webLayout && !!weather && !loading && splashPhase === 'done'
+
+  const weatherPanel = weather && !loading && (webLayout ? (
+    <WebLayout
+      tab={webTab}
+      onNavigate={setWebTab}
+      weather={weather}
+      location={location}
+      airQuality={airQuality}
+      alerts={alerts}
+      unit={unit}
+      radarClear={radarClear}
+      lastUpdated={lastUpdated}
+      loading={loading}
+      colorCoding={colorCoding}
+      weatherAnimations={weatherAnimations}
+      overviewParts={overviewParts}
+      showOverview={showOverview}
+      nowcastMode={nowcastMode}
+      radarMode={radarMode}
+      hasActiveAlert={hasActiveAlert}
+      saved={isSaved(location)}
+      onSave={() => save(location)}
+      onRemove={() => remove(location)}
+      isHome={isHome(location)}
+      hasHome={!!home}
+      onGoHome={() => { if (home) fetchWeather(home) }}
+      onSetHome={() => setHome(location)}
+      onUnsetHome={unsetHome}
+      onRefresh={() => fetchWeather(location)}
+    />
+  ) : (
     <>
       <div className="weather-left">
         <WeatherAlerts alerts={alerts} />
@@ -640,17 +818,31 @@ function App() {
         </DndContext>
       </div>
     </>
-  )
+  ))
 
   return (
     <>
       {weather && weatherAnimations && <div className={`sky-bg ${skyC}`} aria-hidden="true" />}
       {weather && weatherAnimations && <WeatherCanvas code={liveCode} gyro={gyroscope} />}
     <div
-      className={`app${weatherAnimations && levelC ? ` ${levelC}` : ''}${!weatherAnimations ? ' no-effects' : ''}${weather && weatherAnimations ? ' sky-active' : ''}`}
+      className={`app${weatherAnimations && levelC ? ` ${levelC}` : ''}${!weatherAnimations ? ' no-effects' : ''}${weather && weatherAnimations ? ' sky-active' : ''}${headerTabs ? ' app--web-tabs' : ''}${headerTabs && webTab === 'radar' ? ' app--web-radar' : ''}`}
       style={weather && weatherAnimations ? SKY_CARD_VARS[skyC] : undefined}
     >
-      <header className={`app-header${!weather ? ' app-header--no-city' : ''}`}>
+      <header className={`app-header${!weather ? ' app-header--no-city' : ''}${headerTabs ? ' app-header--tabs' : ''}`}>
+                {/* Backdrop for the sticky tab bar. It repaints the same sky gradient
+            as .sky-bg, anchored to the viewport the same way (see .header-sky
+            in WebApp.css), so it is opaque enough to hide the page scrolling
+            beneath it while being invisible against the sky itself. */}
+        {headerTabs && weatherAnimations && (
+          <div className={`header-sky ${skyC}`} aria-hidden="true" />
+        )}
+        {/* Backdrop for the sticky tab bar. It repaints the same sky gradient
+            as .sky-bg, anchored to the viewport the same way (see .header-sky
+            in WebApp.css), so it is opaque enough to hide the page scrolling
+            beneath it while being invisible against the sky itself. */}
+        {headerTabs && weatherAnimations && (
+          <div className={`header-sky ${skyC}`} aria-hidden="true" />
+        )}
         <button
           className={`header-icon-btn${searchHolding ? ' header-icon-btn--holding' : ''}`}
           style={{ '--long-press-ms': `${LONG_PRESS_MS}ms` }}
@@ -668,12 +860,17 @@ function App() {
           </span>
         </button>
         <div className="app-title-wrapper">
+          {/* The wordmark stays mounted through the handoff: it is the element
+              the splash logo flies into, so it has to exist and finish landing
+              before the tab bar cross-fades over it. */}
           <span
-            className={`app-title${splashPhase === 'visible' ? ' app-title--splash' : ''}${splashPhase === 'exit' ? ' app-title--splash-exit' : ''}${splashPhase === 'done' && weather ? ' app-title--home' : ''}`}
+            className={`app-title${splashPhase === 'visible' ? ' app-title--splash' : ''}${splashPhase === 'exit' ? ' app-title--splash-exit' : ''}${splashPhase === 'done' && weather ? ' app-title--home' : ''}${headerTabs ? ' app-title--handed-off' : ''}`}
             onClick={handleLogoClick}
             role={splashPhase === 'done' && weather ? 'button' : undefined}
             aria-label={splashPhase === 'done' && weather ? 'Go to home' : undefined}
-          >Alek Weather</span>
+            aria-hidden={headerTabs || undefined}
+          ></span>
+          {headerTabs && <WebTabs tabs={WEB_TABS} active={webTab} onChange={setWebTab} />}
         </div>
         <button className="settings-btn" onClick={showSettings ? closeSettings : openSettings} aria-label="Settings">
           <Settings size={22} />
@@ -703,16 +900,39 @@ function App() {
               <p className="empty-text">{isDesktop ? 'Click anywhere or begin typing to search for a city' : 'Tap to find a location'}</p>
             </div>
           )}
-          <div className="weather-content">
+          <div className={`weather-content${webLayout ? ' weather-content--web' : ''}`}>
             {weatherPanel}
           </div>
         </main>
+
+        {/* With the tab bar occupying the header, the wordmark moves to the
+            foot of the page. It keeps the header logo's job: click to drop the
+            current city and go back to the start. The Radar tab is the one
+            exception — the map is the whole page there, so there is no foot for
+            it to sit at. */}
+        {headerTabs && webTab !== 'radar' && (
+          <footer className="web-footer">
+            <span
+              className="web-footer-mark"
+              onClick={handleLogoClick}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleLogoClick() } }}
+              aria-label="Go to home"
+            >Alek Weather</span>
+            <span className="web-footer-version">Version {APP_VERSION}</span>
+          </footer>
+        )}
       </div>
 
       {/* Splash screen — big logo centered, animates to header on city select */}
       {splashPhase !== 'done' && (
         <>
-          <div className="splash-bg" aria-hidden="true">
+          {/* The splash is decorative on the phone styles, where the whole thing
+              is one big "tap to search" target. The web splash puts a real
+              search field and location cards on it, so it can't be hidden from
+              assistive tech there — only the scenery inside it is. */}
+          <div className={`splash-bg${webSplash ? ' splash-bg--web' : ''}`} aria-hidden={webSplash ? undefined : true}>
             <img
               src="/logo-transparent.svg"
               alt=""
@@ -725,26 +945,46 @@ function App() {
               className={`splash-logo-img splash-logo-img-dark${splashPhase === 'exit' ? ' splash-logo-img--exit' : ''}`}
               aria-hidden="true"
             />
-            <div className="splash-clouds">
+            <div className="splash-clouds" aria-hidden="true">
               <div className="splash-el e1" /><div className="splash-el e2" /><div className="splash-el e3" />
               <div className="splash-el e4" /><div className="splash-el e5" /><div className="splash-el e6" />
             </div>
             <div className={`splash-logo${splashPhase === 'exit' ? ' splash-logo--exit' : ''}`}>
               <span className="splash-logo-text">Alek Weather</span>
-              {splashPhase === 'visible' && (
+              {splashPhase === 'visible' && !webSplash && (
                 <p className="splash-hint">
                   {isDesktop ? 'Click or type anywhere to search for a location' : 'Tap anywhere to find a location'}
                 </p>
               )}
             </div>
-            <div className="splash-stars">
+            {webSplash && (
+              <SplashHome
+                recents={recents}
+                savedCities={cities}
+                unit={unit}
+                exiting={splashPhase === 'exit'}
+                busy={loading}
+                active={splashPhase === 'visible' && !showSettings && !savedOpen && !searchOpen}
+                onSelect={handleSplashCitySelect}
+                onRemoveRecent={removeRecent}
+                onRemoveSaved={remove}
+                onSearch={searchCity}
+                searchResults={searchResults}
+                onSelectResult={handleSplashSearchSelect}
+                onUseLocation={useMyLocation}
+                onClearSearch={() => setSearchResults([])}
+                isSaved={isSaved}
+                isHome={isHome}
+              />
+            )}
+            <div className="splash-stars" aria-hidden="true">
               {STARS.map((s, i) => (
                 <div key={i} className="splash-star" style={{ top: s.top, left: s.left, animationDuration: s.dur, animationDelay: s.delay }} />
               ))}
             </div>
             <p className="splash-version">Version {APP_VERSION}</p>
           </div>
-          {splashPhase === 'visible' && (
+          {splashPhase === 'visible' && !webSplash && (
             <div className="splash-overlay" onClick={openSearch} aria-label="Search for a city" role="button" />
           )}
         </>
@@ -823,6 +1063,10 @@ function App() {
           onDarkModeChange={changeDarkMode}
           platformTheme={platformTheme}
           onPlatformThemeChange={changePlatformTheme}
+          materialColor={materialColor}
+          onMaterialColorChange={changeMaterialColor}
+          cardTransparency={cardTransparency}
+          onCardTransparencyChange={changeCardTransparency}
           unit={unit}
           onUnitChange={changeUnit}
           showOverview={showOverview}

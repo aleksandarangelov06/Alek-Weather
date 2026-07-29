@@ -160,7 +160,14 @@ export function WeatherAlerts({ alerts }) {
           {alerts.map(alert => {
             const props = alert.properties
             const cfg = resolveStyle(props)
-            const critical = props.severity === 'Extreme'
+            // Blink for Warnings — the hazard is happening or imminent — and not
+            // for severity Extreme, which is what this used to test. NWS rates a
+            // Tornado Watch Extreme too, so that test made the icon red on an
+            // alert resolveStyle() had already coloured orange for being a
+            // Watch, leaving the icon disagreeing with the chip beside it.
+            // Warnings resolve to red on their own, so the pulse needs no colour
+            // of its own now.
+            const critical = /warning$/i.test((props.event ?? '').trim())
             return (
               <button
                 key={alert.id}
@@ -169,7 +176,7 @@ export function WeatherAlerts({ alerts }) {
               >
                 <div
                   className={`alert-row-icon${critical ? ' alert-row-icon--critical' : ''}`}
-                  style={{ background: cfg.bg }}
+                  style={{ background: cfg.bg, '--alert-color': cfg.color }}
                 >
                   <TriangleAlert size={14} style={{ color: cfg.color }} />
                 </div>

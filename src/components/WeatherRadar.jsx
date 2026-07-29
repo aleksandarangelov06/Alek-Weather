@@ -55,7 +55,12 @@ function fmtTime(unixSec, timezone) {
 
 // mode: 'nowcast' (observed frames only) | 'future' (live frame + forecast only)
 // | 'both' (full timeline, default).
-export function WeatherRadar({ location, timezone, mode = 'both' }) {
+//
+// fill: the card is the whole page (the web app's Radar tab) rather than one
+// block in a stack. The map then gets its controls and its pan/zoom straight
+// away instead of hiding them behind tap-to-expand, which only makes sense for
+// a map small enough that a tap can't be a drag.
+export function WeatherRadar({ location, timezone, mode = 'both', fill = false }) {
   const mapRef      = useRef(null)
   const mapInst     = useRef(null)
   const baseTileRef = useRef(null)
@@ -318,12 +323,14 @@ export function WeatherRadar({ location, timezone, mode = 'both' }) {
     return () => window.removeEventListener('popstate', handler)
   }, [expanded])
 
-  // Desktop keyboard shortcuts while expanded: Esc collapses, Space toggles play/pause.
+  // Desktop keyboard shortcuts while the map is the focus of the screen: Esc
+  // collapses (full-screen only — on the Radar tab there is nothing to collapse
+  // to), Space toggles play/pause, arrows scrub and zoom.
   useEffect(() => {
-    if (!expanded) return
+    if (!expanded && !fill) return
     const onKey = (e) => {
       if (e.key === 'Escape') {
-        collapse()
+        if (expanded) collapse()
       } else if (e.key === ' ' || e.code === 'Space') {
         e.preventDefault() // stop the page from scrolling
         setPlaying(v => !v)
@@ -345,17 +352,23 @@ export function WeatherRadar({ location, timezone, mode = 'both' }) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [expanded, frames.length])
+  }, [expanded, fill, frames.length])
 
-  // Resize, re-center, and toggle interaction on expand/collapse
+  // Resize, re-center, and toggle interaction on expand/collapse.
+  //
+  // mapReady is in the deps because the map is built asynchronously — it can't
+  // exist until the frame list has loaded — so on the first pass there is
+  // nothing here to configure. Expanding re-runs this and picks the map up, but
+  // `fill` never changes after mount, so without mapReady the Radar tab's map
+  // kept the dragging: false it was constructed with and could not be panned.
   useEffect(() => {
     const map = mapInst.current
     if (!map) return
     const t = setTimeout(() => {
       map.invalidateSize()
-      if (!expanded) map.setView([location.latitude, location.longitude], 10, { animate: false })
+      if (!expanded && !fill) map.setView([location.latitude, location.longitude], 10, { animate: false })
     }, 80)
-    if (expanded) {
+    if (expanded || fill) {
       map.dragging.enable(); map.scrollWheelZoom.enable()
       map.doubleClickZoom.enable(); map.touchZoom.enable()
     } else {
@@ -363,7 +376,7 @@ export function WeatherRadar({ location, timezone, mode = 'both' }) {
       map.doubleClickZoom.disable(); map.touchZoom.disable()
     }
     return () => clearTimeout(t)
-  }, [expanded, location.latitude, location.longitude])
+  }, [expanded, fill, mapReady, location.latitude, location.longitude])
 
   const handleLocate = useCallback(() => {
     const map = mapInst.current
@@ -392,7 +405,6 @@ export function WeatherRadar({ location, timezone, mode = 'both' }) {
 
   if (frames.length === 0) return null
 
-  const isFuture = idx >= pastCount
   // The legend tracks the tiles actually on screen: HRRR frames draw with the
   // NWS reflectivity ramp, while RainViewer frames (past and any nowcast) keep
   // RainViewer's palette. The palettes can't be reconciled — RainViewer's free
@@ -406,8 +418,8 @@ export function WeatherRadar({ location, timezone, mode = 'both' }) {
   const showDivider = pastCount > 0 && pastCount < frames.length
 
   return (
-    <div className={`card radar-card${expanded ? ' radar-expanded' : ''}`}>
-      {!expanded && (
+    <div className={`card radar-card${expanded ? ' radar-expanded' : ''}${fill ? ' radar-fill' : ''}`}>
+      {!expanded && !fill && (
         <div className="radar-header">
           <span className="section-label" style={{ margin: 0 }}>RADAR</span>
         </div>
@@ -415,11 +427,16 @@ export function WeatherRadar({ location, timezone, mode = 'both' }) {
 
       <div className="radar-map-wrap">
         <div ref={mapRef} className="radar-map" />
-        {expanded && (
+        {(expanded || fill) && (
           <>
-            <button className="radar-expand-btn radar-expand-btn--floating" onClick={collapse} aria-label="Collapse">
-              <Minimize2 size={20} />
-            </button>
+            {/* Only the full-screen overlay offers a way out of itself. In fill
+                mode the map is already the whole page, so there is nothing to
+                expand into and nothing to collapse back to. */}
+            {expanded && (
+              <button className="radar-expand-btn radar-expand-btn--floating" onClick={collapse} aria-label="Collapse">
+                <Minimize2 size={20} />
+              </button>
+            )}
             <div className="radar-zoom-btns">
               <button className="radar-zoom-btn" onClick={handleZoomIn} aria-label="Zoom in">
                 <ZoomIn size={16} />
@@ -433,7 +450,7 @@ export function WeatherRadar({ location, timezone, mode = 'both' }) {
             </button>
           </>
         )}
-        {!expanded && (
+        {!expanded && !fill && (
           <div
             className="radar-map-tap"
             onClick={expand}
@@ -447,8 +464,6 @@ export function WeatherRadar({ location, timezone, mode = 'both' }) {
         <div className="radar-main-row">
           <div className="radar-big-time">
             {frames[idx] ? fmtTime(frames[idx].time, timezone) : ''}
-            {idx === pastCount - 1 && <span className="radar-live-badge">LIVE</span>}
-            {isFuture && <span className="radar-live-badge radar-live-badge--future">FUTURECAST</span>}
           </div>
           <button className="radar-play-circle" onClick={() => setPlaying(v => !v)} aria-label={playing ? 'Pause' : 'Play'}>
             {playing ? <Pause size={22} /> : <Play size={22} />}

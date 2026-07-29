@@ -1,0 +1,2306 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Web app — the tabbed desktop layout.
+
+   Only mounted when App Style is "Web" on a desktop-width window, so nothing
+   here is scoped to a media query: if the markup exists, the layout applies.
+   Everything hangs off .web-shell.
+
+   Surfaces: any container that should read as a card carries the shared .card
+   class, which already tracks the theme and the sky tint. Nested surfaces
+   inside those cards use --web-sunken instead of a fixed colour, because the
+   card underneath them can be white, near-black, or a mid-tone sky blue.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.web-shell {
+  --web-sunken: rgba(0, 0, 0, 0.045);
+  --web-line: rgba(0, 0, 0, 0.07);
+  --web-scroll-thumb: rgba(0, 0, 0, 0.16);
+  --web-scroll-thumb-hover: rgba(0, 0, 0, 0.3);
+  --web-precip: var(--cond-info);
+  width: 100%;
+}
+
+[data-theme="dark"] .web-shell {
+  --web-sunken: rgba(255, 255, 255, 0.07);
+  --web-line: rgba(255, 255, 255, 0.09);
+  --web-scroll-thumb: rgba(255, 255, 255, 0.18);
+  --web-scroll-thumb-hover: rgba(255, 255, 255, 0.34);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .web-shell {
+    --web-sunken: rgba(255, 255, 255, 0.07);
+    --web-line: rgba(255, 255, 255, 0.09);
+    --web-scroll-thumb: rgba(255, 255, 255, 0.18);
+    --web-scroll-thumb-hover: rgba(255, 255, 255, 0.34);
+  }
+}
+
+/* Sky-tinted cards are mid-tone colour in either theme, so a black wash
+   disappears into them — nested surfaces lift instead. */
+.sky-lvl-slight .web-shell,
+.sky-lvl-medium .web-shell,
+.sky-lvl-dark .web-shell,
+.sky-lvl-darkest .web-shell {
+  --web-sunken: rgba(255, 255, 255, 0.13);
+  --web-line: rgba(255, 255, 255, 0.16);
+  --web-scroll-thumb: rgba(255, 255, 255, 0.28);
+  --web-scroll-thumb-hover: rgba(255, 255, 255, 0.45);
+}
+
+/* The two-column desktop split (sticky current weather + scrolling blocks) is
+   the mobile-derived layout; the web app owns the full width itself. */
+.weather-content--web {
+  display: block;
+}
+
+/* ── Tab bar ─────────────────────────────────────────────────────────────── */
+
+/* The tab bar sits in the header, in the slot the wordmark used to hold, and
+   the wordmark moves to a footer at the foot of the page. The header is the
+   app's own chrome, so these rules are keyed off .app-header rather than
+   .web-shell — the bar is drawn outside the shell. */
+
+/* .app carries overflow-x: hidden, which CSS resolves to a scroll container on
+   both axes — that traps position: sticky, pinning the header to .app's own
+   (never-scrolling) box instead of the viewport. `clip` clips the same overflow
+   without creating a scrollport, so the header can stick. Scoped to the web app
+   so the phone layouts keep the behaviour they were tuned against. */
+.app--web-tabs {
+  overflow-x: clip;
+  /* Height of the sticky header: 24px top padding + the 56px tab-bar slot +
+     12px bottom padding. Anything that has to sit clear of it reads this. */
+  --web-header-h: 92px;
+}
+
+.app-header--tabs {
+  position: sticky;
+  top: 0;
+  padding-bottom: 12px;
+}
+
+/* Page content scrolls underneath, so the header needs a backdrop of its own —
+   without one, table rows read straight through the tab bar. It is fully opaque
+   with a hard bottom edge rather than a fade: the Hourly page parks its own
+   sticky column head directly below, and a fade would leave a band where rows
+   show through between the two. A soft drop shadow keeps the edge from reading
+   as a drawn border. With weather effects off this flat panel is the page
+   background, so it is invisible; .header-sky below covers the sky case. */
+.app-header--tabs::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--bg);
+  box-shadow: 0 10px 22px -18px rgba(0, 0, 0, 0.7);
+}
+
+/* Over a sky, a flat --bg panel would cut a rectangle out of the gradient. This
+   element repaints the sky instead: background-attachment fixed sizes the
+   gradient to the viewport rather than to this 92px strip, and the header is
+   pinned to the top of that viewport, so the strip shows exactly the slice of
+   sky it is covering — opaque to the page scrolling beneath, invisible against
+   the backdrop. It matches because .sky-bg is itself position: fixed, so the
+   sky never moves with the page either.
+
+   The sky classes set the `background` shorthand, which resets
+   background-attachment; this file loads after App.css, so this wins. */
+.header-sky {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-attachment: fixed;
+}
+
+.sky-active .app-header--tabs::before {
+  background: none;
+  box-shadow: none;
+}
+
+
+/* The wordmark stays in the flow so the splash logo has something to land on;
+   it hands over to the tab bar once that landing is done. */
+.app-title--handed-off {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+
+.web-tabs-wrap {
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  max-width: 100%;
+  animation: web-tabs-in 0.28s ease both;
+}
+
+@keyframes web-tabs-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .web-tabs-wrap { animation: none; }
+}
+
+.web-tabs {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px;
+  margin-bottom: 0;
+  border-radius: 999px;
+  pointer-events: auto;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.web-tabs::-webkit-scrollbar { display: none; }
+
+.web-tab {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-display), var(--font);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding: 10px 22px;
+  border-radius: 999px;
+  white-space: nowrap;
+  transition: color 0.2s ease, opacity 0.2s ease;
+}
+
+.web-tab:not(.web-tab--active) {
+  opacity: 0.72;
+}
+
+.web-tab:not(.web-tab--active):hover {
+  opacity: 1;
+}
+
+.web-tab--active {
+  color: var(--accent);
+}
+
+.web-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The moving highlight. One element rather than a background per button, so
+   switching tabs slides instead of blinking. */
+.web-tab-pill {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 0;
+  border-radius: 999px;
+  background: var(--accent-light);
+  pointer-events: none;
+}
+
+.web-tab-pill--ready {
+  transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1), width 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* On a tinted sky the accent blue washes out against the blue card, so the
+   active pill and its label go white-on-white-wash instead. */
+.sky-lvl-slight .web-tab--active,
+.sky-lvl-medium .web-tab--active,
+.sky-lvl-dark .web-tab--active,
+.sky-lvl-darkest .web-tab--active {
+  color: #fff;
+}
+
+.sky-lvl-slight .web-tab-pill,
+.sky-lvl-medium .web-tab-pill,
+.sky-lvl-dark .web-tab-pill,
+.sky-lvl-darkest .web-tab-pill {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .web-tab-pill--ready { transition: none; }
+}
+
+/* ── Footer wordmark ─────────────────────────────────────────────────────── */
+
+.web-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 48px 0 8px;
+}
+
+.web-footer-mark {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+  color: var(--text-tertiary);
+  padding: 6px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 0.16s, background 0.16s;
+}
+
+.web-footer-mark:hover {
+  color: var(--text-secondary);
+  background: var(--hover-subtle);
+}
+
+.web-footer-mark:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.web-footer-version {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  opacity: 0.7;
+}
+
+/* On a sky the footer sits on the backdrop, not on a card, so it carries its
+   own light-on-dark colours the way the page headings do. */
+.sky-active .web-footer-mark,
+.sky-active .web-footer-version {
+  color: rgba(255, 255, 255, 0.7);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.sky-active .web-footer-mark:hover {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* ── Page frame ──────────────────────────────────────────────────────────── */
+
+.web-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: web-page-in 0.28s ease both;
+}
+
+@keyframes web-page-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .web-page { animation: none; }
+}
+
+/* The page's own cards manage their spacing through the flex gap. */
+.web-page > .card,
+.web-page .web-hero > .card,
+.web-page .web-cols > .card,
+.web-page .web-col-stack > .card,
+.web-page .web-detail-grid > .card {
+  margin-bottom: 0;
+}
+
+.web-page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+/* A page heading that sits on the page rather than inside a card reads against
+   the sky itself, and the sky is dark in every theme — the card-level text
+   overrides never reach it, so it carries its own. */
+.sky-lvl-slight .web-page > .web-page-head,
+.sky-lvl-medium .web-page > .web-page-head,
+.sky-lvl-dark .web-page > .web-page-head,
+.sky-lvl-darkest .web-page > .web-page-head {
+  --text-primary: #fff;
+  --text-secondary: rgba(255, 255, 255, 0.82);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.web-page-title {
+  font-family: var(--font-display), var(--font);
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.web-page-sub {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  margin: 4px 0 0;
+  max-width: 62ch;
+}
+
+/* A page-head inside a card sits above that card's chart. */
+.web-chart-card .web-page-head {
+  margin-bottom: 14px;
+}
+
+/* ── Small shared controls ───────────────────────────────────────────────── */
+
+.web-seg {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--web-sunken);
+}
+
+.web-seg-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 6px 14px;
+  border-radius: 999px;
+  transition: background 0.18s, color 0.18s;
+}
+
+.web-seg-btn:hover { color: var(--text-primary); }
+
+.web-seg-btn--active {
+  background: var(--card-bg);
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.sky-lvl-slight .web-seg-btn--active,
+.sky-lvl-medium .web-seg-btn--active,
+.sky-lvl-dark .web-seg-btn--active,
+.sky-lvl-darkest .web-seg-btn--active {
+  background: rgba(255, 255, 255, 0.24);
+  color: #fff;
+}
+
+.web-link-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  padding: 6px 10px;
+  margin: -6px -10px;
+  border-radius: 8px;
+  transition: background 0.15s, gap 0.15s;
+}
+
+.web-link-btn:hover {
+  background: var(--accent-light);
+  gap: 8px;
+}
+
+.web-link-btn--block {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  margin: 12px 0 0;
+}
+
+.sky-lvl-slight .web-link-btn,
+.sky-lvl-medium .web-link-btn,
+.sky-lvl-dark .web-link-btn,
+.sky-lvl-darkest .web-link-btn {
+  color: #fff;
+}
+
+.sky-lvl-slight .web-link-btn:hover,
+.sky-lvl-medium .web-link-btn:hover,
+.sky-lvl-dark .web-link-btn:hover,
+.sky-lvl-darkest .web-link-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.web-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.web-unit {
+  color: var(--text-tertiary);
+  font-size: 0.85em;
+  font-weight: 400;
+}
+
+.web-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 56px 20px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+/* ── Today ───────────────────────────────────────────────────────────────── */
+
+.web-hero {
+  display: grid;
+  grid-template-columns: minmax(300px, 1fr) minmax(0, 1.75fr);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.web-hero > .card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* The mobile current card is sized for a phone hero; on a wide page it anchors
+   one column of a two-column band, so it gets room to breathe instead. */
+.web-hero .current-card {
+  padding: 28px 24px;
+  gap: 2px;
+}
+
+.web-hero .current-temp {
+  font-size: 78px;
+  line-height: 1.02;
+}
+
+.web-hero .current-icon svg,
+.web-hero .current-icon img {
+  width: 92px;
+  height: 92px;
+}
+
+.web-glance {
+  display: flex;
+  flex-direction: column;
+}
+
+.web-glance-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  flex: 1;
+}
+
+.web-glance-tile {
+  background: var(--web-sunken);
+  border-radius: 14px;
+  padding: 14px 14px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.web-glance-icon {
+  color: var(--text-tertiary);
+  margin-bottom: 4px;
+}
+
+.web-glance-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.web-glance-value {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.web-glance-sep {
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+.web-glance-sub {
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.web-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+  gap: 16px;
+  align-items: start;
+}
+
+/* With the overview card switched off in Settings the previews take the width. */
+.web-cols > .web-col-stack:only-child {
+  grid-column: 1 / -1;
+}
+
+.web-col-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* The nowcast chart is a viewBox that scales its own type with its width, so
+   past a point it stops being a chart and becomes a poster. */
+.web-page .nowcast-card svg {
+  max-width: 640px;
+  margin-inline: auto;
+}
+
+.web-preview-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.web-preview-head .section-label {
+  margin-bottom: 0;
+}
+
+.web-mini-hours {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 2px;
+  margin-top: 12px;
+}
+
+.web-mini-hour {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 2px;
+  border-radius: 12px;
+  min-width: 0;
+}
+
+.web-mini-hour:first-child {
+  background: var(--web-sunken);
+}
+
+.web-mini-time {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.web-mini-icon svg,
+.web-mini-icon img {
+  width: 26px;
+  height: 26px;
+  display: block;
+}
+
+.web-mini-temp {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.web-mini-precip {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--web-precip);
+  font-variant-numeric: tabular-nums;
+}
+
+.web-mini-precip--high { font-weight: 700; }
+.web-mini-precip--zero { color: var(--text-tertiary); opacity: 0.5; }
+
+.web-mini-days {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 2px;
+  margin-top: 12px;
+}
+
+.web-mini-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 2px;
+  border-radius: 12px;
+}
+
+.web-mini-day:first-child {
+  background: var(--web-sunken);
+}
+
+.web-mini-dayname {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.web-mini-high {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.web-mini-low {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Charts ──────────────────────────────────────────────────────────────── */
+
+.web-chart {
+  width: 100%;
+  min-width: 0;
+}
+
+.web-chart svg {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+
+.web-chart-divider {
+  stroke: var(--web-line);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+
+.web-chart-baseline {
+  stroke: var(--web-line);
+  stroke-width: 1;
+}
+
+.web-chart-dayname {
+  fill: var(--text-tertiary);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.web-chart-temp {
+  fill: var(--text-primary);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-anchor: middle;
+  font-variant-numeric: tabular-nums;
+}
+
+.web-chart-temp--low {
+  fill: var(--text-secondary);
+  font-weight: 500;
+}
+
+.web-chart-axis {
+  fill: var(--text-tertiary);
+  font-size: 11px;
+  text-anchor: middle;
+}
+
+.web-chart-bar {
+  fill: var(--web-precip);
+  opacity: 0.4;
+}
+
+.web-chart-bar--high {
+  opacity: 0.75;
+}
+
+.web-chart-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.web-chart-key-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.web-chart-key-line {
+  width: 18px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--graph-line);
+}
+
+.web-chart-key-bar {
+  width: 9px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--web-precip);
+  opacity: 0.55;
+}
+
+.web-spark {
+  display: block;
+  width: 100%;
+  overflow: visible;
+}
+
+/* ── Hourly overview chart ───────────────────────────────────────────────── */
+
+.web-hchart-frame {
+  position: relative;
+  display: flex;
+  border-radius: 16px;
+  background: var(--web-sunken);
+  overflow: hidden;
+}
+
+/* The degree scale is outside the scroller so it stays readable at any offset. */
+/* marginTop is set inline to HEAD_H — the gutter is outside the scroller, so it
+   can't line itself up with the plot any other way. No divider rule: the
+   gridlines already read as the scale, and a border here only boxed it in. */
+.web-hchart-yaxis {
+  position: relative;
+  flex: 0 0 44px;
+  z-index: 1;
+}
+
+.web-hchart-ytick {
+  position: absolute;
+  right: 9px;
+  transform: translateY(-50%);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.web-hchart-scroll {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--web-scroll-thumb) transparent;
+}
+
+/* A hairline that sits in the card rather than on top of it: transparent track,
+   and the thumb padded away from the edges with a transparent border so it
+   floats clear of the frame instead of butting against the rounded corner. */
+.web-hchart-scroll::-webkit-scrollbar {
+  height: 10px;
+}
+
+.web-hchart-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.web-hchart-scroll::-webkit-scrollbar-thumb {
+  background: var(--web-scroll-thumb);
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: 999px;
+}
+
+.web-hchart-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--web-scroll-thumb-hover);
+  background-clip: padding-box;
+}
+
+.web-hchart-cols {
+  display: flex;
+  border-bottom: 1px solid var(--web-line);
+}
+
+/* Fixed height, matching HEAD_H in HourlyChart.jsx: the degree gutter offsets
+   itself by that number to line up with the plot below. */
+.web-hcol {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 96px;
+  flex: 0 0 auto;
+}
+
+.web-hcol--now .web-hcol-time {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.web-hcol-day {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  min-height: 14px;
+  white-space: nowrap;
+}
+
+.web-hcol-time {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.web-hcol-icon svg,
+.web-hcol-icon img {
+  width: 30px;
+  height: 30px;
+  display: block;
+}
+
+.web-hcol-temp {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.web-hchart-plot {
+  position: relative;
+}
+
+.web-hchart-plot svg {
+  display: block;
+}
+
+.web-hchart-grid {
+  stroke: var(--web-line);
+  stroke-width: 1;
+  stroke-dasharray: 2 5;
+}
+
+/* Just a ruler notch on the baseline, not a full-height line — a grid of 48
+   verticals fought the temperature band for attention. */
+.web-hchart-vgrid {
+  stroke: var(--web-line);
+  stroke-width: 1;
+}
+
+.web-hchart-daybreak {
+  stroke: var(--web-line);
+  stroke-width: 1;
+  opacity: 0.9;
+}
+
+.web-hchart-line {
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.web-hchart-sunline {
+  stroke: var(--cond-orange);
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+  opacity: 0.45;
+}
+
+/* On a pill of its own: the label lands on top of the temperature band, and
+   plain text on a saturated gradient is a coin toss for legibility. */
+.web-hchart-sun {
+  position: absolute;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px 3px 7px;
+  border-radius: 999px;
+  background: var(--card-bg);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.16);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.sky-lvl-slight .web-hchart-sun,
+.sky-lvl-medium .web-hchart-sun,
+.sky-lvl-dark .web-hchart-sun,
+.sky-lvl-darkest .web-hchart-sun {
+  background: var(--sky-card-deep, #2b3a4e);
+}
+
+.web-hchart-sun svg {
+  color: var(--cond-orange);
+}
+
+/* ── Precipitation animation ─────────────────────────────────────────────── */
+
+/* Sits over the hours that are actually precipitating. This is what replaced
+   the old night shading: whether it is raining reads as more useful over a
+   forecast than whether the sun is up, and the tint doubles as the "wet window"
+   marker the old chart had no equivalent for. */
+.web-hchart-fx {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.web-fx-band {
+  position: absolute;
+  top: 0;
+  overflow: hidden;
+  background: linear-gradient(
+    to bottom,
+    rgba(96, 165, 250, 0.20),
+    rgba(96, 165, 250, 0.07)
+  );
+  border-left: 1px solid rgba(96, 165, 250, 0.35);
+  border-right: 1px solid rgba(96, 165, 250, 0.35);
+}
+
+.web-fx-band--snow {
+  background: linear-gradient(
+    to bottom,
+    rgba(186, 216, 255, 0.24),
+    rgba(186, 216, 255, 0.08)
+  );
+  border-color: rgba(186, 216, 255, 0.4);
+}
+
+.web-fx-drop {
+  position: absolute;
+  top: 0;
+  width: 1.5px;
+  border-radius: 1px;
+  background: linear-gradient(to bottom, rgba(59, 130, 246, 0), rgba(59, 130, 246, 0.85));
+  animation-name: web-fx-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+.web-fx-flake {
+  position: absolute;
+  top: 0;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 0 3px rgba(147, 197, 253, 0.9);
+  animation-name: web-fx-drift;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+/* 200px is the plot's baseline (BASE in HourlyChart.jsx) — the distance a drop
+   travels before it lands on the temperature curve's floor. */
+@keyframes web-fx-fall {
+  0%   { transform: translateY(-18px); opacity: 0; }
+  12%  { opacity: 0.9; }
+  88%  { opacity: 0.9; }
+  100% { transform: translateY(200px); opacity: 0; }
+}
+
+@keyframes web-fx-drift {
+  0%   { transform: translate(0, -12px); opacity: 0; }
+  15%  { opacity: 0.95; }
+  50%  { transform: translate(9px, 100px); }
+  85%  { opacity: 0.95; }
+  100% { transform: translate(0, 200px); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .web-fx-drop,
+  .web-fx-flake { display: none; }
+}
+
+/* ── Chance-of-precipitation strip ───────────────────────────────────────── */
+
+.web-hchart-precip {
+  position: relative;
+  height: 30px;
+  margin: 6px 0 10px;
+}
+
+/* Hatched by default — "nothing expected here" — with a solid band laid over
+   the stretches that do expect something. */
+.web-pband {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  border-radius: 8px;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--web-line) 0 1px,
+    transparent 1px 6px
+  );
+}
+
+.web-pband--wet {
+  background-image: none;
+  background-color: rgba(96, 165, 250, 0.24);
+}
+
+.web-pchip {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.web-pchip svg {
+  color: var(--web-precip);
+}
+
+/* Round, and sitting over the plot rather than notched into the frame — the
+   square buttons read as part of the chart's structure, which they aren't. */
+.web-hchart-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 3;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  transition: opacity 0.18s, color 0.15s, transform 0.15s;
+}
+
+.web-hchart-nav:hover {
+  color: var(--text-primary);
+  transform: translateY(-50%) scale(1.08);
+}
+
+.web-hchart-nav--left { left: 50px; }
+.web-hchart-nav--right { right: 10px; }
+
+.web-hchart-nav--hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sky-lvl-slight .web-hchart-nav,
+.sky-lvl-medium .web-hchart-nav,
+.sky-lvl-dark .web-hchart-nav,
+.sky-lvl-darkest .web-hchart-nav {
+  background: var(--sky-card-deep, #2b3a4e);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.web-hchart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.web-hchart-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.web-hchart-legend-temp {
+  width: 22px;
+  height: 9px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #74c0fc, #51cf66, #ffd43b, #ff922b);
+}
+
+.web-hchart-legend-precip {
+  width: 14px;
+  height: 9px;
+  border-radius: 3px;
+  background: rgba(96, 165, 250, 0.45);
+}
+
+/* ── Header controls ─────────────────────────────────────────────────────── */
+
+.web-head-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.web-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 4px;
+}
+
+.web-switch:hover { color: var(--text-primary); }
+
+.web-switch-track {
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--bar-track-bg);
+  padding: 3px;
+  transition: background 0.2s ease;
+}
+
+.web-switch-knob {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--card-bg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.web-switch--on {
+  color: var(--text-primary);
+}
+
+.web-switch--on .web-switch-track {
+  background: var(--accent);
+}
+
+.web-switch--on .web-switch-knob {
+  transform: translateX(16px);
+}
+
+.sky-lvl-slight .web-switch--on .web-switch-track,
+.sky-lvl-medium .web-switch--on .web-switch-track,
+.sky-lvl-dark .web-switch--on .web-switch-track,
+.sky-lvl-darkest .web-switch--on .web-switch-track {
+  background: rgba(255, 255, 255, 0.55);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .web-switch-knob { transition: none; }
+}
+
+/* ── Hourly table ────────────────────────────────────────────────────────── */
+
+/* No overflow clipping here: the day header below is sticky, and an
+   overflow-hidden ancestor would make it stick to a box that never scrolls. */
+.web-table-card {
+  padding: 8px 0 12px;
+}
+
+.web-table-head,
+.web-table-row {
+  display: grid;
+  grid-template-columns: 86px minmax(160px, 1.4fr) 74px 78px 132px 96px 60px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px;
+}
+
+.web-table-head {
+  padding-top: 10px;
+  padding-bottom: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  border-bottom: 1px solid var(--web-line);
+  position: sticky;
+  top: var(--web-header-h);
+  background: inherit;
+  z-index: 2;
+}
+
+.web-table-day {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 14px 20px 8px;
+  font-family: var(--font-display), var(--font);
+}
+
+.web-table-dayname {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.web-table-daydate {
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+}
+
+.web-table-row {
+  height: 42px;
+  font-size: 14px;
+  color: var(--text-primary);
+  border-radius: 10px;
+  transition: background 0.12s;
+}
+
+.web-table-row:hover {
+  background: var(--web-sunken);
+}
+
+.web-table-row--now {
+  background: var(--web-sunken);
+  font-weight: 600;
+}
+
+.web-table-time {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.web-table-row--now .web-table-time {
+  color: var(--text-primary);
+}
+
+.web-table-cond {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-secondary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.web-table-icon svg,
+.web-table-icon img {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
+
+.web-table-temp {
+  font-weight: 600;
+}
+
+.web-table-precip {
+  color: var(--web-precip);
+}
+
+.web-table-precip--high { font-weight: 700; }
+.web-table-precip--zero { color: var(--text-tertiary); opacity: 0.5; }
+
+.web-table-wind {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.web-wind-arrow {
+  color: var(--text-tertiary);
+  flex: 0 0 auto;
+}
+
+/* ── 7 day ───────────────────────────────────────────────────────────────── */
+
+.web-days-card {
+  padding: 6px 8px;
+}
+
+.web-day + .web-day {
+  border-top: 1px solid var(--web-line);
+}
+
+.web-day--open {
+  background: var(--web-sunken);
+  border-radius: 14px;
+}
+
+.web-day--open + .web-day,
+.web-day:has(+ .web-day--open) {
+  border-top-color: transparent;
+}
+
+.web-day-row {
+  display: grid;
+  grid-template-columns: 96px 40px minmax(120px, 1fr) 56px minmax(220px, 2fr) 24px;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  padding: 14px 14px;
+  border-radius: 14px;
+  color: var(--text-primary);
+  transition: background 0.14s;
+}
+
+.web-day-row:hover {
+  background: var(--web-sunken);
+}
+
+.web-day--open .web-day-row:hover {
+  background: transparent;
+}
+
+.web-day-name {
+  display: flex;
+  flex-direction: column;
+}
+
+.web-day-weekday {
+  font-family: var(--font-display), var(--font);
+  font-size: 15.5px;
+  font-weight: 600;
+}
+
+.web-day-date {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.web-day-icon svg,
+.web-day-icon img {
+  width: 34px;
+  height: 34px;
+  display: block;
+}
+
+.web-day-cond {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.web-day-chance {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--web-precip);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.web-day-chance--high { font-weight: 700; }
+.web-day-chance--zero { color: var(--text-tertiary); opacity: 0.5; }
+
+.web-day-range {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 10px;
+}
+
+.web-day-temp {
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.web-day-temp--low {
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+.web-day-temp--high {
+  font-weight: 600;
+}
+
+/* The week's full span; each bar covers only that day's slice of it, so a run
+   of similar days reads as a stack of aligned segments. */
+.web-day-track {
+  position: relative;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--daily-bar-bg);
+}
+
+.web-day-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+}
+
+.web-day-chevron {
+  color: var(--text-tertiary);
+  transition: transform 0.2s ease;
+  justify-self: center;
+}
+
+.web-day--open .web-day-chevron {
+  transform: rotate(180deg);
+}
+
+.web-day-body {
+  padding: 0 14px 16px;
+  animation: web-day-open 0.24s ease both;
+}
+
+@keyframes web-day-open {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .web-day-body { animation: none; }
+}
+
+.web-day-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.web-day-stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--card-bg);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.sky-lvl-slight .web-day-stat,
+.sky-lvl-medium .web-day-stat,
+.sky-lvl-dark .web-day-stat,
+.sky-lvl-darkest .web-day-stat {
+  background: var(--sky-card-deep, #2b3a4e);
+}
+
+[data-theme="dark"] .sky-lvl-slight .web-day-stat,
+[data-theme="dark"] .sky-lvl-medium .web-day-stat,
+[data-theme="dark"] .sky-lvl-dark .web-day-stat,
+[data-theme="dark"] .sky-lvl-darkest .web-day-stat {
+  background: var(--bg);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .sky-lvl-slight .web-day-stat,
+  :root:not([data-theme="light"]) .sky-lvl-medium .web-day-stat,
+  :root:not([data-theme="light"]) .sky-lvl-dark .web-day-stat,
+  :root:not([data-theme="light"]) .sky-lvl-darkest .web-day-stat {
+    background: var(--bg);
+  }
+}
+
+.web-day-stat-label {
+  flex: 1;
+}
+
+.web-day-stat-value {
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.web-day-hours {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(52px, 1fr);
+  gap: 2px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.web-day-hour {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 2px;
+  border-radius: 10px;
+}
+
+.web-day-hour:hover {
+  background: var(--web-sunken);
+}
+
+.web-day-hour-time {
+  font-size: 11px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.web-day-hour-icon svg,
+.web-day-hour-icon img {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
+
+.web-day-hour-temp {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.web-day-hour-precip {
+  font-size: 10.5px;
+  color: var(--web-precip);
+  font-variant-numeric: tabular-nums;
+}
+
+.web-day-hour-precip--high { font-weight: 700; }
+.web-day-hour-precip--zero { color: var(--text-tertiary); opacity: 0.45; }
+
+/* ── Details ─────────────────────────────────────────────────────────────── */
+
+.web-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.web-detail {
+  display: flex;
+  flex-direction: column;
+}
+
+.web-detail--wide {
+  grid-column: span 2;
+}
+
+@media (max-width: 1399px) {
+  .web-detail--wide { grid-column: auto; }
+}
+
+.web-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.web-detail-head-icon {
+  display: flex;
+  color: var(--text-tertiary);
+}
+
+.web-detail-head .section-label {
+  margin-bottom: 0;
+}
+
+.web-detail-hero {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.web-detail-value {
+  font-family: var(--font-display), var(--font);
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1.05;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.web-detail-unit {
+  font-size: 17px;
+  font-weight: 500;
+  opacity: 0.75;
+}
+
+.web-detail-status {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.web-detail-note {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 8px 0 0;
+  min-height: 2.6em;
+}
+
+.web-detail-chart {
+  margin-top: 10px;
+}
+
+.web-detail-chart-axis {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+.web-detail-chart-range {
+  font-variant-numeric: tabular-nums;
+}
+
+.web-detail-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.web-detail-stat {
+  flex: 1 1 130px;
+  background: var(--web-sunken);
+  border-radius: 12px;
+  padding: 9px 12px;
+}
+
+.web-detail-stat-label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  margin-bottom: 2px;
+}
+
+.web-detail-stat-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.web-detail-trend {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.web-sun-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 1.2fr) minmax(220px, 1fr);
+  gap: 24px;
+  align-items: center;
+}
+
+@media (max-width: 1399px) {
+  .web-sun-layout { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* The dial's arc and horizon are drawn in currentColor; nothing between here
+   and the card sets one, so without this they inherit the document default and
+   vanish on a dark or sky-tinted surface. */
+.web-sun-arc {
+  color: var(--text-primary);
+}
+
+.web-sun-arc .sun-dial--wide {
+  width: 100%;
+  height: auto;
+}
+
+.web-sun-times {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.web-sun-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.web-sun-daylight {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.web-sun-uv .web-detail-note {
+  min-height: 0;
+}
+
+/* The shared AQI scale bar is built for the mobile detail cover, which puts its
+   own spacing above it; here it follows a paragraph directly. */
+.web-detail .aqi-scale {
+  margin: 16px 0 4px;
+  padding-bottom: 0;
+}
+
+/* ── Radar ───────────────────────────────────────────────────────────────── */
+
+/* The radar tab is one screen, no scrolling: the page box is the viewport less
+   the sticky header, and the card grows into whatever the footer leaves. That
+   means stretching every wrapper between .app-grid and the map, since a flex
+   child only fills its parent if the parent was told to fill too. min-height: 0
+   throughout — without it a flex item refuses to shrink below its content, and
+   the map's tiles would push the card past the bottom of the screen. */
+/* Full bleed: the radar is the page, so it drops the grid's gutters entirely
+   and runs edge to edge, from directly under the sticky header to the bottom of
+   the window. The footer wordmark is left off this one tab — it would be the
+   only thing keeping the map from actually being the whole page. */
+.app--web-radar .app-grid {
+  min-height: calc(100vh - var(--web-header-h));
+  padding: 0;
+  max-width: none;
+}
+
+.app--web-radar .main-content,
+.app--web-radar .weather-content,
+.app--web-radar .web-shell,
+.app--web-radar .web-panel,
+.app--web-radar .web-page--radar {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.app--web-radar .radar-fill {
+  flex: 1;
+  min-height: 0;
+}
+
+.radar-fill {
+  padding: 0;
+}
+
+/* Strip the card: no inset, no rounding, no shadow. The surface colour stays,
+   because the controls strip under the map still needs one to read against. */
+.app--web-radar .radar-fill {
+  border-radius: 0;
+  box-shadow: none;
+  margin: 0;
+}
+
+.radar-fill .radar-map-wrap {
+  margin: 0;
+  border-radius: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* The map takes the height the controls below it don't. A floor keeps it usable
+   if the window is short enough that the controls would otherwise crowd it out;
+   past that point the page starts scrolling rather than the map disappearing. */
+.radar-fill .radar-map {
+  flex: 1;
+  height: auto;
+  min-height: 260px;
+}
+
+/* ── Air quality ─────────────────────────────────────────────────────────── */
+
+.web-aqi-hero {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 28px;
+  align-items: center;
+}
+
+@media (max-width: 1199px) {
+  .web-aqi-hero { grid-template-columns: minmax(0, 1fr); }
+}
+
+.web-aqi-dial {
+  width: 100%;
+  height: auto;
+}
+
+.web-aqi-band {
+  fill: none;
+  stroke-width: 13;
+  stroke-linecap: butt;
+  opacity: 0.85;
+}
+
+.web-aqi-dot {
+  stroke: var(--card-bg);
+  stroke-width: 3;
+}
+
+.web-aqi-dial-num {
+  font-family: var(--font-display), var(--font);
+  font-size: 46px;
+  font-weight: 600;
+  text-anchor: middle;
+}
+
+.web-aqi-dial-cap {
+  fill: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-anchor: middle;
+}
+
+.web-aqi-status {
+  font-family: var(--font-display), var(--font);
+  font-size: 26px;
+  font-weight: 600;
+}
+
+.web-aqi-note {
+  font-size: 14px;
+  color: var(--text-secondary);
+  margin: 6px 0 0;
+  max-width: 60ch;
+}
+
+.web-aqi-driver {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 12px 0 0;
+}
+
+.web-aqi-driver strong {
+  color: var(--text-primary);
+}
+
+.web-aqi-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin-top: 16px;
+}
+
+.web-aqi-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.web-aqi-legend-swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.web-aqi-legend-range {
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.web-poll-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.web-poll {
+  background: var(--web-sunken);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.web-poll-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.web-poll-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.web-poll-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.web-poll-unit {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+
+.web-poll-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bar-track-bg);
+  overflow: hidden;
+}
+
+.web-poll-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+
+.web-poll-desc {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+  margin-top: 8px;
+}
+
+.web-aqi-gridline {
+  stroke-width: 1;
+  stroke-dasharray: 2 5;
+  opacity: 0.55;
+}
+
+.web-aqi-gridlabel {
+  fill: var(--text-tertiary);
+  font-size: 10.5px;
+  text-anchor: end;
+}
+
+.web-aqi-peaks {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.web-aqi-peak {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 6px;
+  border-radius: 12px;
+  background: var(--web-sunken);
+  text-align: center;
+}
+
+.web-aqi-peak-day {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.web-aqi-peak-val {
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.web-aqi-peak-label {
+  font-size: 10.5px;
+  color: var(--text-tertiary);
+}
+
+/* ── Narrower desktops ───────────────────────────────────────────────────── */
+
+@media (max-width: 1279px) {
+  .web-hero,
+  .web-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .web-glance-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .web-table-head,
+  .web-table-row {
+    grid-template-columns: 76px minmax(120px, 1.3fr) 64px 68px 116px 84px 52px;
+    gap: 8px;
+    padding-inline: 14px;
+  }
+
+  .web-day-row {
+    grid-template-columns: 84px 34px minmax(90px, 1fr) 48px minmax(170px, 1.6fr) 20px;
+    gap: 10px;
+  }
+}
+
+/* ── Splash home ─────────────────────────────────────────────────────────── */
+
+/* On the phone styles the splash is a poster you tap anywhere on. Here it is
+   the app's home screen: a search field and the places you've already looked
+   at, so a desktop launch lands on something usable. The scenery (clouds,
+   stars, wordmark) is the shared splash — only the content below is new. */
+
+/* Both moves are withheld from .splash-logo--exit so the fly-to-header
+   animation still starts from wherever the logo actually sits. */
+.splash-bg--web .splash-logo:not(.splash-logo--exit) {
+  top: 23%;
+}
+
+.splash-bg--web .splash-logo:not(.splash-logo--exit) .splash-logo-text {
+  font-size: clamp(2rem, 4vw, 3rem);
+}
+
+.splash-bg--web .splash-logo-img {
+  width: clamp(72px, 8vw, 104px);
+  bottom: calc(77% + 2.2rem);
+}
+
+.splash-home {
+  --splash-surface: rgba(255, 255, 255, 0.55);
+  --splash-surface-hover: rgba(255, 255, 255, 0.82);
+  --splash-surface-border: rgba(255, 255, 255, 0.6);
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 32%;
+  /* Bottom-anchored rather than auto-height: the recents list scrolls inside
+     the leftover space instead of running off the screen, and clears the
+     version line at the foot of the splash. */
+  bottom: calc(var(--sa-bottom) + 56px);
+  width: min(840px, 88vw);
+  display: flex;
+  flex-direction: column;
+  /* .splash-bg itself is inert; this is the part that isn't. */
+  pointer-events: auto;
+}
+
+[data-theme="dark"] .splash-home {
+  --splash-surface: rgba(255, 255, 255, 0.07);
+  --splash-surface-hover: rgba(255, 255, 255, 0.13);
+  --splash-surface-border: rgba(255, 255, 255, 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .splash-home {
+    --splash-surface: rgba(255, 255, 255, 0.07);
+    --splash-surface-hover: rgba(255, 255, 255, 0.13);
+    --splash-surface-border: rgba(255, 255, 255, 0.1);
+  }
+}
+
+/* Clears out ahead of the logo so the wordmark flies to the header alone. */
+.splash-home--exit {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+/* A city is being fetched: the splash still covers the loading skeleton, so it
+   goes inert and the card that was clicked keeps its spinner lit. */
+.splash-home--busy {
+  pointer-events: none;
+}
+
+.splash-home--busy .splash-search,
+.splash-home--busy .splash-city:not(.splash-city--opening) {
+  opacity: 0.5;
+  transition: opacity 0.2s ease;
+}
+
+/* Not clipped by the scroll container below it, so the results dropdown can
+   hang over the cards instead of being cut off by them. */
+.splash-search {
+  position: relative;
+  z-index: 2;
+}
+
+.splash-search .search-wrapper {
+  margin-bottom: 22px;
+}
+
+.splash-search .search-bar {
+  height: 56px;
+  padding: 0 22px;
+  border-color: transparent;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+}
+
+.splash-search .search-bar input {
+  font-size: 16px;
+}
+
+.splash-search .search-dropdown {
+  border-radius: 20px;
+}
+
+.splash-recents {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.splash-recents .section-label {
+  margin-bottom: 10px;
+}
+
+.splash-city-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px;
+  padding-bottom: 6px;
+}
+
+.splash-city {
+  position: relative;
+  border-radius: 16px;
+  background: var(--splash-surface);
+  border: 1px solid var(--splash-surface-border);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+
+.splash-city:hover {
+  background: var(--splash-surface-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.14);
+}
+
+.splash-city-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 14px 16px 13px;
+  border: none;
+  border-radius: inherit;
+  background: none;
+  font-family: var(--font);
+  text-align: left;
+  cursor: pointer;
+}
+
+.splash-city-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.splash-city-home {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.splash-city-sub {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+/* Reserved height: the conditions arrive a moment after the names, and the
+   grid shouldn't jump when they land. */
+.splash-city-now {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  margin-top: 8px;
+}
+
+.splash-city-icon {
+  display: flex;
+  font-size: 26px;
+  line-height: 1;
+}
+
+.splash-city-temp {
+  font-size: 30px;
+  font-weight: 300;
+  letter-spacing: -1px;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.splash-city-temp--unknown {
+  opacity: 0.4;
+}
+
+.splash-city-feels {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  min-height: 1em;
+}
+
+.splash-city-spinner {
+  width: 22px;
+  height: 22px;
+}
+
+/* Kept off the card until it's hovered (or tabbed to) so six cards don't read
+   as six close buttons. */
+.splash-city-remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  padding: 5px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+
+.splash-city:hover .splash-city-remove,
+.splash-city-remove:focus-visible {
+  opacity: 1;
+}
+
+.splash-city-remove:hover {
+  background: var(--hover-medium);
+  color: var(--text-primary);
+}
+
+.splash-home-hint {
+  margin: 0;
+  text-align: center;
+  font-size: 14px;
+  color: var(--text-tertiary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash-city:hover {
+    transform: none;
+  }
+}

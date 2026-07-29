@@ -399,7 +399,127 @@ function OverviewSettingsView({ showOverview, onShowOverviewChange, overviewPart
   )
 }
 
-function ThemeView({ darkMode, onDarkModeChange, platformTheme, onPlatformThemeChange, onBack }) {
+// Seed colors for the Material You palette. Each is a source color, not a token
+// the app paints directly — the palette generator derives the whole light/dark
+// token set from it, so these read as the swatch colors and roughly as the
+// light-mode primary. Anything outside the presets goes through the browser's
+// own color picker on the last swatch.
+const MATERIAL_SEEDS = [
+  { value: '#6750a4', label: 'Purple'  },
+  { value: '#0b57d0', label: 'Blue'    },
+  { value: '#00696e', label: 'Teal'    },
+  { value: '#146c2e', label: 'Green'   },
+  { value: '#8f4c00', label: 'Orange'  },
+  { value: '#b3261e', label: 'Red'     },
+  { value: '#8c4a60', label: 'Rose'    },
+]
+
+// The most transparent a card may get. Past this the label on it is reading
+// against the sky animation rather than against a surface, and the card has
+// stopped being a card. Exported because App.jsx clamps the stored value to it
+// — a value past this one would mix the fill at a negative opacity, which is
+// not a color, which is a card with no background at all.
+export const MAX_CARD_TRANSPARENCY = 50
+
+// The transparency control itself, shared by the two phone styles. Both thin
+// their card stack over the same sky, so the row, its peek behaviour and the
+// stored value are identical — only what each style does with the number
+// differs (see the effect in App.jsx).
+function CardTransparencyRow({ transparency, onTransparencyChange, onPeekChange }) {
+  return (
+    <div className="settings-row md-slider-row">
+      <div className="settings-row-label">Card Transparency</div>
+      <div className="md-slider-wrap">
+        {/* Holding the thumb clears the settings page away so the change
+            lands on the real cards while it's being made. The page is only
+            faded, never unmounted, and nothing moves: this input owns the
+            pointer for the length of the gesture, and taking it out of the
+            document — or letting the row reflow under the thumb — would
+            strand the drag. */}
+        <input
+          className="md-slider"
+          type="range"
+          min="0"
+          max={MAX_CARD_TRANSPARENCY}
+          step="5"
+          value={transparency}
+          /* WebKit can't paint the filled half of the track on its own —
+             --fill is the gradient stop that stands in for it. */
+          style={{ '--fill': `${(transparency / MAX_CARD_TRANSPARENCY) * 100}%` }}
+          onChange={e => onTransparencyChange(Number(e.target.value))}
+          onPointerDown={() => onPeekChange(true)}
+          onPointerUp={() => onPeekChange(false)}
+          onPointerCancel={() => onPeekChange(false)}
+          aria-label="Card transparency"
+        />
+      </div>
+    </div>
+  )
+}
+
+function GlassSection({ transparency, onTransparencyChange, onPeekChange }) {
+  return (
+    <>
+      <p className="color-coding-desc">Choose how much of the sky behind the cards shows through the glass.</p>
+      <div className="card settings-card md-peek-host">
+        <CardTransparencyRow
+          transparency={transparency}
+          onTransparencyChange={onTransparencyChange}
+          onPeekChange={onPeekChange}
+        />
+      </div>
+    </>
+  )
+}
+
+function MaterialYouSection({ color, onColorChange, transparency, onTransparencyChange, onPeekChange }) {
+  const custom = !MATERIAL_SEEDS.some(seed => seed.value === color)
+  return (
+    <>
+      <p className="color-coding-desc">Choose the color the Material You theme is built from — surfaces, text and switches are all generated from it, for both light and dark — and how much of the sky behind the cards shows through them.</p>
+      <div className="card settings-card md-peek-host">
+        <div className="settings-row md-color-row">
+          <div className="settings-row-label">Theme Color</div>
+          <div className="md-swatches">
+            {MATERIAL_SEEDS.map(seed => (
+              <button
+                key={seed.value}
+                className={`md-swatch${color === seed.value ? ' active' : ''}`}
+                style={{ '--swatch': seed.value }}
+                onClick={() => onColorChange(seed.value)}
+                aria-label={seed.label}
+                aria-pressed={color === seed.value}
+                title={seed.label}
+              />
+            ))}
+            {/* The custom slot shows a spectrum until it holds the live color.
+                The <input> is the whole hit area — clicking it opens the OS
+                color picker, so no separate button is needed. */}
+            <label
+              className={`md-swatch md-swatch--custom${custom ? ' active' : ''}`}
+              style={custom ? { '--swatch': color } : undefined}
+              title="Custom color"
+            >
+              <input
+                type="color"
+                value={color}
+                onChange={e => onColorChange(e.target.value)}
+                aria-label="Custom theme color"
+              />
+            </label>
+          </div>
+        </div>
+        <CardTransparencyRow
+          transparency={transparency}
+          onTransparencyChange={onTransparencyChange}
+          onPeekChange={onPeekChange}
+        />
+      </div>
+    </>
+  )
+}
+
+function ThemeView({ darkMode, onDarkModeChange, platformTheme, onPlatformThemeChange, materialColor, onMaterialColorChange, cardTransparency, onCardTransparencyChange, onPeekChange, onBack }) {
   return (
     <>
       {onBack && (
@@ -422,7 +542,7 @@ function ThemeView({ darkMode, onDarkModeChange, platformTheme, onPlatformThemeC
           />
         </SettingRow>
       </div>
-      <p className="color-coding-desc">Match the app to your device. iOS uses the Apple font and look; Android uses Google Sans and a Material You style.</p>
+      <p className="color-coding-desc">Choose the app's style. iOS and Android are the two phone looks; Web is the desktop app, which is what a computer opens by default.</p>
       <div className="card settings-card">
         <SettingRow label="App Style">
           <SegmentedControl
@@ -431,10 +551,31 @@ function ThemeView({ darkMode, onDarkModeChange, platformTheme, onPlatformThemeC
             options={[
               { value: 'ios',     label: 'iOS'     },
               { value: 'android', label: 'Android' },
+              { value: 'web',     label: 'Web'     },
             ]}
           />
         </SettingRow>
       </div>
+      {/* Only Android draws itself from the Material You tokens, so the seed
+          picker is its alone. Transparency rides along there and stands on its
+          own under iOS, whose glass thins the same way. Web has neither: its
+          cards are a desktop surface, not a layer over the sky. */}
+      {platformTheme === 'android' && (
+        <MaterialYouSection
+          color={materialColor}
+          onColorChange={onMaterialColorChange}
+          transparency={cardTransparency}
+          onTransparencyChange={onCardTransparencyChange}
+          onPeekChange={onPeekChange}
+        />
+      )}
+      {platformTheme === 'ios' && (
+        <GlassSection
+          transparency={cardTransparency}
+          onTransparencyChange={onCardTransparencyChange}
+          onPeekChange={onPeekChange}
+        />
+      )}
     </>
   )
 }
@@ -570,6 +711,23 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastM
 const SUB_VIEW_TITLES = { colorcoding: 'Color Coding', overview: 'Weather Overview Settings', effects: 'Weather Effects', theme: 'Theme' }
 
 export function SettingsPage({ onBack, inline, closing, subView, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onThemeOpen, onSubViewBack, colorCoding, onColorCodingToggle, overviewParts, onOverviewPartToggle, ...bodyProps }) {
+  // Set while the transparency thumb is held, which fades the page down to just
+  // that slider (see .settings-page.peeking). A pointer released off the input
+  // — dragged past the end of the track, or lifted after the browser handed the
+  // capture back — would never send pointerup here, so the window is what
+  // guarantees the page comes back.
+  const [peeking, setPeeking] = useState(false)
+  useEffect(() => {
+    if (!peeking) return
+    const end = () => setPeeking(false)
+    window.addEventListener('pointerup', end)
+    window.addEventListener('pointercancel', end)
+    return () => {
+      window.removeEventListener('pointerup', end)
+      window.removeEventListener('pointercancel', end)
+    }
+  }, [peeking])
+
   let body
   if (subView === 'colorcoding') {
     body = <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} />
@@ -580,6 +738,11 @@ export function SettingsPage({ onBack, inline, closing, subView, onColorCodingOp
         onDarkModeChange={bodyProps.onDarkModeChange}
         platformTheme={bodyProps.platformTheme}
         onPlatformThemeChange={bodyProps.onPlatformThemeChange}
+        materialColor={bodyProps.materialColor}
+        onMaterialColorChange={bodyProps.onMaterialColorChange}
+        cardTransparency={bodyProps.cardTransparency}
+        onCardTransparencyChange={bodyProps.onCardTransparencyChange}
+        onPeekChange={setPeeking}
       />
     )
   } else if (subView === 'overview') {
@@ -628,7 +791,7 @@ export function SettingsPage({ onBack, inline, closing, subView, onColorCodingOp
   }
 
   return (
-    <div className={`settings-page${closing ? ' closing' : ''}`}>
+    <div className={`settings-page${closing ? ' closing' : ''}${peeking ? ' peeking' : ''}`}>
       <header className="settings-page-header">
         <button className="back-btn" onClick={subView ? onSubViewBack : onBack} aria-label="Back">
           <ArrowLeft size={18} />
