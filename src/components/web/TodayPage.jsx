@@ -154,12 +154,16 @@ export function TodayPage({
           are the things that actually benefit from it. */}
       <div className="web-cols">
         <div className="web-col-stack">
+          {/* Wide viewBox: the same chart drawn into a flatter box, so it fills
+              the column at a fraction of the height the phone proportions gave
+              it here. */}
           <PrecipNowcast
             minutely={weather.minutely_15}
             currentTime={current.time}
             mode={nowcastMode}
             current={current}
             radarClear={radarClear}
+            wide
           />
           {showOverview && (
           <WeatherOverview

@@ -175,10 +175,7 @@ export function AirQualityPage({ airQuality, timezone }) {
   return (
     <div className="web-page">
       <div className="web-page-head">
-        <div>
-          <h2 className="web-page-title">Air quality</h2>
-          <p className="web-page-sub">Current US AQI, what is driving it, and how it develops over the coming days.</p>
-        </div>
+        <h2 className="web-page-title">Air quality</h2>
       </div>
 
       <div className="card web-aqi-hero">

@@ -427,16 +427,15 @@ export function WeatherRadar({ location, timezone, mode = 'both', fill = false }
 
       <div className="radar-map-wrap">
         <div ref={mapRef} className="radar-map" />
-        {(expanded || fill) && (
+        {/* The full-screen overlay keeps its map tools floating on the map, and
+            is the only mode that offers a way out of itself. Fill mode puts the
+            same tools in the strip below instead — there the map is the whole
+            page, so anything laid on it is covering the thing it controls. */}
+        {expanded && (
           <>
-            {/* Only the full-screen overlay offers a way out of itself. In fill
-                mode the map is already the whole page, so there is nothing to
-                expand into and nothing to collapse back to. */}
-            {expanded && (
-              <button className="radar-expand-btn radar-expand-btn--floating" onClick={collapse} aria-label="Collapse">
-                <Minimize2 size={20} />
-              </button>
-            )}
+            <button className="radar-expand-btn radar-expand-btn--floating" onClick={collapse} aria-label="Collapse">
+              <Minimize2 size={20} />
+            </button>
             <div className="radar-zoom-btns">
               <button className="radar-zoom-btn" onClick={handleZoomIn} aria-label="Zoom in">
                 <ZoomIn size={16} />
@@ -465,9 +464,24 @@ export function WeatherRadar({ location, timezone, mode = 'both', fill = false }
           <div className="radar-big-time">
             {frames[idx] ? fmtTime(frames[idx].time, timezone) : ''}
           </div>
-          <button className="radar-play-circle" onClick={() => setPlaying(v => !v)} aria-label={playing ? 'Pause' : 'Play'}>
-            {playing ? <Pause size={22} /> : <Play size={22} />}
-          </button>
+          <div className="radar-row-actions">
+            {fill && (
+              <div className="radar-map-tools">
+                <button className="radar-zoom-btn" onClick={handleZoomIn} aria-label="Zoom in">
+                  <ZoomIn size={16} />
+                </button>
+                <button className="radar-zoom-btn" onClick={handleZoomOut} aria-label="Zoom out">
+                  <ZoomOut size={16} />
+                </button>
+                <button className="radar-locate-btn" onClick={handleLocate} aria-label="Center on location">
+                  <Navigation size={15} />
+                </button>
+              </div>
+            )}
+            <button className="radar-play-circle" onClick={() => setPlaying(v => !v)} aria-label={playing ? 'Pause' : 'Play'}>
+              {playing ? <Pause size={22} /> : <Play size={22} />}
+            </button>
+          </div>
         </div>
 
         <div

@@ -4,7 +4,15 @@ import { useLayoutEffect, useRef, useState } from 'react'
 // pill that slides to whichever is active. The pill is a single positioned
 // element rather than a background on each button so the move between tabs is
 // animated rather than a hard swap.
-export function WebTabs({ tabs, active, onChange }) {
+//
+// Also the Hourly page's reading menu, which is the same control in a different
+// place — hence the id and label props. `controls` is for the case where every
+// tab points at one region that changes contents (the hourly table) rather than
+// at a panel per tab; a tab may carry `disabled` when its reading has no data.
+export function WebTabs({
+  tabs, active, onChange,
+  idPrefix = 'web-tab', controls, label = 'Forecast pages', className = '',
+}) {
   const listRef = useRef(null)
   const btnRefs = useRef({})
   const [pill, setPill] = useState(null)
@@ -27,9 +35,13 @@ export function WebTabs({ tabs, active, onChange }) {
     return () => { cancelAnimationFrame(raf); ro.disconnect() }
   }, [active, tabs])
 
+  // Arrow keys step over anything disabled rather than landing on it, so a
+  // reading with no data can't become the selection by keyboard either.
   const move = (delta) => {
-    const i = tabs.findIndex((t) => t.id === active)
-    onChange(tabs[(i + delta + tabs.length) % tabs.length].id)
+    const usable = tabs.filter((t) => !t.disabled)
+    if (!usable.length) return
+    const i = usable.findIndex((t) => t.id === active)
+    onChange(usable[(i + delta + usable.length) % usable.length].id)
   }
 
   const handleKeyDown = (e) => {
@@ -40,8 +52,8 @@ export function WebTabs({ tabs, active, onChange }) {
   }
 
   return (
-    <div className="web-tabs-wrap">
-      <div className="web-tabs card" role="tablist" aria-label="Forecast pages" ref={listRef} onKeyDown={handleKeyDown}>
+    <div className={`web-tabs-wrap${className ? ` ${className}` : ''}`}>
+      <div className="web-tabs card" role="tablist" aria-label={label} ref={listRef} onKeyDown={handleKeyDown}>
         {pill && (
           <span
             className={`web-tab-pill${ready ? ' web-tab-pill--ready' : ''}`}
@@ -55,9 +67,10 @@ export function WebTabs({ tabs, active, onChange }) {
             ref={(el) => { btnRefs.current[t.id] = el }}
             className={`web-tab${t.id === active ? ' web-tab--active' : ''}`}
             role="tab"
-            id={`web-tab-${t.id}`}
+            id={`${idPrefix}-${t.id}`}
             aria-selected={t.id === active}
-            aria-controls={`web-panel-${t.id}`}
+            aria-controls={controls ?? `web-panel-${t.id}`}
+            disabled={t.disabled}
             tabIndex={t.id === active ? 0 : -1}
             onClick={() => onChange(t.id)}
           >

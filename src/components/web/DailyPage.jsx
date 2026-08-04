@@ -93,10 +93,7 @@ export function DailyPage({ weather, unit, colorCoding }) {
     <div className="web-page">
       <div className="card web-chart-card">
         <div className="web-page-head">
-          <div>
-            <h2 className="web-page-title">7-day forecast</h2>
-            <p className="web-page-sub">Daily highs and lows for the week ahead. Select a day for its full breakdown.</p>
-          </div>
+          <h2 className="web-page-title">7-day forecast</h2>
         </div>
         <WeekChart daily={daily} timezone={timezone} unit={unit} colorCoding={colorCoding.daily} />
       </div>

@@ -25,6 +25,22 @@ of the build, so it does not depend on the Pages site being up.
   the app still opens but the Workbox precache fails and offline never works.
 - **Theme** is `Theme.AppCompat.DayNight` + algorithmic darkening, so the web
   app's "system" theme setting sees the right `prefers-color-scheme`.
+- **Notifications are native, not web.** A WebView exposes no Notifications API,
+  and — more to the point — a notification is only worth having if it arrives
+  when the app is closed, which no page script can do. So `WeatherCheckWorker`
+  (WorkManager, hourly) fetches Open-Meteo and the NWS itself and applies the
+  rules that used to live in `src/utils/notifications.js`; the page's only job is
+  to mirror the toggles, the current location, and the unit into
+  `NotifyStore` through `AndroidNotify.syncSettings`. Opening the app enqueues
+  one extra check, so both paths share the one dedup record and a rain
+  notification still fires once a day, not once per path.
+
+  WorkManager keeps its schedule in its own database, so it survives reboot,
+  force-stop, and app update with no boot receiver of ours (the library merges
+  in `RECEIVE_BOOT_COMPLETED` and its own receiver). Doze can push an hourly run
+  into the next maintenance window — treat the hour as a floor. Rain and the
+  daily summary stay quiet overnight; the summary fires between 17:00 and 22:00
+  local, and NOAA alerts fire whenever they arrive.
 
 ## Build
 

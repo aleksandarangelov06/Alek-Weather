@@ -54,6 +54,38 @@
   display: block;
 }
 
+/* ── Page container ──────────────────────────────────────────────────────── */
+
+/* The header and grid that wrap every page are App.css's, and there they are a
+   phone column: max-width 480px, 600px from 768px up, going full-bleed only
+   inside a (min-width: 1100px) block. That was fine when the web app existed
+   only above 1100px. Now that the style is honoured at any width, the shell has
+   to claim the container itself — keyed off the shell attribute rather than a
+   width, so it holds wherever the web app is rendered. This file loads after
+   App.css, so these win without !important.
+
+   Horizontal padding is fluid: 48px of gutter on each side is right on a
+   monitor and absurd on a 380px phone, where it would eat a quarter of the
+   screen. Only the gutters scale: the header's vertical rhythm is shared with
+   the phone shells, and there is nothing to gain by shrinking it. Whatever
+   height it lands on, App.jsx measures it into --web-header-h, so the sticky
+   column heads that hang off the header follow it. */
+:root[data-shell="desktop"] .app-header,
+:root[data-shell="desktop"] .app-grid {
+  max-width: none;
+}
+
+:root[data-shell="desktop"] .app-header {
+  padding-inline: max(clamp(14px, 3.4vw, 48px), var(--sa-left)) max(clamp(14px, 3.4vw, 48px), var(--sa-right));
+}
+
+:root[data-shell="desktop"] .app-grid {
+  padding: clamp(14px, 2vw, 24px)
+           max(clamp(14px, 3.4vw, 48px), var(--sa-right))
+           calc(clamp(40px, 5vw, 64px) + var(--sa-bottom))
+           max(clamp(14px, 3.4vw, 48px), var(--sa-left));
+}
+
 /* ── Tab bar ─────────────────────────────────────────────────────────────── */
 
 /* The tab bar sits in the header, in the slot the wordmark used to hold, and
@@ -68,8 +100,13 @@
    so the phone layouts keep the behaviour they were tuned against. */
 .app--web-tabs {
   overflow-x: clip;
-  /* Height of the sticky header: 24px top padding + the 56px tab-bar slot +
-     12px bottom padding. Anything that has to sit clear of it reads this. */
+  /* Height of the sticky header — anything that has to sit clear of it reads
+     this. App.jsx measures the header and overwrites this property on the same
+     element; the value here is only what the first paint uses, before the
+     ResizeObserver has reported. It is the tallest the header gets (24px top
+     padding + a 56px tab-bar slot + 12px bottom), because guessing high hides
+     content under the header for one frame, while guessing low flashes a band
+     of rows scrolling through above the column head. */
   --web-header-h: 92px;
 }
 
@@ -104,14 +141,21 @@
    the backdrop. It matches because .sky-bg is itself position: fixed, so the
    sky never moves with the page either.
 
-   The sky classes set the `background` shorthand, which resets
-   background-attachment; this file loads after App.css, so this wins. */
+   The sky classes set the `background` shorthand, which silently resets
+   background-attachment to scroll. Against the base .sky-* rules load order is
+   enough, but the dark-mode overrides are [data-theme="dark"] .sky-clear-day
+   and :root:not([data-theme="light"]) .sky-clear-day — two and three points of
+   specificity against this rule's one, so they won and the strip drew the whole
+   gradient squeezed into 92px: a bright band across the header with a hard seam
+   under it. !important because the fight is with a shorthand's side effect
+   rather than with anyone's intent, and out-specifying it would mean copying
+   both theme selectors here and re-copying them at the next one. */
 .header-sky {
   position: absolute;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background-attachment: fixed;
+  background-attachment: fixed !important;
 }
 
 .sky-active .app-header--tabs::before {
@@ -146,6 +190,69 @@
   .web-tabs-wrap { animation: none; }
 }
 
+/* The same bar used inside a card rather than in the header — the Hourly page's
+   reading menu, which sits at the top of the table it drives. It loses what was
+   specific to living in the header: the entrance animation (it isn't handing
+   over from a wordmark) and the centring (it heads a left-aligned table). */
+.web-tabs-wrap--inline {
+  justify-content: flex-start;
+  animation: none;
+}
+
+/* Nested in a card, the bar's own .card surface would be the same fill as the
+   card it sits on — invisible, leaving the pills adrift. Sunk instead, so it
+   reads as a control strip set into the card's top. */
+.web-tabs-wrap--inline .web-tabs {
+  background: var(--web-sunken);
+  box-shadow: none;
+  margin-bottom: 0;
+}
+
+/* The reading menu and the column head, pinned under the app header as a single
+   element. They were sticky separately, which meant the head had to park itself
+   at exactly the menu's height — and any disagreement, from a measurement one
+   frame late or a fluid tab font, opened a band that the rows scrolled through
+   in plain view. Sticking the pair as one box removes the arithmetic entirely.
+
+   The background is stated rather than inherited: while scrolling this is the
+   only thing between the rows and the viewport, so anything less than opaque
+   shows the table straight through it. --sky-card is the fill a card takes over
+   a sky and --card-bg the fill it takes otherwise — the pair `.card` resolves. */
+.web-table-stick {
+  position: sticky;
+  top: var(--web-header-h);
+  z-index: 3;
+  background: var(--sky-card, var(--card-bg));
+  /* Square on purpose, with no radius of its own. The card clips it (see
+     overflow: clip on .web-table-card), so at rest the card's own rounded
+     corners shape it and it reads as the top of the card — and once it pins
+     under the header, where the clip is square because the card's corners are
+     far above, it goes square too and meets the header edge to edge. A radius
+     here would instead leave two wedges of page background between the header
+     and the block for the rows to show through. */
+}
+
+/* A strip of the same fill carried up behind the app header. --web-header-h is
+   a measured pixel height, and the block's top edge has to land on the header's
+   bottom edge exactly: a fractional layout, a zoom level, or a measurement
+   arriving a frame late leaves a sliver with nothing behind it, which is where
+   the rows showed through. Rather than chase the arithmetic to the pixel, the
+   block paints past where the header ends; the header sits at z-index 6 against
+   this block's 3, so the overlap stays hidden behind it. */
+.web-table-stick::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 16px;
+  background: inherit;
+}
+
+.web-table-menu {
+  padding: 12px 12px 0;
+}
+
 .web-tabs {
   position: relative;
   display: flex;
@@ -162,6 +269,88 @@
 
 .web-tabs::-webkit-scrollbar { display: none; }
 
+/* ── Severe alert pill ───────────────────────────────────────────────────── */
+
+/* Holds the tab bar and the alert pill side by side in the header slot. The bar
+   keeps the middle: it is centred by its own wrapper, and the pill sits to its
+   right without shifting it, so switching tabs doesn't make the navigation
+   jump as the pill appears and disappears. */
+.web-tabs-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* Coloured by the same rules as the banner it points at — --alert-color and
+   --alert-bg are set inline from resolveStyle, so a warning is red here and red
+   there without the two ever being written down twice. */
+.web-alert-pill {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Round rather than a capsule now it holds only the glyph, and sized to the
+     tab bar's own height so the two read as one row of controls. */
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid var(--alert-color);
+  border-radius: 50%;
+  cursor: pointer;
+  pointer-events: auto;
+  color: var(--alert-color);
+  background: var(--alert-bg);
+  transition: background 0.14s, transform 0.14s;
+}
+
+/* A live warning should read as one at a glance, so unlike the tab bar the
+   pill keeps a solid outline and its own colour rather than sitting quiet
+   until selected. */
+.web-alert-pill:hover {
+  background: color-mix(in srgb, var(--alert-color) 22%, transparent);
+}
+
+.web-alert-pill:active {
+  transform: scale(0.97);
+}
+
+.web-alert-pill:focus-visible {
+  outline: 2px solid var(--alert-color);
+  outline-offset: 2px;
+}
+
+/* Warnings pulse — the hazard is happening or imminent. Same treatment the
+   banner's row icon gets, so the two agree about which alerts are urgent. */
+.web-alert-pill--critical {
+  animation: web-alert-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes web-alert-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--alert-color) 55%, transparent); }
+  70%      { box-shadow: 0 0 0 7px color-mix(in srgb, var(--alert-color) 0%, transparent); }
+}
+
+/* Over a sky the header is dark in every theme, and the tinted fill the banner
+   uses on a card is too faint to read against it. */
+.sky-active .web-alert-pill {
+  background: color-mix(in srgb, var(--alert-color) 26%, transparent);
+  border-color: color-mix(in srgb, var(--alert-color) 70%, transparent);
+  color: #fff;
+}
+
+.sky-active .web-alert-pill:hover {
+  background: color-mix(in srgb, var(--alert-color) 38%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .web-alert-pill { transition: none; }
+  .web-alert-pill:active { transform: none; }
+  .web-alert-pill--critical { animation: none; }
+}
+
 .web-tab {
   position: relative;
   z-index: 1;
@@ -170,10 +359,12 @@
   border: none;
   cursor: pointer;
   font-family: var(--font-display), var(--font);
-  font-size: 15px;
+  font-size: clamp(13.5px, 1.5vw, 15px);
   font-weight: 600;
   color: var(--text-primary);
-  padding: 10px 22px;
+  /* Tightening the gutters fits more tabs before the bar has to scroll. The
+     bar shrinking the header is fine: --web-header-h is measured, not assumed. */
+  padding: 10px clamp(11px, 2.2vw, 22px);
   border-radius: 999px;
   white-space: nowrap;
   transition: color 0.2s ease, opacity 0.2s ease;
@@ -181,6 +372,13 @@
 
 .web-tab:not(.web-tab--active) {
   opacity: 0.72;
+}
+
+/* A reading the location has no data for. Offered rather than hidden, so the
+   menu keeps the same shape everywhere and stays learnable. */
+.web-tab:disabled {
+  cursor: default;
+  opacity: 0.34;
 }
 
 .web-tab:not(.web-tab--active):hover {
@@ -333,17 +531,10 @@
 
 .web-page-title {
   font-family: var(--font-display), var(--font);
-  font-size: 24px;
+  font-size: clamp(19px, 2.4vw, 24px);
   font-weight: 600;
   color: var(--text-primary);
   margin: 0;
-}
-
-.web-page-sub {
-  font-size: 13.5px;
-  color: var(--text-secondary);
-  margin: 4px 0 0;
-  max-width: 62ch;
 }
 
 /* A page-head inside a card sits above that card's chart. */
@@ -469,22 +660,40 @@
   justify-content: center;
 }
 
-/* The mobile current card is sized for a phone hero; on a wide page it anchors
-   one column of a two-column band, so it gets room to breathe instead. */
+/* The mobile current card is sized for a phone hero, where it is the whole
+   screen and the air around it is the design. Here it is one column of a band,
+   so the same air is just an empty card. Everything below trims spacing only —
+   no type is resized, so the readings keep the weight they had.
+   Fluid rather than stepped: stepping the padding at a breakpoint is exactly
+   where a layout looks broken just before it snaps. */
 .web-hero .current-card {
-  padding: 28px 24px;
+  padding: clamp(12px, 1.6vw, 18px) clamp(16px, 2.2vw, 24px);
   gap: 2px;
 }
 
+/* 16px above and below the glyph is a phone's spacing; at this size the icon
+   already separates itself from the text on either side. */
+.web-hero .current-icon {
+  margin: 6px 0 4px;
+}
+
+.web-hero .current-condition {
+  margin-top: 6px;
+}
+
+.web-hero .current-feels {
+  margin-top: 6px;
+}
+
 .web-hero .current-temp {
-  font-size: 78px;
+  font-size: clamp(52px, 8.2vw, 78px);
   line-height: 1.02;
 }
 
 .web-hero .current-icon svg,
 .web-hero .current-icon img {
-  width: 92px;
-  height: 92px;
+  width: clamp(62px, 9.6vw, 92px);
+  height: clamp(62px, 9.6vw, 92px);
 }
 
 .web-glance {
@@ -523,7 +732,7 @@
 }
 
 .web-glance-value {
-  font-size: 22px;
+  font-size: clamp(17px, 2.2vw, 22px);
   font-weight: 600;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
@@ -562,11 +771,17 @@
   min-width: 0;
 }
 
-/* The nowcast chart is a viewBox that scales its own type with its width, so
-   past a point it stops being a chart and becomes a poster. */
-.web-page .nowcast-card svg {
-  max-width: 640px;
-  margin-inline: auto;
+/* No width cap here any more. Capping the width shrank the drawing and centred
+   it, leaving the card nearly as tall with a small chart marooned in it — the
+   height follows the viewBox ratio, so the ratio is what had to change. The
+   web pages pass `wide` to PrecipNowcast for a 480-unit box instead of 300,
+   which is a chart of the same width and two-thirds the height. */
+
+/* 20px all round is the phone card's padding, where the nowcast is one of a
+   stack you scroll past. Here it sits in a column beside the hourly and weekly
+   previews, and the extra air only pushes those further down the page. */
+.web-page .nowcast-card {
+  padding: 14px 16px 12px;
 }
 
 .web-preview-head {
@@ -771,6 +986,118 @@
 
 /* ── Hourly overview chart ───────────────────────────────────────────────── */
 
+/* ── Focused reading cell ────────────────────────────────────────────────── */
+
+/* The single reading a narrowed table shows: a bar for the shape of the series
+   and the number itself. The bar leads because the eye reads the run of them
+   down the column as a profile — the same job the chart used to do, folded into
+   the row rather than stacked above it. */
+/* The track and bar are lifted from the 7 Day page's temperature rows — same
+   7px height, same --daily-bar-bg channel, same gradient — so the two pages
+   read as the same kind of thing. The numbers differ on purpose: there a row
+   shows a low and a high at equal weight, here one hour's reading leads at 18px
+   with the day's range small on either side of the bar. Every column is a fixed
+   width so a reading gaining a digit shifts nothing. */
+.web-focus-cell {
+  --web-focus-value-w: 82px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--web-focus-value-w);
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* Wind and gusts: "5 mph SE" needs more room than a temperature, more still now
+   the number itself is 18px. */
+.web-focus-cell--wide {
+  --web-focus-value-w: 122px;
+}
+
+/* The unit rides with the small figures rather than the big one — at 0.85em of
+   an 18px number it read as part of the reading instead of a label on it. */
+.web-focus-value .web-unit {
+  font-size: 12.5px;
+  font-weight: 400;
+}
+
+/* Temperature carries two extra figures: the day's low at the bar's left end,
+   and the day's high after a slash, which puts the hour in the context of the
+   day it belongs to. The left column fits a three-digit reading, and the value
+   column the whole "85° / 91°" pair at the size the hour's number is set in —
+   both sized so nothing reflows when the numbers gain a digit. */
+.web-focus-cell--range {
+  --web-focus-value-w: 112px;
+  grid-template-columns: 40px minmax(0, 1fr) var(--web-focus-value-w);
+}
+
+/* Deliberately smaller and quieter than the reading itself — context for the
+   bar's left end, not a second number competing with the one the row is about. */
+.web-focus-low {
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+  text-align: right;
+}
+
+/* Same size and weight as the low at the other end of the bar: the two are a
+   pair, the day's range the hour sits inside, and only the hour's own reading
+   is meant to be read at full size. */
+.web-focus-max {
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+
+
+.web-focus-track {
+  position: relative;
+  min-width: 0;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--daily-bar-bg);
+}
+
+/* Every reading is a magnitude from nothing, so every bar grows from the track's
+   left end and only its width varies. Down the column those widths are the
+   shape of the series. */
+.web-focus-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.18s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .web-focus-bar { transition: none; }
+}
+
+/* Precipitation and humidity are water, and read as the same blue they do
+   everywhere else on the page; wind gets its own weight so gusts and sustained
+   wind are not two identical-looking columns. */
+.web-focus-bar--precip,
+.web-focus-bar--humidity { background: var(--web-precip); }
+.web-focus-bar--gust     { opacity: 0.65; }
+
+/* The reading the row exists for, and the only thing in the cell set at full
+   size — the day's low and high flanking it are deliberately small, so this can
+   run larger than the 7 Day page's equivalent without crowding anything. */
+.web-focus-value {
+  text-align: right;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.web-focus-value--zero {
+  color: var(--text-tertiary);
+  opacity: 0.5;
+}
+
 .web-hchart-frame {
   position: relative;
   display: flex;
@@ -811,23 +1138,33 @@
 
 /* A hairline that sits in the card rather than on top of it: transparent track,
    and the thumb padded away from the edges with a transparent border so it
-   floats clear of the frame instead of butting against the rounded corner. */
-.web-hchart-scroll::-webkit-scrollbar {
+   floats clear of the frame instead of butting against the rounded corner.
+
+   Shared with the hour strip inside an open day on the 7 Day page, which is the
+   same thing — a row of hours scrolling sideways inside a card — and had been
+   left with the platform's default bar, a grey trough with square end caps
+   drawn hard against the card's bottom edge. The declarations live here rather
+   than beside .web-day-hours so the two cannot drift. */
+.web-hchart-scroll::-webkit-scrollbar,
+.web-day-hours::-webkit-scrollbar {
   height: 10px;
 }
 
-.web-hchart-scroll::-webkit-scrollbar-track {
+.web-hchart-scroll::-webkit-scrollbar-track,
+.web-day-hours::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.web-hchart-scroll::-webkit-scrollbar-thumb {
+.web-hchart-scroll::-webkit-scrollbar-thumb,
+.web-day-hours::-webkit-scrollbar-thumb {
   background: var(--web-scroll-thumb);
   background-clip: padding-box;
   border: 3px solid transparent;
   border-radius: 999px;
 }
 
-.web-hchart-scroll::-webkit-scrollbar-thumb:hover {
+.web-hchart-scroll::-webkit-scrollbar-thumb:hover,
+.web-day-hours::-webkit-scrollbar-thumb:hover {
   background: var(--web-scroll-thumb-hover);
   background-clip: padding-box;
 }
@@ -837,8 +1174,9 @@
   border-bottom: 1px solid var(--web-line);
 }
 
-/* Fixed height, matching HEAD_H in HourlyChart.jsx: the degree gutter offsets
-   itself by that number to line up with the plot below. */
+/* Fixed height so a column keeps its shape whichever reading is selected —
+   "5 mph SE" is two lines' worth of text where "84°" is one, and the strip
+   must not resize as you move through the menu. */
 .web-hcol {
   display: flex;
   flex-direction: column;
@@ -1218,46 +1556,78 @@
 
 /* ── Hourly table ────────────────────────────────────────────────────────── */
 
-/* No overflow clipping here: the day header below is sticky, and an
-   overflow-hidden ancestor would make it stick to a box that never scrolls. */
+/* `clip`, never `hidden`: CSS resolves overflow-hidden into a scroll container,
+   and the sticky block at the top of this card would then pin itself to a box
+   that never scrolls instead of to the viewport. `clip` clips the same overflow
+   without creating a scrollport — the same distinction .app--web-tabs relies on
+   further up this file.
+
+   What it clips: that block paints a strip of its own fill upward, to cover the
+   seam between itself and the app header. Unclipped, at rest, the strip is a
+   square band poking out past the card's rounded top corners. Clipping to the
+   card's own rounded box hides it until the card has scrolled far enough for
+   the strip to be inside the card, which is exactly when it is needed. It also
+   keeps the rows from painting into the corner arcs.
+
+   No padding of its own either — the reading menu at the top brings its own,
+   and the rows run to the card's edges. */
 .web-table-card {
-  padding: 8px 0 12px;
+  overflow: clip;
+  padding: 0 0 12px;
+  /* The head and every row share one template, and the table has two shapes:
+     seven columns in Overview, three when the menu narrows it to a single
+     reading. Holding the tracks in a custom property means the narrow-window
+     tiers below restate one value per breakpoint instead of one per shape, and
+     the head can never drift out of step with the rows. */
+  --web-table-cols: 86px minmax(160px, 1.4fr) 74px 78px 132px 96px 60px;
+}
+
+.web-table-card--focus {
+  --web-table-cols: 86px minmax(160px, 1.4fr) minmax(0, 2.4fr);
 }
 
 .web-table-head,
 .web-table-row {
   display: grid;
-  grid-template-columns: 86px minmax(160px, 1.4fr) 74px 78px 132px 96px 60px;
+  grid-template-columns: var(--web-table-cols);
   align-items: center;
   gap: 12px;
   padding: 0 20px;
 }
 
 .web-table-head {
-  padding-top: 10px;
-  padding-bottom: 10px;
-  font-size: 11px;
+  padding-top: 14px;
+  padding-bottom: 12px;
+  /* No corner radius: the reading menu occupies the card's top edge now, so
+     this is a band between two things rather than the lid of the card. */
+  font-size: 10.5px;
   font-weight: 600;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.7px;
   text-transform: uppercase;
   color: var(--text-tertiary);
   border-bottom: 1px solid var(--web-line);
-  position: sticky;
-  top: var(--web-header-h);
-  background: inherit;
-  z-index: 2;
+  /* Not sticky itself — .web-table-stick above pins it along with the menu, as
+     one box, so no offset has to be kept in step with anything. */
 }
 
+/* The day divider is the table's only real heading, so it gets the air to act
+   like one: a clear break above it, tight to the rows it introduces. */
 .web-table-day {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 14px 20px 8px;
+  padding: 22px 20px 6px;
   font-family: var(--font-display), var(--font);
 }
 
+/* ...except the first, which sits directly under the column head and would
+   otherwise open the table with a band of empty space. */
+.web-table-group:first-of-type .web-table-day {
+  padding-top: 14px;
+}
+
 .web-table-dayname {
-  font-size: 15px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--text-primary);
 }
@@ -1267,16 +1637,17 @@
   color: var(--text-tertiary);
 }
 
+/* 46px rather than the old 42: at 14px type the rows were closer together than
+   the text was tall, which is what made a long table hard to track across.
+   Height and font size move together — the ratio is the readable part. */
+/* No hover state: the rows aren't interactive, so a highlight that followed the
+   pointer only suggested they were. The "now" row below still carries the same
+   fill, which now marks that row alone rather than competing with whatever the
+   pointer happened to be over. */
 .web-table-row {
-  height: 42px;
-  font-size: 14px;
+  height: 46px;
+  font-size: 14.5px;
   color: var(--text-primary);
-  border-radius: 10px;
-  transition: background 0.12s;
-}
-
-.web-table-row:hover {
-  background: var(--web-sunken);
 }
 
 .web-table-row--now {
@@ -1284,7 +1655,12 @@
   font-weight: 600;
 }
 
+/* The time is the row's label, not one of its readings — it carries the display
+   face and a little more weight so the eye can run down that column and land on
+   an hour without reading the numbers beside it. */
 .web-table-time {
+  font-family: var(--font-display), var(--font);
+  font-weight: 500;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
 }
@@ -1311,7 +1687,11 @@
   display: block;
 }
 
+/* The one reading Overview leads with, on the same face as the focused value
+   so switching between the two views doesn't restyle the temperature. */
 .web-table-temp {
+  font-family: var(--font-display), var(--font);
+  font-size: 15px;
   font-weight: 600;
 }
 
@@ -1346,19 +1726,16 @@
   border-top: 1px solid var(--web-line);
 }
 
-.web-day--open {
-  background: var(--web-sunken);
-  border-radius: 14px;
-}
-
-.web-day--open + .web-day,
-.web-day:has(+ .web-day--open) {
-  border-top-color: transparent;
-}
+/* An open day gets no panel of its own: the chevron flipping and the detail
+   appearing under the row already say which one is expanded, and tinting the
+   whole block on top of that reads as a selection the row does not have. The
+   dividers above and below it stay drawn for the same reason — with no panel
+   edge to separate the open day from its neighbours, the lines are what does
+   it. */
 
 .web-day-row {
   display: grid;
-  grid-template-columns: 96px 40px minmax(120px, 1fr) 56px minmax(220px, 2fr) 24px;
+  grid-template-columns: 96px 66px minmax(120px, 1fr) 56px minmax(220px, 2fr) 24px;
   align-items: center;
   gap: 14px;
   width: 100%;
@@ -1371,14 +1748,6 @@
   border-radius: 14px;
   color: var(--text-primary);
   transition: background 0.14s;
-}
-
-.web-day-row:hover {
-  background: var(--web-sunken);
-}
-
-.web-day--open .web-day-row:hover {
-  background: transparent;
 }
 
 .web-day-name {
@@ -1399,8 +1768,8 @@
 
 .web-day-icon svg,
 .web-day-icon img {
-  width: 34px;
-  height: 34px;
+  width: 60px;
+  height: 60px;
   display: block;
 }
 
@@ -1535,13 +1904,22 @@
   white-space: nowrap;
 }
 
+/* Firefox gets the thin bar through the standard properties; the ::-webkit-
+   rules that shape it in Chromium sit with the hourly chart's, up beside
+   .web-hchart-scroll. overflow-y hidden keeps the tallest hour column from
+   arming a second, vertical bar. No bottom padding under the strip: the 10px
+   bar is its own gap from the card's edge, and the row of hours reads better
+   sitting directly on it than floating four pixels above. */
 .web-day-hours {
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: minmax(52px, 1fr);
   gap: 2px;
   overflow-x: auto;
-  padding-bottom: 4px;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--web-scroll-thumb) transparent;
 }
 
 .web-day-hour {
@@ -1632,7 +2010,7 @@
 
 .web-detail-value {
   font-family: var(--font-display), var(--font);
-  font-size: 40px;
+  font-size: clamp(30px, 4.2vw, 40px);
   font-weight: 600;
   line-height: 1.05;
   color: var(--text-primary);
@@ -1773,13 +2151,97 @@
    throughout — without it a flex item refuses to shrink below its content, and
    the map's tiles would push the card past the bottom of the screen. */
 /* Full bleed: the radar is the page, so it drops the grid's gutters entirely
-   and runs edge to edge, from directly under the sticky header to the bottom of
-   the window. The footer wordmark is left off this one tab — it would be the
-   only thing keeping the map from actually being the whole page. */
-.app--web-radar .app-grid {
-  min-height: calc(100vh - var(--web-header-h));
+   and runs edge to edge, from the very top of the window to the bottom of it.
+   The footer wordmark is left off this one tab — it would be the only thing
+   keeping the map from actually being the whole page.
+
+   The header still takes its height in the flow above this box, so a negative
+   top margin of exactly that height slides the grid back up underneath it, and
+   the min-height becomes the full viewport rather than the viewport less the
+   header. The two cancel, so the document is still one screen tall and nothing
+   scrolls. The header is sticky at top: 0 with z-index 6, well above the map's
+   own stacking context, so it keeps floating over the tiles it now overlaps.
+
+   Carries the shell attribute purely for specificity: the fluid gutters up top
+   are written as :root[data-shell="desktop"] .app-grid, and :root counts as a
+   pseudo-class, so a plain .app--web-radar .app-grid loses to it no matter how
+   far down the file it sits. Matching the prefix puts this one class ahead. */
+:root[data-shell="desktop"] .app--web-radar .app-grid {
+  min-height: 100vh;
+  margin-top: calc(-1 * var(--web-header-h));
   padding: 0;
   max-width: none;
+}
+
+/* With the map running up behind it, the header drops both of its backdrops:
+   the flat --bg panel that hides scrolling rows on the other tabs, and the
+   .header-sky strip that repaints the gradient over it. Neither has anything
+   left to hide here, and either one would be the one opaque band between the
+   map and the top of the window. */
+.app--web-radar .app-header--tabs::before,
+.app--web-radar .header-sky {
+  display: none;
+}
+
+/* The two header icons lose that backdrop with everything else, and they are
+   bare glyphs — over a pale basemap a white pin is not a pin. Give them the
+   surface the map's own zoom and locate controls wear (see the .sky-lvl-*
+   rules in App.css), which is also what the tab bar between them resolves to,
+   so the three read as one row of controls floating over the map.
+
+   Surface only, no colour: the glyphs already resolve to the right ink for
+   whichever fill --sky-card lands on — white over a sky, --text-secondary over
+   the white card when effects are off — and restating it here would win over
+   the .sky-active rule that does that and leave dark ink on a blue pill. */
+.app--web-radar .app-header--tabs .header-icon-btn,
+.app--web-radar .app-header--tabs .settings-btn {
+  background: var(--sky-card, var(--card-bg));
+  border-radius: 999px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+/* Map tools in the strip rather than on the map. The two zoom steps and locate
+   are written as overlays for the full-screen mode — absolutely placed in the
+   corners of .radar-map-wrap — so here they are unpinned and laid out in a row
+   beside the play button. */
+.radar-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.radar-map-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.radar-map-tools .radar-locate-btn {
+  position: static;
+}
+
+/* Floating on the map they take the card fill, which is what makes them read as
+   objects sitting above it. In the strip that fill is the surface they are
+   sitting on, so they would vanish into it — sunk into the card instead, the
+   same treatment every other nested control in the web app gets. Sized to a
+   square that reads as a set with the 48px play circle beside them. */
+.radar-map-tools .radar-zoom-btn,
+.radar-map-tools .radar-locate-btn {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  justify-content: center;
+  background: var(--web-sunken);
+  box-shadow: none;
+  border-radius: 12px;
+}
+
+/* Restated because the rule above out-specifies the base :hover and would
+   otherwise leave these as the only buttons on the page with no hover at all. */
+.radar-map-tools .radar-zoom-btn:hover,
+.radar-map-tools .radar-locate-btn:hover {
+  background: var(--accent-light);
+  color: var(--accent);
 }
 
 .app--web-radar .main-content,
@@ -2045,16 +2507,121 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
+  .web-table-card {
+    --web-table-cols: 76px minmax(120px, 1.3fr) 64px 68px 116px 84px 52px;
+  }
+
+  .web-table-card--focus {
+    --web-table-cols: 76px minmax(120px, 1.3fr) minmax(0, 2.4fr);
+  }
+
   .web-table-head,
   .web-table-row {
-    grid-template-columns: 76px minmax(120px, 1.3fr) 64px 68px 116px 84px 52px;
     gap: 8px;
     padding-inline: 14px;
   }
 
   .web-day-row {
-    grid-template-columns: 84px 34px minmax(90px, 1fr) 48px minmax(170px, 1.6fr) 20px;
+    grid-template-columns: 84px 60px minmax(90px, 1fr) 48px minmax(170px, 1.6fr) 20px;
     gap: 10px;
+  }
+
+  .web-day-icon svg,
+  .web-day-icon img { width: 54px; height: 54px; }
+}
+
+/* ── Narrow windows ──────────────────────────────────────────────────────── */
+
+/* Below 1100px the Web style used to hand off to the phone layout entirely.
+   It no longer does — the setting is honoured at every width — so the wide
+   pieces have to fold down instead. Two tiers: a tablet-ish one that drops the
+   remaining two-column rows, and a phone-width one that sheds table columns
+   the row cannot fit. The tab bar needs nothing here; it is already a
+   horizontally scrollable flex row (.web-tabs), so it just gets shorter. */
+
+@media (max-width: 1099px) {
+  /* Anything still auto-fitting at a 300px track would leave one orphaned
+     column with a wide gutter; a single explicit column is tidier. */
+  .web-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .web-glance-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .web-table-card {
+    --web-table-cols: 68px minmax(90px, 1.2fr) 56px 60px 100px 72px 44px;
+  }
+
+  .web-table-card--focus {
+    --web-table-cols: 68px minmax(90px, 1.2fr) minmax(0, 2.4fr);
+  }
+
+  .web-table-head,
+  .web-table-row {
+    gap: 6px;
+    padding-inline: 12px;
+  }
+
+  .web-day-row {
+    grid-template-columns: 76px 54px minmax(70px, 1fr) 44px minmax(120px, 1.4fr) 18px;
+    gap: 8px;
+    padding-inline: 10px;
+  }
+
+  .web-day-icon svg,
+  .web-day-icon img { width: 48px; height: 48px; }
+}
+
+@media (max-width: 767px) {
+  /* Humidity and UV are the two columns the hourly table can lose without
+     becoming a different table: temperature, precipitation and wind are what
+     the page is read for. Head and row share a child order, so one rule hides
+     the column in both. Overview only — a focused table has three columns and
+     nothing to spare, and the menu is how you reach those readings here. */
+  .web-table-card:not(.web-table-card--focus) .web-table-head > :nth-child(n + 6),
+  .web-table-card:not(.web-table-card--focus) .web-table-row > :nth-child(n + 6) {
+    display: none;
+  }
+
+  .web-table-card {
+    --web-table-cols: 58px minmax(0, 1fr) 48px 52px 78px;
+  }
+
+  .web-table-card--focus {
+    --web-table-cols: 58px minmax(0, 1fr) minmax(0, 2fr);
+  }
+
+  /* Same trade on the daily rows: the written condition goes, since the icon
+     beside it already carries that meaning. The high/low bar stays — it is the
+     row's whole point. */
+  .web-day-row > .web-day-cond {
+    display: none;
+  }
+
+  .web-day-row {
+    grid-template-columns: 64px 50px 40px minmax(0, 1fr) 16px;
+    gap: 8px;
+  }
+
+  .web-day-icon svg,
+  .web-day-icon img { width: 44px; height: 44px; }
+
+  .web-glance-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .web-day-stats {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  }
+
+  .web-poll-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .splash-city-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   }
 }
 
@@ -2243,7 +2810,7 @@
 }
 
 .splash-city-temp {
-  font-size: 30px;
+  font-size: clamp(24px, 3.2vw, 30px);
   font-weight: 300;
   letter-spacing: -1px;
   color: var(--text-primary);
@@ -2303,4 +2870,366 @@
   .splash-city:hover {
     transform: none;
   }
+}
+
+/* ── Settings ────────────────────────────────────────────────────────────────
+   The settings surfaces are shared markup: App.css draws a neutral grouped
+   list, then each platform style re-skins it. The web app publishes
+   data-platform="android" (that is what gives it Google Sans), so without this
+   block it also inherited the Material You skin — purple group labels, 24px
+   tinted cards, connected outline buttons, fat Material switches — dropped on
+   top of a desktop app that shares none of that language.
+
+   So this is the web app's own skin for the same markup, written in the
+   vocabulary the rest of this file already uses: .card surfaces, the .web-seg
+   pill for segmented controls, the .web-switch toggle, and the page head from
+   .web-page-title. Keyed off data-shell rather than the style name, because
+   that attribute tracks the shell that actually rendered (App.jsx sets it from
+   webLayout), which is the same thing these rules are dressing.
+
+   Every selector here outranks the [data-platform="android"] block it is
+   undoing — one attribute plus the :is() list beats an attribute plus the
+   :is() list alone — so this holds regardless of source order.
+
+   The saved-cities page borrows .settings-page for its own full-width list and
+   is not a settings surface, so it sits the layout rules out. */
+
+:root[data-shell="desktop"] {
+  /* The app's accent, stashed before the settings surfaces below reassign
+     --accent to the Material primary. Read at the root, where that reassignment
+     has not happened yet, so this resolves to whichever accent the active theme
+     set — no need to restate the light and dark values here. */
+  --app-accent: var(--accent);
+  --app-accent-light: var(--accent-light);
+  /* Wide enough for a desktop window to feel used, narrow enough that a row
+     label and its control aren't a screen apart. */
+  --web-settings-w: 860px;
+  --web-settings-gutter: max(clamp(16px, 3vw, 40px), var(--sa-left));
+}
+
+:root[data-shell="desktop"] :is(.settings-page:not(.saved-cities-page), .settings-inline, .settings-pill) {
+  --accent: var(--app-accent);
+  --accent-light: var(--app-accent-light);
+  /* The sunken tone the web app's nested surfaces use. .web-shell defines this
+     for the pages; the settings page is drawn outside that shell, so it carries
+     its own copy. It only ever sits on the flat --bg page (settings cards are
+     excluded from the sky tint in App.css), so light and dark are the only two
+     cases — none of .web-shell's sky-tinted tier is needed. */
+  --web-sunken: rgba(0, 0, 0, 0.045);
+}
+
+[data-theme="dark"][data-shell="desktop"] :is(.settings-page:not(.saved-cities-page), .settings-inline, .settings-pill) {
+  --web-sunken: rgba(255, 255, 255, 0.07);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-shell="desktop"]:not([data-theme="light"]) :is(.settings-page:not(.saved-cities-page), .settings-inline, .settings-pill) {
+    --web-sunken: rgba(255, 255, 255, 0.07);
+  }
+}
+
+/* A page sliding in from the right edge is the phone gesture; the web app's
+   pages arrive with the same short rise the tabs use. */
+:root[data-shell="desktop"] .settings-page:not(.saved-cities-page) {
+  background: var(--bg);
+  animation: web-page-in 0.24s ease both;
+}
+
+/* Shorter than the 260ms App.jsx waits before unmounting, so the page is gone
+   before the element is. */
+:root[data-shell="desktop"] .settings-page:not(.saved-cities-page).closing {
+  animation: web-settings-out 0.2s ease forwards;
+}
+
+@keyframes web-settings-out {
+  from { opacity: 1; }
+  to   { opacity: 0; transform: translateY(6px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-shell="desktop"] .settings-page:not(.saved-cities-page) {
+    animation: none;
+  }
+}
+
+/* ── Page head ── */
+
+/* The phone header centres the title over a back button. Stacked and
+   left-aligned instead, it is the same head every web page carries: a title on
+   the page with its controls beside it. */
+:root[data-shell="desktop"] .settings-page:not(.saved-cities-page) .settings-page-header {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  max-width: var(--web-settings-w);
+  padding: calc(22px + var(--sa-top))
+           max(clamp(16px, 3vw, 40px), var(--sa-right))
+           0
+           var(--web-settings-gutter);
+}
+
+:root[data-shell="desktop"] .settings-page:not(.saved-cities-page) .settings-page-title {
+  position: static;
+  left: auto;
+  transform: none;
+  font-family: var(--font-display), var(--font);
+  font-size: clamp(21px, 2.4vw, 26px);
+  font-weight: 600;
+}
+
+:root[data-shell="desktop"] .settings-page:not(.saved-cities-page) .back-btn {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 5px 10px;
+  /* Pulled back out to the gutter so the label, not the button's padding,
+     lines up with the title under it. */
+  margin-left: -10px;
+  border-radius: 8px;
+  transition: background 0.15s;
+}
+
+:root[data-shell="desktop"] .settings-page:not(.saved-cities-page) .back-btn:hover {
+  background: var(--accent-light);
+  opacity: 1;
+}
+
+:root[data-shell="desktop"] .settings-page:not(.saved-cities-page) .settings-body {
+  max-width: var(--web-settings-w);
+  padding: 18px
+           max(clamp(16px, 3vw, 40px), var(--sa-right))
+           calc(48px + var(--sa-bottom))
+           var(--web-settings-gutter);
+}
+
+/* ── Groups and cards ── */
+
+:root[data-shell="desktop"] :is(.settings-page:not(.saved-cities-page), .settings-inline, .settings-pill) .settings-group-label {
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 1.2px;
+  margin: 24px 4px 8px;
+}
+
+:root[data-shell="desktop"] :is(.settings-page:not(.saved-cities-page), .settings-inline, .settings-pill) .settings-card {
+  background: var(--card-bg);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+:root[data-shell="desktop"] :is(.settings-page:not(.saved-cities-page), .settings-inline, .settings-pill) .settings-row {
+  padding: 14px 18px;
+}
+
+/* Material lists run rows together; the web app's stacked rows read as a list
+   only with the divider between them. */
+:root[data-shell="desktop"] :is(.settings-page:not(.saved-cities-page), .settings-inline, .settings-pill) .settings-row + .settings-row {
+  border-top: 1px solid var(--border);
+}
+
+:root[data-shell="desktop"] :is(.settings-page:not(.saved-cities-page), .settings-inline, .settings-pill) .settings-row-label {
+  color: var(--text-primary);
+}
+
+/* ── Controls ── */
+
+/* Segmented control → the .web-seg pill: a sunken track with the active option
+   riding on a raised card-coloured pill. */
+:root[data-shell="desktop"] :is(.settings-page:not(.saved-cities-page), .settings-inline, .settings-pill) .settings-options {
+  background: var(--web-sunken);
+  border: none;
+  border-radius: 999px;
+  padding: 3px;
+  gap: 2px;
+  /* The Material group clips its connected buttons to the track; here the
+     active pill carries a drop shadow that the same clip would shave off. */
+  overflow: visible;
+}
+
+:root[data-shell="desktop"] :is(.settings-page:not(.saved-cities-page), .settings-inline, .settings-pill) .setting-opt {
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+:root[data-shell="desktop"] :is(.settings-page:not(.saved-cities-page), .settings-inline, .settings-pill) .setting-opt + .setting-opt {
+  border-left: none;
+}
+
+:root[data-shell="desktop"] :is(.settings-page:not(.saved-cities-page), .settings-inline, .settings-pill) .setting-opt.active {
+  background: var(--card-bg);
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+/* The pill is what marks the selection, so an unselected option only warms its
+   label — a hover fill here would read as a second selection. */
+:root[data-shell="desktop"] :is(.settings-page:not(.saved-cities-page), .settings-inline, .settings-pill) .setting-opt:not(.active):hover {
+  background: none;
+  color: var(--text-primary);
+}
+
+/* Toggle → the .web-switch: 38×22 track, 16px knob in the card colour. */
+:root[data-shell="desktop"] :is(.settings-page:not(.saved-cities-page), .settings-inline, .settings-pill) .toggle-switch {
+  width: 38px;
+  height: 22px;
+}
+
+:root[data-shell="desktop"] :is(.settings-page:not(.saved-cities-page), .settings-inline, .settings-pill) .toggle-track {
+  background: var(--bar-track-bg);
+  box-shadow: none;
+}
+
+/* Every box property is restated in both states: the Material switch this is
+   replacing grows its thumb on the way on, and leaving any of them to that
+   rule would animate the knob's size along with its travel. */
+:root[data-shell="desktop"] :is(.settings-page:not(.saved-cities-page), .settings-inline, .settings-pill) .toggle-track::after,
+:root[data-shell="desktop"] :is(.settings-page:not(.saved-cities-page), .settings-inline, .settings-pill) .toggle-switch input:checked + .toggle-track::after {
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  background: var(--card-bg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+:root[data-shell="desktop"] :is(.settings-page:not(.saved-cities-page), .settings-inline, .settings-pill) .toggle-switch input:checked + .toggle-track {
+  background: var(--accent);
+  box-shadow: none;
+}
+
+:root[data-shell="desktop"] :is(.settings-page:not(.saved-cities-page), .settings-inline, .settings-pill) .toggle-switch input:checked + .toggle-track::after {
+  transform: translateX(16px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-shell="desktop"] :is(.settings-page:not(.saved-cities-page), .settings-inline, .settings-pill) .toggle-track::after {
+    transition: none;
+  }
+}
+
+:root[data-shell="desktop"] :is(.settings-page:not(.saved-cities-page), .settings-inline, .settings-pill) .install-btn {
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+}
+
+/* ── Settings as a modal ─────────────────────────────────────────────────────
+   On a phone, settings is a screen that replaces the one you were on: it takes
+   the whole display, and Back is how you leave. On a desktop window there is
+   nothing to replace — the app is still right there around it — so the web
+   shell opens the same markup as a dialog over the page instead. App.jsx adds
+   the modal class (and the backdrop) only when the web layout is what
+   rendered, so nothing here needs to guard against the phone shells.
+
+   These rules restate a few of the ones above (the page's own animation, the
+   head, the body's gutters) for the dialog's smaller box. They match those on
+   specificity — hence .settings-page.settings-page--modal rather than the
+   class alone — and win on order. */
+
+/* Dims the app and takes the click that dismisses. Sits one below the page's
+   own z-index: 500. */
+.settings-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 499;
+  background: rgba(10, 15, 28, 0.45);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  animation: fadeInBackdrop 0.2s ease;
+}
+
+.settings-backdrop.closing {
+  animation: fadeOutBackdrop 0.2s ease forwards;
+}
+
+/* Centred on a transform rather than inset: 0 + margin: auto, because a fixed
+   box only centres vertically that way when its height is definite, and this
+   one's is its content capped by max-height. That spends the transform, so the
+   keyframes below carry the centring offset in every step of the animation. */
+:root[data-shell="desktop"] .settings-page.settings-page--modal {
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  width: min(720px, calc(100vw - 48px));
+  max-height: min(760px, calc(100vh - 72px));
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.3), 0 2px 10px rgba(0, 0, 0, 0.14);
+  /* Reaching the end of the settings list shouldn't hand the scroll to the
+     page behind the dialog. */
+  overscroll-behavior: contain;
+  /* The panel takes focus when it opens (see SettingsPage) so the keyboard
+     lands inside the dialog; it is a container, not a control, and has no ring
+     to draw. */
+  outline: none;
+  animation: web-settings-modal-in 0.22s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+
+:root[data-shell="desktop"] .settings-page.settings-page--modal.closing {
+  animation: web-settings-modal-out 0.18s ease forwards;
+}
+
+@keyframes web-settings-modal-in {
+  from { opacity: 0; transform: translate(-50%, -46%) scale(0.97); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+@keyframes web-settings-modal-out {
+  from { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  to   { opacity: 0; transform: translate(-50%, -48%) scale(0.98); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The transform is the centring, not the effect, so it stays. */
+  :root[data-shell="desktop"] .settings-page.settings-page--modal,
+  :root[data-shell="desktop"] .settings-page.settings-page--modal.closing {
+    animation: none;
+    transform: translate(-50%, -50%);
+  }
+
+  .settings-backdrop {
+    animation: none;
+  }
+}
+
+/* A dialog head: title on the left, close on the right, pinned so the way out
+   stays put while the list scrolls under it. Back joins it only on a sub-page,
+   where it means going up a level rather than leaving. */
+:root[data-shell="desktop"] .settings-page.settings-page--modal .settings-page-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  max-width: none;
+  padding: 16px 20px 12px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  /* Clears the panel's rounded top corners, which the header would otherwise
+     square off as it scrolls under them. */
+  border-radius: 19px 19px 0 0;
+}
+
+:root[data-shell="desktop"] .settings-page.settings-page--modal .settings-page-title {
+  font-size: 20px;
+}
+
+:root[data-shell="desktop"] .settings-page.settings-page--modal .settings-modal-close {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+:root[data-shell="desktop"] .settings-page.settings-page--modal .settings-body {
+  max-width: none;
+  padding: 4px 20px calc(24px + var(--sa-bottom));
+}
+
+/* The head already sets the distance to the first group. */
+:root[data-shell="desktop"] .settings-page.settings-page--modal .settings-body > .settings-group-label:first-child {
+  margin-top: 8px;
 }

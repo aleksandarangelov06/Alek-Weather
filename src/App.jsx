@@ -117,6 +117,7 @@ import { WeatherOverview } from './components/WeatherOverview'
 import { SettingsPage, MAX_CARD_TRANSPARENCY } from './components/SettingsPage'
 import { WebLayout } from './components/web/WebLayout'
 import { WebTabs } from './components/web/WebTabs'
+import { WebAlertPill } from './components/web/WebAlertPill'
 import { TABS as WEB_TABS, useWebTab } from './components/web/tabs'
 import { SplashHome } from './components/web/SplashHome'
 import { LoadingScreen } from './components/LoadingScreen'
@@ -124,7 +125,7 @@ import { liveWeatherCode } from './utils/weatherCodes'
 import { APP_VERSION, IS_ANDROID_APP } from './utils/version'
 import { applyMaterialTokens, DEFAULT_SEED, isValidSeed } from './utils/materialTheme'
 import { useNotifications } from './hooks/useNotifications'
-import { fireAlertNotifications, fireRainNotification, fireTomorrowNotification } from './utils/notifications'
+import { syncNotificationSettings } from './utils/notifications'
 import './App.css'
 // Imported after App.css so the web app's rules win the ties against the shared
 // card styles they refine.
@@ -139,6 +140,21 @@ const CARD_TRANSPARENCY_KEY = 'alek-weather-card-transparency' // 0–90, percen
 // isDesktop media query below so the first-run default and the layout agree on
 // what counts as a desktop.
 const DESKTOP_MQ = '(min-width: 1100px)'
+// ...and the width it gives up at. The two differ on purpose: with a single
+// threshold, a window parked near 1100px (or a laptop at 125% browser zoom,
+// which lands right about there) flips shells on a one-pixel drag. Desktop is
+// entered at 1100 and only surrendered below 940, so the layout has to be
+// clearly too narrow before it changes its mind.
+const MOBILE_MQ = '(max-width: 939.98px)'
+
+// Resolve the shell width state with that hysteresis: widening past DESKTOP_MQ
+// turns desktop on, narrowing past MOBILE_MQ turns it off, and in the band
+// between them whatever is already on screen stays.
+function nextIsDesktop(current) {
+  if (window.matchMedia(DESKTOP_MQ).matches) return true
+  if (window.matchMedia(MOBILE_MQ).matches) return false
+  return current
+}
 
 // First-run app style, from the device. The order matters: the APK is always
 // the phone app no matter how large the tablet it runs on, so it is settled
@@ -214,6 +230,13 @@ function SortableBlock({ id, children }) {
 function App() {
   const [unit, setUnit] = useState(() => localStorage.getItem('alek-weather-unit') ?? 'F')
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem(THEME_KEY) ?? 'system')
+  // The OS scheme, in render scope. The theme effects each read it themselves,
+  // but which classes go on .app depends on it too (see levelC), and that has to
+  // be known while rendering — and has to re-render when the OS flips it under
+  // a "System" setting, which a matchMedia read inside an effect would not do.
+  const [prefersDark, setPrefersDark] = useState(
+    () => window.matchMedia('(prefers-color-scheme: dark)').matches
+  )
   const [platformTheme, setPlatformTheme] = useState(() => localStorage.getItem(PLATFORM_THEME_KEY) ?? defaultPlatformTheme())
   const [materialColor, setMaterialColor] = useState(() => {
     const saved = localStorage.getItem(MATERIAL_COLOR_KEY)
@@ -240,15 +263,18 @@ function App() {
   const [installPrompt, setInstallPrompt] = useState(null)
   const [showSettings, setShowSettings] = useState(false)
   const [settingsClosing, setSettingsClosing] = useState(false)
-  const [subView, setSubView] = useState(null) // null | 'colorcoding' | 'overview' | 'effects' | 'theme'
+  const [subView, setSubView] = useState(null) // null | 'colorcoding' | 'overview' | 'effects' | 'theme' | 'notifications'
   const [isDesktop, setIsDesktop] = useState(() => window.matchMedia(DESKTOP_MQ).matches)
   const [webTab, setWebTab] = useWebTab()
 
-  // The web app is a desktop app: it lays six pages out side by side behind a
-  // tab bar, which needs the width to work at all. Picking "Web" in Settings on
-  // a narrow window therefore still renders the stacked mobile layout rather
-  // than a tab bar with nowhere to put its tabs.
-  const webLayout = platformTheme === 'web' && isDesktop
+  // The app style setting is honoured at every width: picking "Web" and then
+  // narrowing the window keeps the web app, because a layout that swapped
+  // itself out from under you mid-resize was the more confusing behaviour.
+  // Viewport width only seeds the first-run default (defaultPlatformTheme).
+  // WebApp.css carries the narrow tiers that let the tab bar and the wide
+  // grids survive down there; isDesktop still gates the pieces that genuinely
+  // need room, and the pointer-specific affordances below.
+  const webLayout = platformTheme === 'web'
 
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchClosing, setSearchClosing] = useState(false)
@@ -263,6 +289,7 @@ function App() {
   // Declared here rather than beside webLayout above: it reads splashPhase, so
   // it has to come after that state is initialised.
   const webSplash = webLayout && splashPhase !== 'done'
+  const headerRef = useRef(null)
   const searchAreaRef = useRef(null)
   const searchHoldTimer = useRef(null)
   const searchLongPressed = useRef(false)
@@ -300,19 +327,14 @@ function App() {
   const { recents, addRecent, removeRecent } = useRecentSearches()
   const { notifyEnabled, notifyTypes, permission: notifyPermission, toggleNotifyEnabled, toggleType } = useNotifications()
 
-  // Weather notifications are APK-only (they ride the native bridge). NOAA
-  // alerts fire as they arrive; rain and tomorrow fire when a forecast loads.
-  // Each helper de-dupes internally so a re-render won't repeat one.
+  // Weather notifications are APK-only (they ride the native bridge). The page
+  // only publishes settings: the native worker does the checking, on its own
+  // schedule, so notifications keep arriving with the app closed. Re-syncing on
+  // a location change is what points it at the place currently on screen.
   useEffect(() => {
-    if (!IS_ANDROID_APP || !notifyEnabled || !notifyTypes.includes('alerts') || !alerts?.length) return
-    fireAlertNotifications(alerts)
-  }, [alerts, notifyEnabled, notifyTypes])
-
-  useEffect(() => {
-    if (!IS_ANDROID_APP || !notifyEnabled || !weather) return
-    if (notifyTypes.includes('rain')) fireRainNotification(weather.hourly, weather.timezone)
-    if (notifyTypes.includes('tomorrow')) fireTomorrowNotification(weather.daily, weather.timezone)
-  }, [weather, notifyEnabled, notifyTypes])
+    if (!IS_ANDROID_APP) return
+    syncNotificationSettings({ enabled: notifyEnabled, types: notifyTypes, location, unit })
+  }, [notifyEnabled, notifyTypes, location, unit])
   useEffect(() => {
     const handler = (e) => { e.preventDefault(); setInstallPrompt(e) }
     window.addEventListener('beforeinstallprompt', handler)
@@ -327,10 +349,22 @@ function App() {
   }
 
   useEffect(() => {
-    const mq = window.matchMedia(DESKTOP_MQ)
-    const handler = (e) => setIsDesktop(e.matches)
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
+    // Both edges of the hysteresis band have to be watched: the desktop query
+    // firing false only means "no longer wide", which is not yet narrow enough
+    // to drop the shell. nextIsDesktop reads both and keeps the current value
+    // while the window sits between them.
+    const wide = window.matchMedia(DESKTOP_MQ)
+    const narrow = window.matchMedia(MOBILE_MQ)
+    const handler = () => setIsDesktop(nextIsDesktop)
+    wide.addEventListener('change', handler)
+    narrow.addEventListener('change', handler)
+    // A resize that crosses both edges before this effect attaches (or a zoom
+    // change during hydration) would otherwise leave the state stale.
+    handler()
+    return () => {
+      wide.removeEventListener('change', handler)
+      narrow.removeEventListener('change', handler)
+    }
   }, [])
 
   // Mark the root when running inside the installed APK (vs the website), so CSS
@@ -353,9 +387,10 @@ function App() {
   //
   //   data-shell    (mobile | desktop) — which app is being rendered. Today both
   //     shells are the same component tree and only CSS tells them apart; this
-  //     is the seam a separate desktop view tree will branch on later, so it is
-  //     deliberately not derived from the viewport. A wide window changes the
-  //     first-run default (below), never the choice itself.
+  //     is the seam a separate desktop view tree will branch on later. It tracks
+  //     webLayout, not the raw setting: WebApp.css carries no width query of its
+  //     own, so publishing "desktop" for a narrow window with Web selected would
+  //     dress the stacked mobile tree that actually rendered in desktop styles.
   //   data-platform (ios | android) — which design language the mobile shell is
   //     drawn in. The desktop shell keeps a value here so it inherits the font
   //     and the Material You settings pages, but rules meant only for the phone
@@ -365,9 +400,10 @@ function App() {
   // parts that are specifically the phone app.
   useEffect(() => {
     const root = document.documentElement
-    root.setAttribute('data-shell', platformTheme === 'web' ? 'desktop' : 'mobile')
+    root.setAttribute('data-shell', webLayout ? 'desktop' : 'mobile')
     root.setAttribute('data-platform', platformTheme === 'ios' ? 'ios' : 'android')
-  }, [platformTheme])
+  }, [platformTheme, webLayout])
+
 
   // Material You seed color (Android style only — it's the one style whose look
   // is built out of the --md-* tokens, and the only one that offers the picker).
@@ -387,6 +423,13 @@ function App() {
     mq.addEventListener('change', paint)
     return () => mq.removeEventListener('change', paint)
   }, [materialColor, platformTheme, darkMode])
+
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const sync = (e) => setPrefersDark(e.matches)
+    mq.addEventListener('change', sync)
+    return () => mq.removeEventListener('change', sync)
+  }, [])
 
   // Card transparency, the other half of that picker — one stored value, but
   // the two styles start from opposite places, so each reads it its own way:
@@ -435,6 +478,17 @@ function App() {
     return () => document.removeEventListener('keydown', handler)
   }, [searchOpen]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Escape closes the settings modal — the dialog behaviour a desktop user
+  // expects, and the web app is the only shell that draws one. It goes through
+  // history like every other way out of settings, so with a sub-page open it
+  // steps back to the main list first rather than dropping the whole modal.
+  useEffect(() => {
+    if (!showSettings || !webLayout) return
+    const handler = (e) => { if (e.key === 'Escape') closeSettings() }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [showSettings, webLayout]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // Fly splash logo to header when weather arrives; dismiss immediately on error
   useEffect(() => {
     if (splashPhase !== 'visible') return
@@ -465,7 +519,11 @@ function App() {
   // Hardware back button / Android back gesture
   useEffect(() => {
     const handler = () => {
-      if (subView) setSubView(null)
+      // What closes is read from where history landed, not assumed to be one
+      // level: dismissing the web app's settings modal from a sub-page pops
+      // both of its entries at once, and that has to close the whole thing
+      // rather than surface the list underneath.
+      if (subView && history.state?.overlay === 'settings') setSubView(null)
       else if (showSettings) doCloseSettings()
       else if (searchOpen) doCloseSearch()
       else if (savedOpen) doCloseSaved()
@@ -578,6 +636,11 @@ function App() {
   }
 
   const closeSettings = () => history.back()
+
+  // Leave settings entirely, from wherever inside it you are. Back and Escape
+  // step up a level (a sub-page hands you back to the list); this is for the
+  // gestures that mean "out": the modal's backdrop and its close button.
+  const dismissSettings = () => history.go(subView ? -2 : -1)
 
   const openSubView = (view) => {
     history.pushState({ overlay: 'subview' }, '')
@@ -693,16 +756,23 @@ function App() {
   const liveCode = weather ? liveWeatherCode(weather.current, weather.minutely_15, radarClear) : null
   if (weather) console.log('[radar-enh] decision', { radarEnhanced, radarClear, rawCode: weather.current.weather_code, confirmed: weather.current.weather_code_confirmed, liveCode })
   const skyC     = weather ? skyClass(liveCode, weather.current.is_day) : ''
+  const skyLevel = SKY_LEVEL[skyC] ?? ''
+  const isDarkTheme = darkMode === 'on' || (darkMode === 'system' && prefersDark)
   // The sky level class is what tints the cards toward the sky (and flips the
-  // text on them to white to match). The Android phone look keeps its cards on
-  // their own Material surface — a white or dark card with a faint purple cast
-  // — so the class is withheld there, and only there: the iOS phone look and
-  // the web app both keep the tint.
-  // Everything else about an active sky still applies, since .sky-active is
-  // unaffected — the header, hero and search chrome go on reading over the
-  // backdrop exactly as they already do on a clear day, which is the one sky
-  // with no level class of its own.
-  const levelC   = platformTheme === 'android' ? '' : (SKY_LEVEL[skyC] ?? '')
+  // text on them to white to match). Every style takes it in light mode, where
+  // a card left on its own surface is a white hole punched in a dark scene.
+  //
+  // Android in *dark* mode is the one exception: its Material containers are
+  // already darker than any of the sky colours, so tinting them would lighten
+  // the cards toward the storm rather than away from it. There the class is
+  // withheld and the surface tokens stand, which is why this needs to know the
+  // scheme actually on screen rather than just the setting.
+  //
+  // Everything else about an active sky is unaffected either way, since
+  // .sky-active is set independently — the header, hero and search chrome go on
+  // reading over the backdrop as they already do on a clear day, which is the
+  // one sky with no level class of its own.
+  const levelC   = platformTheme === 'android' && isDarkTheme ? '' : skyLevel
 
   // Keep the theme-color metas (status bar) and the body background (navigation
   // bar) matched to the sky, or to the flat app background when effects are
@@ -744,6 +814,34 @@ function App() {
   // something to navigate: with no city loaded, and while the splash logo is
   // still flying into the header, the header keeps its wordmark.
   const headerTabs = webLayout && !!weather && !loading && splashPhase === 'done'
+
+  // --web-header-h is what everything parked under the sticky header offsets
+  // itself by: the Hourly page's own sticky column head (top) and the radar's
+  // full-bleed map (min-height). It used to be a hard-coded 92px, the sum of
+  // the header's parts at the one width the web app ran at. The tab bar now
+  // scales with the viewport, so that arithmetic drifts — and a value even a
+  // few pixels too large opens a band between the header and the column head
+  // that rows scroll through in the open. Measuring the header is right at
+  // every width, and survives a font swap or a longer tab label. Written to
+  // .app (the header's parent) because that is the element carrying the
+  // fallback in WebApp.css, so the two never disagree about scope.
+  //
+  // Declared here rather than beside the other layout effects: it reads
+  // headerTabs, so it has to come after that is computed.
+  useEffect(() => {
+    const el = headerRef.current
+    if (!el || !headerTabs) return
+    const ro = new ResizeObserver(([entry]) => {
+      // Ceil, not round: the header's height is fractional at most zoom levels,
+      // and rounding down parks the sticky column head half a pixel above the
+      // header's real bottom edge, which is enough to show a hairline of the
+      // rows scrolling behind it. Erring tall costs nothing visible.
+      const h = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height
+      el.parentElement?.style.setProperty('--web-header-h', `${Math.ceil(h)}px`)
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [headerTabs])
 
   const weatherPanel = weather && !loading && (webLayout ? (
     <WebLayout
@@ -828,7 +926,7 @@ function App() {
       className={`app${weatherAnimations && levelC ? ` ${levelC}` : ''}${!weatherAnimations ? ' no-effects' : ''}${weather && weatherAnimations ? ' sky-active' : ''}${headerTabs ? ' app--web-tabs' : ''}${headerTabs && webTab === 'radar' ? ' app--web-radar' : ''}`}
       style={weather && weatherAnimations ? SKY_CARD_VARS[skyC] : undefined}
     >
-      <header className={`app-header${!weather ? ' app-header--no-city' : ''}${headerTabs ? ' app-header--tabs' : ''}`}>
+      <header ref={headerRef} className={`app-header${!weather ? ' app-header--no-city' : ''}${headerTabs ? ' app-header--tabs' : ''}`}>
                 {/* Backdrop for the sticky tab bar. It repaints the same sky gradient
             as .sky-bg, anchored to the viewport the same way (see .header-sky
             in WebApp.css), so it is opaque enough to hide the page scrolling
@@ -870,7 +968,12 @@ function App() {
             aria-label={splashPhase === 'done' && weather ? 'Go to home' : undefined}
             aria-hidden={headerTabs || undefined}
           ></span>
-          {headerTabs && <WebTabs tabs={WEB_TABS} active={webTab} onChange={setWebTab} />}
+          {headerTabs && (
+            <div className="web-tabs-row">
+              <WebTabs tabs={WEB_TABS} active={webTab} onChange={setWebTab} />
+              <WebAlertPill alerts={alerts} tab={webTab} />
+            </div>
+          )}
         </div>
         <button className="settings-btn" onClick={showSettings ? closeSettings : openSettings} aria-label="Settings">
           <Settings size={22} />
@@ -1050,14 +1153,30 @@ function App() {
       {showSettings && platformTheme === 'ios' && weather && weatherAnimations && (
         <div className={`settings-sky ${skyC}`} aria-hidden="true" />
       )}
+      {/* The web app opens settings as a dialog over the page rather than as a
+          full-screen page, so it gets a backdrop: it dims what the modal is
+          covering, and clicking it is the other way out. Phone shells have no
+          modal and no backdrop — there the page is the whole screen. */}
+      {showSettings && webLayout && (
+        <div
+          className={`settings-backdrop${settingsClosing ? ' closing' : ''}`}
+          /* Clicking away means leaving, not stepping up a level, so from a
+             sub-page this pops that entry and the settings one together. */
+          onClick={dismissSettings}
+          aria-hidden="true"
+        />
+      )}
       {showSettings && (
         <SettingsPage
+          modal={webLayout}
           onBack={closeSettings}
+          onDismiss={dismissSettings}
           subView={subView}
           onColorCodingOpen={() => openSubView('colorcoding')}
           onOverviewOpen={() => openSubView('overview')}
           onWeatherEffectsOpen={() => openSubView('effects')}
           onThemeOpen={() => openSubView('theme')}
+          onNotificationsOpen={() => openSubView('notifications')}
           onSubViewBack={closeSubView}
           darkMode={darkMode}
           onDarkModeChange={changeDarkMode}

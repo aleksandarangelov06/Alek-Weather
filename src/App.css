@@ -406,6 +406,12 @@ body {
 .sky-active .app-title { color: rgba(255,255,255,0.85); }
 .sky-active .header-icon-btn,
 .sky-active .settings-btn { color: rgba(255,255,255,0.70); }
+/* The settings panel is an opaque --bg surface, not something floating over the
+   sky, so the white sky icon colour above does not apply inside it — on a light
+   panel the close X was all but invisible. Back to the theme's own icon colour. */
+.sky-active :is(.settings-page, .settings-inline) .header-icon-btn { color: var(--text-secondary); }
+.sky-active :is(.settings-page, .settings-inline) .header-icon-btn:hover { color: var(--text-primary); }
+
 .sky-active .search-overlay { background: var(--sky-card-deep, #2d3f55); }
 .sky-active .search-overlay .search-bar { background: var(--sky-card, #3a5068); border-color: transparent; --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; }
 /* Pill and dropdown use the lighter --sky-card so they read above the darker
@@ -596,11 +602,62 @@ body {
   }
 }
 
+/* ── Page scrollbar ── */
+
+/* Keyed off the shell rather than a width query. This used to sit in the
+   (min-width: 1100px) block below, from when the web style only existed above
+   that width; now that it is honoured at any size, a narrower window fell back
+   to the platform default — a full-width trough with stepper arrows — down the
+   side of a layout that draws hairlines everywhere else.
+
+   Same shape as the in-card scrollbars over in WebApp.css: transparent track,
+   and a pill thumb held off the edges by a transparent border so it floats in
+   the margin rather than butting against the window frame. The border eats 6 of
+   the 10px, leaving the 4px sliver this was before. */
+:root[data-shell="desktop"] {
+  scrollbar-width: thin;
+  scrollbar-color: var(--bar-track-bg) transparent;
+}
+
+:root[data-shell="desktop"]::-webkit-scrollbar {
+  width: 10px;
+}
+
+:root[data-shell="desktop"]::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+:root[data-shell="desktop"]::-webkit-scrollbar-thumb {
+  background: var(--bar-track-bg);
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: 999px;
+}
+
+:root[data-shell="desktop"]::-webkit-scrollbar-thumb:hover {
+  background: var(--text-tertiary);
+  background-clip: padding-box;
+}
+
+/* The phone styles draw no scrollbar at all, in a browser as much as in the
+   APK: they are phone UIs, and a trough down the side gives that away before
+   anything else in them does. The bare descendant selector takes the inner
+   scrollers with it; everything still scrolls, by wheel or by touch, with
+   nothing drawn for it. */
+:root[data-shell="mobile"] { scrollbar-width: none; }
+:root[data-shell="mobile"]::-webkit-scrollbar,
+:root[data-shell="mobile"] ::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 /* Installed APK: hide scrollbars for a native feel. The WebView is Chromium, so
    ::-webkit-scrollbar covers the page scroller and every inner one; content still
    scrolls by touch. Scoped to data-native (set only inside the APK) so the
-   website keeps its scrollbars. The class-plus-attribute specificity here also
-   outweighs the desktop rule below, for the APK on a large screen. */
+   website keeps its scrollbars. It follows the shell rules above so it wins the
+   tie against them: the APK is hidden either way when it renders a phone style,
+   and this is what covers it when the user picks the Web style inside it. */
 :root[data-native="android"] { scrollbar-width: none; }
 :root[data-native="android"]::-webkit-scrollbar,
 :root[data-native="android"] ::-webkit-scrollbar {
@@ -611,11 +668,6 @@ body {
 
 /* ── Desktop layout (1100px+) ── */
 @media (min-width: 1100px) {
-  html::-webkit-scrollbar       { width: 4px; }
-  html::-webkit-scrollbar-track { background: transparent; }
-  html::-webkit-scrollbar-thumb { background: var(--bar-track-bg); border-radius: 2px; }
-  html::-webkit-scrollbar-thumb:hover { background: var(--text-tertiary); }
-
   .app-header {
     max-width: none;
     padding: calc(24px + var(--sa-top)) 48px 0;
@@ -1441,18 +1493,12 @@ body {
 
 .daily-row {
   display: grid;
-  grid-template-columns: 46px 50px 1fr;
+  grid-template-columns: 54px 50px 1fr;
   align-items: center;
   gap: 10px;
   padding: 9px 6px;
   border-radius: 12px;
   transition: background 0.15s;
-}
-
-/* Hover-capable pointers only: on touch, a scroll-drag would otherwise apply
-   sticky :hover to the row under the finger and force a repaint mid-scroll. */
-@media (hover: hover) {
-  .daily-row:hover { background: var(--hover-subtle); }
 }
 
 .daily-row--expand {
@@ -1461,7 +1507,6 @@ body {
 }
 
 .daily-row--active { background: var(--accent-light); }
-.daily-row--active:hover { background: var(--accent-light); }
 
 /* Hourly strip inside an open day cover — no "Now" highlight on the first item,
    since the strip starts at the day's first hour, not the current one. */
@@ -1499,7 +1544,7 @@ body {
 
 .daily-icon {
   position: relative;
-  font-size: 38px;
+  font-size: 46px;
   user-select: none;
   display: flex;
   align-items: center;
@@ -1565,7 +1610,8 @@ body {
 /* Very small widths: shave the icon/day columns and gaps to hand the pill
    track every spare pixel. */
 @media (max-width: 400px) {
-  .daily-row { grid-template-columns: 42px 46px 1fr; gap: 8px; }
+  .daily-row { grid-template-columns: 48px 46px 1fr; gap: 8px; }
+  .daily-icon { font-size: 40px; }
 }
 
 .daily-low,
@@ -2794,12 +2840,15 @@ body {
   text-align: right;
 }
 
+/* Sits inside the notifications card, under the master toggle, so it lines up
+   with the row labels above it rather than with the card's edge. */
 .notify-hint {
   font-size: 12px;
   color: var(--text-secondary);
   line-height: 1.5;
   margin: 0;
-  padding: 2px 0 6px;
+  padding: 12px 18px 14px;
+  border-top: 1px solid var(--border);
 }
 
 
@@ -3876,16 +3925,17 @@ body {
    the Material You settings pages) but is a different shell, and keeps the
    sky-tinted weather cards.
 
-   The cards here stay on their own surface rather than tinting toward the sky:
-   a white card with a faint purple cast in light mode, a near-black one with
-   the same cast in dark mode, which is what --md-surface-container is. That
-   holds over any sky because App.jsx withholds the sky level class in this
-   mode (see levelC), so none of the .sky-lvl-* tinting — nor the white-on-tint
-   text, lightened condition palette and temperature scrims that go with it —
-   ever applies. What is left is the same path the app already renders on a
-   clear day: opaque cards over the backdrop, with only the header, hero and
-   search chrome following the sky. So the rules below need no sky gating,
-   apart from the search bar, which is part of that chrome. */
+   In light mode the cards tint toward the sky like every other style does: the
+   .sky-lvl-* rules near the top of this file own the tint, the white-on-tint
+   text, the lightened condition palette and the temperature scrims, and the
+   Material rules below defer to them through --md-card-fill rather than
+   restating any of it. Only the fill and the section-label colour need saying
+   twice, because those are the two places Material outranks them.
+
+   In dark mode the cards keep their own surface — a near-black container with a
+   faint purple cast — because App.jsx withholds the level class there (see
+   levelC): the container is already darker than any sky colour, so tinting it
+   would lighten the card toward the storm. */
 
 /* The tonal base. Material sits the page on --md-surface and makes every card
    a container stacked on it, so remapping the two surface variables carries
@@ -3919,13 +3969,45 @@ body {
   --md-card-alpha: 100%;
 }
 
+/* What the card fills resolve to, in one place, because the rules below carry
+   more specificity than the .sky-lvl-* tinting and would otherwise paint over
+   it. Default: the Material containers, a white card with a faint purple cast
+   in light mode and a near-black one with the same cast in dark.
+
+   With a sky level on .app they become the sky's own colours instead, matching
+   what every other style does over an active sky. Material's surfaces are
+   generated from the seed and know nothing about the weather, so a card left on
+   one is a white hole punched in a dark scene; the seed still colours the
+   accents, the settings pages and the chrome, which is where the palette is
+   actually read as an identity. App.jsx withholds the level class in Android
+   dark mode (see levelC) — those containers are already darker than any of the
+   sky colours — so no dark-mode override is needed here. */
+:root[data-shell="mobile"][data-platform="android"] .app {
+  --md-card-fill: var(--md-surface-container);
+  --md-card-fill-high: var(--md-surface-container-high);
+}
+
+:root[data-shell="mobile"][data-platform="android"] .app:is(.sky-lvl-slight, .sky-lvl-medium, .sky-lvl-dark, .sky-lvl-darkest) {
+  --md-card-fill: var(--sky-card, #324055);
+  --md-card-fill-high: var(--sky-card-deep, #1f2c3e);
+}
+
+/* Section labels are the one in-card colour Material sets outright rather than
+   through a text variable, and primary at tone 40 is far too dark to read on a
+   tinted card. On one, follow the card's own text colours like every other
+   style does. */
+:root[data-shell="mobile"][data-platform="android"] .app:is(.sky-lvl-slight, .sky-lvl-medium, .sky-lvl-dark, .sky-lvl-darkest) .card .section-label {
+  color: var(--text-secondary);
+}
+
 /* Nested tier. The base stylesheet paints these with --bg, which now resolves
    to the page surface and would sit *below* the card they're inside — Material
    stacks containers upward instead, so they take the next step up the scale.
-   One rule covers both themes: --md-surface-container-high already flips with
-   the theme, and with no sky level class there are no tint rules to outrank. */
+   The -deep half of the sky pair keeps them a step darker than the card they
+   sit in once the tint is on, the same way the plain container-high does when
+   it isn't. */
 :root[data-shell="mobile"][data-platform="android"] .app :is(.detail-card, .aqi-pollutant, .hourly-nav) {
-  background: color-mix(in srgb, var(--md-surface-container-high) var(--md-card-alpha), transparent);
+  background: color-mix(in srgb, var(--md-card-fill-high) var(--md-card-alpha), transparent);
 }
 
 /* Card transparency (Theme page). The stack is opaque containers sitting over
@@ -3936,11 +4018,12 @@ body {
    and the settings cards have their own opaque page under them, so making them
    see-through would only fade them into it.
 
-   The 0.8s cross-fade the base .card rule carries is for sky changes, which
-   never reach a card in this mode (no .sky-lvl-* class is applied) — inherited
-   here it would just make the slider feel like it lags the drag. */
+   The 0.8s cross-fade the base .card rule carries is for sky changes, and it
+   makes the slider feel like it lags the drag, so this replaces it with a short
+   one. A sky turning stormy now rides on that shorter transition too, which is
+   rare enough to read fine at 0.18s. */
 :root[data-shell="mobile"][data-platform="android"] .app :is(.card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill), .detail-cover-fill) {
-  background: color-mix(in srgb, var(--md-surface-container) var(--md-card-alpha), transparent);
+  background: color-mix(in srgb, var(--md-card-fill) var(--md-card-alpha), transparent);
   transition: background 0.18s ease;
 }
 
@@ -5208,13 +5291,13 @@ body {
 }
 .skeleton-day-row {
   display: grid;
-  grid-template-columns: 46px 50px 1fr;
+  grid-template-columns: 54px 50px 1fr;
   align-items: center;
   gap: 10px;
   padding: 9px 6px;
 }
 .skeleton-day-name { width: 38px; height: 14px; }
-.skeleton-day-icon { width: 34px; height: 34px; justify-self: center; }
+.skeleton-day-icon { width: 42px; height: 42px; justify-self: center; }
 .skeleton-day-bar  { height: 8px; border-radius: 4px; margin: 0 28px 0 24px; }
 
 /* Details — 2×2 grid of stat tiles like .details-grid */

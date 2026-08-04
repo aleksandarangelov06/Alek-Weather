@@ -12,11 +12,17 @@ const SPAN_MIN = 60    // minutes to display on X axis
 // model reports no measured amount — the weather code is the only signal.
 const TIER_RATE = { 1: LIGHT_P, 2: MED_P, 3: MAX_P, 4: MAX_P }
 
-// SVG layout
-const VW = 300, VH = 90
+// SVG layout. The viewBox height is fixed and the width has two settings, which
+// is what controls how tall the card is: the svg is rendered at 100% width, so
+// its height is that width times VH/VW. On a phone the card is one of a stack
+// and 300 wide gives it presence; in the web app's column it would be a 220px
+// poster of a one-hour trace, so a wider box flattens the same drawing into the
+// height it needs — and scales the type down with it, since font sizes below
+// are in viewBox units too.
+const VW_PHONE = 300, VW_WIDE = 480
+const VH = 90
 const PL = 44, PR = 6, PT = 8, PB = 22
 const CX = PL
-const CW = VW - PL - PR   // 250
 const CH = VH - PT - PB   // 60
 const CB = PT + CH         // 68 — chart bottom y
 
@@ -40,7 +46,9 @@ function buildPath(pts) {
   }
 }
 
-export function PrecipNowcast({ minutely, currentTime, mode = 'auto', current = null, radarClear = null }) {
+export function PrecipNowcast({ minutely, currentTime, mode = 'auto', current = null, radarClear = null, wide = false }) {
+  const VW = wide ? VW_WIDE : VW_PHONE
+  const CW = VW - PL - PR
   // Live, observation-corrected current condition. The minutely_15 trace can read
   // flat/zero at onset while a station already observes rain (the nowcast lag
   // handled in liveWeatherCode), so this — not the forward trace — is the source
@@ -89,7 +97,7 @@ export function PrecipNowcast({ minutely, currentTime, mode = 'auto', current = 
     // band. A flat trace of drizzle (below LIGHT_P) doesn't count as "it'll rain".
     const willRain = pts.some(p => p.p >= LIGHT_P)
     return { pts, allDry, willRain }
-  }, [minutely, currentTime, rainingNow, liveCode, current?.precipitation])
+  }, [minutely, currentTime, rainingNow, liveCode, current?.precipitation, CW])
 
   if (!data) return null
   if (mode === 'off') return null

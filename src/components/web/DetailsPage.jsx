@@ -113,10 +113,7 @@ export function DetailsPage({ weather, unit, airQuality, colorCoding, onNavigate
   return (
     <div className="web-page">
       <div className="web-page-head">
-        <div>
-          <h2 className="web-page-title">Conditions in detail</h2>
-          <p className="web-page-sub">Every current reading, what it means, and how it moves over the next 24 hours.</p>
-        </div>
+        <h2 className="web-page-title">Conditions in detail</h2>
       </div>
 
       <div className="web-detail-grid">

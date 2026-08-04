@@ -2,9 +2,6 @@ package com.alekweather.app
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -21,7 +18,6 @@ import android.webkit.WebView
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
-import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
@@ -90,10 +86,6 @@ class MainActivity : AppCompatActivity() {
         const val REQ_LOCATION = 1
         const val REQ_NOTIF = 2
 
-        /** Notification channel for weather notifications (rain, alerts, tomorrow). */
-        const val NOTIF_CHANNEL = "weather"
-        const val NOTIF_PREFS = "alek_notif"
-
         /** Below this relative luminance a background needs light (white) icons. */
         const val LIGHT_ICON_THRESHOLD = 0.5
 
@@ -106,8 +98,8 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         applyEdgeToEdge()
-        createNotificationChannel()
-        notifAsked = getSharedPreferences(NOTIF_PREFS, MODE_PRIVATE).getBoolean("asked", false)
+        WeatherNotifier.ensureChannel(this)
+        notifAsked = getSharedPreferences(NotifyStore.PREFS, MODE_PRIVATE).getBoolean("asked", false)
 
         val loader = WebViewAssetLoader.Builder()
             .setDomain(DOMAIN)
@@ -325,19 +317,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Creates the channel the weather notifications post to (required on 26+). */
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                NOTIF_CHANNEL,
-                "Weather",
-                NotificationManager.IMPORTANCE_DEFAULT,
-            ).apply { description = "Rain, weather alerts, and the daily forecast" }
-            (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
-                .createNotificationChannel(channel)
-        }
-    }
-
     /** Reports a POST_NOTIFICATIONS outcome to the page as an aleknotifpermission event. */
     private fun emitNotifPermission(state: String) {
         emitUpdate("aleknotifpermission", JSONObject.quote(state))
@@ -346,8 +325,13 @@ class MainActivity : AppCompatActivity() {
     /**
      * Web notifications for the APK, bound as `window.AndroidNotify`. A WebView
      * exposes no Notifications API, so the web build (utils/notifications.js)
-     * talks to this instead: it reads and requests the POST_NOTIFICATIONS grant
-     * and posts system notifications through NotificationManager.
+     * talks to this instead: it reads and requests the POST_NOTIFICATIONS grant,
+     * and mirrors the notification settings into [NotifyStore] so
+     * [WeatherCheckWorker] can keep checking the forecast with the app closed.
+     *
+     * Deciding *what* to notify about is entirely the worker's job — the page
+     * only supplies settings. That is what makes a rain notification fire once
+     * a day rather than once per place it was evaluated.
      */
     inner class NotifyBridge {
         /** 'granted' | 'denied' | 'default', mirroring web Notification.permission. */
@@ -389,7 +373,7 @@ class MainActivity : AppCompatActivity() {
                     return@runOnUiThread
                 }
                 notifAsked = true
-                getSharedPreferences(NOTIF_PREFS, MODE_PRIVATE).edit().putBoolean("asked", true).apply()
+                getSharedPreferences(NotifyStore.PREFS, MODE_PRIVATE).edit().putBoolean("asked", true).apply()
                 ActivityCompat.requestPermissions(
                     this@MainActivity,
                     arrayOf(Manifest.permission.POST_NOTIFICATIONS),
@@ -399,42 +383,41 @@ class MainActivity : AppCompatActivity() {
         }
 
         /**
-         * Posts (or replaces) a notification. `tag` doubles as the dedup key, so
-         * re-firing the same alert updates the existing one rather than stacking.
-         * The runtime check keeps NotificationManagerCompat from throwing on 13+
-         * when the grant is missing.
+         * Mirrors the page's notification settings into prefs and (re)schedules
+         * the background check. Called whenever the toggles or the displayed
+         * location change, so the worker always checks the place the user is
+         * actually looking at.
+         *
+         * @param json `{ enabled, types: string[], latitude, longitude, unit }`
          */
-        @SuppressLint("MissingPermission")
         @JavascriptInterface
-        fun notify(tag: String, title: String, body: String) {
-            val mgr = NotificationManagerCompat.from(this@MainActivity)
-            if (!mgr.areNotificationsEnabled()) return
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                ContextCompat.checkSelfPermission(
-                    this@MainActivity, Manifest.permission.POST_NOTIFICATIONS,
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
+        fun syncSettings(json: String) {
+            val obj = try {
+                JSONObject(json)
+            } catch (e: org.json.JSONException) {
                 return
             }
-
-            val intent = Intent(this@MainActivity, MainActivity::class.java).apply {
-                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            val enabled = obj.optBoolean("enabled", false)
+            val typesArray = obj.optJSONArray("types")
+            val types = buildSet {
+                if (typesArray != null) {
+                    for (i in 0 until typesArray.length()) add(typesArray.optString(i))
+                }
             }
-            val pending = PendingIntent.getActivity(
-                this@MainActivity,
-                tag.hashCode(),
-                intent,
-                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
-            )
-            val notification = NotificationCompat.Builder(this@MainActivity, NOTIF_CHANNEL)
-                .setSmallIcon(R.mipmap.ic_launcher)
-                .setContentTitle(title)
-                .setContentText(body)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-                .setContentIntent(pending)
-                .setAutoCancel(true)
-                .build()
-            mgr.notify(tag, tag.hashCode(), notification)
+            // A missing/NaN coordinate stays null so the worker skips the run
+            // rather than checking the weather at 0,0.
+            val lat = obj.optDouble("latitude").takeIf { !it.isNaN() }
+            val lon = obj.optDouble("longitude").takeIf { !it.isNaN() }
+
+            NotifyStore(applicationContext)
+                .saveSettings(enabled, types, lat, lon, obj.optString("unit", "F"))
+
+            if (enabled && lat != null && lon != null) {
+                WeatherCheckWorker.schedule(applicationContext)
+                WeatherCheckWorker.checkNow(applicationContext)
+            } else {
+                WeatherCheckWorker.cancel(applicationContext)
+            }
         }
     }
 
@@ -516,6 +499,16 @@ class MainActivity : AppCompatActivity() {
         // `retain = false`: a denial here should not be remembered, so the user
         // can retry from the app's own "use my location" button.
         callback.invoke(origin, ok, false)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Opening the app is the one moment we know the user wants current
+        // information. The page re-syncs its settings on mount and that also
+        // triggers a check, but this covers a restored WebView that never
+        // re-runs the sync. Both go through the same unique one-shot, so at most
+        // one extra check actually runs.
+        if (NotifyStore(this).enabled) WeatherCheckWorker.checkNow(this)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

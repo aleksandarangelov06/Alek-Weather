@@ -22,8 +22,8 @@ android {
         // versionCode must increase on every published build; versionName is
         // the human one, kept in step with ANDROID_VERSION in
         // src/utils/version.js, which Settings displays inside the APK.
-        versionCode 2
-        versionName "0.2"
+        versionCode 3
+        versionName "0.3"
     }
 
     signingConfigs {
@@ -65,4 +65,7 @@ dependencies {
     // WebViewAssetLoader: serves the bundled build over a real https origin
     // instead of file://, which the CSP and the service worker both require.
     implementation 'androidx.webkit:webkit:1.10.0'
+    // WorkManager runs the hourly weather check (WeatherCheckWorker) with the
+    // app closed, and persists that schedule across reboots and app updates.
+    implementation 'androidx.work:work-runtime-ktx:2.9.0'
 }

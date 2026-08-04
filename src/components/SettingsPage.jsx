@@ -258,37 +258,51 @@ const NOTIFY_TYPE_LABELS = {
   tomorrow: 'Weather Tomorrow',
 }
 
-// APK-only (gated by IS_ANDROID_APP where it's rendered): the toggle drives the
-// native POST_NOTIFICATIONS grant. 'default' shows an off toggle that prompts on
-// tap; 'denied' points the user to the system settings; once granted, the
-// per-type toggles appear.
-function NotificationsSection({ notifyEnabled, notifyTypes, permission, onEnabledChange, onTypeToggle }) {
+// APK-only (gated by IS_ANDROID_APP where the row into it is rendered): the
+// master toggle drives the native POST_NOTIFICATIONS grant. 'default' shows an
+// off toggle that prompts on tap; 'denied' points the user to the system
+// settings; with the grant in hand the per-type toggles come alive, dimmed and
+// inert until then in the same way the Weather Overview options are.
+function NotificationsView({ notifyEnabled, notifyTypes, permission, onEnabledChange, onTypeToggle, onBack }) {
   const unsupported = permission === 'unsupported'
   const denied = permission === 'denied'
   const active = notifyEnabled && permission === 'granted'
 
   return (
-    <div className="card settings-card">
-      <SettingRow label="Notifications">
-        {unsupported ? (
-          <span className="notify-status-label">Not supported</span>
-        ) : (
-          <Toggle id="toggle-notify" checked={active} onChange={onEnabledChange} />
-        )}
-      </SettingRow>
-      {denied && (
-        <p className="notify-hint">Notifications are blocked. Enable them for Alek Weather in your device's app settings.</p>
+    <>
+      {onBack && (
+        <button className="back-btn color-coding-back" onClick={onBack} aria-label="Back to settings">
+          <ArrowLeft size={18} />
+          <span>Back</span>
+        </button>
       )}
-      {active && Object.entries(NOTIFY_TYPE_LABELS).map(([type, label]) => (
-        <SettingRow key={type} label={label}>
-          <Toggle
-            id={`toggle-notify-${type}`}
-            checked={notifyTypes.includes(type)}
-            onChange={() => onTypeToggle(type)}
-          />
+      <p className="color-coding-desc">Get notified about rain on the way, weather alerts for your area, and what tomorrow looks like.</p>
+      <div className="card settings-card">
+        <SettingRow label="Notifications">
+          {unsupported ? (
+            <span className="notify-status-label">Not supported</span>
+          ) : (
+            <Toggle id="toggle-notify" checked={active} onChange={onEnabledChange} />
+          )}
         </SettingRow>
-      ))}
-    </div>
+        {denied && (
+          <p className="notify-hint">Notifications are blocked. Enable them for Alek Weather in your device's app settings.</p>
+        )}
+      </div>
+      <p className="color-coding-desc">Choose what's worth a notification.</p>
+      <div className={`card settings-card${active ? '' : ' settings-card--disabled'}`}>
+        {Object.entries(NOTIFY_TYPE_LABELS).map(([type, label]) => (
+          <SettingRow key={type} label={label}>
+            <Toggle
+              id={`toggle-notify-${type}`}
+              checked={notifyTypes.includes(type)}
+              onChange={() => onTypeToggle(type)}
+            />
+          </SettingRow>
+        ))}
+      </div>
+      <p className="color-coding-desc">The forecast is checked about once an hour in the background, including when the app is closed. Rain and tomorrow's summary stay quiet overnight; alerts arrive whenever they're issued.</p>
+    </>
   )
 }
 
@@ -580,7 +594,7 @@ function ThemeView({ darkMode, onDarkModeChange, platformTheme, onPlatformThemeC
   )
 }
 
-function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastMode, onNowcastModeChange, radarMode, onRadarModeChange, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onThemeOpen, weatherAnimations, onWeatherAnimationsChange, radarEnhanced, onRadarEnhancedChange, installPrompt, onInstall, notifyEnabled, notifyTypes, notifyPermission, onNotifyEnabledChange, onNotifyTypeToggle }) {
+function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastMode, onNowcastModeChange, radarMode, onRadarModeChange, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onThemeOpen, onNotificationsOpen, weatherAnimations, onWeatherAnimationsChange, radarEnhanced, onRadarEnhancedChange, installPrompt, onInstall }) {
   return (
     <>
       <div className="settings-group-label">Appearance</div>
@@ -679,17 +693,18 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastM
         <RadarEnhancedRow checked={radarEnhanced} onChange={onRadarEnhancedChange} />
       </div>
 
-      {/* Notifications ride on a native bridge that only exists in the APK. */}
+      {/* Notifications ride on a native bridge that only exists in the APK.
+          The master toggle and the per-type ones live on their own page, the
+          way Weather Overview does. */}
       {IS_ANDROID_APP && (
         <>
           <div className="settings-group-label">Notifications</div>
-          <NotificationsSection
-            notifyEnabled={notifyEnabled}
-            notifyTypes={notifyTypes}
-            permission={notifyPermission}
-            onEnabledChange={onNotifyEnabledChange}
-            onTypeToggle={onNotifyTypeToggle}
-          />
+          <div className="card settings-card">
+            <button className="settings-row about-row" onClick={onNotificationsOpen}>
+              <div className="settings-row-label">Notifications</div>
+              <ChevronRight size={16} className="about-chevron" />
+            </button>
+          </div>
         </>
       )}
 
@@ -708,9 +723,9 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastM
   )
 }
 
-const SUB_VIEW_TITLES = { colorcoding: 'Color Coding', overview: 'Weather Overview Settings', effects: 'Weather Effects', theme: 'Theme' }
+const SUB_VIEW_TITLES = { colorcoding: 'Color Coding', overview: 'Weather Overview Settings', effects: 'Weather Effects', theme: 'Theme', notifications: 'Notifications' }
 
-export function SettingsPage({ onBack, inline, closing, subView, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onThemeOpen, onSubViewBack, colorCoding, onColorCodingToggle, overviewParts, onOverviewPartToggle, ...bodyProps }) {
+export function SettingsPage({ onBack, onDismiss, inline, modal, closing, subView, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onThemeOpen, onNotificationsOpen, onSubViewBack, colorCoding, onColorCodingToggle, overviewParts, onOverviewPartToggle, ...bodyProps }) {
   // Set while the transparency thumb is held, which fades the page down to just
   // that slider (see .settings-page.peeking). A pointer released off the input
   // — dragged past the end of the track, or lifted after the browser handed the
@@ -727,6 +742,15 @@ export function SettingsPage({ onBack, inline, closing, subView, onColorCodingOp
       window.removeEventListener('pointercancel', end)
     }
   }, [peeking])
+
+  // Opening a dialog should hand it the keyboard, or the next Tab carries on
+  // through the page behind the backdrop as if nothing had opened. Programmatic
+  // focus on a tabindex="-1" container draws no ring (:focus-visible doesn't
+  // match it), so this is only felt by whoever is using the keyboard.
+  const panelRef = useRef(null)
+  useEffect(() => {
+    if (modal) panelRef.current?.focus()
+  }, [modal])
 
   let body
   if (subView === 'colorcoding') {
@@ -763,8 +787,18 @@ export function SettingsPage({ onBack, inline, closing, subView, onColorCodingOp
         onGyroscopeChange={bodyProps.onGyroscopeChange}
       />
     )
+  } else if (subView === 'notifications') {
+    body = (
+      <NotificationsView
+        notifyEnabled={bodyProps.notifyEnabled}
+        notifyTypes={bodyProps.notifyTypes}
+        permission={bodyProps.notifyPermission}
+        onEnabledChange={bodyProps.onNotifyEnabledChange}
+        onTypeToggle={bodyProps.onNotifyTypeToggle}
+      />
+    )
   } else {
-    body = <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} onOverviewOpen={onOverviewOpen} onWeatherEffectsOpen={onWeatherEffectsOpen} onThemeOpen={onThemeOpen} />
+    body = <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} onOverviewOpen={onOverviewOpen} onWeatherEffectsOpen={onWeatherEffectsOpen} onThemeOpen={onThemeOpen} onNotificationsOpen={onNotificationsOpen} />
   }
 
   if (inline) {
@@ -791,13 +825,35 @@ export function SettingsPage({ onBack, inline, closing, subView, onColorCodingOp
   }
 
   return (
-    <div className={`settings-page${closing ? ' closing' : ''}${peeking ? ' peeking' : ''}`}>
+    <div
+      ref={panelRef}
+      tabIndex={modal ? -1 : undefined}
+      className={`settings-page${modal ? ' settings-page--modal' : ''}${closing ? ' closing' : ''}${peeking ? ' peeking' : ''}`}
+      /* Only the modal is a dialog. The phone shells are a page that replaces
+         what was on screen, and announcing that as a dialog would promise a
+         layer the user could dismiss to get back to it. */
+      role={modal ? 'dialog' : undefined}
+      aria-modal={modal ? 'true' : undefined}
+      aria-label={modal ? 'Settings' : undefined}
+    >
       <header className="settings-page-header">
-        <button className="back-btn" onClick={subView ? onSubViewBack : onBack} aria-label="Back">
-          <ArrowLeft size={18} />
-          <span>Back</span>
-        </button>
+        {/* Back is how you leave a page; a dialog has a close button instead.
+            So the modal keeps Back only where it means going up a level — out
+            of a sub-page and back to the list behind it. */}
+        {(!modal || subView) && (
+          <button className="back-btn" onClick={subView ? onSubViewBack : onBack} aria-label="Back">
+            <ArrowLeft size={18} />
+            <span>Back</span>
+          </button>
+        )}
         <span className="settings-page-title">{SUB_VIEW_TITLES[subView] ?? 'Settings'}</span>
+        {/* Closes the dialog outright, from a sub-page as much as from the
+            list — Back is what walks up a level. */}
+        {modal && (
+          <button className="header-icon-btn settings-modal-close" onClick={onDismiss ?? onBack} aria-label="Close settings">
+            <X size={18} />
+          </button>
+        )}
       </header>
       <div className="settings-body">
         {body}
@@ -806,7 +862,7 @@ export function SettingsPage({ onBack, inline, closing, subView, onColorCodingOp
   )
 }
 
-export function SettingsPill({ expanded, onToggle, subView, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onThemeOpen, onSubViewBack, colorCoding, onColorCodingToggle, overviewParts, onOverviewPartToggle, ...bodyProps }) {
+export function SettingsPill({ expanded, onToggle, subView, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onThemeOpen, onNotificationsOpen, onSubViewBack, colorCoding, onColorCodingToggle, overviewParts, onOverviewPartToggle, ...bodyProps }) {
   let body
   if (subView === 'colorcoding') {
     body = <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} onBack={onSubViewBack} />
@@ -840,8 +896,19 @@ export function SettingsPill({ expanded, onToggle, subView, onColorCodingOpen, o
         onBack={onSubViewBack}
       />
     )
+  } else if (subView === 'notifications') {
+    body = (
+      <NotificationsView
+        notifyEnabled={bodyProps.notifyEnabled}
+        notifyTypes={bodyProps.notifyTypes}
+        permission={bodyProps.notifyPermission}
+        onEnabledChange={bodyProps.onNotifyEnabledChange}
+        onTypeToggle={bodyProps.onNotifyTypeToggle}
+        onBack={onSubViewBack}
+      />
+    )
   } else {
-    body = <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} onOverviewOpen={onOverviewOpen} onWeatherEffectsOpen={onWeatherEffectsOpen} onThemeOpen={onThemeOpen} />
+    body = <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} onOverviewOpen={onOverviewOpen} onWeatherEffectsOpen={onWeatherEffectsOpen} onThemeOpen={onThemeOpen} onNotificationsOpen={onNotificationsOpen} />
   }
 
   return (
