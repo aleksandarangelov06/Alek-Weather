@@ -123,6 +123,7 @@ import { SplashHome } from './components/web/SplashHome'
 import { LoadingScreen } from './components/LoadingScreen'
 import { liveWeatherCode } from './utils/weatherCodes'
 import { APP_VERSION, IS_ANDROID_APP } from './utils/version'
+import { IS_PHONE } from './utils/device'
 import { applyMaterialTokens, DEFAULT_SEED, isValidSeed } from './utils/materialTheme'
 import { useNotifications } from './hooks/useNotifications'
 import { syncNotificationSettings } from './utils/notifications'
@@ -237,7 +238,17 @@ function App() {
   const [prefersDark, setPrefersDark] = useState(
     () => window.matchMedia('(prefers-color-scheme: dark)').matches
   )
-  const [platformTheme, setPlatformTheme] = useState(() => localStorage.getItem(PLATFORM_THEME_KEY) ?? defaultPlatformTheme())
+  const [platformTheme, setPlatformTheme] = useState(() => {
+    const saved = localStorage.getItem(PLATFORM_THEME_KEY)
+    // The web app needs a desktop-sized viewport: on a phone its header
+    // controls run off screen, settings among them, and with settings out of
+    // reach the choice can't be undone. So a phone never keeps 'web' — the
+    // Web option is hidden there (see SettingsPage), and anything already
+    // stored, from an older build or another device, falls back to the phone
+    // look on the next launch.
+    if (!saved || (saved === 'web' && IS_PHONE)) return defaultPlatformTheme()
+    return saved
+  })
   const [materialColor, setMaterialColor] = useState(() => {
     const saved = localStorage.getItem(MATERIAL_COLOR_KEY)
     return isValidSeed(saved) ? saved.toLowerCase() : DEFAULT_SEED
@@ -448,9 +459,15 @@ function App() {
   // Neither is scoped to a style in CSS — the rules that read them already are
   // — but both come off entirely under the other styles so nothing lingers on
   // the root.
+  // Both readings are also gated on the sky being there to show. Thinning a card
+  // with weather effects off doesn't reveal anything — there is no sky behind
+  // the stack, only the flat page surface — so all it does is wash the cards
+  // out. The stored value is left alone rather than zeroed, so turning effects
+  // back on restores the look the user had picked; the Theme page greys the
+  // control out for as long as it can't do anything (see CardTransparencyRow).
   useEffect(() => {
     const root = document.documentElement
-    const thinned = cardTransparency > 0
+    const thinned = cardTransparency > 0 && weatherAnimations
     if (thinned && platformTheme === 'android') {
       root.style.setProperty('--md-card-alpha', `${100 - cardTransparency}%`)
       root.setAttribute('data-card-glass', 'on')
@@ -463,7 +480,7 @@ function App() {
     } else {
       root.style.removeProperty('--ios-glass-clarity')
     }
-  }, [cardTransparency, platformTheme])
+  }, [cardTransparency, platformTheme, weatherAnimations])
 
   // Auto-load the home city on mount (falling back to the first saved city).
   useEffect(() => {
@@ -608,6 +625,7 @@ function App() {
   }
 
   const changePlatformTheme = (mode) => {
+    if (mode === 'web' && IS_PHONE) return
     setPlatformTheme(mode)
     localStorage.setItem(PLATFORM_THEME_KEY, mode)
   }
@@ -806,7 +824,7 @@ function App() {
     hourly:  <HourlyForecast hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.hourly} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
     daily:   <DailyForecast daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.daily} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
     details: <WeatherDetails current={weather.current} daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} airQuality={airQuality} colorCoding={colorCoding.details} />,
-    radar:   <WeatherRadar location={location} timezone={weather.timezone} mode={radarMode} />,
+    radar:   <WeatherRadar location={location} timezone={weather.timezone} mode={radarMode} sky={weatherAnimations ? skyC : ''} />,
     nowcast: <PrecipNowcast minutely={weather.minutely_15} currentTime={weather.current.time} mode={nowcastMode} current={weather.current} radarClear={radarClear} />,
   } : null
 
@@ -928,13 +946,6 @@ function App() {
     >
       <header ref={headerRef} className={`app-header${!weather ? ' app-header--no-city' : ''}${headerTabs ? ' app-header--tabs' : ''}`}>
                 {/* Backdrop for the sticky tab bar. It repaints the same sky gradient
-            as .sky-bg, anchored to the viewport the same way (see .header-sky
-            in WebApp.css), so it is opaque enough to hide the page scrolling
-            beneath it while being invisible against the sky itself. */}
-        {headerTabs && weatherAnimations && (
-          <div className={`header-sky ${skyC}`} aria-hidden="true" />
-        )}
-        {/* Backdrop for the sticky tab bar. It repaints the same sky gradient
             as .sky-bg, anchored to the viewport the same way (see .header-sky
             in WebApp.css), so it is opaque enough to hide the page scrolling
             beneath it while being invisible against the sky itself. */}

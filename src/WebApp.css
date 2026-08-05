@@ -173,10 +173,25 @@
   transition: opacity 0.22s ease;
 }
 
+/* The header is a flex row of three: location button, this wrapper, settings
+   button. A flex item's automatic minimum size is its content's, so the
+   wrapper refused to shrink below the full width of the tab bar inside it —
+   at any width that couldn't fit all six tabs the header overflowed, taking
+   the settings button off the right edge of the screen with it (and with
+   settings unreachable, the app style couldn't be changed back). min-width: 0
+   lets the wrapper shrink; .web-tabs already scrolls its own overflow, so the
+   tabs slide under a scroll instead of pushing the chrome away. The chain has
+   to hold the whole way down — every link between here and the scroll
+   container is itself a flex item with the same automatic minimum. */
+.app-header--tabs .app-title-wrapper {
+  min-width: 0;
+}
+
 .web-tabs-wrap {
   display: flex;
   justify-content: center;
   pointer-events: none;
+  min-width: 0;
   max-width: 100%;
   animation: web-tabs-in 0.28s ease both;
 }
@@ -1580,6 +1595,13 @@
      tiers below restate one value per breakpoint instead of one per shape, and
      the head can never drift out of step with the rows. */
   --web-table-cols: 86px minmax(160px, 1.4fr) 74px 78px 132px 96px 60px;
+  /* The table's gutter, for the same reason. The day headings sit outside the
+     grid (they are a flex row, not a seven-column one) and so had to repeat the
+     padding by hand; when the narrow tiers below tightened it for the head and
+     the rows, the headings kept the wide value and the date drifted a gutter's
+     width to the right of the Time column it labels. One property, read by all
+     three, is what keeps them on the same line. */
+  --web-table-pad: 20px;
 }
 
 .web-table-card--focus {
@@ -1592,7 +1614,7 @@
   grid-template-columns: var(--web-table-cols);
   align-items: center;
   gap: 12px;
-  padding: 0 20px;
+  padding: 0 var(--web-table-pad);
 }
 
 .web-table-head {
@@ -1612,11 +1634,13 @@
 
 /* The day divider is the table's only real heading, so it gets the air to act
    like one: a clear break above it, tight to the rows it introduces. */
+/* Aligned to the same gutter as the rows, so the day name starts exactly where
+   the Time column does and reads as that column's heading. */
 .web-table-day {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding: 22px 20px 6px;
+  padding: 22px var(--web-table-pad) 6px;
   font-family: var(--font-display), var(--font);
 }
 
@@ -2509,6 +2533,7 @@
 
   .web-table-card {
     --web-table-cols: 76px minmax(120px, 1.3fr) 64px 68px 116px 84px 52px;
+    --web-table-pad: 14px;
   }
 
   .web-table-card--focus {
@@ -2518,7 +2543,6 @@
   .web-table-head,
   .web-table-row {
     gap: 8px;
-    padding-inline: 14px;
   }
 
   .web-day-row {
@@ -2552,6 +2576,7 @@
 
   .web-table-card {
     --web-table-cols: 68px minmax(90px, 1.2fr) 56px 60px 100px 72px 44px;
+    --web-table-pad: 12px;
   }
 
   .web-table-card--focus {
@@ -2561,7 +2586,6 @@
   .web-table-head,
   .web-table-row {
     gap: 6px;
-    padding-inline: 12px;
   }
 
   .web-day-row {

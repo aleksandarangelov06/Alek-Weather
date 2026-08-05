@@ -18,16 +18,18 @@ import java.time.LocalTime
 import java.time.ZoneId
 import java.util.Locale
 import java.util.concurrent.TimeUnit
+import org.json.JSONArray
 import org.json.JSONObject
 import kotlin.math.roundToInt
 
 /**
  * The weather check that runs whether or not the app is open.
  *
- * The rules here are a port of the web app's `src/utils/notifications.js`: same
- * weather-code buckets, same 12-hour rain scan, same tomorrow-vs-the-week
- * comparison, same wording. They had to move to Kotlin because the JS versions
- * only ever ran inside a live WebView — close the app and nothing fired.
+ * The rules started as a port of the web app's `src/utils/notifications.js` and
+ * have since grown past it; they had to move to Kotlin because the JS versions
+ * only ever ran inside a live WebView, so closing the app meant nothing fired.
+ * Nothing on the page decides what to notify about any more, so this file is
+ * the only place the wording and the thresholds live.
  *
  * The page no longer fires notifications itself. Opening the app enqueues a
  * one-shot run of this worker instead ([checkNow]), so foreground and background
@@ -101,65 +103,139 @@ class WeatherCheckWorker(context: Context, params: WorkerParameters) : Worker(co
             val body = props?.optString("headline")?.ifEmpty { null }
                 ?: props?.optString("areaDesc")?.substringBefore(';')
                 ?: ""
-            WeatherNotifier.post(applicationContext, id, title, body)
+            WeatherNotifier.post(applicationContext, id, title, body, R.drawable.ic_notify_alert)
             fired.add(id)
         }
         store.markAlertsSeen(fired)
     }
 
-    // ── Rain / storm in the next 12 hours ────────────────────────────────────
+    // ── Precipitation in the next 12 hours ───────────────────────────────────
 
+    /**
+     * Finds the notable spell of precipitation in the next 12 hours and reports
+     * when it starts and how long it runs.
+     *
+     * "Rain in the next 12 hours" was true of a shower at 7pm and of one already
+     * falling, which made it useless for deciding anything. So the scan now
+     * picks the worst hour in the window, walks outward to the edges of the
+     * spell around it, and phrases the result against the clock. Picking the
+     * worst hour first (rather than the earliest) is what keeps the timing
+     * attached to the part worth knowing about: an afternoon of drizzle with a
+     * thunderstorm at the end of it is a notification about the thunderstorm.
+     */
     private fun checkRain(store: NotifyStore, data: JSONObject, zone: ZoneId) {
         val today = LocalDate.now(zone).toString()
-        if (store.notifiedDate("rain") == today) return
-        if (inQuietHours(zone)) return
 
         val hourly = data.optJSONObject("hourly") ?: return
         val times = hourly.optJSONArray("time") ?: return
         val codes = hourly.optJSONArray("weather_code") ?: return
+        val probs = hourly.optJSONArray("precipitation_probability")
 
         // Scan from the current hour. If it isn't in the array something is off
         // with the response; starting at 0 would report on hours already past.
-        val nowKey = "${today}T%02d:00".format(Locale.US, LocalTime.now(zone).hour)
+        val nowHour = LocalTime.now(zone).hour
+        val nowKey = "${today}T%02d:00".format(Locale.US, nowHour)
         var start = -1
         for (i in 0 until times.length()) {
             if (times.optString(i).startsWith(nowKey)) { start = i; break }
         }
         if (start == -1) return
 
-        var worstLevel = "clear"
-        var worstCode: Int? = null
-        for (i in start until minOf(start + 12, codes.length())) {
-            val code = codes.optInt(i, -1)
-            when (classify(code)) {
-                "severe" -> { worstLevel = "severe"; worstCode = code }
-                "heavy" -> if (worstLevel != "severe") { worstLevel = "heavy"; worstCode = code }
-                "moderate" -> if (worstLevel != "severe" && worstLevel != "heavy") { worstLevel = "moderate"; worstCode = code }
-                "light" -> if (worstLevel == "clear") { worstLevel = "light"; worstCode = code }
-            }
-            if (worstLevel == "severe") break
-        }
-        if (worstLevel == "clear") return
-        val worst = worstCode ?: return
+        val span = minOf(WINDOW_HOURS, codes.length() - start)
+        if (span <= 0) return
+        val wet = BooleanArray(span) { PRECIP.containsKey(codes.optInt(start + it, -1)) }
 
-        val thunder = THUNDER_CODES.contains(worst)
-        val snow = SNOW_CODES.contains(worst)
-
-        val title = when (worstLevel) {
-            "severe" -> if (thunder) "Thunderstorm Ahead" else "Violent Rain Ahead"
-            "heavy" -> if (snow) "Heavy Snow Ahead" else "Heavy Rain Ahead"
-            "moderate" -> if (snow) "Snow Expected" else "Rain Expected"
-            else -> "Light Rain Expected"
+        // The worst hour in the window, by the severity ranking rather than by
+        // when it lands: 2pm drizzle and 6pm freezing rain is a notification
+        // about the freezing rain.
+        var peak = -1
+        for (j in 0 until span) {
+            if (!wet[j]) continue
+            if (peak == -1 || severityAt(codes, start + j) > severityAt(codes, start + peak)) peak = j
         }
-        val body = when (worstLevel) {
-            "severe" -> if (thunder) "Thunderstorms expected in the next 12 hours." else "Violent rain showers expected in the next 12 hours."
-            "heavy" -> if (snow) "Heavy snowfall expected in the next 12 hours." else "Heavy rain expected in the next 12 hours."
-            "moderate" -> if (snow) "Moderate snow on the way in the next 12 hours." else "Rain moving in over the next 12 hours."
-            else -> "Light rain or drizzle expected in the next 12 hours."
+        if (peak == -1) return
+        val worst = PRECIP[codes.optInt(start + peak, -1)] ?: return
+
+        // The spell around that hour. A single dry hour mid-spell is a lull, not
+        // an ending: without the tolerance, showers that pause for an hour read
+        // as two separate one-hour events and the duration is always "1 hour".
+        var from = peak
+        while (from - 1 >= 0 && (wet[from - 1] || (from - 2 >= 0 && wet[from - 2]))) from--
+        var to = peak
+        while (to + 1 < span && (wet[to + 1] || (to + 2 < span && wet[to + 2]))) to++
+
+        // Overnight, when a phone buzzing about drizzle is worse than silence.
+        // Severe weather still goes through: the whole point of a warning about
+        // a thunderstorm or freezing rain is that it reaches you before you walk
+        // out into it.
+        if (inQuietHours(zone) && worst.severity < QUIET_BYPASS_SEVERITY) return
+
+        // Once a day, unless it gets worse. A drizzle notice at 8am must not be
+        // what stops the afternoon's thunderstorm from being announced, so the
+        // severity that fired is remembered alongside the date and only a
+        // higher one fires again. Same tag, so the second one replaces the first
+        // in the shade rather than stacking.
+        val prior = store.notifiedDate("rain")
+        if (prior != null && prior.substringBefore('|') == today &&
+            worst.severity <= (prior.substringAfter('|', "").toIntOrNull() ?: 0)
+        ) return
+
+        val startsIn = from
+        val hours = to - from + 1
+        // The spell is still going at the edge of what was scanned, so its
+        // length is unknown; say where the window ends instead of guessing.
+        val openEnded = to == span - 1
+
+        var peakProb = 0
+        if (probs != null) {
+            for (j in from..to) peakProb = maxOf(peakProb, probs.optInt(start + j, 0))
         }
 
-        WeatherNotifier.post(applicationContext, "rain-forecast", title, body)
-        store.markNotifiedDate("rain", today)
+        val title = "${worst.label} ${whenTitle(startsIn, clock(nowHour + startsIn))}"
+        val body = buildString {
+            append(worst.label.lowercase(Locale.US).replaceFirstChar { it.uppercase() })
+            append(' ')
+            append(
+                when {
+                    startsIn <= 0 -> "starting now"
+                    startsIn == 1 -> "starting within the hour"
+                    startsIn <= 3 -> "starting in about $startsIn hours"
+                    else -> "starting around ${clock(nowHour + startsIn)}"
+                },
+            )
+            append(
+                when {
+                    openEnded -> ", continuing past ${clock(nowHour + span - 1)}"
+                    hours <= 1 -> ", clearing within the hour"
+                    else -> ", lasting about $hours hours"
+                },
+            )
+            append('.')
+            // Only worth stating when the model is hedging; at 90% and up the
+            // sentence above is already the story.
+            if (peakProb in 1 until CONFIDENT_PROB) append(" Chance peaks at $peakProb%.")
+        }
+
+        WeatherNotifier.post(applicationContext, "rain-forecast", title, body, worst.icon)
+        store.markNotifiedDate("rain", "$today|${worst.severity}")
+    }
+
+    private fun severityAt(codes: JSONArray, index: Int): Int =
+        PRECIP[codes.optInt(index, -1)]?.severity ?: 0
+
+    /** "Heavy Rain" + this = the notification title. */
+    private fun whenTitle(hoursAway: Int, clock: String): String = when {
+        hoursAway <= 0 -> "Starting Now"
+        hoursAway == 1 -> "Within the Hour"
+        hoursAway <= 3 -> "in $hoursAway Hours"
+        else -> "at $clock"
+    }
+
+    /** 15 -> "3 PM". Hours past 23 wrap, since they are offsets from now. */
+    private fun clock(hour: Int): String {
+        val h = ((hour % 24) + 24) % 24
+        val h12 = if (h % 12 == 0) 12 else h % 12
+        return "$h12 ${if (h < 12) "AM" else "PM"}"
     }
 
     // ── Tomorrow's weather ───────────────────────────────────────────────────
@@ -200,10 +276,32 @@ class WeatherCheckWorker(context: Context, params: WorkerParameters) : Worker(co
             }
         }
 
+        // Tomorrow in one phrase. Thunderstorms and freezing rain used to fall
+        // under the flat " with rain" (95/96/99 were in RAIN_CODES), and a dry
+        // day said nothing at all about the sky, so a clear day and an overcast
+        // one read identically.
+        // The phrase and the icon come from the same branch so they can never
+        // disagree about what tomorrow is.
         val code = daily.optJSONArray("weather_code")?.optInt(1, -1) ?: -1
-        val condition = when {
-            RAIN_CODES.contains(code) -> " with rain"
-            SNOW_CODES.contains(code) -> " with snow"
+        val (condition, icon) = when {
+            THUNDER_CODES.contains(code) -> " with thunderstorms" to R.drawable.ic_notify_storm
+            FREEZING_CODES.contains(code) -> " with freezing rain" to R.drawable.ic_notify_ice
+            SNOW_CODES.contains(code) -> " with snow" to R.drawable.ic_notify_snow
+            SHOWER_CODES.contains(code) -> " with showers" to R.drawable.ic_notify_rain
+            RAIN_CODES.contains(code) -> " with rain" to R.drawable.ic_notify_rain
+            FOG_CODES.contains(code) -> " and foggy" to R.drawable.ic_notify_cloud
+            code == 3 -> " and overcast" to R.drawable.ic_notify_cloud
+            code == 2 -> " and partly cloudy" to R.drawable.ic_notify_sun
+            code == 0 || code == 1 -> " and mostly sunny" to R.drawable.ic_notify_sun
+            else -> "" to R.drawable.ic_notify_sun
+        }
+
+        // Wind only earns a mention when it is the thing you would have noticed.
+        val wind = daily.optJSONArray("wind_speed_10m_max")?.optDouble(1, Double.NaN) ?: Double.NaN
+        val windNote = when {
+            wind.isNaN() -> ""
+            wind >= WINDY_MPH -> ", windy"
+            wind >= BREEZY_MPH -> ", breezy"
             else -> ""
         }
 
@@ -212,7 +310,8 @@ class WeatherCheckWorker(context: Context, params: WorkerParameters) : Worker(co
             applicationContext,
             "tomorrow-weather",
             "Tomorrow's Weather",
-            "High ${fmtTemp(high, unit)}, Low ${fmtTemp(low, unit)}$condition$weekContext.",
+            "High ${fmtTemp(high, unit)}, Low ${fmtTemp(low, unit)}$condition$windNote$weekContext.",
+            icon,
         )
         store.markNotifiedDate("tomorrow", today)
     }
@@ -220,14 +319,6 @@ class WeatherCheckWorker(context: Context, params: WorkerParameters) : Worker(co
     /** Forecasts are fetched in Fahrenheit; the page's unit choice is applied here. */
     private fun fmtTemp(fahrenheit: Double, unit: String): String =
         if (unit == "C") "${((fahrenheit - 32) * 5 / 9).roundToInt()}°" else "${fahrenheit.roundToInt()}°"
-
-    private fun classify(code: Int): String = when {
-        SEVERE_CODES.contains(code) -> "severe"
-        HEAVY_CODES.contains(code) -> "heavy"
-        MODERATE_CODES.contains(code) -> "moderate"
-        LIGHT_CODES.contains(code) -> "light"
-        else -> "clear"
-    }
 
     /** Overnight, when a phone buzzing about drizzle is worse than silence. */
     private fun inQuietHours(zone: ZoneId): Boolean =
@@ -245,9 +336,12 @@ class WeatherCheckWorker(context: Context, params: WorkerParameters) : Worker(co
         append("&longitude=").append(lon)
         // Only what the two rules read; the page's full request pulls a dozen
         // more fields that nothing here would look at.
-        append("&hourly=weather_code")
-        append("&daily=weather_code,temperature_2m_max,temperature_2m_min")
-        append("&temperature_unit=fahrenheit&timezone=auto&forecast_days=7")
+        append("&hourly=weather_code,precipitation_probability")
+        append("&daily=weather_code,temperature_2m_max,temperature_2m_min,wind_speed_10m_max")
+        // Wind in mph so the thresholds below can be read as written; the
+        // default is km/h, which would make BREEZY_MPH a much lower bar.
+        append("&temperature_unit=fahrenheit&wind_speed_unit=mph")
+        append("&timezone=auto&forecast_days=7")
     }
 
     private fun httpGet(url: String, nws: Boolean = false): String {
@@ -275,20 +369,77 @@ class WeatherCheckWorker(context: Context, params: WorkerParameters) : Worker(co
         private const val NWS_USER_AGENT =
             "AlekWeatherApp/1.0 (angelov6+alekweather@terpmail.umd.edu)"
 
-        /** Weather-code buckets, mirroring src/utils/notifications.js. */
-        private val SEVERE_CODES = setOf(95, 96, 99, 82)
-        private val HEAVY_CODES = setOf(65, 75, 86)
-        private val MODERATE_CODES = setOf(63, 73, 81, 55)
-        private val LIGHT_CODES = setOf(51, 53, 61, 71, 77, 80, 85)
-        private val RAIN_CODES = setOf(51, 53, 55, 61, 63, 65, 80, 81, 82, 95, 96, 99)
+        /** What one WMO weather code means for the notification. */
+        private data class Precip(val severity: Int, val label: String, val icon: Int)
+
+        /**
+         * Every precipitating WMO code, with how bad it is and what to call it.
+         *
+         * One table rather than the four buckets this replaces. The buckets had
+         * no place to say *which* kind of precipitation a code was, so snow in
+         * the light bucket was announced as "Light Rain Expected", and the
+         * freezing codes (56, 57, 66, 67) were in no bucket at all, meaning the
+         * single most hazardous thing on the scale was the one thing that never
+         * notified.
+         *
+         * Severity is a total order, not a tier, so any two hours can be
+         * compared directly. The spacing is arbitrary and only the ranking
+         * matters; gaps are left so a code can be slotted in later without
+         * renumbering. Anything absent is a dry hour, fog and cloud included.
+         */
+        private val PRECIP = mapOf(
+            96 to Precip(100, "Thunderstorms With Hail", R.drawable.ic_notify_storm),
+            99 to Precip(100, "Thunderstorms With Hail", R.drawable.ic_notify_storm),
+            95 to Precip(95, "Thunderstorms", R.drawable.ic_notify_storm),
+            67 to Precip(90, "Heavy Freezing Rain", R.drawable.ic_notify_ice),
+            66 to Precip(85, "Freezing Rain", R.drawable.ic_notify_ice),
+            57 to Precip(80, "Freezing Drizzle", R.drawable.ic_notify_ice),
+            56 to Precip(75, "Freezing Drizzle", R.drawable.ic_notify_ice),
+            82 to Precip(70, "Violent Downpours", R.drawable.ic_notify_rain),
+            75 to Precip(65, "Heavy Snow", R.drawable.ic_notify_snow),
+            86 to Precip(63, "Heavy Snow Showers", R.drawable.ic_notify_snow),
+            65 to Precip(60, "Heavy Rain", R.drawable.ic_notify_rain),
+            73 to Precip(50, "Snow", R.drawable.ic_notify_snow),
+            63 to Precip(46, "Rain", R.drawable.ic_notify_rain),
+            81 to Precip(45, "Rain Showers", R.drawable.ic_notify_rain),
+            55 to Precip(40, "Heavy Drizzle", R.drawable.ic_notify_rain),
+            71 to Precip(30, "Light Snow", R.drawable.ic_notify_snow),
+            85 to Precip(28, "Light Snow Showers", R.drawable.ic_notify_snow),
+            77 to Precip(26, "Snow Grains", R.drawable.ic_notify_snow),
+            61 to Precip(25, "Light Rain", R.drawable.ic_notify_rain),
+            80 to Precip(24, "Light Showers", R.drawable.ic_notify_rain),
+            53 to Precip(20, "Drizzle", R.drawable.ic_notify_rain),
+            51 to Precip(18, "Light Drizzle", R.drawable.ic_notify_rain),
+        )
+
+        /** Codes that describe tomorrow in one phrase, for the daily summary. */
+        private val RAIN_CODES = setOf(51, 53, 55, 61, 63, 65)
+        private val SHOWER_CODES = setOf(80, 81, 82)
         private val SNOW_CODES = setOf(71, 73, 75, 77, 85, 86)
         private val THUNDER_CODES = setOf(95, 96, 99)
+        private val FREEZING_CODES = setOf(56, 57, 66, 67)
+        private val FOG_CODES = setOf(45, 48)
+
+        /** How far ahead the precipitation scan looks. */
+        private const val WINDOW_HOURS = 12
+        /** At or above this chance, the forecast speaks for itself. */
+        private const val CONFIDENT_PROB = 90
+        /**
+         * Severity from which a spell is worth the overnight interruption:
+         * violent downpours and everything above them (freezing precipitation,
+         * thunderstorms). Snow and ordinary rain wait for morning.
+         */
+        private const val QUIET_BYPASS_SEVERITY = 70
 
         /** Rain and tomorrow hold off overnight; alerts never do. */
         private const val QUIET_HOUR_START = 22
         private const val QUIET_HOUR_END = 7
         private const val TOMORROW_HOUR_START = 17
         private const val TOMORROW_HOUR_END = 22
+
+        /** Sustained wind (mph) that gets a mention in tomorrow's summary. */
+        private const val BREEZY_MPH = 20
+        private const val WINDY_MPH = 30
 
         private const val PERIODIC_WORK = "weather-check"
         private const val ONE_SHOT_WORK = "weather-check-now"

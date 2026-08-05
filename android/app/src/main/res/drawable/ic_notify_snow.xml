@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!-- The rain cloud with six-point flakes in place of the drops. See
+     ic_notify_rain.xml for why the cloud is built the way it is. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M6.6,9.6a4.4,4.4 0 1,1 8.8,0a4.4,4.4 0 1,1 -8.8,0zM3.8,11.2a3,3 0 1,1 6,0a3,3 0 1,1 -6,0zM13.2,11.2a3,3 0 1,1 6,0a3,3 0 1,1 -6,0zM6.8,11.2H16.2V14.2H6.8z" />
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round"
+        android:pathData="M9,16.8L9,20.4M7.44,17.7L10.56,19.5M10.56,17.7L7.44,19.5M15,16.8L15,20.4M13.44,17.7L16.56,19.5M16.56,17.7L13.44,19.5" />
+</vector>

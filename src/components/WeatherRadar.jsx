@@ -60,7 +60,7 @@ function fmtTime(unixSec, timezone) {
 // block in a stack. The map then gets its controls and its pan/zoom straight
 // away instead of hiding them behind tap-to-expand, which only makes sense for
 // a map small enough that a tap can't be a drag.
-export function WeatherRadar({ location, timezone, mode = 'both', fill = false }) {
+export function WeatherRadar({ location, timezone, mode = 'both', fill = false, sky = '' }) {
   const mapRef      = useRef(null)
   const mapInst     = useRef(null)
   const baseTileRef = useRef(null)
@@ -418,6 +418,15 @@ export function WeatherRadar({ location, timezone, mode = 'both', fill = false }
   const showDivider = pastCount > 0 && pastCount < frames.length
 
   return (
+    <>
+    {/* Full-screen radar is a card blown up to the viewport, and with the
+        transparency slider up its fill is translucent — so the weather stack it
+        is covering reads straight through the controls strip. This paints the
+        page backdrop (the sky gradient, or the flat surface with effects off)
+        between the two: same fixed geometry as .sky-bg, so it lines up with the
+        real sky exactly, but above the app content rather than below it. Only
+        while expanded; the compact card is meant to sit in the stack. */}
+    {expanded && <div className={`radar-sky ${sky}`} aria-hidden="true" />}
     <div className={`card radar-card${expanded ? ' radar-expanded' : ''}${fill ? ' radar-fill' : ''}`}>
       {!expanded && !fill && (
         <div className="radar-header">
@@ -427,10 +436,11 @@ export function WeatherRadar({ location, timezone, mode = 'both', fill = false }
 
       <div className="radar-map-wrap">
         <div ref={mapRef} className="radar-map" />
-        {/* The full-screen overlay keeps its map tools floating on the map, and
-            is the only mode that offers a way out of itself. Fill mode puts the
-            same tools in the strip below instead — there the map is the whole
-            page, so anything laid on it is covering the thing it controls. */}
+        {/* The full-screen overlay floats its zoom and collapse tools on the
+            map, and is the only mode that offers a way out of itself. Its
+            locate button lives with the controls instead — see below. Fill mode
+            puts every tool in the strip: there the map is the whole page, so
+            anything laid on it is covering the thing it controls. */}
         {expanded && (
           <>
             <button className="radar-expand-btn radar-expand-btn--floating" onClick={collapse} aria-label="Collapse">
@@ -444,9 +454,6 @@ export function WeatherRadar({ location, timezone, mode = 'both', fill = false }
                 <ZoomOut size={16} />
               </button>
             </div>
-            <button className="radar-locate-btn" onClick={handleLocate} aria-label="Center on location">
-              <Navigation size={15} />
-            </button>
           </>
         )}
         {!expanded && !fill && (
@@ -460,6 +467,15 @@ export function WeatherRadar({ location, timezone, mode = 'both', fill = false }
       </div>
 
       <div className="radar-controls">
+        {/* Full-screen only, and a child of the pill rather than of the map:
+            the pill covers the map's bottom-right corner where this used to
+            float, and hanging it off the pill's top edge is what keeps it
+            clear without hard-coding the pill's height. */}
+        {expanded && (
+          <button className="radar-locate-btn" onClick={handleLocate} aria-label="Center on location">
+            <Navigation size={15} />
+          </button>
+        )}
         <div className="radar-main-row">
           <div className="radar-big-time">
             {frames[idx] ? fmtTime(frames[idx].time, timezone) : ''}
@@ -532,5 +548,6 @@ export function WeatherRadar({ location, timezone, mode = 'both', fill = false }
         </p>
       </div>
     </div>
+    </>
   )
 }

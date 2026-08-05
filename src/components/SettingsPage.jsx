@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { ArrowLeft, ChevronRight, ChevronDown, X, Info } from 'lucide-react'
 import { APP_VERSION, ANDROID_VERSION, IS_ANDROID_APP } from '../utils/version'
+import { IS_PHONE } from '../utils/device'
 
 function SettingRow({ label, children }) {
   return (
@@ -253,7 +254,7 @@ function UpdateSection() {
 
 
 const NOTIFY_TYPE_LABELS = {
-  rain:     'Upcoming Rain / Storm',
+  rain:     'Rain, Snow & Storms',
   alerts:   'Weather Alerts',
   tomorrow: 'Weather Tomorrow',
 }
@@ -301,7 +302,7 @@ function NotificationsView({ notifyEnabled, notifyTypes, permission, onEnabledCh
           </SettingRow>
         ))}
       </div>
-      <p className="color-coding-desc">The forecast is checked about once an hour in the background, including when the app is closed. Rain and tomorrow's summary stay quiet overnight; alerts arrive whenever they're issued.</p>
+      <p className="color-coding-desc">The forecast is checked about once an hour in the background, including when the app is closed. Precipitation notices say when it starts and how long it lasts, and repeat only if the day turns worse. Rain, snow, and tomorrow's summary stay quiet overnight; severe weather and alerts arrive whenever they're issued.</p>
     </>
   )
 }
@@ -439,9 +440,14 @@ export const MAX_CARD_TRANSPARENCY = 50
 // their card stack over the same sky, so the row, its peek behaviour and the
 // stored value are identical — only what each style does with the number
 // differs (see the effect in App.jsx).
-function CardTransparencyRow({ transparency, onTransparencyChange, onPeekChange }) {
+//
+// It goes dead when weather effects are off, because what the slider does is
+// let the sky through and there is no sky then — App.jsx stops applying the
+// value at the same point, so a control that still moved would be one that did
+// nothing. The stored value survives, so the look comes back with the effects.
+function CardTransparencyRow({ transparency, onTransparencyChange, onPeekChange, disabled }) {
   return (
-    <div className="settings-row md-slider-row">
+    <div className={`settings-row md-slider-row${disabled ? ' settings-row--disabled' : ''}`}>
       <div className="settings-row-label">Card Transparency</div>
       <div className="md-slider-wrap">
         {/* Holding the thumb clears the settings page away so the change
@@ -460,6 +466,7 @@ function CardTransparencyRow({ transparency, onTransparencyChange, onPeekChange 
           /* WebKit can't paint the filled half of the track on its own —
              --fill is the gradient stop that stands in for it. */
           style={{ '--fill': `${(transparency / MAX_CARD_TRANSPARENCY) * 100}%` }}
+          disabled={disabled}
           onChange={e => onTransparencyChange(Number(e.target.value))}
           onPointerDown={() => onPeekChange(true)}
           onPointerUp={() => onPeekChange(false)}
@@ -471,7 +478,17 @@ function CardTransparencyRow({ transparency, onTransparencyChange, onPeekChange 
   )
 }
 
-function GlassSection({ transparency, onTransparencyChange, onPeekChange }) {
+// Explains a slider that has gone grey, so it doesn't read as broken. Only
+// shown in the one case that greys it.
+function NoSkyNote() {
+  return (
+    <p className="color-coding-desc">
+      Card transparency needs a sky to show through; turn Weather Effects back on to use it.
+    </p>
+  )
+}
+
+function GlassSection({ transparency, onTransparencyChange, onPeekChange, weatherAnimations }) {
   return (
     <>
       <p className="color-coding-desc">Choose how much of the sky behind the cards shows through the glass.</p>
@@ -480,13 +497,15 @@ function GlassSection({ transparency, onTransparencyChange, onPeekChange }) {
           transparency={transparency}
           onTransparencyChange={onTransparencyChange}
           onPeekChange={onPeekChange}
+          disabled={!weatherAnimations}
         />
       </div>
+      {!weatherAnimations && <NoSkyNote />}
     </>
   )
 }
 
-function MaterialYouSection({ color, onColorChange, transparency, onTransparencyChange, onPeekChange }) {
+function MaterialYouSection({ color, onColorChange, transparency, onTransparencyChange, onPeekChange, weatherAnimations }) {
   const custom = !MATERIAL_SEEDS.some(seed => seed.value === color)
   return (
     <>
@@ -527,13 +546,15 @@ function MaterialYouSection({ color, onColorChange, transparency, onTransparency
           transparency={transparency}
           onTransparencyChange={onTransparencyChange}
           onPeekChange={onPeekChange}
+          disabled={!weatherAnimations}
         />
       </div>
+      {!weatherAnimations && <NoSkyNote />}
     </>
   )
 }
 
-function ThemeView({ darkMode, onDarkModeChange, platformTheme, onPlatformThemeChange, materialColor, onMaterialColorChange, cardTransparency, onCardTransparencyChange, onPeekChange, onBack }) {
+function ThemeView({ darkMode, onDarkModeChange, platformTheme, onPlatformThemeChange, materialColor, onMaterialColorChange, cardTransparency, onCardTransparencyChange, onPeekChange, weatherAnimations, onBack }) {
   return (
     <>
       {onBack && (
@@ -556,16 +577,23 @@ function ThemeView({ darkMode, onDarkModeChange, platformTheme, onPlatformThemeC
           />
         </SettingRow>
       </div>
-      <p className="color-coding-desc">Choose the app's style. iOS and Android are the two phone looks; Web is the desktop app, which is what a computer opens by default.</p>
+      <p className="color-coding-desc">
+        {IS_PHONE
+          ? "Choose the app's style. iOS and Android are the two phone looks."
+          : "Choose the app's style. iOS and Android are the two phone looks; Web is the desktop app, which is what a computer opens by default."}
+      </p>
       <div className="card settings-card">
         <SettingRow label="App Style">
+          {/* No Web on a phone: the desktop app's header controls, settings
+              among them, don't fit that width, and a screen you can't reach
+              settings from is a screen you can't leave. */}
           <SegmentedControl
             value={platformTheme}
             onChange={onPlatformThemeChange}
             options={[
               { value: 'ios',     label: 'iOS'     },
               { value: 'android', label: 'Android' },
-              { value: 'web',     label: 'Web'     },
+              ...(IS_PHONE ? [] : [{ value: 'web', label: 'Web' }]),
             ]}
           />
         </SettingRow>
@@ -581,6 +609,7 @@ function ThemeView({ darkMode, onDarkModeChange, platformTheme, onPlatformThemeC
           transparency={cardTransparency}
           onTransparencyChange={onCardTransparencyChange}
           onPeekChange={onPeekChange}
+          weatherAnimations={weatherAnimations}
         />
       )}
       {platformTheme === 'ios' && (
@@ -588,6 +617,7 @@ function ThemeView({ darkMode, onDarkModeChange, platformTheme, onPlatformThemeC
           transparency={cardTransparency}
           onTransparencyChange={onCardTransparencyChange}
           onPeekChange={onPeekChange}
+          weatherAnimations={weatherAnimations}
         />
       )}
     </>
@@ -743,6 +773,22 @@ export function SettingsPage({ onBack, onDismiss, inline, modal, closing, subVie
     }
   }, [peeking])
 
+  // Whether the open slide has landed. Only the iOS theme reads it, to hold its
+  // backdrop-filter glass back until the page has stopped moving — see the
+  // :not(.settled) rules in App.css for why that is what the slide costs.
+  //
+  // animationend is the real signal. The timer behind it covers the cases where
+  // there is no animation to end — reduced motion, or a shell that doesn't
+  // slide — since waiting on an event that never fires would mean a page that
+  // never frosts at all. Whichever lands first wins; the other is a no-op.
+  const [settled, setSettled] = useState(false)
+  useEffect(() => {
+    // Going out is a slide too, so the glass comes off again for it.
+    if (closing) { setSettled(false); return }
+    const t = setTimeout(() => setSettled(true), 400)
+    return () => clearTimeout(t)
+  }, [closing])
+
   // Opening a dialog should hand it the keyboard, or the next Tab carries on
   // through the page behind the backdrop as if nothing had opened. Programmatic
   // focus on a tabindex="-1" container draws no ring (:focus-visible doesn't
@@ -767,6 +813,7 @@ export function SettingsPage({ onBack, onDismiss, inline, modal, closing, subVie
         cardTransparency={bodyProps.cardTransparency}
         onCardTransparencyChange={bodyProps.onCardTransparencyChange}
         onPeekChange={setPeeking}
+        weatherAnimations={bodyProps.weatherAnimations}
       />
     )
   } else if (subView === 'overview') {
@@ -828,7 +875,11 @@ export function SettingsPage({ onBack, onDismiss, inline, modal, closing, subVie
     <div
       ref={panelRef}
       tabIndex={modal ? -1 : undefined}
-      className={`settings-page${modal ? ' settings-page--modal' : ''}${closing ? ' closing' : ''}${peeking ? ' peeking' : ''}`}
+      className={`settings-page${modal ? ' settings-page--modal' : ''}${closing ? ' closing' : ''}${peeking ? ' peeking' : ''}${settled ? ' settled' : ''}`}
+      /* Guarded on the target: animations inside the page (a toggle, an info
+         panel opening) bubble their end events through here too, and any one
+         of them would otherwise report the slide as finished. */
+      onAnimationEnd={(e) => { if (e.target === e.currentTarget && !closing) setSettled(true) }}
       /* Only the modal is a dialog. The phone shells are a page that replaces
          what was on screen, and announcing that as a dialog would promise a
          layer the user could dismiss to get back to it. */

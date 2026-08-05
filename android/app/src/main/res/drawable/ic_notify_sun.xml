@@ -1,0 +1,16 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!-- A clear or mostly clear day, for tomorrow's summary. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M7.8,12a4.2,4.2 0 1,1 8.4,0a4.2,4.2 0 1,1 -8.4,0z" />
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M12,2.6L12,5M12,19L12,21.4M2.6,12L5,12M19,12L21.4,12M5.4,5.4L7.1,7.1M16.9,16.9L18.6,18.6M18.6,5.4L16.9,7.1M7.1,16.9L5.4,18.6" />
+</vector>

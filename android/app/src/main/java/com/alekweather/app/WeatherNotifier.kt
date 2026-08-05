@@ -52,9 +52,21 @@ object WeatherNotifier {
     /**
      * Posts (or replaces) a notification. `tag` doubles as the dedup key, so
      * re-firing the same alert updates the existing one rather than stacking.
+     *
+     * `icon` is one of the ic_notify_* drawables, chosen by the caller from the
+     * weather it is reporting. It defaults to the launcher icon so nothing can
+     * post without one; the launcher icon is a poor status-bar glyph (the
+     * system masks small icons to their alpha, which turns a full-colour square
+     * into a solid blob), so every real call passes a silhouette.
      */
     @SuppressLint("MissingPermission")
-    fun post(context: Context, tag: String, title: String, body: String) {
+    fun post(
+        context: Context,
+        tag: String,
+        title: String,
+        body: String,
+        icon: Int = R.mipmap.ic_launcher,
+    ) {
         if (!canPost(context)) return
 
         val intent = Intent(context, MainActivity::class.java).apply {
@@ -67,7 +79,10 @@ object WeatherNotifier {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher)
+            .setSmallIcon(icon)
+            // The accent the shade tints the icon and the app name with. Without
+            // it the system picks its own grey, and the icons read as disabled.
+            .setColor(ContextCompat.getColor(context, R.color.icon_bg))
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(NotificationCompat.BigTextStyle().bigText(body))

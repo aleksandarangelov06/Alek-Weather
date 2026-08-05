@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!-- Freezing rain: a drop and a flake under the same cloud, which is the whole
+     hazard in one glyph. See ic_notify_rain.xml for the cloud. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M6.6,9.6a4.4,4.4 0 1,1 8.8,0a4.4,4.4 0 1,1 -8.8,0zM3.8,11.2a3,3 0 1,1 6,0a3,3 0 1,1 -6,0zM13.2,11.2a3,3 0 1,1 6,0a3,3 0 1,1 -6,0zM6.8,11.2H16.2V14.2H6.8z" />
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:pathData="M9.4,16.5L8.2,20" />
+    <path
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round"
+        android:pathData="M15,16.8L15,20.4M13.44,17.7L16.56,19.5M16.56,17.7L13.44,19.5" />
+</vector>

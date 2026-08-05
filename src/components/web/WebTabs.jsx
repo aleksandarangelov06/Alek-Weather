@@ -20,11 +20,29 @@ export function WebTabs({
   // from the left edge on mount.
   const [ready, setReady] = useState(false)
 
+  // Whether a measurement has already run, for the scroll below: the first one
+  // lands the active tab without animating, later ones slide to it. `ready`
+  // says the same thing but is state, so reading it here would re-run the
+  // effect for no reason.
+  const measuredRef = useRef(false)
+
   useLayoutEffect(() => {
     const measure = () => {
       const el = btnRefs.current[active]
       if (!el) return
       setPill({ left: el.offsetLeft, width: el.offsetWidth })
+      // Too narrow for every tab (a phone-width window), so the bar scrolls:
+      // centre the active one rather than leave the selection off the edge.
+      // Done by hand instead of scrollIntoView, which would also scroll the
+      // page to bring the header into view.
+      const list = listRef.current
+      if (list && list.scrollWidth > list.clientWidth) {
+        list.scrollTo({
+          left: Math.max(0, el.offsetLeft - (list.clientWidth - el.offsetWidth) / 2),
+          behavior: measuredRef.current ? 'smooth' : 'auto',
+        })
+      }
+      measuredRef.current = true
     }
     measure()
     const raf = requestAnimationFrame(() => setReady(true))

@@ -643,8 +643,23 @@ body {
    APK: they are phone UIs, and a trough down the side gives that away before
    anything else in them does. The bare descendant selector takes the inner
    scrollers with it; everything still scrolls, by wheel or by touch, with
-   nothing drawn for it. */
-:root[data-shell="mobile"] { scrollbar-width: none; }
+   nothing drawn for it.
+
+   Both spellings, on the element *and* on its descendants, because either one
+   alone leaks. Chromium ignores the ::-webkit-scrollbar pseudo-elements on any
+   element that also has a standard scrollbar property specified, and
+   scrollbar-color is inherited — so the desktop shell's scrollbar-color on
+   :root reaches every scroller under it and silently disables the pseudo rule
+   there, while scrollbar-width (not inherited) stays at auto. That combination
+   is what put a full-width bar down the settings page: it is position: fixed
+   with its own overflow-y, so it is a scroller in its own right rather than
+   part of the page scroll the root rules cover. Setting the standard properties
+   on the descendants too is what actually closes it; the pseudo-element rules
+   stay for the engines that only honour those. */
+:root[data-shell="mobile"],
+:root[data-shell="mobile"] * {
+  scrollbar-width: none;
+}
 :root[data-shell="mobile"]::-webkit-scrollbar,
 :root[data-shell="mobile"] ::-webkit-scrollbar {
   width: 0;
@@ -652,13 +667,22 @@ body {
   display: none;
 }
 
-/* Installed APK: hide scrollbars for a native feel. The WebView is Chromium, so
-   ::-webkit-scrollbar covers the page scroller and every inner one; content still
-   scrolls by touch. Scoped to data-native (set only inside the APK) so the
-   website keeps its scrollbars. It follows the shell rules above so it wins the
-   tie against them: the APK is hidden either way when it renders a phone style,
-   and this is what covers it when the user picks the Web style inside it. */
-:root[data-native="android"] { scrollbar-width: none; }
+/* Installed APK: hide scrollbars for a native feel. Scoped to data-native (set
+   only inside the APK) so the website keeps its scrollbars. It follows the
+   shell rules above so it wins the tie against them: the APK is hidden either
+   way when it renders a phone style, and this is what covers it when the user
+   picks the Web style inside it — which is also the case that needs the
+   scrollbar-color reset, since that is the style whose :root sets one for the
+   whole tree to inherit.
+
+   The page scroller itself is not in here: in a WebView its bar is drawn by the
+   Android View rather than by Chromium, and no CSS reaches it. MainActivity
+   turns that one off directly. */
+:root[data-native="android"],
+:root[data-native="android"] * {
+  scrollbar-width: none;
+  scrollbar-color: auto;
+}
 :root[data-native="android"]::-webkit-scrollbar,
 :root[data-native="android"] ::-webkit-scrollbar {
   width: 0;
@@ -2306,6 +2330,24 @@ body {
   z-index: 0;
   pointer-events: none;
 }
+
+/* Backdrop for the full-screen radar (WeatherRadar renders it as the card's
+   sibling while expanded), sitting just under the card at z 400 and above the
+   app content at z 2 — so a card thinned by the transparency slider shows the
+   page backdrop through it instead of the weather stack it is covering.
+
+   Same fixed geometry as .sky-bg above, so when a sky class is on it repaints
+   the identical slice of gradient and is invisible against the real sky. The
+   var(--bg) here is only the effects-off fallback: it has to be declared before
+   the .sky-* gradients below, since those are single-class rules too and would
+   otherwise lose to whichever came later. */
+.radar-sky {
+  position: fixed;
+  inset: 0;
+  z-index: 399;
+  pointer-events: none;
+  background: var(--bg);
+}
 .sky-clear-day    { background: linear-gradient(180deg, #1565c0 0%, #1e88e5 40%, #81d4fa 100%); }
 .sky-clear-night  { background: linear-gradient(180deg, #050d1f 0%, #0d1b42 50%, #1a237e 100%); }
 .sky-partly-day   { background: linear-gradient(180deg, #2e6da4 0%, #5b9bd5 45%, #a8cce8 100%); }
@@ -2641,6 +2683,14 @@ body {
 /* When the Weather Overview tile is hidden, its sub-option cards read as
    inactive: dimmed and non-interactive until the master toggle is back on. */
 .settings-card--disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+/* Same treatment for a single row, where the card around it is still live —
+   the transparency slider goes inactive with weather effects off, but the
+   Material You seed picker sharing its card does not. */
+.settings-row--disabled {
   opacity: 0.5;
   pointer-events: none;
 }
@@ -4094,6 +4144,158 @@ body {
   border-radius: 999px;
 }
 
+/* ── Android: full-screen radar ──
+   The one screen in the phone app where the backdrop is a map rather than the
+   sky, and it was styled as though it were the sky: the controls pill took the
+   per-sky tint (.sky-lvl-* .radar-expanded .radar-controls, further down this
+   file) and everything inside it was drawn in white at 30-65% alpha. Over a
+   pale map that combination is a slate panel with ticks and labels that all but
+   disappear, which is the legibility complaint.
+
+   So over the map the pill stops following the weather and becomes a proper
+   Material surface: an opaque container with on-surface text, which is both
+   readable and what an Android app would actually do with a bottom sheet of
+   controls. The map tools become circular icon buttons on the same container
+   colour, and the play button becomes an FAB. Nothing here touches the compact
+   radar card in the stack, which is still a card among cards over the sky. */
+:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-controls {
+  /* Container-high rather than the plain container: this is the top layer of
+     the screen, and it has to separate from a map of any brightness. */
+  background: var(--md-surface-container-high);
+  color: var(--md-on-surface);
+  /* Over a sky, .card sets these three to white for the tinted fill it expects
+     (see the .sky-lvl-* block near the top of this file), and they inherit down
+     into the pill. On a light Material container that is white text on
+     near-white. Re-pointing them here fixes the whole subtree at once, so
+     anything added to the pill later is right without a rule of its own. */
+  --text-primary: var(--md-on-surface);
+  --text-secondary: var(--md-on-surface-variant);
+  --text-tertiary: color-mix(in srgb, var(--md-on-surface-variant) 70%, transparent);
+  border-radius: 28px;
+  padding: 14px 20px 16px;
+  /* M3 elevation 3. Tone carries elevation everywhere else in this style, but
+     over an arbitrary map there is no tonal relationship to lean on. */
+  box-shadow: 0 4px 8px 3px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+/* Headline for the frame time. Google Sans at 400 is the Material weight for
+   display text; the tighter tracking the base rule uses is an iOS idiom. */
+:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-big-time {
+  font-size: 32px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--md-on-surface);
+}
+
+/* The play control as an M3 FAB: a rounded square, not a circle, in the primary
+   colour it already used. */
+:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-play-circle {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: var(--md-primary);
+  color: var(--md-on-primary);
+  box-shadow: 0 1px 3px 1px rgba(0, 0, 0, 0.15), 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* Map tools: circular icon buttons on the same container colour as the pill, so
+   the whole set reads as one surface treatment rather than as three different
+   floating chips. 44px is the M3 touch target for a standard icon button. */
+:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded :is(.radar-zoom-btn, .radar-locate-btn, .radar-expand-btn--floating) {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--md-surface-container-high);
+  color: var(--md-on-surface-variant);
+  box-shadow: 0 1px 3px 1px rgba(0, 0, 0, 0.15), 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded :is(.radar-zoom-btn, .radar-locate-btn, .radar-expand-btn--floating):active {
+  background: color-mix(in srgb, var(--md-on-surface) 12%, var(--md-surface-container-high));
+}
+
+/* The glyphs are sized in JS (lucide's `size` prop) at 15-20px, tuned for the
+   small square chips these used to be. In a 44px circular button they float;
+   Material draws icon buttons with a 24px icon. Set here rather than in the
+   component because it is a per-style decision, and an inline width/height on
+   the <svg> is beaten by any class rule. */
+:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded :is(.radar-zoom-btn, .radar-locate-btn, .radar-expand-btn--floating) > svg {
+  width: 22px;
+  height: 22px;
+}
+
+:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-zoom-btns {
+  gap: 8px;
+}
+
+/* Scrubber, on an opaque surface at last. The ticks are the on-surface-variant
+   colour at strengths that hold up in both schemes, rather than white at an
+   alpha picked for a dark sky: 38% is the M3 disabled/inactive strength, and
+   the hour marks step up to full. */
+:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-tick {
+  background: color-mix(in srgb, var(--md-on-surface-variant) 38%, transparent);
+}
+
+:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-tick--hour {
+  background: var(--md-on-surface-variant);
+}
+
+/* Forecast frames stay distinguishable from observed ones without going pale
+   enough to vanish: the primary colour, held back to half. */
+:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-tick--forecast {
+  background: color-mix(in srgb, var(--md-primary) 50%, transparent);
+}
+
+/* The active frame is the M3 slider handle: a full-height bar in the primary
+   colour with the slider's own rounded ends, no glow. */
+:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-tick--active {
+  width: 4px;
+  height: 32px;
+  border-radius: 2px;
+  background: var(--md-primary);
+  box-shadow: none;
+}
+
+:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-tick-label {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+  color: var(--md-on-surface-variant);
+}
+
+:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-now-divider {
+  border-left-color: var(--md-outline);
+  opacity: 1;
+}
+
+/* Legend: the intensity ramp is the point of it, so the blocks get the height
+   of a Material track and the labels get label-medium rather than the 10px
+   tertiary whisper they had. */
+:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-legend {
+  gap: 10px;
+  margin-top: 12px;
+}
+
+:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-legend-block {
+  height: 12px;
+  border-radius: 999px;
+}
+
+:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-legend-lbl {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+  color: var(--md-on-surface-variant);
+}
+
+:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-source {
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  color: color-mix(in srgb, var(--md-on-surface-variant) 80%, transparent);
+}
+
 /* ── Platform style: iOS 26 (Liquid Glass) ──
    data-platform="ios" restyles the settings surfaces as frosted "liquid glass":
    translucent cards over a backdrop-blurred sky, specular top-edge highlights,
@@ -4339,6 +4541,29 @@ body {
   box-shadow: 0 6px 22px var(--ios-glass-shadow), inset 0 1px 0 var(--ios-glass-highlight);
 }
 
+/* Glass is withheld until the page has finished sliding, and taken away again
+   for the slide out. .settled is set by SettingsPage on animationend.
+
+   The open/close slide is a transform animation over a page whose every card is
+   a backdrop-filter, and a backdrop filter is the one effect a transform can't
+   be composited around: each frame has to re-read and re-blur the pixels behind
+   a card that just moved. A settings list is a dozen of them at blur(24px), so
+   the cost lands all at once on the frame the page appears — which is the hitch
+   on opening, and why it is specific to this theme.
+
+   The frost arriving a quarter-second late is not something you can catch: what
+   is behind these cards is either the sky gradient (.settings-sky) or a flat
+   surface, and both blur to very nearly themselves. Same reasoning that lets
+   the weather stack drop its own blurs while settings is up, further down.
+
+   Left un-suspended: .settings-inline and .settings-pill, which don't slide. */
+:root[data-platform="ios"] .settings-page:not(.settled) .settings-card,
+:root[data-platform="ios"] .settings-page:not(.settled) .setting-opt.active,
+:root[data-platform="ios"] .settings-page:not(.settled) .md-slider-wrap::before {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
 /* ── iOS mode: main weather cards as liquid glass ──
    The main stack keeps its two-tier color system (card surface + deeper nested
    surface) but swaps opaque fills for translucent glass over the backdrop-
@@ -4580,10 +4805,35 @@ body {
   flex-shrink: 0;
 }
 
+/* Full screen: the controls lift off the bottom of the window and float over
+   the map as a rounded pill, the way the zoom and locate buttons already do.
+   Taking them out of the column is also what lets the map run the full height
+   of the screen — as a flex item the strip was reserving a band at the bottom,
+   and the map stopping dead against it was the hard horizontal seam.
+
+   Surface matches the other floating map tools rather than the card it came
+   out of, so the three read as one set of controls laid on the map. The radius
+   is a rounded rect, not a true 999px pill: this box is ~190px tall, and a
+   full pill would bow its ends into the tick track. */
 .radar-expanded .radar-controls {
-  padding-bottom: calc(14px + var(--sa-bottom));
-  padding-left: max(18px, var(--sa-left));
-  padding-right: max(18px, var(--sa-right));
+  position: absolute;
+  left: max(12px, var(--sa-left));
+  right: max(12px, var(--sa-right));
+  bottom: calc(12px + var(--sa-bottom));
+  z-index: 600;
+  padding: 12px 18px 14px;
+  border-radius: 28px;
+  background: var(--card-bg);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22);
+}
+
+/* The locate button used to sit in the map's bottom-right corner, which the
+   pill now covers. It moves into the pill's own box (see WeatherRadar.jsx) and
+   anchors off its top edge, so it clears the pill exactly without anyone
+   having to know how tall the pill is. */
+.radar-expanded .radar-controls .radar-locate-btn {
+  bottom: calc(100% + 12px);
+  right: 0;
 }
 
 /* ── Radar main row (time + play button) ── */
@@ -5122,6 +5372,15 @@ body {
 .sky-lvl-darkest .radar-zoom-btn,
 .sky-lvl-darkest .radar-locate-btn,
 .sky-lvl-darkest .radar-expand-btn--floating { background: var(--sky-card, #324055); color: rgba(255,255,255,0.80); }
+
+/* The floating controls pill takes the same per-sky tint the card it came out
+   of had, so lifting it off the bottom changed only its shape. Mirrors the
+   .card rules near the top of the file; --sky-card is remapped to --card-bg on
+   .app in dark mode, so these cover both schemes without a restatement. */
+.sky-lvl-slight  .radar-expanded .radar-controls { background: var(--sky-card, #5a6d85); }
+.sky-lvl-medium  .radar-expanded .radar-controls { background: var(--sky-card, #4d6078); }
+.sky-lvl-dark    .radar-expanded .radar-controls { background: var(--sky-card, #3e5068); }
+.sky-lvl-darkest .radar-expanded .radar-controls { background: var(--sky-card, #324055); }
 
 /* Radar ticks: boost visibility against dark sky-level backgrounds */
 .sky-lvl-slight .radar-tick,

@@ -109,6 +109,14 @@ class MainActivity : AppCompatActivity() {
         web = WebView(this)
         setContentView(web)
 
+        // The document scroller's bar is drawn by the Android View, not by
+        // Chromium, so the ::-webkit-scrollbar rules the page carries for
+        // data-native="android" never reach it -- a trough runs down the side of
+        // the page and reads as a web page in a frame. Inner scrollers (hourly
+        // strip, alert sheet) are real DOM and stay covered by that CSS.
+        web.isVerticalScrollBarEnabled = false
+        web.isHorizontalScrollBarEnabled = false
+
         web.settings.apply {
             javaScriptEnabled = true
             // localStorage: theme choice, saved locations, unit preferences.
