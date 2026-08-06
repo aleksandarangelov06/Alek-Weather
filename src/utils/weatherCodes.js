@@ -114,14 +114,42 @@ export function livePrecipRate(current, minutely) {
   return precip[i] ?? null
 }
 
+// Only the first couple of hours of minutely_15 are an actual nowcast. The
+// series itself spans the ENTIRE forecast range (verified: 288 slots = 3 days),
+// so the "no minutely data for this hour" escape below never fires and the
+// reality-check would otherwise run against plain model output days ahead.
+const NOWCAST_HORIZON_HOURS = 2
+
+// Shift a naive local timestamp ("YYYY-MM-DDTHH:MM") by whole hours, staying in
+// the same naive frame. Parsed as UTC so the browser's own offset and DST never
+// enter into it; the strings are already in the location's local time.
+function shiftHours(localTimeStr, hours) {
+  const d = new Date(`${localTimeStr.slice(0, 16)}:00Z`)
+  d.setUTCHours(d.getUTCHours() + hours)
+  return d.toISOString().slice(0, 16)
+}
+
 // Reality-checks a FUTURE hourly slot code against the minutely_15 nowcast.
 // If the nowcast shows negligible precip across the entire slot window, downgrade
 // a precipitation code to a sky condition. Non-precip codes pass through unchanged.
-// Safe to call for any slot: returns the original code when minutely data doesn't
-// cover that hour (i.e. the slot is beyond the nowcast window).
-export function nowcastHourlyCode(code, minutely, slotTimeStr, cloudCover) {
+// Safe to call for any slot: returns the original code unchanged whenever the slot
+// is beyond the nowcast horizon, or minutely data doesn't cover that hour.
+//
+// The horizon matters: Open-Meteo's minutely model is routinely dry when NWS
+// forecasts convection (verified over Bel Air MD during heavy showers — NWS said
+// 70% "Showers and Thunderstorms Likely" for every hour of the afternoon while
+// minutely_15 read 0.00 throughout, which zeroed out the whole day's forecast).
+// Near-term that disagreement is worth acting on; hours out it is just a second
+// model overruling the authoritative one, so leave those slots alone.
+export function nowcastHourlyCode(code, minutely, slotTimeStr, current) {
   if (precipTier(code) === 0) return code
   if (!minutely?.time?.length || !minutely?.precipitation?.length) return code
+  if (!current?.time) return code
+  if (slotTimeStr > shiftHours(current.time, NOWCAST_HORIZON_HOURS)) return code
+  // A station is measuring precipitation here right now, so the minutely series
+  // is demonstrably wrong at this location and can't be trusted to veto the
+  // near-term forecast either. Same rule liveWeatherCode applies to `current`.
+  if (current.weather_code_confirmed && precipTier(current.weather_code) > 0) return code
   // slotTimeStr format: "YYYY-MM-DDTHH:MM" — match all minutely entries in the same hour.
   const prefix = slotTimeStr.slice(0, 14) // "YYYY-MM-DDTHH:"
   let peak = 0, found = false
@@ -131,7 +159,7 @@ export function nowcastHourlyCode(code, minutely, slotTimeStr, cloudCover) {
       found = true
     }
   }
-  return found && peak < PRECIP_RATE.TRACE ? skyCode(cloudCover) : code
+  return found && peak < PRECIP_RATE.TRACE ? skyCode(current.cloud_cover) : code
 }
 
 // Best estimate of the current weather code, corrected against the live nowcast.

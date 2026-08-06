@@ -188,7 +188,7 @@ export function DailyPage({ weather, unit, colorCoding }) {
                   <div className="web-day-hours">
                     {idxs.map((hi) => {
                       const code = nowcastHourlyCode(
-                        hourly.weather_code[hi], weather.minutely_15, hourly.time[hi], current.cloud_cover,
+                        hourly.weather_code[hi], weather.minutely_15, hourly.time[hi], current,
                       )
                       const hInfo = getWeatherInfo(code, !hourly.is_day?.[hi])
                       const hChance = displayPrecipChance(code, precipTier(code) === 0 ? 0 : hourly.precipitation_probability?.[hi])

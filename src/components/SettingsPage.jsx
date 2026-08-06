@@ -509,7 +509,7 @@ function MaterialYouSection({ color, onColorChange, transparency, onTransparency
   const custom = !MATERIAL_SEEDS.some(seed => seed.value === color)
   return (
     <>
-      <p className="color-coding-desc">Choose the color the Material You theme is built from — surfaces, text and switches are all generated from it, for both light and dark — and how much of the sky behind the cards shows through them.</p>
+      <p className="color-coding-desc">Choose the color the Material You theme is built from.</p>
       <div className="card settings-card md-peek-host">
         <div className="settings-row md-color-row">
           <div className="settings-row-label">Theme Color</div>
@@ -579,8 +579,8 @@ function ThemeView({ darkMode, onDarkModeChange, platformTheme, onPlatformThemeC
       </div>
       <p className="color-coding-desc">
         {IS_PHONE
-          ? "Choose the app's style. iOS and Android are the two phone looks."
-          : "Choose the app's style. iOS and Android are the two phone looks; Web is the desktop app, which is what a computer opens by default."}
+          ? "Choose the app's style."
+          : "Choose the app's style."}
       </p>
       <div className="card settings-card">
         <SettingRow label="App Style">
@@ -709,14 +709,17 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastM
 
       <div className="settings-group-label">Radar</div>
       <div className="card settings-card">
-        <SettingRow label="Mode">
+        {/* Which side of the timeline the radar opens on. US locations can
+            switch sides on the map itself, so this is a default rather than a
+            restriction; elsewhere there is no forecast to open on and the
+            radar stays observed whatever this says. */}
+        <SettingRow label="Opens on">
           <SegmentedControl
             value={radarMode}
             onChange={onRadarModeChange}
             options={[
-              { value: 'nowcast', label: 'Nowcast' },
-              { value: 'both',    label: 'Both'    },
-              { value: 'future',  label: 'Future'  },
+              { value: 'nowcast', label: 'Observed' },
+              { value: 'future',  label: 'Forecast' },
             ]}
           />
         </SettingRow>
@@ -798,6 +801,28 @@ export function SettingsPage({ onBack, onDismiss, inline, modal, closing, subVie
     if (modal) panelRef.current?.focus()
   }, [modal])
 
+  // Scrolling the list costs what the open slide costs, and for the same reason:
+  // the sky behind the cards is a fixed layer, so every card that moves has its
+  // backdrop re-read and re-blurred that frame, a dozen times over at blur(24px).
+  // So the blur comes off for the length of the gesture and back a beat after it
+  // stops. What's behind these cards is a smooth gradient, which blurs to itself,
+  // so this isn't a look you can catch it without — the rule keeps the saturate
+  // for the part you could. See .settings-page.scrolling in App.css.
+  //
+  // The class is written straight onto the node instead of held in state — a
+  // re-render of the whole page per scroll event would cost more than the blur
+  // it's saving. React only rewrites className when its own computed value
+  // changes, so this survives in between renders.
+  const scrollTimer = useRef(0)
+  const onScroll = () => {
+    const el = panelRef.current
+    if (!el) return
+    el.classList.add('scrolling')
+    clearTimeout(scrollTimer.current)
+    scrollTimer.current = setTimeout(() => el.classList.remove('scrolling'), 140)
+  }
+  useEffect(() => () => clearTimeout(scrollTimer.current), [])
+
   let body
   if (subView === 'colorcoding') {
     body = <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} />
@@ -876,6 +901,7 @@ export function SettingsPage({ onBack, onDismiss, inline, modal, closing, subVie
       ref={panelRef}
       tabIndex={modal ? -1 : undefined}
       className={`settings-page${modal ? ' settings-page--modal' : ''}${closing ? ' closing' : ''}${peeking ? ' peeking' : ''}${settled ? ' settled' : ''}`}
+      onScroll={onScroll}
       /* Guarded on the target: animations inside the page (a toggle, an info
          panel opening) bubble their end events through here too, and any one
          of them would otherwise report the slide as finished. */

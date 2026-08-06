@@ -161,7 +161,7 @@ function alignDailyWithHourly(daily, hourly, minutely, current, timezone) {
 
       // Apply the same nowcast correction used by HourlyForecast and WeatherOverview.
       // Slots beyond the minutely window are returned unchanged.
-      const code = nowcastHourlyCode(rawCode, minutely, slotTime, current?.cloud_cover)
+      const code = nowcastHourlyCode(rawCode, minutely, slotTime, current)
 
       // When nowcast downgrades to non-precip, that slot contributes 0 probability.
       const p = precipTier(code) === 0 ? 0 : (hourly.precipitation_probability?.[j] ?? null)
@@ -480,7 +480,12 @@ export function useWeather(initialLoading = false) {
           // pipeline (obsToWmoCode returns null). Small AWOS fields often
           // report nothing (verified: K0W3 near Bel Air MD was empty during an
           // active thunderstorm while KMTN two entries later reported +TS +RA),
-          // so walk the list until a station actually reports weather.
+          // so walk the list until a station actually reports weather — which
+          // means a report that survives obsToWmoCode, not merely one with a
+          // textDescription. A stale or sky-cover-only report from a nearer
+          // station must not short-circuit the walk (verified during heavy
+          // showers over Bel Air MD: K0W3 was 2.5 h stale with "Fog/Mist" and
+          // KAPG said "Cloudy" while KMTN was reporting Rain).
           const obsPromise = (async () => {
             const stationsUrl = pointsData.properties?.observationStations
             if (!stationsUrl) return null
@@ -494,7 +499,7 @@ export function useWeather(initialLoading = false) {
                 const oRes = await fetch(`https://api.weather.gov/stations/${id}/observations/latest`, { headers: NWS_HEADERS })
                 if (!oRes.ok) continue
                 const obs = (await oRes.json()).properties
-                if (obs?.presentWeather?.length || obs?.textDescription) return obs
+                if (obsToWmoCode(obs) != null) return obs
               } catch { /* try the next station */ }
             }
             return null

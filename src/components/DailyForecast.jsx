@@ -3,9 +3,10 @@ import { X } from 'lucide-react'
 import { getWeatherInfo, formatDay, formatHour, formatTime, getUVLabel, liveWeatherCode, nowcastHourlyCode, precipTier, toTemp, tempColor, tempStyle, displayPrecipChance, SUN_ORANGE } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
 
-// Keep in sync with the detail-cover animation duration in App.css — the cover
-// stays mounted this long while the circle shrinks back into the tapped row.
-const REVEAL_MS = 380
+// Keep in step with --reveal-dur in App.css, which is where the reasoning for the
+// number lives — the cover stays mounted this long while the circle shrinks back
+// into the tapped row.
+const REVEAL_MS = 520
 
 // Fixed backing size of the reveal circle; it is scaled up to cover instead of
 // being sized to the card, so the GPU texture stays small on a tall card (see
@@ -63,6 +64,16 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
   const closeTimer = useRef(null)
   const hoursTimer = useRef(null)
 
+  // Hold the hourly strip back one reveal's worth, counted from the moment the
+  // reveal actually starts. That is not the tap: armCover below gives the mount a
+  // couple of frames first, and a delay counted from the tap therefore expires
+  // *inside* the animation's last frames — where mounting ~24 icon items takes
+  // them, and a reveal missing its last frames is one that looks cut short.
+  const scheduleHours = () => {
+    clearTimeout(hoursTimer.current)
+    hoursTimer.current = setTimeout(() => setHoursReady(true), REVEAL_MS)
+  }
+
   const closeDay = () => {
     setClosing(true)
     clearTimeout(hoursTimer.current)
@@ -86,14 +97,44 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
     }
     clearTimeout(closeTimer.current)
     setClosing(false)
+    const wasOpen = expanded !== null
     setExpanded(date)
-    // Defer the hourly strip past the reveal (see hoursReady above).
+    // Defer the hourly strip past the reveal (see hoursReady above). On a fresh
+    // open the cover is about to mount, so armCover owns the timing and starts the
+    // clock when it lets the animation go. Switching from one day to another keeps
+    // the cover it already has: nothing arms, nothing replays, so the wait is only
+    // to keep the strip's own render off the frame that swapped the day.
     setHoursReady(false)
     clearTimeout(hoursTimer.current)
-    hoursTimer.current = setTimeout(() => setHoursReady(true), REVEAL_MS)
+    if (wasOpen) scheduleHours()
   }
 
   useEffect(() => () => { clearTimeout(closeTimer.current); clearTimeout(hoursTimer.current) }, [])
+
+  // A cover that has just mounted has to be laid out, painted and promoted to a
+  // composited layer before anything can move it, and the reveal starts on that
+  // same frame — so what gets dropped is the beginning of the animation. The two
+  // phone styles are where it shows, because they're where that paint is dear:
+  // glass rims and inset highlights over a blurred backdrop under iOS, tonal
+  // fills over a 28px radius under Android, against flat surfaces on web. And it
+  // shows on opening only, because closing moves a layer that is already
+  // rasterised.
+  //
+  // So the mount gets a frame to itself. --arming pins both animations to their
+  // start state; it goes on during the commit, which is before the browser has
+  // painted, and comes off two frames later. Two, because the first rAF still
+  // runs ahead of that paint — the second is the first one with a rasterised
+  // layer to animate. The whole cost is one frame of latency on the tap.
+  const armCover = useCallback((el) => {
+    if (!el) return
+    el.classList.add('detail-cover--arming')
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      el.classList.remove('detail-cover--arming')
+      // This is the frame the reveal begins on, so it is the frame the strip's
+      // wait has to be measured from — see scheduleHours.
+      scheduleHours()
+    }))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!expanded) return
@@ -146,7 +187,7 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
       if (slotTime === currentHourStr && current) {
         code = liveWeatherCode(current, minutely, radarClear) ?? rawCode
       } else if (slotTime > currentHourStr) {
-        code = nowcastHourlyCode(rawCode, minutely, slotTime, current?.cloud_cover)
+        code = nowcastHourlyCode(rawCode, minutely, slotTime, current)
       } else {
         code = rawCode
       }
@@ -240,6 +281,7 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
 
       {expanded && di !== -1 && (
         <div
+          ref={armCover}
           className={`detail-cover${closing ? ' detail-cover--closing' : ''}`}
           style={{
             '--reveal-x': `${reveal.x}px`,
@@ -319,13 +361,12 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
                       {openHours.map((h, hi) => {
                         const hInfo = getWeatherInfo(h.code, !h.isDay)
                         const label = formatHour(h.time, timezone)
-                        const precipClass = h.precip >= 30 ? 'hourly-precip high' : h.precip > 0 ? 'hourly-precip low' : 'hourly-precip zero'
                         return (
                           <div key={hi} className="hourly-item">
                             <span className="hourly-time">{label}</span>
                             <span className="hourly-icon"><WeatherIcon id={hInfo.icon} alt={hInfo.label} /></span>
                             <span className="hourly-temp" style={tempStyle(h.temp, colorCoding, 0.4, glow, frost)}>{toTemp(h.temp, unit)}°</span>
-                            <span className={precipClass}>{h.precip}%</span>
+                            <span className="hourly-precip">{h.precip}%</span>
                           </div>
                         )
                       })}

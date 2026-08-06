@@ -1492,17 +1492,16 @@ body {
   color: var(--text-primary);
 }
 
+/* One flat colour for every chance; the number itself carries the meaning, so
+   it stays readable no matter what the temperature colour coding is doing. */
 .hourly-precip {
   font-size: 13px;
   font-weight: 600;
   height: 16px;
   display: flex;
   align-items: center;
+  color: var(--text-secondary);
 }
-
-.hourly-precip.high { color: var(--accent); }
-.hourly-precip.low  { color: var(--text-secondary); }
-.hourly-precip.zero { color: var(--text-tertiary); font-weight: 400; }
 
 /* ── Daily forecast ── */
 .daily-list {
@@ -1868,6 +1867,34 @@ body {
   position: relative;
 }
 
+/* The two numbers that decide how the reveal feels, in one place because the
+   duration is shared with REVEAL_MS in DailyForecast and WeatherDetails and all
+   three have to agree.
+
+   The curve is symmetric on purpose, and that is the whole trick. Half of this
+   animation happens where you can't see it: the circle's radius runs out to the
+   card's furthest corner, but it stops being inside the card at about half the
+   card's height, and past that overflow eats its edge. So large radii are motion
+   with nothing to show.
+
+   Fast-out-slow-in — the app's usual curve, and what this used to be — reaches
+   half progress at t≈0.23. The entire visible sweep was therefore over in the
+   first quarter of the duration: ~90ms of the 380ms, whatever the other 290ms were
+   nominally doing. That is why it read as too fast, and why simply making the
+   number bigger mostly buys a longer invisible tail.
+
+   A symmetric curve hits half progress at half the time, so the visible sweep gets
+   half the duration instead of a quarter — and, being its own mirror, it makes the
+   close match the open for free rather than needing a hand-reversed twin.
+
+   260ms of visible movement, then, out of 520ms. To make it slower still, raise
+   --reveal-dur and REVEAL_MS together. To change how much of it you actually see,
+   move the curve's middle two numbers toward 0.5. */
+:root {
+  --reveal-dur: 0.52s;
+  --reveal-ease: cubic-bezier(0.4, 0, 0.6, 1);
+}
+
 /* The cover is a transparent, card-shaped clip window (overflow + border-radius)
    that holds the content. The visible surface is painted by .detail-cover-fill,
    a circle that scales up from the tap point. The reveal origin and radius come
@@ -1917,7 +1944,7 @@ body {
   transform: scale(var(--fill-scale, 1));
   transform-origin: center;
   will-change: transform;
-  animation: detailFillIn 0.38s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation: detailFillIn var(--reveal-dur) var(--reveal-ease) forwards;
 }
 
 /* Content rides above the fill and fades in as the circle nears full coverage,
@@ -1926,16 +1953,43 @@ body {
 .detail-cover-body {
   position: relative;
   z-index: 1;
-  animation: detailContentIn 0.38s ease forwards;
+  animation: detailContentIn var(--reveal-dur) ease forwards;
 }
 
 .detail-cover--closing .detail-cover-fill {
-  animation: detailFillOut 0.38s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  animation: detailFillOut var(--reveal-dur) var(--reveal-ease) forwards;
 }
 
 .detail-cover--closing .detail-cover-head,
 .detail-cover--closing .detail-cover-body {
-  animation: detailContentOut 0.18s ease forwards;
+  animation: detailContentOut 0.24s ease forwards;
+}
+
+/* Holds a just-mounted cover at the start of its reveal for one frame, so the
+   layout, paint and layer promotion of the whole thing land on a frame where
+   nothing is animating. Added by DailyForecast during the commit and dropped two
+   frames later; the comment on armCover there is why the phone styles need it.
+
+   Both animations are pinned by hand rather than switched off, because
+   `animation: none` alone would drop the fill back to its resting transform —
+   which is fully open — and flash the cover on for that frame. */
+.detail-cover--arming .detail-cover-fill {
+  animation: none;
+  transform: scale(0);
+}
+
+/* will-change is the load-bearing part, not an optimisation hint: a plain
+   opacity:0 subtree is content a browser is free not to rasterise at all, which
+   would leave the paint to land on the frame the fade begins — the stutter,
+   moved rather than removed. Asking for the composited layer up front means the
+   texture has to exist during the armed frame, and the animation that follows
+   only changes its alpha. It doesn't need restating on the animation itself;
+   an animated opacity composites on its own. */
+.detail-cover--arming .detail-cover-head,
+.detail-cover--arming .detail-cover-body {
+  animation: none;
+  opacity: 0;
+  will-change: opacity;
 }
 
 @keyframes detailFillIn  { from { transform: scale(0); } to { transform: scale(var(--fill-scale, 1)); } }
@@ -2123,6 +2177,13 @@ body {
   }
   /* No grow/shrink — the fill just sits fully open behind the content. */
   .detail-cover--closing .detail-cover-fill { transform: scale(0); }
+  /* Nothing animates here, so there is no opening frame to protect, and an armed
+     cover would only blink empty for one frame before landing where it already
+     was. Spelled out because arming carries the higher specificity of the two
+     and would otherwise win regardless of which rule comes later. */
+  .detail-cover--arming .detail-cover-fill { transform: scale(var(--fill-scale, 1)); }
+  .detail-cover--arming .detail-cover-head,
+  .detail-cover--arming .detail-cover-body { opacity: 1; }
 }
 
 .uv-timeline {
@@ -3295,6 +3356,127 @@ body {
   margin: 0 !important;
 }
 
+/* Keeps the stack the height it was while the card is off being full-screen —
+   otherwise the block around it collapses onto its drag handle and everything
+   below jumps up, which is what reads as the page scrolling. Height and bottom
+   margin are both measured off the compact card and set inline, so this has the
+   card's box rather than an approximation of it; see WeatherRadar.
+
+   Deliberately unpainted — no surface, no radius, nothing. It held the `card`
+   class for a version so the slot would read as an empty card instead of a hole,
+   and an empty card is something rather than nothing: it appeared on the frame the
+   real card went full-screen and the iris then covered it over, which is the blink
+   that came with it. */
+.radar-placeholder {
+  flex-shrink: 0;
+  /* Nothing inside is meant to be usable: it holds a still of the card, cloned
+     rather than rendered (see snapshot in WeatherRadar), and a copy of a map
+     that answers to taps would be worse than the gap it replaced. */
+  pointer-events: none;
+  /* The slot is sized from the card it is standing in for, so the two agree to
+     the pixel — but only while the column stays the width it was measured at. A
+     rotation mid-transition would reflow the copy inside a slot still holding
+     the old height, and this keeps that from pushing the stack around. */
+  overflow: hidden;
+}
+
+/* ── Full-screen radar: the iris ──
+   Going full-screen is otherwise a hard cut: the card is simply position:fixed
+   inset:0 from one frame to the next. This opens it out of the point that was
+   tapped instead — a circular window onto the real full-screen radar, growing
+   until it is clear of the furthest corner.
+
+   This is the app's one animated clip-path, and the file argues against those
+   twice (see .detail-cover, where clip-path was measured as the covers' jank). It
+   is here because it is the only thing that does this job. A growing fill can
+   only ever be a colour: the covers get away with that because their content
+   fades in over it, and across a whole screen of map that fade reads as a
+   coloured disc the radar turns up inside afterwards — which is exactly what it
+   looked like. Clipping puts the destination inside the circle from the first
+   frame. What makes it affordable here and not there: the clipped subtree is one
+   composited tile map, not a page of SVG and text, and the expensive frame — the
+   switch to full-screen, Leaflet's resize with it — is spent on the armed frame
+   before the circle moves at all.
+
+   Both layers take the same clip: the card, and the sky behind it. The sky is not
+   decoration here, it is what the card is translucent onto, and unclipped it
+   would black the weather stack out on frame one — the circle would then be
+   opening onto a screen that had already gone.
+
+   Gated on the mobile shell, which is exactly the two phone styles — the desktop
+   app publishes data-shell="desktop" whatever platform it borrows (see the
+   attribute note in App.jsx) and keeps the cut. WeatherRadar sets the geometry
+   only on the path that animates, so the two can't disagree about which is which. */
+
+/* The armed frame: shut, and not animating. Everything the switch to full-screen
+   costs is paid here, behind a window with nothing through it. */
+:root[data-shell="mobile"] .radar-iris--shut {
+  -webkit-clip-path: circle(0px at var(--reveal-x) var(--reveal-y));
+  clip-path: circle(0px at var(--reveal-x) var(--reveal-y));
+}
+
+/* Same duration and same symmetric curve as the covers — the reasoning for both is
+   up beside --reveal-dur, and it applies here more strongly than there: a screen's
+   corners are further out than a card's, so an even larger share of the radius is
+   off-frame, and an even smaller share of a front-loaded curve would be visible. */
+:root[data-shell="mobile"] .radar-iris--in {
+  animation: radarIrisIn var(--reveal-dur) var(--reveal-ease) forwards;
+}
+
+:root[data-shell="mobile"] .radar-iris--out {
+  animation: radarIrisOut var(--reveal-dur) var(--reveal-ease) forwards;
+}
+
+/* Both radii are lengths from JS rather than percentages, so the circle is the
+   same circle on both layers whatever each one's box turns out to be. --reveal-r
+   already clears the furthest corner, so the open state is edge to edge; the clip
+   is then dropped altogether once it lands, rather than left sitting on two
+   full-screen layers for as long as the radar is up. */
+@keyframes radarIrisIn {
+  from {
+    -webkit-clip-path: circle(0px at var(--reveal-x) var(--reveal-y));
+    clip-path: circle(0px at var(--reveal-x) var(--reveal-y));
+  }
+  to {
+    -webkit-clip-path: circle(var(--reveal-r) at var(--reveal-x) var(--reveal-y));
+    clip-path: circle(var(--reveal-r) at var(--reveal-x) var(--reveal-y));
+  }
+}
+
+@keyframes radarIrisOut {
+  from {
+    -webkit-clip-path: circle(var(--reveal-r) at var(--reveal-x) var(--reveal-y));
+    clip-path: circle(var(--reveal-r) at var(--reveal-x) var(--reveal-y));
+  }
+  to {
+    -webkit-clip-path: circle(0px at var(--reveal-x) var(--reveal-y));
+    clip-path: circle(0px at var(--reveal-x) var(--reveal-y));
+  }
+}
+
+/* Inert while the window is moving: the map behind it is already full-screen and
+   draggable, and a tap that lands on a part of it not yet revealed is not a tap
+   anyone could have aimed. */
+:root[data-shell="mobile"] :is(.radar-iris--shut, .radar-iris--in, .radar-iris--out) .radar-map-wrap,
+:root[data-shell="mobile"] :is(.radar-iris--shut, .radar-iris--in, .radar-iris--out) .radar-controls {
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* WeatherRadar skips the reveal outright under this — expand goes straight to
+     full-screen — so none of this should get the chance to run; it covers the
+     setting being turned on midway. Restated at matching specificity, since a
+     media query adds none of its own. Open, not shut: the settled state of a
+     window that isn't going to animate is the one you can see through. */
+  :root[data-shell="mobile"] .radar-iris--shut,
+  :root[data-shell="mobile"] .radar-iris--in,
+  :root[data-shell="mobile"] .radar-iris--out {
+    animation: none;
+    -webkit-clip-path: none;
+    clip-path: none;
+  }
+}
+
 .radar-header {
   display: flex;
   align-items: center;
@@ -3975,17 +4157,13 @@ body {
    the Material You settings pages) but is a different shell, and keeps the
    sky-tinted weather cards.
 
-   In light mode the cards tint toward the sky like every other style does: the
-   .sky-lvl-* rules near the top of this file own the tint, the white-on-tint
-   text, the lightened condition palette and the temperature scrims, and the
-   Material rules below defer to them through --md-card-fill rather than
-   restating any of it. Only the fill and the section-label colour need saying
-   twice, because those are the two places Material outranks them.
-
-   In dark mode the cards keep their own surface — a near-black container with a
-   faint purple cast — because App.jsx withholds the level class there (see
-   levelC): the container is already darker than any sky colour, so tinting it
-   would lighten the card toward the storm. */
+   The cards never tint toward the sky here, in either scheme: App.jsx withholds
+   the sky level class from .app under this style (see levelC), so none of the
+   .sky-lvl-* rules near the top of this file reach them. The stack stays on its
+   Material containers — the seed palette is the style, and it holds whether or
+   not there is weather behind it. Weather effects still paint the backdrop; the
+   way to let that backdrop into the stack is Card Transparency, which thins the
+   container fills (--md-card-alpha) rather than repainting them. */
 
 /* The tonal base. Material sits the page on --md-surface and makes every card
    a container stacked on it, so remapping the two surface variables carries
@@ -4019,43 +4197,20 @@ body {
   --md-card-alpha: 100%;
 }
 
-/* What the card fills resolve to, in one place, because the rules below carry
-   more specificity than the .sky-lvl-* tinting and would otherwise paint over
-   it. Default: the Material containers, a white card with a faint purple cast
-   in light mode and a near-black one with the same cast in dark.
-
-   With a sky level on .app they become the sky's own colours instead, matching
-   what every other style does over an active sky. Material's surfaces are
-   generated from the seed and know nothing about the weather, so a card left on
-   one is a white hole punched in a dark scene; the seed still colours the
-   accents, the settings pages and the chrome, which is where the palette is
-   actually read as an identity. App.jsx withholds the level class in Android
-   dark mode (see levelC) — those containers are already darker than any of the
-   sky colours — so no dark-mode override is needed here. */
+/* What the card fills resolve to, in one place: the Material containers, a
+   white card with a faint purple cast in light mode and a near-black one with
+   the same cast in dark. They are the fills under every sky as well as under
+   none — the weather is behind the stack, not in it — and the transparency
+   slider mixes these same two at --md-card-alpha to let it through. */
 :root[data-shell="mobile"][data-platform="android"] .app {
   --md-card-fill: var(--md-surface-container);
   --md-card-fill-high: var(--md-surface-container-high);
 }
 
-:root[data-shell="mobile"][data-platform="android"] .app:is(.sky-lvl-slight, .sky-lvl-medium, .sky-lvl-dark, .sky-lvl-darkest) {
-  --md-card-fill: var(--sky-card, #324055);
-  --md-card-fill-high: var(--sky-card-deep, #1f2c3e);
-}
-
-/* Section labels are the one in-card colour Material sets outright rather than
-   through a text variable, and primary at tone 40 is far too dark to read on a
-   tinted card. On one, follow the card's own text colours like every other
-   style does. */
-:root[data-shell="mobile"][data-platform="android"] .app:is(.sky-lvl-slight, .sky-lvl-medium, .sky-lvl-dark, .sky-lvl-darkest) .card .section-label {
-  color: var(--text-secondary);
-}
-
 /* Nested tier. The base stylesheet paints these with --bg, which now resolves
    to the page surface and would sit *below* the card they're inside — Material
-   stacks containers upward instead, so they take the next step up the scale.
-   The -deep half of the sky pair keeps them a step darker than the card they
-   sit in once the tint is on, the same way the plain container-high does when
-   it isn't. */
+   stacks containers upward instead, so they take the next step up the scale,
+   which keeps them a step above the card they sit in. */
 :root[data-shell="mobile"][data-platform="android"] .app :is(.detail-card, .aqi-pollutant, .hourly-nav) {
   background: color-mix(in srgb, var(--md-card-fill-high) var(--md-card-alpha), transparent);
 }
@@ -4068,10 +4223,9 @@ body {
    and the settings cards have their own opaque page under them, so making them
    see-through would only fade them into it.
 
-   The 0.8s cross-fade the base .card rule carries is for sky changes, and it
-   makes the slider feel like it lags the drag, so this replaces it with a short
-   one. A sky turning stormy now rides on that shorter transition too, which is
-   rare enough to read fine at 0.18s. */
+   The 0.8s cross-fade the base .card rule carries is for sky changes, which
+   these fills no longer follow, and it makes the slider feel like it lags the
+   drag; a short transition is all this needs. */
 :root[data-shell="mobile"][data-platform="android"] .app :is(.card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill), .detail-cover-fill) {
   background: color-mix(in srgb, var(--md-card-fill) var(--md-card-alpha), transparent);
   transition: background 0.18s ease;
@@ -4263,11 +4417,6 @@ body {
   font-weight: 500;
   letter-spacing: 0.4px;
   color: var(--md-on-surface-variant);
-}
-
-:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-now-divider {
-  border-left-color: var(--md-outline);
-  opacity: 1;
 }
 
 /* Legend: the intensity ramp is the point of it, so the blocks get the height
@@ -4541,8 +4690,40 @@ body {
   box-shadow: 0 6px 22px var(--ios-glass-shadow), inset 0 1px 0 var(--ios-glass-highlight);
 }
 
+/* Scrolling the list is the slide again, only longer: the sky behind the cards
+   is a fixed layer, so a card that moves cannot reuse last frame's blur — the
+   pixels behind it are different ones. Every frame of the gesture re-reads and
+   re-blurs a dozen regions at blur(24px), and that is the lag. The blur comes
+   off for the length of the scroll and back a beat after it stops (.scrolling is
+   set by SettingsPage's onScroll).
+
+   Only the blur. The saturate stays, and that distinction is the whole reason
+   this is invisible rather than merely quick: the backdrop here is the sky
+   gradient under a flat page wash, so blurring it lands on very nearly itself —
+   but pulling its saturation to 100% would visibly cool every card the moment a
+   scroll began, and put the color back with a pop when it ended. A color matrix
+   over the backdrop costs a fraction of a 24px convolution; it's the radius,
+   redone per card per frame, that doesn't fit in the budget. */
+:root[data-platform="ios"] .settings-page.scrolling .settings-card,
+:root[data-platform="ios"] .settings-page.scrolling .md-slider-wrap::before {
+  -webkit-backdrop-filter: saturate(180%);
+  backdrop-filter: saturate(180%);
+}
+
+/* The selected segment blurs without saturating, so for it there's nothing to
+   keep. It's also small enough that this is a rounding error next to the cards;
+   it goes along to keep one gesture from being two different decisions. */
+:root[data-platform="ios"] .settings-page.scrolling .setting-opt.active {
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
 /* Glass is withheld until the page has finished sliding, and taken away again
    for the slide out. .settled is set by SettingsPage on animationend.
+
+   Ordered after .scrolling deliberately: the two carry equal specificity, and
+   this is the stronger suspension of the two — a page mid-slide that is also
+   being scrolled should keep no backdrop filter at all.
 
    The open/close slide is a transform animation over a page whose every card is
    a backdrop-filter, and a backdrop filter is the one effect a transform can't
@@ -4609,6 +4790,11 @@ body {
     0 6px 22px color-mix(in srgb, var(--ios-glass-shadow) var(--ios-glass-lift), transparent),
     inset 0 1px 0 color-mix(in srgb, var(--ios-glass-highlight) var(--ios-glass-edge), transparent);
 }
+
+/* Nothing extra for the full-screen radar's reveal, and two attempts at it lived
+   here: the iris clips this glass rather than standing in for it, so the card is
+   its own surface throughout and there is no second fill to keep in step with it.
+   See the iris block up beside .radar-expanded. */
 
 /* While the settings page is up, the main stack is fully covered: by the
    opaque page itself, or by the opaque .settings-sky layer behind the
@@ -4873,6 +5059,53 @@ body {
 .radar-play-circle:hover  { opacity: 0.88; }
 .radar-play-circle:active { transform: scale(0.94); }
 
+/* ── Observed / Forecast toggle ──
+   Same segmented shape as the settings control, but it can't borrow that one's
+   colours: .settings-options paints its track in --bg, and this sits on four
+   different surfaces (the card in the stack, the floating pill over the map,
+   the web app's fill mode, and any of the sky tints over all of them). Track
+   and hover are mixed out of --text-primary instead: every one of those
+   surfaces already re-points that var to something legible on itself, so the
+   control takes its contrast from whatever it has been dropped onto. */
+.radar-view-toggle {
+  display: flex;
+  gap: 2px;
+  margin: 0 0 6px;
+  padding: 3px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+}
+
+.radar-view-btn {
+  flex: 1;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+
+.radar-view-btn--active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.radar-view-btn:not(.radar-view-btn--active):hover {
+  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
+  color: var(--text-primary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .radar-view-btn { transition: none; }
+}
+
 /* ── Radar tick scrubber ── */
 .radar-tick-track {
   display: flex;
@@ -4917,17 +5150,6 @@ body {
    between the last observed tick and the first forecast one, so the scrubber
    visibly splits into "what happened" and "what's expected". Dashed and tertiary
    so it separates without competing with the active tick. */
-.radar-now-divider {
-  position: absolute;
-  left: 0;
-  bottom: -4px;
-  width: 0;
-  height: 36px;
-  border-left: 1px dashed var(--text-tertiary);
-  opacity: 0.55;
-  pointer-events: none;
-}
-
 .radar-tick-label {
   position: absolute;
   bottom: -20px;
@@ -5405,13 +5627,9 @@ body {
 .sky-lvl-dark .radar-tick-label,
 .sky-lvl-darkest .radar-tick-label { color: rgba(255,255,255,0.65); }
 
-/* Boundary divider and feed attribution follow the same sky treatment as the
-   tick labels — both are var(--text-tertiary) by default, which goes muddy
-   against the dark sky backgrounds. */
-.sky-lvl-slight .radar-now-divider,
-.sky-lvl-medium .radar-now-divider,
-.sky-lvl-dark .radar-now-divider,
-.sky-lvl-darkest .radar-now-divider { border-left-color: rgba(255,255,255,0.65); }
+/* Feed attribution follows the same sky treatment as the tick labels: it is
+   var(--text-tertiary) by default, which goes muddy against the dark sky
+   backgrounds. */
 
 .sky-lvl-slight .radar-source,
 .sky-lvl-medium .radar-source,

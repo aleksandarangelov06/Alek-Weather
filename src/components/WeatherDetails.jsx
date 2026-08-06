@@ -118,9 +118,10 @@ function DetailCard({ icon, label, value, sub, color, onClick, isExpanded, conte
   )
 }
 
-// Keep in sync with the detail-cover animation duration in App.css — the cover
-// stays mounted this long while the circle shrinks back into the tapped tile.
-const REVEAL_MS = 380
+// Keep in step with --reveal-dur in App.css, which is where the reasoning for the
+// number lives — the cover stays mounted this long while the circle shrinks back
+// into the tapped tile.
+const REVEAL_MS = 520
 
 // Fixed backing size of the reveal circle, scaled up to cover; keeps the GPU
 // texture small regardless of card size. Must match the 360px .detail-cover-fill

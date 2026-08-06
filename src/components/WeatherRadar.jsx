@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { Minimize2, Play, Pause, Navigation, ZoomIn, ZoomOut } from 'lucide-react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -53,8 +53,84 @@ function fmtTime(unixSec, timezone) {
   })
 }
 
-// mode: 'nowcast' (observed frames only) | 'future' (live frame + forecast only)
-// | 'both' (full timeline, default).
+// The full-screen radar irises open out of the point that was tapped: a circle
+// that is a window onto the real thing, not a disc laid over it.
+//
+// This is the one place in the app that animates clip-path, and the file argues
+// against it twice — see .detail-cover, where it was measured as the source of
+// the covers' jank. It is here because it is the only way to get what it gets. A
+// growing fill can only ever be a colour: the covers get away with that because
+// their content fades in on top, and over a whole screen of map that fade reads
+// as a coloured circle the radar turns up inside afterwards. Clipping is what
+// puts the destination *inside* the circle from the first frame.
+//
+// What makes it affordable here and not there: the clipped subtree is one
+// composited tile map rather than a page of SVG icons and text, and the frame
+// that costs the most — the switch to full-screen, and Leaflet's resize with it —
+// is paid on the armed frame before the animation starts. If it does stutter on a
+// slower device, the honest fallback is the disc: grow an opaque circle and fade
+// the radar in on it, which is what the covers do.
+//
+// Both directions run for --reveal-dur, the covers' own duration — see the note
+// beside it in App.css for why it is the number it is, and why the curve is
+// symmetric. Keep these two in step with it.
+const IRIS_IN_MS  = 520
+const IRIS_OUT_MS = 520
+
+// A still of the compact card, for the slot it leaves behind when it goes
+// full-screen. This is the screenshot idea without the screenshot: the card is
+// already a tree of loaded <img> tiles positioned by inline transforms, so a
+// deep clone of it paints the same pixels — no canvas rasterising, no reading
+// back cross-origin tiles, and no second Leaflet instance to keep in step.
+//
+// The copy is inert by construction: it carries no React fiber, so the app's
+// delegated listeners find nothing to fire, and the placeholder around it takes
+// pointer events out anyway. Its focusables still have to be pulled out of the
+// tab order by hand, though — the placeholder is aria-hidden, and a reachable
+// button inside an aria-hidden subtree is the one thing screen readers will not
+// forgive.
+//
+// The margin goes because the placeholder is already holding it: the clone is a
+// .card and would otherwise contribute a second one inside a slot sized to
+// include the first.
+function snapshot(el) {
+  const clone = el.cloneNode(true)
+  clone.style.marginBottom = '0'
+  clone.querySelectorAll('button, a, [tabindex], [role="button"]').forEach(node => {
+    node.tabIndex = -1
+  })
+  return clone
+}
+
+// Origin and reach of the iris, as the custom properties the keyframes read. The
+// radius is the distance to the furthest corner of the screen, so the circle
+// always finishes clear of it whichever corner the tap was near — the covers'
+// own calculation, against the viewport rather than against a card.
+function revealVars(x, y) {
+  return {
+    '--reveal-x': `${x}px`,
+    '--reveal-y': `${y}px`,
+    '--reveal-r': `${Math.hypot(
+      Math.max(x, window.innerWidth  - x),
+      Math.max(y, window.innerHeight - y),
+    )}px`,
+  }
+}
+
+// Whether going full-screen animates at all. The reveal is a phone-style
+// opening, so the desktop app keeps the hard cut — and so does anyone who has
+// asked for less motion. Read off the same attribute the CSS gates on, so the
+// two can't disagree about whether there is an animation to wait for.
+const revealAnimates = () =>
+  document.documentElement.dataset.shell === 'mobile' &&
+  !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+// mode: which half of the timeline the radar opens on — 'nowcast'/'both' start
+// on observed, 'future' starts on forecast. Inside the HRRR domain the map
+// carries its own Observed/Forecast toggle, so this is a starting point rather
+// than a lock: the setting decides what you see first, the toggle decides what
+// you see next. Outside the domain there are no forecast frames to switch to
+// and the toggle doesn't appear.
 //
 // fill: the card is the whole page (the web app's Radar tab) rather than one
 // block in a stack. The map then gets its controls and its pan/zoom straight
@@ -69,18 +145,70 @@ export function WeatherRadar({ location, timezone, mode = 'both', fill = false, 
   const wantedKey   = useRef(null) // latest frame requested; guards stale async loads
   const trackRef    = useRef(null)
   const isDragging  = useRef(false)
+  const cardRef     = useRef(null)
+  // Where the page was scrolled to when the radar was tapped, and whether that is
+  // a position worth putting back. See the layout effect that reads them.
+  const pageScroll  = useRef(0)
+  const scrollPinned = useRef(false)
+  // The still of the card, taken on the way out of the stack and mounted into
+  // the placeholder. See snapshot().
+  const holdClone   = useRef(null)
 
-  const [frames, setFrames]       = useState([])
-  const [pastCount, setPastCount] = useState(0)
+  // Both halves of the timeline as fetched, kept apart rather than pre-joined:
+  // the Observed/Forecast toggle is a slice of this, so switching views is a
+  // re-derive rather than a re-fetch.
+  //   rv       RainViewer frames, observed followed by its own nowcast (if any)
+  //   pastLen  how many of those are observed
+  //   fut      HRRR forecast steps, after the last RainViewer frame
+  const [feed, setFeed] = useState({ rv: [], pastLen: 0, fut: [] })
+  const [view, setView] = useState(mode === 'future' ? 'forecast' : 'observed')
   const [idx, setIdx]             = useState(0)
   const [playing, setPlaying]     = useState(false)
   const [expanded, setExpanded]   = useState(false)
   const [mapReady, setMapReady]   = useState(false)
 
+  // Geometry of the iris, as custom properties — set from the point that was
+  // tapped and kept for as long as the card is full-screen, so it closes back into
+  // where it opened from. Viewport rather than card coordinates: the expanded card
+  // is fixed to the viewport, so its box is the viewport's box, and the sky layer
+  // that gets the same clip is fixed to it too.
+  //
+  // Its presence is also what says there is a reveal at all: it is only ever set
+  // on the path that animates, so the desktop app and reduced motion get the plain
+  // switch they had before.
+  const [revealStyle, setRevealStyle] = useState(null)
+  // The compact card's box, measured on the way out of the stack. Going
+  // full-screen means going position:fixed, which takes the card out of the flow
+  // and lets the block around it collapse onto the drag handle — the page then
+  // shortens by a card and everything below jumps up, which is what reads as the
+  // page scrolling. This holds the space open for as long as the card is away.
+  //
+  // Height and margin are kept apart rather than added together, so the stand-in
+  // has the same box the card had and not merely the same total: .card's bottom
+  // margin collapses out through the block it sits in, and a placeholder that
+  // folded it into its height would keep it inside instead — the same number, a
+  // different layout, off by that margin.
+  //
+  // Nothing to do with the reveal, so it is kept even when there is no animation:
+  // the stack closing over the gap was always wrong, just never visible before.
+  const [hold, setHold] = useState(null)
+  // Where the transition is up to, or null when there is nothing in flight —
+  // which covers both settled states, open and closed.
+  //
+  //   'arm'  card is full-screen and clipped to nothing; the switch and Leaflet's
+  //          resize are paid for on this frame, before the iris starts moving
+  //   'in'   iris opening
+  //   'out'  iris closing, with the card still full-screen behind it
+  const [phase, setPhase] = useState(null)
+
   // Fetch the frame list once: RainViewer for observed (+ its nowcast when the
-  // free API bothers to include one), then HRRR forecast steps appended after
-  // the last RainViewer frame. Each frame carries its own tile URL template so
-  // the layer code doesn't care which source it came from.
+  // free API bothers to include one), then HRRR forecast steps continuing on
+  // from the last RainViewer frame. Each frame carries its own tile URL template
+  // so the layer code doesn't care which source it came from.
+  //
+  // Both halves are fetched whatever `mode` says: the toggle can ask for the
+  // other one at any point, and paying for HRRR's one metadata request up front
+  // is what makes that switch instant rather than a spinner.
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -100,7 +228,7 @@ export function WeatherRadar({ location, timezone, mode = 'both', fill = false, 
       } catch {}
 
       const futFrames = []
-      if (mode !== 'nowcast' && inHrrrDomain(location.latitude, location.longitude)) {
+      if (inHrrrDomain(location.latitude, location.longitude)) {
         try {
           const meta = await fetch(HRRR_META_URL).then(r => r.json())
           const init = Date.parse(meta.model_init_utc) / 1000
@@ -117,28 +245,50 @@ export function WeatherRadar({ location, timezone, mode = 'both', fill = false, 
         } catch {}
       }
 
-      // Apply the radar mode: 'nowcast' keeps only observed frames, 'future'
-      // keeps the live frame (so the map still shows "now") plus everything
-      // after it, and 'both' keeps the full timeline.
-      let all = [...rvFrames, ...futFrames]
-      let observed = pastLen
-      if (mode === 'nowcast') {
-        all = rvFrames.slice(0, pastLen)
-      } else if (mode === 'future') {
-        const live = pastLen > 0 ? [rvFrames[pastLen - 1]] : []
-        all = [...live, ...rvFrames.slice(pastLen), ...futFrames]
-        observed = live.length
-      }
-
-      if (cancelled || all.length === 0) return
-      setFrames(all)
-      setPastCount(observed)
-      setIdx(Math.max(0, observed - 1))
+      if (cancelled || (rvFrames.length === 0 && futFrames.length === 0)) return
+      setFeed({ rv: rvFrames, pastLen, fut: futFrames })
     })()
     return () => { cancelled = true }
-  }, [location.latitude, location.longitude, mode])
+  }, [location.latitude, location.longitude])
+
+  // A new setting is a new starting point, so it moves the toggle too.
+  useEffect(() => { setView(mode === 'future' ? 'forecast' : 'observed') }, [mode])
+
+  // Only US locations get a forecast half, so only they get the toggle.
+  const canForecast = feed.fut.length > 0
+
+  // The visible timeline, sliced out of the feed by the toggle.
+  //   observed  the RainViewer past, and nothing beyond it
+  //   forecast  the live frame (so the map still opens on "now"), then
+  //             RainViewer's nowcast if it sent one, then the HRRR steps
+  // The live frame is the last observed one, which is the frame both views land
+  // on — switching sides therefore holds the same picture still while the rest
+  // of the timeline changes under it.
+  // `showingForecast` is which timeline was actually built, which is not always
+  // which one the toggle asks for — see the fallback below.
+  const { frames, pastCount, showingForecast } = useMemo(() => {
+    const { rv, pastLen, fut } = feed
+    const past = rv.slice(0, pastLen)
+    // Falling back when there is no observed half covers RainViewer failing
+    // while HRRR answered: a forecast-only timeline beats an empty card.
+    if ((view === 'forecast' || past.length === 0) && fut.length > 0) {
+      const live = past.slice(-1)
+      return {
+        frames: [...live, ...rv.slice(pastLen), ...fut],
+        pastCount: live.length,
+        showingForecast: true,
+      }
+    }
+    return { frames: past, pastCount: past.length, showingForecast: false }
+  }, [feed, view])
 
   const hasFrames = frames.length > 0
+
+  // Land on the live frame whenever the timeline is rebuilt — a fresh fetch, or
+  // a flip of the toggle.
+  useEffect(() => {
+    setIdx(Math.max(0, pastCount - 1))
+  }, [frames, pastCount])
 
   // Init Leaflet map (without base tile — handled separately so it can swap on theme change)
   useEffect(() => {
@@ -309,18 +459,107 @@ export function WeatherRadar({ location, timezone, mode = 'both', fill = false, 
     return () => clearInterval(id)
   }, [playing, frames, idx])
 
-  const expand = () => {
+  const expand = (e) => {
+    pageScroll.current = window.scrollY
+    scrollPinned.current = true
+    // Measured before the switch, while the card is still the compact one in the
+    // stack — afterwards it is the size of the screen. The margin comes along
+    // because .card carries one that goes away with the card; read off the
+    // computed style rather than hard-coded, so a theme that changes the gap
+    // can't leave this a few pixels out.
+    const el = cardRef.current
+    setHold(el
+      ? { height: `${el.offsetHeight}px`, marginBottom: getComputedStyle(el).marginBottom }
+      : null)
+    holdClone.current = el ? snapshot(el) : null
     history.pushState({ overlay: 'radar' }, '')
+    if (!revealAnimates()) { setExpanded(true); return }
+    // Keyboard activation reports 0,0 — grow from the middle of the screen then.
+    const fromPointer = e && (e.clientX || e.clientY)
+    setRevealStyle(revealVars(
+      fromPointer ? e.clientX : window.innerWidth / 2,
+      fromPointer ? e.clientY : window.innerHeight / 2,
+    ))
+    // The card goes full-screen straight away now, because it is the thing being
+    // revealed — the iris is a window onto it, not a lid over it. 'arm' holds the
+    // window shut for a frame so the switch isn't paid for out of the animation.
     setExpanded(true)
+    setPhase('arm')
   }
 
   const collapse = () => history.back()
 
+  // Back (gesture, button or Esc) is what closes the overlay. The teardown waits
+  // on the iris: the card stays full-screen through 'out' so there is something
+  // inside the closing circle, and the 'out' effect below is what unmounts. The
+  // listener comes off once that has started, so a second back press navigates the
+  // app rather than being swallowed here.
   useEffect(() => {
     if (!expanded) return
-    const handler = () => { setExpanded(false); setPlaying(false) }
+    if (phase === 'out') return
+    const handler = () => {
+      setPlaying(false)
+      if (!revealStyle) {
+        setExpanded(false); setPhase(null); setHold(null); holdClone.current = null
+        return
+      }
+      setPhase('out')
+    }
     window.addEventListener('popstate', handler)
     return () => window.removeEventListener('popstate', handler)
+  }, [expanded, phase, revealStyle])
+
+  // The armed frame. Going full-screen is a viewport-wide layout plus a Leaflet
+  // resize, both on the main thread, and both would otherwise land on the frames
+  // the iris is opening. Here they land on a frame where the window is still shut,
+  // so they cost nothing that can be seen. Two rAFs deep for the same reason the
+  // day cover's arming is (see armCover in DailyForecast) — the first still runs
+  // ahead of the paint that lays the card out.
+  useEffect(() => {
+    if (phase !== 'arm') return
+    let inner
+    const outer = requestAnimationFrame(() => {
+      // Also done by the 80ms timeout further down, but that one would land in the
+      // middle of the iris. Leaflet bails early on a size it has already seen, so
+      // the later call stays cheap.
+      mapInst.current?.invalidateSize()
+      inner = requestAnimationFrame(() => setPhase('in'))
+    })
+    return () => { cancelAnimationFrame(outer); cancelAnimationFrame(inner) }
+  }, [phase])
+
+  // Open: drop the clip entirely rather than leave a circle the size of the screen
+  // sitting on two full-screen layers for as long as the radar is up.
+  useEffect(() => {
+    if (phase !== 'in') return
+    const t = setTimeout(() => setPhase(null), IRIS_IN_MS)
+    return () => clearTimeout(t)
+  }, [phase])
+
+  // Closed: the card can rejoin the stack now the window is shut over it.
+  useEffect(() => {
+    if (phase !== 'out') return
+    const t = setTimeout(() => {
+      setExpanded(false)
+      setPhase(null)
+      setRevealStyle(null)
+      setHold(null)
+      holdClone.current = null
+    }, IRIS_OUT_MS)
+    return () => clearTimeout(t)
+  }, [phase])
+
+  // The card entering and leaving the flow is two chances for the browser to move
+  // the scroll on us — clamping it if the document measures shorter, or
+  // scroll-anchoring off the element that just left. The placeholder only stops
+  // the first, and the result either way is that the iris closes onto whatever has
+  // slid into its place. So the position is pinned across both switches, before
+  // the frame that would show it: a layout effect, not an effect.
+  useLayoutEffect(() => {
+    if (!scrollPinned.current) return
+    window.scrollTo(0, pageScroll.current)
+    // Disarmed on the way out, so this never fires on an unrelated render.
+    if (!expanded) scrollPinned.current = false
   }, [expanded])
 
   // Desktop keyboard shortcuts while the map is the focus of the screen: Esc
@@ -330,7 +569,9 @@ export function WeatherRadar({ location, timezone, mode = 'both', fill = false, 
     if (!expanded && !fill) return
     const onKey = (e) => {
       if (e.key === 'Escape') {
-        if (expanded) collapse()
+        // Not while it's already closing, or the second Esc pops a history
+        // entry that belongs to the app rather than to this overlay.
+        if (expanded && phase !== 'out' && phase !== 'shrink') collapse()
       } else if (e.key === ' ' || e.code === 'Space') {
         e.preventDefault() // stop the page from scrolling
         setPlaying(v => !v)
@@ -352,7 +593,7 @@ export function WeatherRadar({ location, timezone, mode = 'both', fill = false, 
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [expanded, fill, frames.length])
+  }, [expanded, fill, frames.length, phase])
 
   // Resize, re-center, and toggle interaction on expand/collapse.
   //
@@ -376,6 +617,22 @@ export function WeatherRadar({ location, timezone, mode = 'both', fill = false, 
       map.doubleClickZoom.disable(); map.touchZoom.disable()
     }
     return () => clearTimeout(t)
+  }, [expanded, fill, mapReady, location.latitude, location.longitude])
+
+  // The compact card paints on the frame `expanded` goes false, and until something
+  // tells it otherwise Leaflet still believes it is the size of the screen — so
+  // that frame is a 220px window onto an 800px map, showing a slice of nowhere in
+  // particular, and the 80ms timeout above then resizes and re-centres it in full
+  // view. That is the map moving on the way out, and the blank moment before it.
+  //
+  // A layout effect instead: the DOM and the class change are already in, so the
+  // size it reads is the compact one, and it lands before the frame is painted.
+  // The timeout still runs afterwards and finds nothing left to do.
+  useLayoutEffect(() => {
+    const map = mapInst.current
+    if (!map || expanded || fill) return
+    map.invalidateSize()
+    map.setView([location.latitude, location.longitude], 10, { animate: false })
   }, [expanded, fill, mapReady, location.latitude, location.longitude])
 
   const handleLocate = useCallback(() => {
@@ -403,19 +660,31 @@ export function WeatherRadar({ location, timezone, mode = 'both', fill = false, 
 
   const handlePointerUp = useCallback(() => { isDragging.current = false }, [])
 
+  // Hangs the still inside the placeholder as it mounts. Only ever appends: the
+  // clone goes out of the document with its parent, and appendChild will move it
+  // back if the slot mounts a second time — which is what StrictMode's double
+  // mount does in development, and what a cleanup here would break.
+  const attachSnapshot = useCallback((node) => {
+    if (node && holdClone.current) node.appendChild(holdClone.current)
+  }, [])
+
   if (frames.length === 0) return null
 
   // The legend tracks the tiles actually on screen: HRRR frames draw with the
   // NWS reflectivity ramp, while RainViewer frames (past and any nowcast) keep
   // RainViewer's palette. The palettes can't be reconciled — RainViewer's free
   // tier ignores the colour-scheme parameter in the tile URL — so instead of
-  // hiding the switch we label it, and the legend blocks ease between ramps.
+  // hiding the switch the legend blocks ease between the two ramps.
   const isHrrrFrame  = !!frames[idx]?.key?.startsWith('hrrr:')
   const legendColors = isHrrrFrame ? LEGEND_COLORS_FUTURE : LEGEND_COLORS
-  // Boundary between observed and forecast frames, marked on the scrubber so the
-  // palette change reads as a deliberate handoff rather than a glitch. Only
-  // meaningful when the timeline actually spans both.
-  const showDivider = pastCount > 0 && pastCount < frames.length
+
+  // The iris state, shared by the two layers it clips — the card and the sky
+  // behind it — so they open and close as one window rather than two.
+  const irisC = !revealStyle ? ''
+    : phase === 'arm' ? ' radar-iris--shut'
+    : phase === 'in'  ? ' radar-iris--in'
+    : phase === 'out' ? ' radar-iris--out'
+    : ''
 
   return (
     <>
@@ -425,9 +694,41 @@ export function WeatherRadar({ location, timezone, mode = 'both', fill = false, 
         page backdrop (the sky gradient, or the flat surface with effects off)
         between the two: same fixed geometry as .sky-bg, so it lines up with the
         real sky exactly, but above the app content rather than below it. Only
-        while expanded; the compact card is meant to sit in the stack. */}
-    {expanded && <div className={`radar-sky ${sky}`} aria-hidden="true" />}
-    <div className={`card radar-card${expanded ? ' radar-expanded' : ''}${fill ? ' radar-fill' : ''}`}>
+        while expanded; the compact card is meant to sit in the stack.
+
+        It takes the same clip as the card, because it is the other half of what
+        the iris opens onto: unclipped it would black the weather stack out on the
+        first frame, and the circle would be opening onto a screen already gone. */}
+    {expanded && (
+      <div
+        className={`radar-sky ${sky}${irisC}`}
+        style={revealStyle ?? undefined}
+        aria-hidden="true"
+      />
+    )}
+    {/* Holds the card's place in the stack while it is off being full-screen, so
+        the page doesn't shorten under it. See hold above.
+
+        Space only, and nothing to look at. It wore `card` for a version, to make
+        the slot read as an empty radar card rather than a hole — and that is what
+        flashed: an empty card surface is something, so it appeared on the frame the
+        real card left and was then covered over by the iris, at both ends of the
+        transition.
+
+        What it holds now is the card itself — a still of it, cloned on the way
+        out (see snapshot). That was the flaw in both earlier versions: an empty
+        slot and a blank card are each a change to the stack, made on the frame
+        the iris is opening over the top of it, and the eye catches the change at
+        the edges of the circle. A copy of what was already there is the only
+        filling that isn't a change. */}
+    {expanded && hold && (
+      <div className="radar-placeholder" style={hold} ref={attachSnapshot} aria-hidden="true" />
+    )}
+    <div
+      ref={cardRef}
+      className={`card radar-card${expanded ? ' radar-expanded' : ''}${fill ? ' radar-fill' : ''}${irisC}`}
+      style={expanded && revealStyle ? revealStyle : undefined}
+    >
       {!expanded && !fill && (
         <div className="radar-header">
           <span className="section-label" style={{ margin: 0 }}>RADAR</span>
@@ -456,7 +757,10 @@ export function WeatherRadar({ location, timezone, mode = 'both', fill = false, 
             </div>
           </>
         )}
-        {!expanded && !fill && (
+        {/* Gone while a transition is in flight as well as while expanded: during
+            the grow the card is still the compact one, so without that this stays
+            tappable under the surface and a second tap starts a second open. */}
+        {!expanded && !fill && !phase && (
           <div
             className="radar-map-tap"
             onClick={expand}
@@ -500,6 +804,28 @@ export function WeatherRadar({ location, timezone, mode = 'both', fill = false, 
           </div>
         </div>
 
+        {/* US only: outside the HRRR domain there are no forecast tiles to
+            show, so rather than offer a switch that lands on a blank map the
+            control isn't there at all. Sits above the scrubber because it is
+            what the scrubber is a scrubber of. */}
+        {canForecast && (
+          <div className="radar-view-toggle" role="group" aria-label="Radar timeline">
+            {[
+              { value: 'observed', label: 'Observed' },
+              { value: 'forecast', label: 'Forecast' },
+            ].map(opt => (
+              <button
+                key={opt.value}
+                className={`radar-view-btn${view === opt.value ? ' radar-view-btn--active' : ''}`}
+                onClick={() => setView(opt.value)}
+                aria-pressed={view === opt.value}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div
           className="radar-tick-track"
           ref={trackRef}
@@ -514,7 +840,6 @@ export function WeatherRadar({ location, timezone, mode = 'both', fill = false, 
             const isHour = prev !== null && d.getHours() !== prev.getHours()
             return (
               <div key={i} className="radar-tick-col">
-                {showDivider && i === pastCount && <span className="radar-now-divider" aria-hidden="true" />}
                 <div className={[
                   'radar-tick',
                   i === idx      && 'radar-tick--active',
@@ -541,10 +866,14 @@ export function WeatherRadar({ location, timezone, mode = 'both', fill = false, 
           <span className="radar-legend-lbl">Heavy</span>
         </div>
 
-        {/* Names the feed behind the current frame. Without it the palette swap at
-            the observed/forecast boundary looks like a rendering bug. */}
+        {/* Names the feed behind the timeline, not behind the frame. Per-frame it
+            flickered back to "Observed" on the forecast view's first frame,
+            which is the live radar frame both views share — true of that one
+            tile, and read as the toggle having failed to take. This is the
+            caption for the side being shown; the legend above is what still
+            tracks the tiles, because that is a statement about their colours. */}
         <p className="radar-source">
-          {isHrrrFrame ? 'Forecast · NOAA HRRR model' : 'Observed · RainViewer radar'}
+          {showingForecast ? 'Forecast · NOAA HRRR model' : 'Observed · RainViewer radar'}
         </p>
       </div>
     </div>

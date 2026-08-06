@@ -191,7 +191,7 @@ export function TodayPage({
               {next.time.map((time, i) => {
                 const code = i === 0
                   ? (liveWeatherCode(current, weather.minutely_15, radarClear) ?? next.code[i])
-                  : nowcastHourlyCode(next.code[i], weather.minutely_15, time, current.cloud_cover)
+                  : nowcastHourlyCode(next.code[i], weather.minutely_15, time, current)
                 const info = getWeatherInfo(code, !next.isDay[i])
                 const chance = displayPrecipChance(code, precipTier(code) === 0 ? 0 : next.precip[i])
                 return (

@@ -46,7 +46,7 @@ export function HourlyPage({ weather, unit, radarClear, colorCoding }) {
   const codes = h.time.map((t, i) => (
     i === 0
       ? (liveWeatherCode(current, weather.minutely_15, radarClear) ?? h.code[i])
-      : nowcastHourlyCode(h.code[i], weather.minutely_15, t, current.cloud_cover)
+      : nowcastHourlyCode(h.code[i], weather.minutely_15, t, current)
   ))
 
   // Table rows, split into one group per calendar day.

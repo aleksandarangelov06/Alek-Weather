@@ -210,7 +210,11 @@ const DEFAULT_COLOR_CODING = { current: true, hourly: true, daily: true, overvie
 const OVERVIEW_PARTS_KEY = 'alek-weather-overview-parts'
 const DEFAULT_OVERVIEW_PARTS = { insight: true, conditions: true, airQuality: true, clothing: true }
 const RADAR_ENHANCED_KEY = 'alek-weather-radar-enhanced'
-const RADAR_MODE_KEY = 'alek-weather-radar-mode' // 'nowcast' | 'both' | 'future'
+// Which half of the radar timeline the map opens on. The map itself carries an
+// Observed/Forecast toggle wherever forecast frames exist (US only), so this is
+// the starting side rather than the only side. 'both' is the retired value from
+// when the two halves shared one timeline; it reads as observed.
+const RADAR_MODE_KEY = 'alek-weather-radar-mode' // 'nowcast' | 'future'
 
 function SortableBlock({ id, children }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
@@ -231,13 +235,6 @@ function SortableBlock({ id, children }) {
 function App() {
   const [unit, setUnit] = useState(() => localStorage.getItem('alek-weather-unit') ?? 'F')
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem(THEME_KEY) ?? 'system')
-  // The OS scheme, in render scope. The theme effects each read it themselves,
-  // but which classes go on .app depends on it too (see levelC), and that has to
-  // be known while rendering — and has to re-render when the OS flips it under
-  // a "System" setting, which a matchMedia read inside an effect would not do.
-  const [prefersDark, setPrefersDark] = useState(
-    () => window.matchMedia('(prefers-color-scheme: dark)').matches
-  )
   const [platformTheme, setPlatformTheme] = useState(() => {
     const saved = localStorage.getItem(PLATFORM_THEME_KEY)
     // The web app needs a desktop-sized viewport: on a phone its header
@@ -262,7 +259,10 @@ function App() {
   const [weatherAnimations, setWeatherAnimations] = useState(() => localStorage.getItem('alek-weather-animations') !== 'false')
   const [gyroscope, setGyroscope] = useState(() => localStorage.getItem('alek-weather-gyroscope') !== 'false')
   const [radarEnhanced, setRadarEnhanced] = useState(() => localStorage.getItem(RADAR_ENHANCED_KEY) === 'true')
-  const [radarMode, setRadarMode] = useState(() => localStorage.getItem(RADAR_MODE_KEY) ?? 'both')
+  const [radarMode, setRadarMode] = useState(() => {
+    const saved = localStorage.getItem(RADAR_MODE_KEY)
+    return saved === 'future' ? 'future' : 'nowcast'
+  })
   const [colorCoding, setColorCoding] = useState(() => {
     const saved = loadJSON(COLOR_CODING_KEY)
     return saved ? { ...DEFAULT_COLOR_CODING, ...saved } : DEFAULT_COLOR_CODING
@@ -434,13 +434,6 @@ function App() {
     mq.addEventListener('change', paint)
     return () => mq.removeEventListener('change', paint)
   }, [materialColor, platformTheme, darkMode])
-
-  useEffect(() => {
-    const mq = window.matchMedia('(prefers-color-scheme: dark)')
-    const sync = (e) => setPrefersDark(e.matches)
-    mq.addEventListener('change', sync)
-    return () => mq.removeEventListener('change', sync)
-  }, [])
 
   // Card transparency, the other half of that picker — one stored value, but
   // the two styles start from opposite places, so each reads it its own way:
@@ -775,22 +768,21 @@ function App() {
   if (weather) console.log('[radar-enh] decision', { radarEnhanced, radarClear, rawCode: weather.current.weather_code, confirmed: weather.current.weather_code_confirmed, liveCode })
   const skyC     = weather ? skyClass(liveCode, weather.current.is_day) : ''
   const skyLevel = SKY_LEVEL[skyC] ?? ''
-  const isDarkTheme = darkMode === 'on' || (darkMode === 'system' && prefersDark)
   // The sky level class is what tints the cards toward the sky (and flips the
-  // text on them to white to match). Every style takes it in light mode, where
-  // a card left on its own surface is a white hole punched in a dark scene.
+  // text on them to white to match). iOS and Web take it: a card left on its
+  // own surface is a white hole punched in a dark scene there.
   //
-  // Android in *dark* mode is the one exception: its Material containers are
-  // already darker than any of the sky colours, so tinting them would lighten
-  // the cards toward the storm rather than away from it. There the class is
-  // withheld and the surface tokens stand, which is why this needs to know the
-  // scheme actually on screen rather than just the setting.
+  // Android never does. Its cards are Material You containers generated from
+  // the seed colour, and that palette is the point of the style — it stays put
+  // whether or not there is weather behind it, so the effects change the
+  // backdrop and nothing else. Card Transparency is how the sky gets into the
+  // stack under Android, and it runs off --md-card-alpha, not off this class.
   //
-  // Everything else about an active sky is unaffected either way, since
-  // .sky-active is set independently — the header, hero and search chrome go on
-  // reading over the backdrop as they already do on a clear day, which is the
-  // one sky with no level class of its own.
-  const levelC   = platformTheme === 'android' && isDarkTheme ? '' : skyLevel
+  // Everything else about an active sky is unaffected, since .sky-active is set
+  // independently — the header, hero and search chrome go on reading over the
+  // backdrop as they already do on a clear day, which is the one sky with no
+  // level class of its own.
+  const levelC   = platformTheme === 'android' ? '' : skyLevel
 
   // Keep the theme-color metas (status bar) and the body background (navigation
   // bar) matched to the sky, or to the flat app background when effects are

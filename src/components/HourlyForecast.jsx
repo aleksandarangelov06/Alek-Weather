@@ -111,19 +111,18 @@ export function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glo
           // NWS code is premature and gets downgraded to a sky condition.
           const displayCode = i === 0 && current
             ? (liveWeatherCode(current, minutely, radarClear) ?? codes[i])
-            : nowcastHourlyCode(codes[i], minutely, hours[i], current?.cloud_cover)
+            : nowcastHourlyCode(codes[i], minutely, hours[i], current)
           const info = getWeatherInfo(displayCode, !isDay[i])
           // When the corrected code carries no precipitation, zero out the chance
           // so the display is internally consistent (no "Clear Sky, 75%").
           const nowPrecip = precipTier(displayCode) === 0 ? 0 : precip[i]
           const p = displayPrecipChance(displayCode, nowPrecip)
-          const precipClass = p >= 30 ? 'hourly-precip high' : p > 0 ? 'hourly-precip low' : 'hourly-precip zero'
           return (
             <div key={i} className="hourly-item">
               <span className="hourly-time">{label}</span>
               <span className="hourly-icon"><WeatherIcon id={info.icon} alt={info.label} /></span>
               <span className="hourly-temp" style={tempStyle(temps[i], colorCoding, 0.4, glow, frost)}>{toTemp(temps[i], unit)}°</span>
-              <span className={precipClass}>{p}%</span>
+              <span className="hourly-precip">{p}%</span>
             </div>
           )
         })}

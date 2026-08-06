@@ -168,7 +168,7 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
   // precipitation — slots beyond the nowcast window are left unchanged.
   for (let i = 1; i < codes.length; i++) {
     const slotTime = hourly.time[start + i]
-    if (slotTime) codes[i] = nowcastHourlyCode(codes[i], minutely, slotTime, current?.cloud_cover)
+    if (slotTime) codes[i] = nowcastHourlyCode(codes[i], minutely, slotTime, current)
   }
 
   // Precipitation chance (%) for a slot, floored to the slot's own condition so an
