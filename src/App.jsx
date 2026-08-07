@@ -123,6 +123,7 @@ import { SplashHome } from './components/web/SplashHome'
 import { LoadingScreen } from './components/LoadingScreen'
 import { liveWeatherCode } from './utils/weatherCodes'
 import { APP_VERSION, IS_ANDROID_APP } from './utils/version'
+import { UpdateToast } from './components/UpdateToast'
 import { IS_PHONE } from './utils/device'
 import { applyMaterialTokens, DEFAULT_SEED, isValidSeed } from './utils/materialTheme'
 import { useNotifications } from './hooks/useNotifications'
@@ -1172,6 +1173,10 @@ function App() {
       {showSettings && (
         <SettingsPage
           modal={webLayout}
+          // The desktop layout doesn't render the overview tile (see TodayPage),
+          // so its settings come out with it rather than sitting there as
+          // controls for something that isn't on the page.
+          webShell={webLayout}
           onBack={closeSettings}
           onDismiss={dismissSettings}
           subView={subView}
@@ -1217,6 +1222,11 @@ function App() {
           closing={settingsClosing}
         />
       )}
+      {/* APK only, and only once the splash is out of the way: the bar owns the
+          bottom of the screen, and over a loading screen it reads as part of the
+          loading rather than as something to act on. Mounting here is what starts
+          its (throttled) check — see UpdateToast. */}
+      {IS_ANDROID_APP && splashPhase === 'done' && <UpdateToast />}
       <div id="alert-portal-root" />
     </div>
     </>

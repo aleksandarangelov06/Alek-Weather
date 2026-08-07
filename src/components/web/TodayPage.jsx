@@ -2,7 +2,6 @@ import { ArrowRight, CloudRain, Droplets, Eye, Sun, Sunrise, Sunset, Thermometer
 import { CurrentWeather } from '../CurrentWeather'
 import { PrecipNowcast } from '../PrecipNowcast'
 import { WeatherAlerts } from '../WeatherAlerts'
-import { WeatherOverview } from '../WeatherOverview'
 import { WeatherIcon } from '../WeatherIcon'
 import {
   displayPrecipChance, formatHour, formatTime, getUVLabel, getWeatherInfo, getWindDirection,
@@ -24,9 +23,9 @@ function GlanceTile({ icon: Icon, label, value, sub, color }) {
 // The two preview cards at the bottom of the page are deliberately read-only
 // summaries: they say enough to answer "do I need to open that tab", and hand
 // off to the real page rather than duplicating it.
-function PreviewCard({ title, onOpen, openLabel, children }) {
+function PreviewCard({ title, onOpen, openLabel, className, children }) {
   return (
-    <div className="card web-preview">
+    <div className={`card web-preview${className ? ` ${className}` : ''}`}>
       <div className="web-preview-head">
         <span className="section-label">{title}</span>
         <button className="web-link-btn" onClick={onOpen}>
@@ -39,9 +38,14 @@ function PreviewCard({ title, onOpen, openLabel, children }) {
   )
 }
 
+// The weather-overview card (insight / conditions / clothing / AQI) is off on
+// the desktop layout for now. WebLayout still spreads its props through, so
+// restoring it is a matter of pulling `airQuality`, `overviewParts`,
+// `showOverview` and `hasActiveAlert` back out of the props and rendering
+// <WeatherOverview> again.
 export function TodayPage({
-  weather, location, airQuality, alerts, unit, radarClear, lastUpdated, loading,
-  colorCoding, overviewParts, showOverview, nowcastMode, hasActiveAlert,
+  weather, location, alerts, unit, radarClear, lastUpdated, loading,
+  colorCoding, nowcastMode,
   saved, onSave, onRemove, isHome, hasHome, onGoHome, onSetHome, onUnsetHome, onRefresh,
   onNavigate,
 }) {
@@ -148,98 +152,83 @@ export function TodayPage({
         </div>
       </div>
 
-      {/* The nowcast and the insight card share the narrow column: both are
-          chart-and-sentence blocks whose type would inflate with the page if
-          they ran the full width. The wide column takes the two strips, which
-          are the things that actually benefit from it. */}
-      <div className="web-cols">
-        <div className="web-col-stack">
-          {/* Wide viewBox: the same chart drawn into a flatter box, so it fills
-              the column at a fraction of the height the phone proportions gave
-              it here. */}
-          <PrecipNowcast
-            minutely={weather.minutely_15}
-            currentTime={current.time}
-            mode={nowcastMode}
-            current={current}
-            radarClear={radarClear}
-            wide
-          />
-          {showOverview && (
-          <WeatherOverview
-            hourly={hourly}
-            daily={daily}
-            current={current}
-            minutely={weather.minutely_15}
-            radarClear={radarClear}
-            timezone={timezone}
-            hasActiveAlert={hasActiveAlert}
-            unit={unit}
-            airQuality={airQuality}
-            showInsight={overviewParts.insight}
-            showConditions={overviewParts.conditions}
-            showAirQuality={overviewParts.airQuality}
-            showClothing={overviewParts.clothing}
-            colorCode={colorCoding.overview}
-          />
-          )}
-        </div>
+      {/* Wide viewBox: the same chart drawn into a flatter box, so it fills the
+          page at a fraction of the height the phone proportions gave it. */}
+      <PrecipNowcast
+        minutely={weather.minutely_15}
+        currentTime={current.time}
+        mode={nowcastMode}
+        current={current}
+        radarClear={radarClear}
+        wide
+      />
 
-        <div className="web-col-stack">
-          <PreviewCard title="NEXT 12 HOURS" onOpen={() => onNavigate('hourly')} openLabel="Hourly">
-            <div className="web-mini-hours">
-              {next.time.map((time, i) => {
-                const code = i === 0
-                  ? (liveWeatherCode(current, weather.minutely_15, radarClear) ?? next.code[i])
-                  : nowcastHourlyCode(next.code[i], weather.minutely_15, time, current)
-                const info = getWeatherInfo(code, !next.isDay[i])
-                const chance = displayPrecipChance(code, precipTier(code) === 0 ? 0 : next.precip[i])
-                return (
-                  <div key={time} className="web-mini-hour">
-                    <span className="web-mini-time">{i === 0 ? 'Now' : formatHour(time, timezone)}</span>
-                    <span className="web-mini-icon"><WeatherIcon id={info.icon} alt={info.label} /></span>
-                    <span
-                      className="web-mini-temp"
-                      style={tempStyle(next.temp[i], colorCoding.hourly, 0.35, colorCoding.glow, colorCoding.frost)}
-                    >
-                      {toTemp(next.temp[i], unit)}°
-                    </span>
-                    <span className={`web-mini-precip${chance >= 30 ? ' web-mini-precip--high' : chance > 0 ? '' : ' web-mini-precip--zero'}`}>
-                      {chance}%
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          </PreviewCard>
-
-          <PreviewCard title="WEEK AHEAD" onOpen={() => onNavigate('daily')} openLabel="7 day">
-            <div className="web-mini-days">
-              {daily.time.map((date, i) => {
-                const info = getWeatherInfo(daily.weather_code[i], false)
-                return (
-                  <div key={date} className="web-mini-day">
-                    <span className="web-mini-dayname">{weekdayLabel(date, timezone)}</span>
-                    <span className="web-mini-icon"><WeatherIcon id={info.icon} alt={info.label} /></span>
-                    <span
-                      className="web-mini-high"
-                      style={tempStyle(daily.temperature_2m_max[i], colorCoding.daily, 0.35, colorCoding.glow, colorCoding.frost)}
-                    >
-                      {toTemp(daily.temperature_2m_max[i], unit)}°
-                    </span>
-                    <span
-                      className="web-mini-low"
-                      style={tempStyle(daily.temperature_2m_min[i], colorCoding.daily, 0.35, colorCoding.glow, colorCoding.frost)}
-                    >
-                      {toTemp(daily.temperature_2m_min[i], unit)}°
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          </PreviewCard>
+      <PreviewCard title="NEXT 12 HOURS" onOpen={() => onNavigate('hourly')} openLabel="Hourly" className="web-strip">
+        <div className="web-mini-hours">
+          {next.time.map((time, i) => {
+            const code = i === 0
+              ? (liveWeatherCode(current, weather.minutely_15, radarClear) ?? next.code[i])
+              : nowcastHourlyCode(next.code[i], weather.minutely_15, time, current)
+            const info = getWeatherInfo(code, !next.isDay[i])
+            const chance = displayPrecipChance(code, precipTier(code) === 0 ? 0 : next.precip[i])
+            return (
+              <div key={time} className={`web-mini-hour${i === 0 ? ' web-mini-hour--now' : ''}`}>
+                <span className="web-mini-time">{i === 0 ? 'Now' : formatHour(time, timezone)}</span>
+                <span className="web-mini-icon"><WeatherIcon id={info.icon} alt={info.label} /></span>
+                <span
+                  className="web-mini-temp"
+                  style={tempStyle(next.temp[i], colorCoding.hourly, 0.35, colorCoding.glow, colorCoding.frost)}
+                >
+                  {toTemp(next.temp[i], unit)}°
+                </span>
+                <span className={`web-mini-precip${chance >= 30 ? ' web-mini-precip--high' : chance > 0 ? '' : ' web-mini-precip--zero'}`}>
+                  {chance}%
+                </span>
+              </div>
+            )
+          })}
         </div>
-      </div>
+      </PreviewCard>
+
+      {/* The week runs the full page width rather than sharing the narrow
+          column. Seven days squeezed into half a row left every cell too tight
+          to give the type a readable size; across the whole width each day gets
+          a tile wide enough for a condition line as well. */}
+      <PreviewCard title="WEEK AHEAD" onOpen={() => onNavigate('daily')} openLabel="7 day" className="web-week">
+        <div className="web-week-days">
+          {daily.time.map((date, i) => {
+            const info = getWeatherInfo(daily.weather_code[i], false)
+            const chance = displayPrecipChance(
+              daily.weather_code[i],
+              precipTier(daily.weather_code[i]) === 0 ? 0 : daily.precipitation_probability_max?.[i],
+            )
+            return (
+              <div key={date} className={`web-week-day${i === 0 ? ' web-week-day--today' : ''}`}>
+                <span className="web-week-dayname">{i === 0 ? 'Today' : weekdayLabel(date, timezone)}</span>
+                <span className="web-week-icon"><WeatherIcon id={info.icon} alt={info.label} /></span>
+                <span className="web-week-cond">{info.label}</span>
+                <span className="web-week-temps">
+                  <span
+                    className="web-week-high"
+                    style={tempStyle(daily.temperature_2m_max[i], colorCoding.daily, 0.35, colorCoding.glow, colorCoding.frost)}
+                  >
+                    {toTemp(daily.temperature_2m_max[i], unit)}°
+                  </span>
+                  <span
+                    className="web-week-low"
+                    style={tempStyle(daily.temperature_2m_min[i], colorCoding.daily, 0.35, colorCoding.glow, colorCoding.frost)}
+                  >
+                    {toTemp(daily.temperature_2m_min[i], unit)}°
+                  </span>
+                </span>
+                <span className={`web-week-precip${chance >= 30 ? ' web-mini-precip--high' : chance > 0 ? '' : ' web-mini-precip--zero'}`}>
+                  {chance}%
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      </PreviewCard>
     </div>
   )
 }

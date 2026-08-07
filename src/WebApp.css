@@ -662,9 +662,13 @@
 
 /* ── Today ───────────────────────────────────────────────────────────────── */
 
+/* The current card is a summary, not the page: it holds one temperature and a
+   condition, where the tiles beside it hold eight readings. Giving it a third
+   of the band was leaving it mostly air on a wide window, so it takes the
+   narrower track and the glance grid takes the width it can actually use. */
 .web-hero {
   display: grid;
-  grid-template-columns: minmax(300px, 1fr) minmax(0, 1.75fr);
+  grid-template-columns: minmax(260px, 0.78fr) minmax(0, 2.2fr);
   gap: 16px;
   align-items: stretch;
 }
@@ -700,15 +704,19 @@
   margin-top: 6px;
 }
 
+/* Sized against its own column rather than the viewport: the reading only has
+   to dominate this card, and at 78px it was setting the height of the whole
+   band. */
 .web-hero .current-temp {
-  font-size: clamp(52px, 8.2vw, 78px);
+  font-size: clamp(46px, 5.4vw, 62px);
   line-height: 1.02;
 }
 
-.web-hero .current-icon svg,
-.web-hero .current-icon img {
-  width: clamp(62px, 9.6vw, 92px);
-  height: clamp(62px, 9.6vw, 92px);
+/* WeatherIcon draws itself at 1em with the size as an inline style, so it is
+   sized by the font-size of whatever holds it — a width on the img or svg is
+   an author rule losing to an inline one, and does nothing. */
+.web-hero .current-icon {
+  font-size: clamp(54px, 6.2vw, 74px);
 }
 
 .web-glance {
@@ -767,9 +775,11 @@
   white-space: nowrap;
 }
 
+/* Unused while the overview card is off on Today: nothing else pairs two
+   cards in a row right now. Kept for when it comes back. */
 .web-cols {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
@@ -810,51 +820,57 @@
   margin-bottom: 0;
 }
 
+/* Both strips run the full page width, so their cells are tiles at the same
+   scale rather than a squeezed row of thirteen tick marks. */
 .web-mini-hours {
   display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
-  gap: 2px;
-  margin-top: 12px;
+  grid-template-columns: repeat(13, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
 }
 
 .web-mini-hour {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
-  padding: 8px 2px;
-  border-radius: 12px;
+  gap: 6px;
+  padding: 14px 4px 12px;
+  border-radius: 14px;
+  background: var(--web-sunken);
   min-width: 0;
 }
 
-.web-mini-hour:first-child {
-  background: var(--web-sunken);
+/* Ringed rather than filled, since every cell is filled now. */
+.web-mini-hour--now {
+  box-shadow: inset 0 0 0 1.5px var(--accent);
 }
 
 .web-mini-time {
-  font-size: 11.5px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--text-secondary);
   white-space: nowrap;
 }
 
-.web-mini-icon svg,
-.web-mini-icon img {
-  width: 26px;
-  height: 26px;
-  display: block;
+.web-mini-hour--now .web-mini-time {
+  color: var(--text-primary);
+}
+
+.web-mini-icon {
+  font-size: 40px;
+  line-height: 1;
+  display: flex;
 }
 
 .web-mini-temp {
-  font-size: 15px;
+  font-size: 20px;
   font-weight: 600;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
 
 .web-mini-precip {
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 500;
   color: var(--web-precip);
   font-variant-numeric: tabular-nums;
@@ -863,44 +879,86 @@
 .web-mini-precip--high { font-weight: 700; }
 .web-mini-precip--zero { color: var(--text-tertiary); opacity: 0.5; }
 
-.web-mini-days {
+/* Week ahead: a full-width row of seven tiles. Each one is wide enough to be
+   read at a glance rather than squinted at, so the type sits at the same scale
+   as the glance tiles above it instead of the strip type it used to share with
+   the hourly preview. */
+.web-week-days {
   display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(0, 1fr);
-  gap: 2px;
-  margin-top: 12px;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
 }
 
-.web-mini-day {
+.web-week-day {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 5px;
-  padding: 8px 2px;
-  border-radius: 12px;
-}
-
-.web-mini-day:first-child {
+  gap: 6px;
+  padding: 14px 8px 12px;
+  border-radius: 14px;
   background: var(--web-sunken);
+  min-width: 0;
+  text-align: center;
 }
 
-.web-mini-dayname {
-  font-size: 12px;
+/* Today is marked with a ring rather than a fill: every tile is filled now, so
+   the fill has nothing left to say. */
+.web-week-day--today {
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.web-week-dayname {
+  font-size: 13px;
   font-weight: 600;
+  letter-spacing: 0.2px;
   color: var(--text-secondary);
+  white-space: nowrap;
 }
 
-.web-mini-high {
-  font-size: 15px;
-  font-weight: 600;
+.web-week-day--today .web-week-dayname {
   color: var(--text-primary);
+}
+
+.web-week-icon {
+  font-size: 56px;
+  line-height: 1;
+  display: flex;
+}
+
+.web-week-cond {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.3;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.web-week-temps {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   font-variant-numeric: tabular-nums;
 }
 
-.web-mini-low {
-  font-size: 13px;
-  font-weight: 400;
+.web-week-high {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.web-week-low {
+  font-size: 16px;
+  font-weight: 500;
   color: var(--text-secondary);
+}
+
+.web-week-precip {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--web-precip);
   font-variant-numeric: tabular-nums;
 }
 
@@ -1222,11 +1280,10 @@
   white-space: nowrap;
 }
 
-.web-hcol-icon svg,
-.web-hcol-icon img {
-  width: 30px;
-  height: 30px;
-  display: block;
+.web-hcol-icon {
+  font-size: 30px;
+  line-height: 1;
+  display: flex;
 }
 
 .web-hcol-temp {
@@ -1704,11 +1761,10 @@
   white-space: nowrap;
 }
 
-.web-table-icon svg,
-.web-table-icon img {
-  width: 24px;
-  height: 24px;
-  display: block;
+.web-table-icon {
+  font-size: 24px;
+  line-height: 1;
+  display: flex;
 }
 
 /* The one reading Overview leads with, on the same face as the focused value
@@ -1790,11 +1846,10 @@
   color: var(--text-tertiary);
 }
 
-.web-day-icon svg,
-.web-day-icon img {
-  width: 60px;
-  height: 60px;
-  display: block;
+.web-day-icon {
+  font-size: 60px;
+  line-height: 1;
+  display: flex;
 }
 
 .web-day-cond {
@@ -1965,11 +2020,10 @@
   white-space: nowrap;
 }
 
-.web-day-hour-icon svg,
-.web-day-hour-icon img {
-  width: 24px;
-  height: 24px;
-  display: block;
+.web-day-hour-icon {
+  font-size: 24px;
+  line-height: 1;
+  display: flex;
 }
 
 .web-day-hour-temp {
@@ -1999,14 +2053,6 @@
 .web-detail {
   display: flex;
   flex-direction: column;
-}
-
-.web-detail--wide {
-  grid-column: span 2;
-}
-
-@media (max-width: 1399px) {
-  .web-detail--wide { grid-column: auto; }
 }
 
 .web-detail-head {
@@ -2109,22 +2155,14 @@
   gap: 5px;
 }
 
-.web-sun-layout {
-  display: grid;
-  grid-template-columns: minmax(280px, 1.2fr) minmax(220px, 1fr);
-  gap: 24px;
-  align-items: center;
-}
-
-@media (max-width: 1399px) {
-  .web-sun-layout { grid-template-columns: minmax(0, 1fr); }
-}
-
 /* The dial's arc and horizon are drawn in currentColor; nothing between here
    and the card sets one, so without this they inherit the document default and
    vanish on a dark or sky-tinted surface. */
 .web-sun-arc {
   color: var(--text-primary);
+  /* The sun card carries a dial where the others carry a value and a chart;
+     centring it keeps its height in the same band as its neighbours. */
+  margin: auto 0;
 }
 
 .web-sun-arc .sun-dial--wide {
@@ -2153,10 +2191,6 @@
 .web-sun-daylight {
   font-size: 12px;
   color: var(--text-tertiary);
-}
-
-.web-sun-uv .web-detail-note {
-  min-height: 0;
 }
 
 /* The shared AQI scale bar is built for the mobile detail cover, which puts its
@@ -2531,6 +2565,12 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
+  /* Thirteen tiles stop fitting well before the page does; wrapping to two
+     rows of seven keeps the tile size rather than the row count. */
+  .web-mini-hours {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+
   .web-table-card {
     --web-table-cols: 76px minmax(120px, 1.3fr) 64px 68px 116px 84px 52px;
     --web-table-pad: 14px;
@@ -2550,8 +2590,7 @@
     gap: 10px;
   }
 
-  .web-day-icon svg,
-  .web-day-icon img { width: 54px; height: 54px; }
+  .web-day-icon { font-size: 54px; }
 }
 
 /* ── Narrow windows ──────────────────────────────────────────────────────── */
@@ -2574,6 +2613,16 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  /* Seven tiles across a tablet width would put the condition line back to one
+     word and an ellipsis; four wrap onto two rows and stay readable. */
+  .web-week-days {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .web-mini-hours {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
   .web-table-card {
     --web-table-cols: 68px minmax(90px, 1.2fr) 56px 60px 100px 72px 44px;
     --web-table-pad: 12px;
@@ -2594,8 +2643,7 @@
     padding-inline: 10px;
   }
 
-  .web-day-icon svg,
-  .web-day-icon img { width: 48px; height: 48px; }
+  .web-day-icon { font-size: 48px; }
 }
 
 @media (max-width: 767px) {
@@ -2629,11 +2677,20 @@
     gap: 8px;
   }
 
-  .web-day-icon svg,
-  .web-day-icon img { width: 44px; height: 44px; }
+  .web-day-icon { font-size: 44px; }
 
   .web-glance-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .web-week-days {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .web-mini-hours {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
   }
 
   .web-day-stats {

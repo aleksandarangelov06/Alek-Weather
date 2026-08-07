@@ -315,7 +315,12 @@ const COLOR_CODING_TILES = [
   { key: 'details',  label: 'Weather Details'  },
 ]
 
-function ColorCodingView({ colorCoding, onToggle, onBack }) {
+function ColorCodingView({ colorCoding, onToggle, onBack, webShell }) {
+  // Same reason the Tiles entry goes on desktop: the overview isn't on the page
+  // there, so a switch for how it colours its readings has nothing to colour.
+  const tiles = webShell
+    ? COLOR_CODING_TILES.filter(t => t.key !== 'overview')
+    : COLOR_CODING_TILES
   return (
     <>
       {onBack && (
@@ -326,7 +331,7 @@ function ColorCodingView({ colorCoding, onToggle, onBack }) {
       )}
       <p className="color-coding-desc">Choose which tiles color their readings by how hot, cold, or severe they are.</p>
       <div className="card settings-card">
-        {COLOR_CODING_TILES.map(({ key, label }) => (
+        {tiles.map(({ key, label }) => (
           <SettingRow key={key} label={label}>
             <Toggle id={`toggle-cc-${key}`} checked={colorCoding[key]} onChange={() => onToggle(key)} />
           </SettingRow>
@@ -624,7 +629,7 @@ function ThemeView({ darkMode, onDarkModeChange, platformTheme, onPlatformThemeC
   )
 }
 
-function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastMode, onNowcastModeChange, radarMode, onRadarModeChange, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onThemeOpen, onNotificationsOpen, weatherAnimations, onWeatherAnimationsChange, radarEnhanced, onRadarEnhancedChange, installPrompt, onInstall }) {
+function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastMode, onNowcastModeChange, radarMode, onRadarModeChange, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onThemeOpen, onNotificationsOpen, weatherAnimations, onWeatherAnimationsChange, radarEnhanced, onRadarEnhancedChange, installPrompt, onInstall, webShell }) {
   return (
     <>
       <div className="settings-group-label">Appearance</div>
@@ -690,10 +695,18 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastM
 
       <div className="settings-group-label">Tiles</div>
       <div className="card settings-card">
-        <button className="settings-row about-row" onClick={onOverviewOpen}>
-          <div className="settings-row-label">Weather Overview</div>
-          <ChevronRight size={16} className="about-chevron" />
-        </button>
+        {/* Not on desktop: the Web layout's Today page doesn't render the
+            overview tile for now (see TodayPage), and a sub-view of switches for
+            a tile that isn't on the page is worse than no entry at all — every
+            one of them would appear to do nothing. The stored values are left
+            alone, so the phone shells keep theirs and this comes back with the
+            tile. */}
+        {!webShell && (
+          <button className="settings-row about-row" onClick={onOverviewOpen}>
+            <div className="settings-row-label">Weather Overview</div>
+            <ChevronRight size={16} className="about-chevron" />
+          </button>
+        )}
         <SettingRow label="Precipitation">
           <SegmentedControl
             value={nowcastMode}
@@ -825,7 +838,7 @@ export function SettingsPage({ onBack, onDismiss, inline, modal, closing, subVie
 
   let body
   if (subView === 'colorcoding') {
-    body = <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} />
+    body = <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} webShell={bodyProps.webShell} />
   } else if (subView === 'theme') {
     body = (
       <ThemeView
@@ -942,7 +955,7 @@ export function SettingsPage({ onBack, onDismiss, inline, modal, closing, subVie
 export function SettingsPill({ expanded, onToggle, subView, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onThemeOpen, onNotificationsOpen, onSubViewBack, colorCoding, onColorCodingToggle, overviewParts, onOverviewPartToggle, ...bodyProps }) {
   let body
   if (subView === 'colorcoding') {
-    body = <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} onBack={onSubViewBack} />
+    body = <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} onBack={onSubViewBack} webShell={bodyProps.webShell} />
   } else if (subView === 'theme') {
     body = (
       <ThemeView

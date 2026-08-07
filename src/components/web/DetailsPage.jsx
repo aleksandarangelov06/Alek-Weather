@@ -91,6 +91,13 @@ export function DetailsPage({ weather, unit, airQuality, colorCoding, onNavigate
   const uvCurrent = uvSeries[0] ?? current.uv_index ?? 0
   const uv = getUVLabel(uvCurrent)
 
+  // Highest reading still ahead in the 24 hours the chart covers, which at
+  // night is tomorrow's midday rather than anything today.
+  const uvPeak = uvSeries.reduce((best, value, i) => {
+    if (value == null || !Number.isFinite(value)) return best
+    return !best || value > best.value ? { value, time: times[i] } : best
+  }, null)
+
   // Wall-clock comparison in the location's own timezone — the API's sunrise and
   // sunset are naive local times, so parsing them as Dates would shift them into
   // the browser's zone. Matches the mobile details card.
@@ -224,46 +231,57 @@ export function DetailsPage({ weather, unit, airQuality, colorCoding, onNavigate
           />
         </Panel>
 
-        <div className="card web-detail web-detail--wide">
+        {/* Sun and UV used to share one double-width card. They are two
+            different readings — where the sun is now, and how strong it is —
+            so each takes an ordinary cell in the grid. */}
+        <div className="card web-detail">
           <div className="web-detail-head">
             <span className="web-detail-head-icon" style={{ color: sunTint }}><Sun size={18} /></span>
-            <span className="section-label">SUN &amp; UV</span>
+            <span className="section-label">SUN</span>
           </div>
-          <div className="web-sun-layout">
-            <div className="web-sun-arc">
-              <SunDial progress={sunProgress} sunFill={sunTint} wide />
-              <div className="web-sun-times">
-                <span className="web-sun-time">
-                  <Sunrise size={15} style={{ color: mono ? undefined : SUN_ORANGE }} aria-hidden="true" />
-                  {formatTime(daily.sunrise[0], timezone)}
-                </span>
-                <span className="web-sun-daylight">{daylightLength(daily.sunrise[0], daily.sunset[0]) ?? ''} of daylight</span>
-                <span className="web-sun-time">
-                  <Sunset size={15} style={{ color: mono ? undefined : SUN_ORANGE }} aria-hidden="true" />
-                  {formatTime(daily.sunset[0], timezone)}
-                </span>
-              </div>
-            </div>
-            <div className="web-sun-uv">
-              <div className="web-detail-hero">
-                <span className="web-detail-value" style={{ color: tint(uv.color) }}>
-                  {Math.round(uvCurrent)}
-                  <span className="web-detail-unit"> UV</span>
-                </span>
-                <span className="web-detail-status" style={{ color: tint(uv.color) }}>{uv.label}</span>
-              </div>
-              <p className="web-detail-note">{getUVNote(uvCurrent)}</p>
-              <PanelChart
-                values={uvSeries}
-                times={times}
-                timezone={timezone}
-                color={tint(uv.color)}
-                step={2}
-                format={(v) => Math.round(v)}
-              />
+          <div className="web-sun-arc">
+            <SunDial progress={sunProgress} sunFill={sunTint} wide />
+            <div className="web-sun-times">
+              <span className="web-sun-time">
+                <Sunrise size={15} style={{ color: mono ? undefined : SUN_ORANGE }} aria-hidden="true" />
+                {formatTime(daily.sunrise[0], timezone)}
+              </span>
+              <span className="web-sun-daylight">{daylightLength(daily.sunrise[0], daily.sunset[0]) ?? ''} of daylight</span>
+              <span className="web-sun-time">
+                <Sunset size={15} style={{ color: mono ? undefined : SUN_ORANGE }} aria-hidden="true" />
+                {formatTime(daily.sunset[0], timezone)}
+              </span>
             </div>
           </div>
         </div>
+
+        <Panel
+          icon={<Sun size={18} />}
+          title="UV INDEX"
+          value={Math.round(uvCurrent)}
+          status={uv.label}
+          note={getUVNote(uvCurrent)}
+          color={tint(uv.color)}
+        >
+          <PanelChart
+            values={uvSeries}
+            times={times}
+            timezone={timezone}
+            color={tint(uv.color)}
+            step={2}
+            format={(v) => Math.round(v)}
+          />
+          <StatRow
+            items={[
+              {
+                label: 'Peak next 24h',
+                value: uvPeak ? `${Math.round(uvPeak.value)} at ${formatHour(uvPeak.time, timezone)}` : null,
+                color: uvPeak ? tint(getUVLabel(uvPeak.value).color) : undefined,
+              },
+              { label: 'Today’s max', value: daily.uv_index_max?.[0] != null ? Math.round(daily.uv_index_max[0]) : null },
+            ]}
+          />
+        </Panel>
 
         <div className="card web-detail">
           <div className="web-detail-head">

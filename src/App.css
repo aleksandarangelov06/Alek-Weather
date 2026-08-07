@@ -1746,11 +1746,13 @@ body {
   flex-shrink: 0;
 }
 
+/* 12cqi put a two-column tile's times at ~18px, which left the left-hand column
+   too little room for the UV rating beside them. */
 .sun-time {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: clamp(13px, 12cqi, 20px);
+  font-size: clamp(13px, 9cqi, 17px);
   font-weight: 300;
   line-height: 1.2;
   white-space: nowrap;
@@ -1772,6 +1774,27 @@ body {
   .sun-times {
     align-items: flex-end;
     justify-content: space-between;
+  }
+
+  /* Side by side, the UV rating sits on the same line as the sunset time, and
+     "Moderate" is the longest of them: without a shrink limit it ran under the
+     sunset icon. It gives way first (the times are fixed-width readings), and
+     clips with an ellipsis rather than crossing the gap. */
+  .sun-main {
+    flex: 1 1 auto;
+    overflow: hidden;
+  }
+
+  .sun-main .detail-value,
+  .sun-main .detail-sub {
+    max-width: 100%;
+  }
+
+  .sun-main .detail-sub--expand > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 
@@ -2227,7 +2250,13 @@ body {
   text-align: center;
   /* Single-word labels ("Moderate", "Extreme") have no space to wrap at, so
      without this they overflow their narrow column and collide with the next
-     reading. Let them wrap inside the column instead. */
+     reading. Let them wrap inside the column instead.
+     width:100% is what makes break-word actually bite here: the column centres
+     its children, so the label is sized fit-content, and an unbreakable word's
+     min-content width is the whole word — it sized itself past the column and
+     spilled into the neighbouring reading before it ever tried to wrap. Pinned
+     to the column width, the break has somewhere to happen. */
+  width: 100%;
   overflow-wrap: break-word;
 }
 
@@ -2924,6 +2953,103 @@ body {
 }
 
 .install-btn:hover { opacity: 0.85; }
+
+/* ── APK update bar ──
+   The automatic half of the sideload updater (see UpdateToast; Settings has the
+   manual Check). A bar at the bottom rather than a dialog: it is news, not a
+   question, and the app behind it stays usable — nothing here is worth taking
+   the screen away from the weather for.
+
+   z-index sits it above the page and below both things that take the screen:
+   settings (500) and the full-screen radar (400). So opening either covers it
+   rather than unmounting it, and it is still there when they close — which
+   matters, because the check that produced it won't run again for six hours. */
+.update-toast {
+  position: fixed;
+  left: max(12px, var(--sa-left));
+  right: max(12px, var(--sa-right));
+  bottom: calc(12px + var(--sa-bottom));
+  z-index: 350;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 12px 12px 16px;
+  border-radius: var(--radius);
+  background: var(--card-bg);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22);
+  animation: updateToastIn 0.28s cubic-bezier(0.2, 0, 0, 1) both;
+}
+
+@keyframes updateToastIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.update-toast-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.update-toast-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.update-toast-sub {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.update-toast-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.update-toast-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 7px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.update-toast-close:hover {
+  background: var(--hover-medium);
+  color: var(--text-primary);
+}
+
+/* Sits where the buttons were, so the row keeps its height as it switches from
+   offering the update to reporting one. */
+.update-toast-bar {
+  flex-shrink: 0;
+  width: 88px;
+  height: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--hover-clear);
+}
+
+.update-toast-bar > div {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .update-toast { animation: none; }
+  .update-toast-bar > div { transition: none; }
+}
 
 .clear-cache-btn {
   width: 100%;
@@ -4817,6 +4943,32 @@ body {
   backdrop-filter: blur(var(--ios-glass-blur)) saturate(180%);
 }
 
+/* And while a card is opening one of the two reveals, for the same reason the
+   settings slide gets the suspension: a backdrop blur is redone every frame the
+   thing in front of it moves, and both reveals move something across the whole
+   card. This is the piece the earlier passes at the reveals kept missing —
+   .detail-cover-fill was made a small composited texture and the radar's
+   full-screen switch was moved onto an armed frame, but the surface underneath
+   was still a live blur, so the win went straight back out again:
+   · the day cover grows over a card that is itself glass, and
+   · .radar-expanded is a .card, so full-screen radar is a *screen-sized* blur
+     with an animated clip-path over it — the most expensive shape this file has.
+   saturate stays: it is a per-pixel pass with no kernel, so it costs almost
+   nothing, and keeping the colour cast means the suspension reads as the same
+   surface rather than as a different one. What it costs is the blur on the part
+   of the day card still showing outside the growing circle, for the ~260ms of
+   visible sweep; behind the radar is the flat .radar-sky gradient, which blurs
+   to very nearly itself, so there it is invisible. */
+:root[data-platform="ios"] .app .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline):is(.radar-expanded, :has(.detail-cover)) {
+  -webkit-backdrop-filter: saturate(180%);
+  backdrop-filter: saturate(180%);
+}
+
+:root[data-card-glass="on"][data-shell="mobile"][data-platform="android"] .app .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):is(.radar-expanded, :has(.detail-cover)) {
+  backdrop-filter: saturate(1.35);
+  -webkit-backdrop-filter: saturate(1.35);
+}
+
 /* The opaque sky layer exists to keep the weather stack out of the glass; peek
    wants exactly the opposite, so it fades out with the page. */
 :root[data-platform="ios"] .app:has(.settings-page.peeking) .settings-sky {
@@ -4949,6 +5101,20 @@ body {
     );
   border: 0.5px solid rgba(255, 255, 255, 0.25);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+
+/* The "you are here" dot. Same 12px the circleMarker it replaced drew — an 8px
+   blue core inside a 2px white ring — but as a marker rather than a vector, so
+   Leaflet's zoom translates it instead of scaling it (see WeatherRadar). The
+   shadow keeps the white ring off a white map. It sits outside .map-base-tiles,
+   so none of the tile inversions below reach it and it stays blue in every
+   theme. */
+.radar-here {
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: #3b82f6;
+  border: 2px solid #fff;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.45);
 }
 
 /* Invert map tiles in dark mode — Positron's gray palette inverts cleanly to a dark map */

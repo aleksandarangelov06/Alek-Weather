@@ -171,16 +171,30 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
   const weekMax = Math.max(...maxTemps)
   const range = weekMax - weekMin || 1
 
-  // Build the hourly entries that fall on a given day (date is "YYYY-MM-DD"),
-  // applying the same live/nowcast corrections used by the main hourly strip.
-  const hoursForDay = (date) => {
+  // Which hourly slots fall on a given day (date is "YYYY-MM-DD"). One pass of
+  // string compares and nothing else — this is the half of the work the tap
+  // frame needs (the cover's humidity average), kept apart from the half it
+  // doesn't (below).
+  const dayIndices = (date) => {
+    const out = []
+    if (!hourly?.time) return out
+    for (let i = 0; i < hourly.time.length; i++) {
+      if (hourly.time[i].startsWith(date)) out.push(i)
+    }
+    return out
+  }
+
+  // The strip's entries, with the same live/nowcast corrections the main hourly
+  // strip uses. Deliberately called only once hoursReady is set: a timezone
+  // format plus a scan of the whole minutely series per slot is real main-thread
+  // work, and on the tap frame it lands where the reveal is trying to start.
+  const hoursForDay = (indices) => {
     if (!hourly?.time) return []
     // Current hour string in the location's timezone, e.g. "2025-06-23T17:00"
     const localNow = new Date().toLocaleString('sv', { timeZone: timezone })
     const currentHourStr = `${localNow.slice(0, 10)}T${localNow.slice(11, 13)}:00`
     const out = []
-    for (let i = 0; i < hourly.time.length; i++) {
-      if (!hourly.time[i].startsWith(date)) continue
+    for (const i of indices) {
       const slotTime = hourly.time[i]
       const rawCode = hourly.weather_code[i]
       let code
@@ -198,7 +212,6 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
         code,
         precip: displayPrecipChance(code, prob),
         isDay: hourly.is_day?.[i],
-        humidity: hourly.relative_humidity_2m?.[i],
       })
     }
     return out
@@ -207,7 +220,8 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
   // Everything the open cover shows about the tapped day.
   const di = expanded ? daily.time.indexOf(expanded) : -1
   const openInfo = di !== -1 ? getWeatherInfo(daily.weather_code[di]) : null
-  const openHours = di !== -1 ? hoursForDay(expanded) : []
+  const openIdx = di !== -1 ? dayIndices(expanded) : []
+  const openHours = hoursReady && di !== -1 ? hoursForDay(openIdx) : []
   const openPrecip = di !== -1
     ? (displayPrecipChance(daily.weather_code[di], daily.precipitation_probability_max[di]) ?? 0)
     : 0
@@ -219,7 +233,7 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
   // series; humidity has no daily aggregate, so average the day's hourly values.
   const precipSum = di !== -1 ? daily.precipitation_sum?.[di] : null
   const windMax   = di !== -1 ? daily.wind_speed_10m_max?.[di] : null
-  const humVals   = openHours.map(h => h.humidity).filter(v => v != null)
+  const humVals   = openIdx.map(i => hourly?.relative_humidity_2m?.[i]).filter(v => v != null)
   const humidityAvg = humVals.length
     ? Math.round(humVals.reduce((a, b) => a + b, 0) / humVals.length)
     : null

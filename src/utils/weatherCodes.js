@@ -23,20 +23,24 @@ const codes = {
   85: { label: 'Slight Snow Showers',    icon: 'snow'                              },
   86: { label: 'Heavy Snow Showers',     icon: 'snowflake'                         },
   95: { label: 'Thunderstorm',           icon: 'storm'                             },
-  96: { label: 'T-Storm w/ Hail',        icon: 'stormStrong'                       },
-  99: { label: 'T-Storm w/ Heavy Hail',  icon: 'stormStrong'                       },
+  // WMO calls 96 and 99 "thunderstorm with slight / heavy hail", but the hail
+  // part is only forecast in Central Europe (DWD ICON); every other model emits
+  // these as its strong-thunderstorm tier, so a hail label promises a reading
+  // that isn't there. Named for the intensity they actually carry.
+  96: { label: 'Heavy Thunderstorm',     icon: 'stormStrong'                       },
+  99: { label: 'Severe Thunderstorm',    icon: 'stormStrong'                       },
 }
 
 // WMO codes have no dedicated "heavy thunderstorm" tier — 95 covers slight and
-// moderate alike, and only the hail codes (96/99, mapped above) reach the strong
-// icon on their own. `severe` lets a caller with an out-of-band intensity signal
+// moderate alike, and only 96/99 (mapped above) reach the strong icon on their
+// own. `severe` lets a caller with an out-of-band intensity signal
 // (e.g. an active NWS Severe Thunderstorm Warning) upgrade a plain 95 to the
 // strong icon too. It only ever upgrades a thunderstorm; other codes pass through.
 export function getWeatherInfo(code, isNight = false, severe = false) {
   const entry = codes[code] ?? { label: 'Unknown', icon: 'therm' }
   let icon = isNight && entry.nightIcon ? entry.nightIcon : entry.icon
   let label = entry.label
-  if (severe && code === 95) { icon = 'stormStrong'; label = 'Severe T-Storm' }
+  if (severe && code === 95) { icon = 'stormStrong'; label = 'Severe Thunderstorm' }
   return { label, icon }
 }
 

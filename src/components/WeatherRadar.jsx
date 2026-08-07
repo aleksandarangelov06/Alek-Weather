@@ -102,17 +102,30 @@ function snapshot(el) {
   return clone
 }
 
-// Origin and reach of the iris, as the custom properties the keyframes read. The
-// radius is the distance to the furthest corner of the screen, so the circle
-// always finishes clear of it whichever corner the tap was near — the covers'
-// own calculation, against the viewport rather than against a card.
-function revealVars(x, y) {
+// Origin and reach of the iris, as the custom properties the keyframes read.
+// `box` is the border box of what is being clipped, in viewport coordinates, and
+// (x, y) is the tap in the same coordinates; clip-path resolves its position
+// against that box, so the origin is the tap measured from the box's corner and
+// the radius is the distance to the box's furthest one — the covers' own
+// calculation, against a screen-sized box rather than a card-sized one.
+//
+// Measured rather than assumed to be the viewport. `inset: 0` on a fixed element
+// is the viewport only while no ancestor has established a containing block for
+// it, and one transform, filter or backdrop-filter anywhere above the card is
+// enough to make it something else — at which point the box can start well above
+// the visible page and the circle arrives from off-screen (which reads as
+// opening out of the top-left corner, whatever was actually tapped). Reading the
+// box back means the geometry is right either way, and it is free: it happens on
+// the armed frame, which exists precisely to absorb this kind of work.
+function revealVars(x, y, box) {
+  const ox = x - box.left
+  const oy = y - box.top
   return {
-    '--reveal-x': `${x}px`,
-    '--reveal-y': `${y}px`,
+    '--reveal-x': `${ox}px`,
+    '--reveal-y': `${oy}px`,
     '--reveal-r': `${Math.hypot(
-      Math.max(x, window.innerWidth  - x),
-      Math.max(y, window.innerHeight - y),
+      Math.max(ox, box.width  - ox),
+      Math.max(oy, box.height - oy),
     )}px`,
   }
 }
@@ -126,11 +139,12 @@ const revealAnimates = () =>
   !window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 // mode: which half of the timeline the radar opens on — 'nowcast'/'both' start
-// on observed, 'future' starts on forecast. Inside the HRRR domain the map
-// carries its own Observed/Forecast toggle, so this is a starting point rather
-// than a lock: the setting decides what you see first, the toggle decides what
-// you see next. Outside the domain there are no forecast frames to switch to
-// and the toggle doesn't appear.
+// on observed, 'future' starts on forecast. Full-size and inside the HRRR domain
+// the map carries its own Observed/Forecast toggle, so this is a starting point
+// rather than a lock: the setting decides what you see first, the toggle decides
+// what you see next. Outside the domain there are no forecast frames to switch
+// to, and on the compact card there is no room to offer the switch, so in both
+// cases the setting is all there is and the toggle doesn't appear.
 //
 // fill: the card is the whole page (the web app's Radar tab) rather than one
 // block in a stack. The map then gets its controls and its pan/zoom straight
@@ -169,14 +183,16 @@ export function WeatherRadar({ location, timezone, mode = 'both', fill = false, 
 
   // Geometry of the iris, as custom properties — set from the point that was
   // tapped and kept for as long as the card is full-screen, so it closes back into
-  // where it opened from. Viewport rather than card coordinates: the expanded card
-  // is fixed to the viewport, so its box is the viewport's box, and the sky layer
-  // that gets the same clip is fixed to it too.
+  // where it opened from. Both clipped layers take the same values: they are the
+  // expanded card and the sky behind it, which share a box.
   //
   // Its presence is also what says there is a reveal at all: it is only ever set
   // on the path that animates, so the desktop app and reduced motion get the plain
   // switch they had before.
   const [revealStyle, setRevealStyle] = useState(null)
+  // The tap, in viewport coordinates, held so the armed frame can convert it
+  // against the card's measured box rather than an assumed one — see revealVars.
+  const tapPoint = useRef(null)
   // The compact card's box, measured on the way out of the stack. Going
   // full-screen means going position:fixed, which takes the card out of the flow
   // and lets the block around it collapse onto the drag handle — the page then
@@ -332,8 +348,19 @@ export function WeatherRadar({ location, timezone, mode = 'both', fill = false, 
     wheelEl.addEventListener('wheel', onWheel, { capture: true, passive: true })
 
     map.setView([location.latitude, location.longitude], 10)
-    L.circleMarker([location.latitude, location.longitude], {
-      radius: 5, fillColor: '#3b82f6', color: '#fff', weight: 2, fillOpacity: 1,
+    // Where you are. A DOM marker rather than the circleMarker this was, because
+    // Leaflet zooms by CSS-scaling a pane rather than redrawing it mid-gesture,
+    // and which pane decides what that does to the dot. Vectors live in the
+    // overlay pane, which is the one that gets the scale() — so the dot grew and
+    // shrank with the map for the whole animation and only snapped back to its
+    // 5px radius when the zoom settled. Markers are in a pane that is translated
+    // instead (markerZoomAnimation above), so a DOM dot is the same size on every
+    // frame. Sized in CSS to what the vector drew: a 12px circle, 2px of it white
+    // ring — see .radar-here.
+    L.marker([location.latitude, location.longitude], {
+      icon: L.divIcon({ className: 'radar-here', iconSize: [12, 12], iconAnchor: [6, 6] }),
+      interactive: false,
+      keyboard: false,
     }).addTo(map)
     mapInst.current = map
     setMapReady(true)
@@ -476,10 +503,17 @@ export function WeatherRadar({ location, timezone, mode = 'both', fill = false, 
     if (!revealAnimates()) { setExpanded(true); return }
     // Keyboard activation reports 0,0 — grow from the middle of the screen then.
     const fromPointer = e && (e.clientX || e.clientY)
-    setRevealStyle(revealVars(
-      fromPointer ? e.clientX : window.innerWidth / 2,
-      fromPointer ? e.clientY : window.innerHeight / 2,
-    ))
+    tapPoint.current = {
+      x: fromPointer ? e.clientX : window.innerWidth / 2,
+      y: fromPointer ? e.clientY : window.innerHeight / 2,
+    }
+    // Provisional geometry, against the viewport, so the armed frame has a shut
+    // window to render. It is remeasured against the card's real box on that
+    // frame (see the arm effect) — and only the radius would be wrong here
+    // anyway, which a zero-radius circle has no use for.
+    setRevealStyle(revealVars(tapPoint.current.x, tapPoint.current.y, {
+      left: 0, top: 0, width: window.innerWidth, height: window.innerHeight,
+    }))
     // The card goes full-screen straight away now, because it is the thing being
     // revealed — the iris is a window onto it, not a lid over it. 'arm' holds the
     // window shut for a frame so the switch isn't paid for out of the animation.
@@ -523,6 +557,15 @@ export function WeatherRadar({ location, timezone, mode = 'both', fill = false, 
       // middle of the iris. Leaflet bails early on a size it has already seen, so
       // the later call stays cheap.
       mapInst.current?.invalidateSize()
+      // The card is full-screen now, so this is the first moment its real box
+      // can be read — and the last before the circle moves. Whatever `inset: 0`
+      // turned out to resolve against, the origin and radius are against that
+      // same box from here on (see revealVars). The extra render is spent on the
+      // armed frame, behind a window that is still shut.
+      const box = cardRef.current?.getBoundingClientRect()
+      if (box && tapPoint.current) {
+        setRevealStyle(revealVars(tapPoint.current.x, tapPoint.current.y, box))
+      }
       inner = requestAnimationFrame(() => setPhase('in'))
     })
     return () => { cancelAnimationFrame(outer); cancelAnimationFrame(inner) }
@@ -807,8 +850,16 @@ export function WeatherRadar({ location, timezone, mode = 'both', fill = false, 
         {/* US only: outside the HRRR domain there are no forecast tiles to
             show, so rather than offer a switch that lands on a blank map the
             control isn't there at all. Sits above the scrubber because it is
-            what the scrubber is a scrubber of. */}
-        {canForecast && (
+            what the scrubber is a scrubber of.
+
+            Full-size only, on top of that — the two surfaces the radar gets a
+            screen to itself on, expanded and fill. The compact card in the stack
+            is a glance at the weather rather than a map to work, and its whole
+            tap target is "open me": a control that isn't that competes with it
+            in the space of a couple of rows. The view it is left on carries over
+            when the card collapses, so what the caption below says is showing is
+            still what is showing. */}
+        {(expanded || fill) && canForecast && (
           <div className="radar-view-toggle" role="group" aria-label="Radar timeline">
             {[
               { value: 'observed', label: 'Observed' },
