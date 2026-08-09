@@ -6,6 +6,7 @@ import {
   precipTier, tempColor, tempStyle, toTemp,
 } from '../../utils/weatherCodes'
 import { niceBounds, smoothPath, useMeasure } from './chartUtils'
+import { formatPrecip, formatWind } from '../../utils/units'
 import { averageAt, daylightLength, hourIndexesForDate, shortDate, weekdayLabel } from './webData'
 
 const CHART_H = 190
@@ -81,7 +82,7 @@ function DayStat({ icon: Icon, label, value, color }) {
   )
 }
 
-export function DailyPage({ weather, unit, colorCoding }) {
+export function DailyPage({ weather, unit, units, colorCoding }) {
   const [open, setOpen] = useState(0)
   const { daily, hourly, current, timezone } = weather
 
@@ -162,12 +163,12 @@ export function DailyPage({ weather, unit, colorCoding }) {
                     <DayStat
                       icon={Droplets}
                       label="Precipitation"
-                      value={daily.precipitation_sum?.[i] != null ? `${daily.precipitation_sum[i].toFixed(2)} in` : '—'}
+                      value={formatPrecip(daily.precipitation_sum?.[i], units)}
                     />
                     <DayStat
                       icon={Wind}
                       label="Max wind"
-                      value={daily.wind_speed_10m_max?.[i] != null ? `${Math.round(daily.wind_speed_10m_max[i])} mph` : '—'}
+                      value={formatWind(daily.wind_speed_10m_max?.[i], units)}
                     />
                     <DayStat
                       icon={Sun}

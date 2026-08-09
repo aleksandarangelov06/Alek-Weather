@@ -122,6 +122,7 @@ import { TABS as WEB_TABS, useWebTab } from './components/web/tabs'
 import { SplashHome } from './components/web/SplashHome'
 import { LoadingScreen } from './components/LoadingScreen'
 import { liveWeatherCode } from './utils/weatherCodes'
+import { loadUnits, saveUnit } from './utils/units'
 import { APP_VERSION, IS_ANDROID_APP } from './utils/version'
 import { UpdateToast } from './components/UpdateToast'
 import { IS_PHONE } from './utils/device'
@@ -211,11 +212,12 @@ const DEFAULT_COLOR_CODING = { current: true, hourly: true, daily: true, overvie
 const OVERVIEW_PARTS_KEY = 'alek-weather-overview-parts'
 const DEFAULT_OVERVIEW_PARTS = { insight: true, conditions: true, airQuality: true, clothing: true }
 const RADAR_ENHANCED_KEY = 'alek-weather-radar-enhanced'
-// Which half of the radar timeline the map opens on. The map itself carries an
-// Observed/Forecast toggle wherever forecast frames exist (US only), so this is
-// the starting side rather than the only side. 'both' is the retired value from
-// when the two halves shared one timeline; it reads as observed.
-const RADAR_MODE_KEY = 'alek-weather-radar-mode' // 'nowcast' | 'future'
+// How the radar timeline presents its two feeds.
+//   'combined'  one scrubber running observed → forecast, divided at now
+//   'split'     the two as separate timelines behind an Observed/Forecast toggle
+// Only US locations have forecast frames at all; elsewhere both settings come
+// out as the same observed-only scrubber.
+const RADAR_MODE_KEY = 'alek-weather-radar-mode' // 'combined' | 'split'
 
 function SortableBlock({ id, children }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
@@ -235,6 +237,11 @@ function SortableBlock({ id, children }) {
 
 function App() {
   const [unit, setUnit] = useState(() => localStorage.getItem('alek-weather-unit') ?? 'F')
+  // Wind, pressure, visibility and precipitation, as one object rather than
+  // four states: every consumer wants the whole set, and passing `units` keeps
+  // the prop lists from growing a member per measure. Temperature stays its own
+  // `unit` — it is threaded through colour coding and toTemp separately.
+  const [units, setUnits] = useState(loadUnits)
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem(THEME_KEY) ?? 'system')
   const [platformTheme, setPlatformTheme] = useState(() => {
     const saved = localStorage.getItem(PLATFORM_THEME_KEY)
@@ -259,10 +266,18 @@ function App() {
   const [nowcastMode, setNowcastMode] = useState(() => localStorage.getItem(NOWCAST_MODE_KEY) ?? 'auto')
   const [weatherAnimations, setWeatherAnimations] = useState(() => localStorage.getItem('alek-weather-animations') !== 'false')
   const [gyroscope, setGyroscope] = useState(() => localStorage.getItem('alek-weather-gyroscope') !== 'false')
-  const [radarEnhanced, setRadarEnhanced] = useState(() => localStorage.getItem(RADAR_ENHANCED_KEY) === 'true')
+  // Defaults on: radar is the only source that observes precipitation over the
+  // location itself, and it has caught storms every model and nearby station
+  // missed. `!== 'false'` so anyone who explicitly turned it off stays off.
+  const [radarEnhanced, setRadarEnhanced] = useState(() => localStorage.getItem(RADAR_ENHANCED_KEY) !== 'false')
   const [radarMode, setRadarMode] = useState(() => {
     const saved = localStorage.getItem(RADAR_MODE_KEY)
-    return saved === 'future' ? 'future' : 'nowcast'
+    // Migrating the values this key used to hold. 'both' was the single
+    // timeline, which is what 'combined' is now. 'nowcast' and 'future' were
+    // the retired "opens on" choice, and that only ever existed in the split
+    // layout, so either of them lands there.
+    if (saved === 'combined' || saved === 'both') return 'combined'
+    return 'split'
   })
   const [colorCoding, setColorCoding] = useState(() => {
     const saved = loadJSON(COLOR_CODING_KEY)
@@ -548,6 +563,11 @@ function App() {
     localStorage.setItem('alek-weather-unit', u)
   }
 
+  const changeUnitGroup = (group, value) => {
+    setUnits(prev => ({ ...prev, [group]: value }))
+    saveUnit(group, value)
+  }
+
   const changeShowOverview = (val) => {
     setShowOverview(val)
     localStorage.setItem(SHOW_OVERVIEW_KEY, String(val))
@@ -766,7 +786,6 @@ function App() {
   )
 
   const liveCode = weather ? liveWeatherCode(weather.current, weather.minutely_15, radarClear) : null
-  if (weather) console.log('[radar-enh] decision', { radarEnhanced, radarClear, rawCode: weather.current.weather_code, confirmed: weather.current.weather_code_confirmed, liveCode })
   const skyC     = weather ? skyClass(liveCode, weather.current.is_day) : ''
   const skyLevel = SKY_LEVEL[skyC] ?? ''
   // The sky level class is what tints the cards toward the sky (and flips the
@@ -813,10 +832,10 @@ function App() {
   }, [darkMode, skyC, weather, weatherAnimations])
 
   const blockComponents = weather && !loading ? {
-    overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} timezone={weather.timezone} hasActiveAlert={hasActiveAlert} unit={unit} airQuality={airQuality} showInsight={overviewParts.insight} showConditions={overviewParts.conditions} showAirQuality={overviewParts.airQuality} showClothing={overviewParts.clothing} colorCode={colorCoding.overview} />,
+    overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} timezone={weather.timezone} hasActiveAlert={hasActiveAlert} unit={unit} units={units} airQuality={airQuality} showInsight={overviewParts.insight} showConditions={overviewParts.conditions} showAirQuality={overviewParts.airQuality} showClothing={overviewParts.clothing} colorCode={colorCoding.overview} />,
     hourly:  <HourlyForecast hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.hourly} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
-    daily:   <DailyForecast daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.daily} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
-    details: <WeatherDetails current={weather.current} daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} airQuality={airQuality} colorCoding={colorCoding.details} />,
+    daily:   <DailyForecast daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} units={units} colorCoding={colorCoding.daily} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
+    details: <WeatherDetails current={weather.current} daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} units={units} airQuality={airQuality} colorCoding={colorCoding.details} />,
     radar:   <WeatherRadar location={location} timezone={weather.timezone} mode={radarMode} sky={weatherAnimations ? skyC : ''} />,
     nowcast: <PrecipNowcast minutely={weather.minutely_15} currentTime={weather.current.time} mode={nowcastMode} current={weather.current} radarClear={radarClear} />,
   } : null
@@ -863,6 +882,7 @@ function App() {
       airQuality={airQuality}
       alerts={alerts}
       unit={unit}
+      units={units}
       radarClear={radarClear}
       lastUpdated={lastUpdated}
       loading={loading}
@@ -1196,6 +1216,8 @@ function App() {
           onCardTransparencyChange={changeCardTransparency}
           unit={unit}
           onUnitChange={changeUnit}
+          units={units}
+          onUnitGroupChange={changeUnitGroup}
           showOverview={showOverview}
           onShowOverviewChange={changeShowOverview}
           nowcastMode={nowcastMode}

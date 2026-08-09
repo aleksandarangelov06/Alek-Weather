@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { ArrowLeft, ChevronRight, ChevronDown, X, Info } from 'lucide-react'
 import { APP_VERSION, ANDROID_VERSION, IS_ANDROID_APP } from '../utils/version'
 import { IS_PHONE } from '../utils/device'
+import { UNIT_GROUPS, UNIT_GROUP_KEYS } from '../utils/units'
 
 function SettingRow({ label, children }) {
   return (
@@ -629,7 +630,7 @@ function ThemeView({ darkMode, onDarkModeChange, platformTheme, onPlatformThemeC
   )
 }
 
-function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastMode, onNowcastModeChange, radarMode, onRadarModeChange, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onThemeOpen, onNotificationsOpen, weatherAnimations, onWeatherAnimationsChange, radarEnhanced, onRadarEnhancedChange, installPrompt, onInstall, webShell }) {
+function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, units, onUnitGroupChange, nowcastMode, onNowcastModeChange, radarMode, onRadarModeChange, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onThemeOpen, onNotificationsOpen, weatherAnimations, onWeatherAnimationsChange, radarEnhanced, onRadarEnhancedChange, installPrompt, onInstall, webShell }) {
   return (
     <>
       <div className="settings-group-label">Appearance</div>
@@ -679,6 +680,11 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastM
         )}
       </div>
 
+      {/* Temperature is its own state and its own row; the rest are driven off
+          the UNIT_GROUPS registry, so adding a measure or an option there puts
+          it here without a second edit. Every one of these is display-only —
+          the app fetches and reasons in one fixed set of units and converts at
+          the last step, so switching is instant and needs no refetch. */}
       <div className="settings-group-label">Units</div>
       <div className="card settings-card">
         <SettingRow label="Temperature">
@@ -691,6 +697,15 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastM
             ]}
           />
         </SettingRow>
+        {UNIT_GROUP_KEYS.map((group) => (
+          <SettingRow key={group} label={UNIT_GROUPS[group].label}>
+            <SegmentedControl
+              value={units[group]}
+              onChange={(value) => onUnitGroupChange(group, value)}
+              options={UNIT_GROUPS[group].options}
+            />
+          </SettingRow>
+        ))}
       </div>
 
       <div className="settings-group-label">Tiles</div>
@@ -722,17 +737,17 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, nowcastM
 
       <div className="settings-group-label">Radar</div>
       <div className="card settings-card">
-        {/* Which side of the timeline the radar opens on. US locations can
-            switch sides on the map itself, so this is a default rather than a
-            restriction; elsewhere there is no forecast to open on and the
-            radar stays observed whatever this says. */}
-        <SettingRow label="Opens on">
+        {/* Whether the observed and forecast halves share one scrubber or sit
+            behind a toggle on the map. Only US locations have forecast frames;
+            elsewhere there is no second half to arrange and the radar is an
+            observed timeline whatever this says. */}
+        <SettingRow label="Timeline">
           <SegmentedControl
             value={radarMode}
             onChange={onRadarModeChange}
             options={[
-              { value: 'nowcast', label: 'Observed' },
-              { value: 'future',  label: 'Forecast' },
+              { value: 'combined', label: 'Combined' },
+              { value: 'split',    label: 'Split'    },
             ]}
           />
         </SettingRow>

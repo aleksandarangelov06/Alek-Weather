@@ -9,7 +9,7 @@ import { AirQualityPage } from './AirQualityPage'
 // App.jsx), so the selection is passed in rather than owned here.
 export function WebLayout(props) {
   const {
-    weather, location, airQuality, radarMode, unit, radarClear, colorCoding,
+    weather, location, airQuality, radarMode, unit, units, radarClear, colorCoding,
     weatherAnimations, tab, onNavigate,
   } = props
 
@@ -21,16 +21,18 @@ export function WebLayout(props) {
           <HourlyPage
             weather={weather}
             unit={unit}
+            units={units}
             radarClear={radarClear}
             colorCoding={colorCoding}
             weatherAnimations={weatherAnimations}
           />
         )}
-        {tab === 'daily' && <DailyPage weather={weather} unit={unit} colorCoding={colorCoding} />}
+        {tab === 'daily' && <DailyPage weather={weather} unit={unit} units={units} colorCoding={colorCoding} />}
         {tab === 'details' && (
           <DetailsPage
             weather={weather}
             unit={unit}
+            units={units}
             airQuality={airQuality}
             colorCoding={colorCoding}
             onNavigate={onNavigate}

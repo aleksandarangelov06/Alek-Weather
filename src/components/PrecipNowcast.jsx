@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
 import { liveWeatherCode, precipTier, SNOW_CODES } from '../utils/weatherCodes'
+import { useMeasure } from './web/chartUtils'
 
 // Thresholds in inches/15min (precipitation_unit=inch in API params)
 const MAX_P   = 0.12   // ~12mm/hr ceiling
@@ -12,26 +13,37 @@ const SPAN_MIN = 60    // minutes to display on X axis
 // model reports no measured amount — the weather code is the only signal.
 const TIER_RATE = { 1: LIGHT_P, 2: MED_P, 3: MAX_P, 4: MAX_P }
 
-// SVG layout. The viewBox height is fixed and the width has two settings, which
-// is what controls how tall the card is: the svg is rendered at 100% width, so
-// its height is that width times VH/VW. On a phone the card is one of a stack
-// and 300 wide gives it presence; in the web app's column it would be a 220px
-// poster of a one-hour trace, so a wider box flattens the same drawing into the
-// height it needs — and scales the type down with it, since font sizes below
-// are in viewBox units too.
-const VW_PHONE = 300, VW_WIDE = 480
-const VH = 90
-const PL = 44, PR = 6, PT = 8, PB = 22
-const CX = PL
-const CH = VH - PT - PB   // 60
-const CB = PT + CH         // 68 — chart bottom y
+// SVG layout, in two flavours.
+//
+// On a phone the card is one of a narrow stack, so the drawing is a fixed
+// 300×90 viewBox rendered at 100% width: the height follows the ratio, and
+// within the width a phone can be that lands somewhere sensible.
+//
+// The web card is the full page width, and there the same trick scales without
+// bound — height is width × VH/VW, so a 2560px monitor turned a one-hour trace
+// into a 400px poster with 30px axis labels. Everything in the viewBox grows
+// with the window, which is exactly what a chart of five points must not do. So
+// the wide chart is drawn in real pixels at a fixed height instead, the way the
+// other web charts (HourlyChart, Sparkline) already are: only the horizontal
+// span stretches, and the type, strokes and gutters stay put.
+const PHONE = {
+  h: 90, pl: 44, pr: 6, pt: 8, pb: 22,
+  bandFont: 7, timeFont: 7.5, hair: 0.8, dash: '3 3', stroke: 1.5, gap: 4,
+}
+const WIDE = {
+  h: 148, pl: 62, pr: 14, pt: 12, pb: 26,
+  bandFont: 11, timeFont: 11, hair: 1, dash: '4 4', stroke: 2, gap: 10,
+}
+// Width to draw at before the ResizeObserver has first reported. The height is
+// fixed either way, so guessing wrong costs a redrawn curve, not a jump in the
+// page — and the plot wrapper clips, so an over-wide guess can't push a
+// scrollbar onto the page for that frame.
+const WIDE_FALLBACK_W = 900
 
-const toY = (p) => CB - (Math.min(Math.max(p, 0), MAX_P) / MAX_P) * CH
+// Rate → y, against a chart bottom `cb` and height `ch` that differ per flavour.
+const yFor = (p, cb, ch) => cb - (Math.min(Math.max(p, 0), MAX_P) / MAX_P) * ch
 
-const Y_LIGHT = toY(LIGHT_P)  // 58
-const Y_MED   = toY(MED_P)    // 28
-
-function buildPath(pts) {
+function buildPath(pts, cb) {
   if (pts.length < 2) return { line: '', area: '' }
   const f = (n) => n.toFixed(2)
   let d = `M${f(pts[0].x)},${f(pts[0].y)}`
@@ -42,13 +54,25 @@ function buildPath(pts) {
   }
   return {
     line: d,
-    area: `${d} L${f(pts.at(-1).x)},${CB} L${f(pts[0].x)},${CB} Z`,
+    area: `${d} L${f(pts.at(-1).x)},${cb} L${f(pts[0].x)},${cb} Z`,
   }
 }
 
 export function PrecipNowcast({ minutely, currentTime, mode = 'auto', current = null, radarClear = null, wide = false }) {
-  const VW = wide ? VW_WIDE : VW_PHONE
-  const CW = VW - PL - PR
+  const [plotRef, measured] = useMeasure()
+
+  const L = wide ? WIDE : PHONE
+  // Phone: the viewBox is the 300-unit design box and the svg scales it. Wide:
+  // one unit is one CSS pixel, so the box is however wide the card turned out.
+  const VW = wide ? (measured || WIDE_FALLBACK_W) : 300
+  const VH = L.h
+  const CX = L.pl
+  const CW = Math.max(VW - L.pl - L.pr, 1)
+  const CH = VH - L.pt - L.pb
+  const CB = L.pt + CH
+
+  const Y_LIGHT = yFor(LIGHT_P, CB, CH)
+  const Y_MED   = yFor(MED_P, CB, CH)
   // Live, observation-corrected current condition. The minutely_15 trace can read
   // flat/zero at onset while a station already observes rain (the nowcast lag
   // handled in liveWeatherCode), so this — not the forward trace — is the source
@@ -72,7 +96,7 @@ export function PrecipNowcast({ minutely, currentTime, mode = 'auto', current = 
       const minFromStart = i * 15
       return {
         x: CX + (minFromStart / SPAN_MIN) * CW,
-        y: toY(precip[si + i] ?? 0),
+        y: yFor(precip[si + i] ?? 0, CB, CH),
         p: precip[si + i] ?? 0,
         min: minFromStart,
       }
@@ -89,7 +113,7 @@ export function PrecipNowcast({ minutely, currentTime, mode = 'auto', current = 
       const measured = (current?.precipitation ?? 0) / 4
       const fromCode = TIER_RATE[precipTier(liveCode)] ?? 0
       const observedNow = Math.max(measured, fromCode)
-      if (observedNow > pts[0].p) pts[0] = { ...pts[0], p: observedNow, y: toY(observedNow) }
+      if (observedNow > pts[0].p) pts[0] = { ...pts[0], p: observedNow, y: yFor(observedNow, CB, CH) }
     }
 
     const allDry = pts.every(p => p.p < 0.001)
@@ -97,7 +121,7 @@ export function PrecipNowcast({ minutely, currentTime, mode = 'auto', current = 
     // band. A flat trace of drizzle (below LIGHT_P) doesn't count as "it'll rain".
     const willRain = pts.some(p => p.p >= LIGHT_P)
     return { pts, allDry, willRain }
-  }, [minutely, currentTime, rainingNow, liveCode, current?.precipitation, CW])
+  }, [minutely, currentTime, rainingNow, liveCode, current?.precipitation, CX, CW, CB, CH])
 
   if (!data) return null
   if (mode === 'off') return null
@@ -111,16 +135,19 @@ export function PrecipNowcast({ minutely, currentTime, mode = 'auto', current = 
     if (!rainingNow && !willRain) return null
   }
 
-  const { line, area } = buildPath(pts)
+  const { line, area } = buildPath(pts, CB)
 
   const xLabels = pts.slice(1).map(p => ({
     x: p.x,
     label: p.min >= 60 ? '+1hr' : `+${p.min}m`,
   }))
 
-  const yHeavyLabel = (PT + Y_MED) / 2 + 3
-  const yMedLabel   = (Y_MED + Y_LIGHT) / 2 + 3
-  const yLightLabel = (Y_LIGHT + CB) / 2 + 3
+  // Band labels sit in the middle of their band; the nudge is the half-cap-height
+  // that turns an SVG text baseline into a visual centre, so it tracks the type size.
+  const nudge = L.bandFont * 0.36
+  const yHeavyLabel = (L.pt + Y_MED) / 2 + nudge
+  const yMedLabel   = (Y_MED + Y_LIGHT) / 2 + nudge
+  const yLightLabel = (Y_LIGHT + CB) / 2 + nudge
 
   return (
     <div className="card nowcast-card">
@@ -130,43 +157,51 @@ export function PrecipNowcast({ minutely, currentTime, mode = 'auto', current = 
           ? <span className="nowcast-now">{SNOW_CODES.has(liveCode) ? 'Snowing now' : 'Raining now'}</span>
           : allDry && <span className="nowcast-dry">None expected</span>}
       </div>
-      <svg
-        viewBox={`0 0 ${VW} ${VH}`}
-        style={{ width: '100%', height: 'auto', display: 'block', marginTop: 10 }}
-        aria-label="Next-hour precipitation forecast"
-      >
-        {/* Dashed zone dividers */}
-        <line x1={CX} y1={Y_MED}   x2={CX + CW} y2={Y_MED}
-          stroke="var(--border)" strokeWidth="0.8" strokeDasharray="3 3" />
-        <line x1={CX} y1={Y_LIGHT} x2={CX + CW} y2={Y_LIGHT}
-          stroke="var(--border)" strokeWidth="0.8" strokeDasharray="3 3" />
+      {/* The measured box. Wide, the svg is sized in pixels to match it, so one
+          viewBox unit is one pixel; on a phone the viewBox ratio scales it. */}
+      <div ref={plotRef} style={{ marginTop: 10, overflow: 'hidden' }}>
+        <svg
+          viewBox={`0 0 ${VW} ${VH}`}
+          width={wide ? VW : undefined}
+          height={wide ? VH : undefined}
+          style={wide
+            ? { display: 'block' }
+            : { width: '100%', height: 'auto', display: 'block' }}
+          aria-label="Next-hour precipitation forecast"
+        >
+          {/* Dashed zone dividers */}
+          <line x1={CX} y1={Y_MED}   x2={CX + CW} y2={Y_MED}
+            stroke="var(--border)" strokeWidth={L.hair} strokeDasharray={L.dash} />
+          <line x1={CX} y1={Y_LIGHT} x2={CX + CW} y2={Y_LIGHT}
+            stroke="var(--border)" strokeWidth={L.hair} strokeDasharray={L.dash} />
 
-        {/* Baseline */}
-        <line x1={CX} y1={CB} x2={CX + CW} y2={CB}
-          stroke="var(--border)" strokeWidth="0.8" />
+          {/* Baseline */}
+          <line x1={CX} y1={CB} x2={CX + CW} y2={CB}
+            stroke="var(--border)" strokeWidth={L.hair} />
 
-        {/* Area fill */}
-        <path d={area} fill="var(--accent)" fillOpacity="0.15" />
-        {/* Stroke line */}
-        <path d={line} fill="none" stroke="var(--accent)" strokeWidth="1.5"
-          strokeLinecap="round" strokeLinejoin="round" />
+          {/* Area fill */}
+          <path d={area} fill="var(--accent)" fillOpacity="0.15" />
+          {/* Stroke line */}
+          <path d={line} fill="none" stroke="var(--accent)" strokeWidth={L.stroke}
+            strokeLinecap="round" strokeLinejoin="round" />
 
-        {/* Y-axis labels */}
-        <text x={CX - 4} y={yHeavyLabel} textAnchor="end" fontSize="7"
-          fill="var(--text-tertiary)" fontFamily="inherit" fontWeight="600">HEAVY</text>
-        <text x={CX - 4} y={yMedLabel}   textAnchor="end" fontSize="7"
-          fill="var(--text-tertiary)" fontFamily="inherit" fontWeight="600">MED</text>
-        <text x={CX - 4} y={yLightLabel} textAnchor="end" fontSize="7"
-          fill="var(--text-tertiary)" fontFamily="inherit" fontWeight="600">LIGHT</text>
+          {/* Y-axis labels */}
+          <text x={CX - L.gap} y={yHeavyLabel} textAnchor="end" fontSize={L.bandFont}
+            fill="var(--text-tertiary)" fontFamily="inherit" fontWeight="600">HEAVY</text>
+          <text x={CX - L.gap} y={yMedLabel}   textAnchor="end" fontSize={L.bandFont}
+            fill="var(--text-tertiary)" fontFamily="inherit" fontWeight="600">MED</text>
+          <text x={CX - L.gap} y={yLightLabel} textAnchor="end" fontSize={L.bandFont}
+            fill="var(--text-tertiary)" fontFamily="inherit" fontWeight="600">LIGHT</text>
 
-        {/* X-axis time labels */}
-        {xLabels.map(({ x, label }) => (
-          <text key={label} x={x} y={VH - 5} textAnchor="middle" fontSize="7.5"
-            fill="var(--text-tertiary)" fontFamily="inherit">
-            {label}
-          </text>
-        ))}
-      </svg>
+          {/* X-axis time labels */}
+          {xLabels.map(({ x, label }) => (
+            <text key={label} x={x} y={VH - L.pb / 4} textAnchor="middle" fontSize={L.timeFont}
+              fill="var(--text-tertiary)" fontFamily="inherit">
+              {label}
+            </text>
+          ))}
+        </svg>
+      </div>
     </div>
   )
 }

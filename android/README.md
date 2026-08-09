@@ -44,8 +44,32 @@ of the build, so it does not depend on the Pages site being up.
 
 ## Build
 
-Needs JDK 17, Gradle 8.7, and Android SDK platform/build-tools 34 — all already
-installed under `~/android-tools` (the same toolchain McBusy uses).
+Needs JDK 17, Gradle 8.7, and Android SDK platform/build-tools 34, all under
+`~/android-tools` (the same toolchain McBusy uses). `build-apk.ps1` points
+`JAVA_HOME` and `ANDROID_HOME` at them itself, so nothing has to be on `PATH`
+and there is no `local.properties` to keep out of the repo.
+
+    ~/android-tools/
+      jdk/jdk-17.*/          Temurin 17 (JDK 21+ will not work: AGP 8.2.2)
+      gradle-8.7/            Gradle 8.x (AGP 8.2.2 does not support Gradle 9)
+      sdk/                   ANDROID_HOME — cmdline-tools/latest, platforms/android-34,
+                             build-tools/34.0.0, platform-tools
+
+To rebuild that toolchain from scratch, fetch [Temurin 17][t], [Gradle 8.7][g],
+and the [Android command-line tools][c] into the layout above (the SDK tools go
+in `sdk/cmdline-tools/latest`), then:
+
+```
+$env:JAVA_HOME = "$env:USERPROFILE\android-tools\jdk\jdk-17.0.20+8"
+$sdk = "$env:USERPROFILE\android-tools\sdk"
+& "$sdk\cmdline-tools\latest\bin\sdkmanager.bat" --sdk_root=$sdk --licenses
+& "$sdk\cmdline-tools\latest\bin\sdkmanager.bat" --sdk_root=$sdk `
+    platform-tools "platforms;android-34" "build-tools;34.0.0"
+```
+
+[t]: https://adoptium.net/temurin/releases/?version=17&os=windows&arch=x64
+[g]: https://services.gradle.org/distributions/gradle-8.7-bin.zip
+[c]: https://developer.android.com/studio#command-line-tools-only
 
 ```
 powershell -ExecutionPolicy Bypass -File android\build-apk.ps1

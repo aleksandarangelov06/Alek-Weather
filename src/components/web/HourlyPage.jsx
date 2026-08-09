@@ -7,6 +7,7 @@ import {
 } from '../../utils/weatherCodes'
 import { WebTabs } from './WebTabs'
 import { currentHourIndex, shortDate, sliceHourly, weekdayLabel } from './webData'
+import { unitSuffix, unitText } from '../../utils/units'
 
 // The longest window the table offers. The API returns a week of hours, which
 // is more rows than anyone scrolls; three days is where the old 24/48/72 range
@@ -34,7 +35,7 @@ const METRICS = [
   { key: 'humidity', label: 'Humidity',     field: 'humidity', scale: 'percent' },
 ]
 
-export function HourlyPage({ weather, unit, radarClear, colorCoding }) {
+export function HourlyPage({ weather, unit, units, radarClear, colorCoding }) {
   const [metric, setMetric] = useState('overview')
   const { current, hourly, daily, timezone } = weather
   const start = currentHourIndex(hourly, timezone)
@@ -120,8 +121,8 @@ export function HourlyPage({ weather, unit, radarClear, colorCoding }) {
       case 'wind':
       case 'gust':
         return {
-          text: v != null ? `${Math.round(v)}` : '—',
-          unit: v != null ? ` mph${active.key === 'wind' && h.windDir[i] != null ? ` ${getWindDirection(h.windDir[i])}` : ''}` : '',
+          text: v != null ? `${unitText('wind', v, units)}` : '—',
+          unit: v != null ? ` ${unitSuffix('wind', units)}${active.key === 'wind' && h.windDir[i] != null ? ` ${getWindDirection(h.windDir[i])}` : ''}` : '',
           pct: barPct(v),
         }
       default: {
@@ -244,8 +245,8 @@ export function HourlyPage({ weather, unit, radarClear, colorCoding }) {
                             aria-hidden="true"
                           />
                         )}
-                        {h.wind[i] != null ? `${Math.round(h.wind[i])}` : '—'}
-                        <span className="web-unit"> mph {h.windDir[i] != null ? getWindDirection(h.windDir[i]) : ''}</span>
+                        {h.wind[i] != null ? unitText('wind', h.wind[i], units) : '—'}
+                        <span className="web-unit"> {unitSuffix('wind', units)} {h.windDir[i] != null ? getWindDirection(h.windDir[i]) : ''}</span>
                       </span>
                       <span className="web-num">{h.humidity[i] != null ? `${Math.round(h.humidity[i])}%` : '—'}</span>
                       <span className="web-num" style={colorCoding.details && h.uv[i] != null ? { color: uv.color } : undefined}>

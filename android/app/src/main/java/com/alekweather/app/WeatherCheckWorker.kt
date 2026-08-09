@@ -36,10 +36,15 @@ import kotlin.math.roundToInt
  * take the same path and share the one dedup record in [NotifyStore].
  *
  * Data comes straight from Open-Meteo and the NWS, not from the page's blended
- * forecast: a background pass has no WebView to ask. That means a background
- * rain notification is based on the raw model where an in-app one would have
- * been NWS-corrected — close enough for "rain in the next 12 hours", and the
- * alternative is spinning up a headless WebView every hour.
+ * forecast: a background pass has no WebView to ask. [NwsForecast] closes most
+ * of that gap by applying the same NWS overlay the page does, so a background
+ * notification and an in-app one are reading the same corrected codes and
+ * probabilities rather than the raw model.
+ *
+ * What it does not port is the page's *current condition* pipeline — station
+ * observations, radar sampling, the minutely nowcast. None of it applies here:
+ * every rule in this file is about the forecast (the next 12 hours, tomorrow),
+ * and nothing notifies about what the sky is doing this minute.
  */
 class WeatherCheckWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
 
@@ -71,6 +76,16 @@ class WeatherCheckWorker(context: Context, params: WorkerParameters) : Worker(co
             try {
                 val data = JSONObject(httpGet(forecastUrl(lat, lon)))
                 val zone = zoneOf(data.optString("timezone"))
+                // Overlay the NWS forecast for US locations so the notification
+                // agrees with the app. Swallowed separately: the overlay is an
+                // improvement on Open-Meteo, never a prerequisite, so an NWS
+                // outage must not cost the notification entirely — and must not
+                // trigger the retry below, which exists for the forecast fetch.
+                try {
+                    NwsForecast.overlay(data, lat, lon, zone) { url -> httpGet(url, nws = true) }
+                } catch (e: Exception) {
+                    // Keep the Open-Meteo values.
+                }
                 if (types.contains("rain")) checkRain(store, data, zone)
                 if (types.contains("tomorrow")) checkTomorrow(store, data, zone)
             } catch (e: Exception) {
@@ -388,8 +403,16 @@ class WeatherCheckWorker(context: Context, params: WorkerParameters) : Worker(co
          * renumbering. Anything absent is a dry hour, fog and cloud included.
          */
         private val PRECIP = mapOf(
-            96 to Precip(100, "Thunderstorms With Hail", R.drawable.ic_notify_storm),
-            99 to Precip(100, "Thunderstorms With Hail", R.drawable.ic_notify_storm),
+            // WMO calls 96 and 99 "thunderstorm with slight / heavy hail", but
+            // the hail is only forecast in Central Europe (DWD ICON); every other
+            // model emits these as its strong-thunderstorm tier. Named for the
+            // intensity they actually carry, matching getWeatherInfo in
+            // weatherCodes.js. This stopped being cosmetic once NwsForecast
+            // started merging NWS codes in: `tsra_hi` maps to 96, so a routine
+            // US afternoon storm now reaches this table and would otherwise
+            // promise hail on every one of them.
+            99 to Precip(100, "Severe Thunderstorms", R.drawable.ic_notify_storm),
+            96 to Precip(98, "Heavy Thunderstorms", R.drawable.ic_notify_storm),
             95 to Precip(95, "Thunderstorms", R.drawable.ic_notify_storm),
             67 to Precip(90, "Heavy Freezing Rain", R.drawable.ic_notify_ice),
             66 to Precip(85, "Freezing Rain", R.drawable.ic_notify_ice),

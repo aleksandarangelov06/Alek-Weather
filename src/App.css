@@ -3534,72 +3534,74 @@ body {
    attribute note in App.jsx) and keeps the cut. WeatherRadar sets the geometry
    only on the path that animates, so the two can't disagree about which is which. */
 
-/* The armed frame: shut, and not animating. Everything the switch to full-screen
-   costs is paid here, behind a window with nothing through it. */
-:root[data-shell="mobile"] .radar-iris--shut {
-  -webkit-clip-path: circle(0px at var(--reveal-x) var(--reveal-y));
-  clip-path: circle(0px at var(--reveal-x) var(--reveal-y));
+/* At rest the three wrappers are not boxes at all, so the card lays out in the
+   stack exactly as it would without them. They exist permanently only because
+   putting them up at open time would re-parent the card, remount its subtree and
+   take Leaflet's map instance with it. */
+.radar-iris,
+.radar-iris-circle,
+.radar-iris-inner {
+  display: contents;
 }
 
-/* Same duration and same symmetric curve as the covers — the reasoning for both is
-   up beside --reveal-dur, and it applies here more strongly than there: a screen's
-   corners are further out than a card's, so an even larger share of the radius is
-   off-frame, and an even smaller share of a front-loaded curve would be visible. */
-:root[data-shell="mobile"] .radar-iris--in {
-  animation: radarIrisIn var(--reveal-dur) var(--reveal-ease) forwards;
+/* Moving. The frame takes the same `inset: 0` the card takes when expanded, so
+   it lands on precisely the box the card is about to fill — that is what makes
+   the geometry independent of what `position: fixed` happens to resolve against
+   here (see irisGeometry). Everything below is offset inside this box. */
+:root[data-shell="mobile"] .radar-iris--on {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 399;
 }
 
-:root[data-shell="mobile"] .radar-iris--out {
-  animation: radarIrisOut var(--reveal-dur) var(--reveal-ease) forwards;
+/* The window: round, clipping, and the only thing that scales. Its box comes
+   from JS as lengths, so the circle is the same circle whatever the frame
+   measured. */
+:root[data-shell="mobile"] .radar-iris--on .radar-iris-circle {
+  display: block;
+  position: absolute;
+  border-radius: 50%;
+  overflow: hidden;
+  transform-origin: 50% 50%;
+  will-change: transform, opacity;
 }
 
-/* Both radii are lengths from JS rather than percentages, so the circle is the
-   same circle on both layers whatever each one's box turns out to be. --reveal-r
-   already clears the furthest corner, so the open state is edge to edge; the clip
-   is then dropped altogether once it lands, rather than left sitting on two
-   full-screen layers for as long as the radar is up. */
-@keyframes radarIrisIn {
-  from {
-    -webkit-clip-path: circle(0px at var(--reveal-x) var(--reveal-y));
-    clip-path: circle(0px at var(--reveal-x) var(--reveal-y));
-  }
-  to {
-    -webkit-clip-path: circle(var(--reveal-r) at var(--reveal-x) var(--reveal-y));
-    clip-path: circle(var(--reveal-r) at var(--reveal-x) var(--reveal-y));
-  }
+/* The counter-scale, sized to the frame and offset back onto it, so that the two
+   transforms cancel and the map holds still at its true size while the circle
+   grows around it. */
+:root[data-shell="mobile"] .radar-iris--on .radar-iris-inner {
+  display: block;
+  position: absolute;
+  will-change: transform;
 }
 
-@keyframes radarIrisOut {
-  from {
-    -webkit-clip-path: circle(var(--reveal-r) at var(--reveal-x) var(--reveal-y));
-    clip-path: circle(var(--reveal-r) at var(--reveal-x) var(--reveal-y));
-  }
-  to {
-    -webkit-clip-path: circle(0px at var(--reveal-x) var(--reveal-y));
-    clip-path: circle(0px at var(--reveal-x) var(--reveal-y));
-  }
+/* Inside a transformed ancestor `fixed` resolves against that ancestor, which
+   would size both layers to the circle. They fill the counter-scaled layer
+   instead — the same rect, reached a different way. */
+:root[data-shell="mobile"] .radar-iris--on .radar-expanded,
+:root[data-shell="mobile"] .radar-iris--on .radar-sky {
+  position: absolute;
 }
 
 /* Inert while the window is moving: the map behind it is already full-screen and
    draggable, and a tap that lands on a part of it not yet revealed is not a tap
    anyone could have aimed. */
-:root[data-shell="mobile"] :is(.radar-iris--shut, .radar-iris--in, .radar-iris--out) .radar-map-wrap,
-:root[data-shell="mobile"] :is(.radar-iris--shut, .radar-iris--in, .radar-iris--out) .radar-controls {
+:root[data-shell="mobile"] .radar-iris--on .radar-map-wrap,
+:root[data-shell="mobile"] .radar-iris--on .radar-controls {
   pointer-events: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
   /* WeatherRadar skips the reveal outright under this — expand goes straight to
-     full-screen — so none of this should get the chance to run; it covers the
-     setting being turned on midway. Restated at matching specificity, since a
-     media query adds none of its own. Open, not shut: the settled state of a
-     window that isn't going to animate is the one you can see through. */
-  :root[data-shell="mobile"] .radar-iris--shut,
-  :root[data-shell="mobile"] .radar-iris--in,
-  :root[data-shell="mobile"] .radar-iris--out {
-    animation: none;
-    -webkit-clip-path: none;
-    clip-path: none;
+     full-screen — so this should never get the chance to run; it covers the
+     setting being turned on midway. Collapsing the wrappers back to display:
+     contents drops the circle and leaves the card full-screen, which is the
+     settled state of a reveal that is not going to animate. */
+  :root[data-shell="mobile"] .radar-iris--on,
+  :root[data-shell="mobile"] .radar-iris--on .radar-iris-circle,
+  :root[data-shell="mobile"] .radar-iris--on .radar-iris-inner {
+    display: contents;
   }
 }
 
@@ -4545,6 +4547,11 @@ body {
   color: var(--md-on-surface-variant);
 }
 
+:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-now-divider {
+  border-left-color: var(--md-outline);
+  opacity: 1;
+}
+
 /* Legend: the intensity ramp is the point of it, so the blocks get the height
    of a Material track and the labels get label-medium rather than the 10px
    tertiary whisper they had. */
@@ -5312,10 +5319,22 @@ body {
   box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
-/* Observed → forecast boundary. Sits on the column's leading edge, i.e. midway
-   between the last observed tick and the first forecast one, so the scrubber
-   visibly splits into "what happened" and "what's expected". Dashed and tertiary
-   so it separates without competing with the active tick. */
+/* Observed → forecast boundary, drawn in the combined timeline. Sits on the
+   column's leading edge, i.e. midway between the last observed tick and the
+   first forecast one, so the scrubber visibly splits into "what happened" and
+   "what's expected". Dashed and tertiary so it separates without competing with
+   the active tick. */
+.radar-now-divider {
+  position: absolute;
+  left: 0;
+  bottom: -4px;
+  width: 0;
+  height: 36px;
+  border-left: 1px dashed var(--text-tertiary);
+  opacity: 0.55;
+  pointer-events: none;
+}
+
 .radar-tick-label {
   position: absolute;
   bottom: -20px;
@@ -5793,9 +5812,13 @@ body {
 .sky-lvl-dark .radar-tick-label,
 .sky-lvl-darkest .radar-tick-label { color: rgba(255,255,255,0.65); }
 
-/* Feed attribution follows the same sky treatment as the tick labels: it is
-   var(--text-tertiary) by default, which goes muddy against the dark sky
-   backgrounds. */
+/* Boundary divider and feed attribution follow the same sky treatment as the
+   tick labels — both are var(--text-tertiary) by default, which goes muddy
+   against the dark sky backgrounds. */
+.sky-lvl-slight .radar-now-divider,
+.sky-lvl-medium .radar-now-divider,
+.sky-lvl-dark .radar-now-divider,
+.sky-lvl-darkest .radar-now-divider { border-left-color: rgba(255,255,255,0.65); }
 
 .sky-lvl-slight .radar-source,
 .sky-lvl-medium .radar-source,

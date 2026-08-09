@@ -25,8 +25,23 @@ $root    = Split-Path -Parent $PSScriptRoot          # the WeatherApp repo
 $android = $PSScriptRoot
 $assets  = Join-Path $android 'app\src\main\assets'
 
-$env:JAVA_HOME = Join-Path $tools 'jdk\jdk-17.0.19+10'
-$gradle        = Join-Path $tools 'gradle-8.7\bin\gradle.bat'
+# Resolved by glob rather than pinned to an exact build: the JDK 17 directory
+# name carries its patch version (jdk-17.0.20+8), so hardcoding one means the
+# script breaks the next time the toolchain is refreshed. Any 17.x will do:
+# AGP 8.2.2 requires 17 and does not yet run on 21+.
+#
+# Keep this file pure ASCII. Windows PowerShell 5.1 reads a .ps1 with no BOM as
+# ANSI, so a stray em-dash in a comment becomes mojibake and takes the parser
+# down with it - the error lands on an unrelated line, which is a genuinely
+# baffling ten minutes if you have not seen it before.
+$jdk = Get-ChildItem (Join-Path $tools 'jdk') -Directory -Filter 'jdk-17*' -ErrorAction SilentlyContinue |
+       Sort-Object Name | Select-Object -Last 1
+if (-not $jdk) { throw "No JDK 17 under $tools\jdk - see android/README.md for the toolchain setup." }
+$env:JAVA_HOME = $jdk.FullName
+# Gradle finds the SDK through this; the alternative is a local.properties that
+# would have to be gitignored and recreated on every machine.
+$env:ANDROID_HOME = Join-Path $tools 'sdk'
+$gradle           = Join-Path $tools 'gradle-8.7\bin\gradle.bat'
 
 Write-Host '==> Building web app (vite build)' -ForegroundColor Cyan
 Push-Location $root

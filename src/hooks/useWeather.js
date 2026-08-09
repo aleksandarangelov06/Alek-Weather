@@ -282,25 +282,43 @@ function collapseAlerts(features) {
   return [...byHazard.values()]
 }
 
-// Map a NWS station observation (METAR) to a WMO weather code. This is the
-// only *measured* current-weather source in the pipeline — everything else is
-// model output, which routinely trails radar in convective weather. Only
-// reports from the last 75 min count (stations report hourly, plus special
-// reports during storms). Sky-cover-only observations return null so the model
-// pipeline keeps handling clear/cloudy — the station can be far enough away
-// that its cloud deck differs from the user's.
-function obsToWmoCode(obs) {
-  if (!obs?.timestamp) return null
-  const age = Date.now() - new Date(obs.timestamp).getTime()
-  if (!(age >= 0 && age <= 75 * 60 * 1000)) return null
+// How far away a station can be and still be describing the user's weather.
+// METAR precipitation is intensely local — a summer cell is a few km across — so
+// past a short radius a report is simply someone else's sky. Verified over Bel
+// Air MD: KMTN, 23 km southwest, reported Heavy Rain while the nearest field
+// (K0W3, 13 km) reported Clear and nothing at all was falling in Bel Air. 16 km
+// is roughly the representativeness limit for surface precipitation reports.
+const MAX_STATION_KM = 16
 
+// Equirectangular approximation. At these distances the error against haversine
+// is centimetres, and it costs a fraction as much.
+function distanceKm(lat1, lon1, lat2, lon2) {
+  const x = (lon2 - lon1) * Math.cos(((lat1 + lat2) / 2) * Math.PI / 180)
+  const y = lat2 - lat1
+  return Math.sqrt(x * x + y * y) * 111.32
+}
+
+// How stale a report may be before it stops describing *now*, keyed to how fast
+// the phenomenon it reports can end. One flat window cannot serve all three: a
+// thunderstorm cell crosses a town in about fifteen minutes, steady rain and snow
+// outlast that comfortably, and fog can sit for hours. The old flat 75 min is
+// what let K0W3's 17:15Z "Light Rain and Fog/Mist and Thunderstorms" still
+// headline "Thunderstorm" at 17:44Z over a Bel Air where nothing was falling.
+const MAX_OBS_AGE_MIN = { thunder: 25, precip: 45, fog: 75 }
+
+// Classify a NWS station observation (METAR) into a WMO weather code, ignoring
+// age. `allowThunder` lets the caller retire a thunder claim that has outlived
+// its window while still reading the rain underneath it: "light rain and
+// thunderstorms" half an hour on is far better evidence of light rain than of
+// thunder, and dropping the whole report would throw away a real measurement.
+function classifyObs(obs, allowThunder) {
   // Substring matching: the API uses plural/compound values ("thunderstorms",
   // "snow_showers", "freezing_rain" — verified live against KMTN during a
   // storm), so exact equality would silently miss them.
   const pw = obs.presentWeather ?? []
   const has = (w) => pw.some(x => x.weather?.includes(w))
   const intensityOf = (w) => pw.find(x => x.weather?.includes(w))?.intensity
-  if (has('thunder')) return 95
+  if (allowThunder && has('thunder')) return 95
   if (has('freezing_rain') || has('freezing_drizzle')) return 67
   if (has('snow')) {
     const i = intensityOf('snow')
@@ -315,13 +333,76 @@ function obsToWmoCode(obs) {
 
   // presentWeather is often empty; fall back to the text summary.
   const txt = (obs.textDescription ?? '').toLowerCase()
-  if (txt.includes('thunderstorm')) return 95
+  if (allowThunder && txt.includes('thunderstorm')) return 95
   if (txt.includes('freezing')) return 67
   if (txt.includes('snow')) return txt.includes('heavy') ? 75 : txt.includes('light') ? 71 : 73
   if (txt.includes('rain') || txt.includes('shower')) return txt.includes('heavy') ? 65 : txt.includes('light') ? 61 : 63
   if (txt.includes('drizzle')) return 53
   if (txt.includes('fog') || txt.includes('mist')) return 45
   return null
+}
+
+// Map a NWS station observation (METAR) to a WMO weather code. This is the
+// only *measured* current-weather source in the pipeline — everything else is
+// model output, which routinely trails radar in convective weather.
+// Sky-cover-only observations return null so the model pipeline keeps handling
+// clear/cloudy — the station can be far enough away that its cloud deck differs
+// from the user's.
+function obsToWmoCode(obs) {
+  if (!obs?.timestamp) return null
+  const ageMin = (Date.now() - new Date(obs.timestamp).getTime()) / 60000
+  if (!(ageMin >= 0)) return null
+
+  const code = classifyObs(obs, ageMin <= MAX_OBS_AGE_MIN.thunder)
+  if (code == null) return null
+
+  const limit = code === 45 ? MAX_OBS_AGE_MIN.fog : MAX_OBS_AGE_MIN.precip
+  return ageMin <= limit ? code : null
+}
+
+// Copy the forecast code + probability for the current hour onto `current`.
+//
+// mergeNWSHourly writes into `hourly` only, so on US locations the authoritative
+// NWS read on the hour the user is actually living in was sitting one array away
+// from the headline and nothing could reach it: `current.weather_code` could only
+// ever be overridden by a station observation or an active warning. Stamping it
+// here puts it within reach of liveWeatherCode too, without threading the hourly
+// arrays through every component that renders a current condition.
+function stampForecastHour(data) {
+  if (!data.current) return
+  const local = new Date().toLocaleString('sv', { timeZone: data.timezone })
+  const hourKey = `${local.slice(0, 10)}T${local.slice(11, 13)}:00`
+  const idx = data.hourly?.time?.indexOf(hourKey) ?? -1
+  if (idx === -1) return
+  data.current.forecast_hour_code = data.hourly.weather_code?.[idx] ?? null
+  data.current.forecast_hour_pop  = data.hourly.precipitation_probability?.[idx] ?? null
+}
+
+// With no station report and no active warning, the current condition falls all
+// the way back to Open-Meteo's model `current` — the weakest source in the stack
+// for convection. Over Bel Air MD it read "Partly Cloudy, 0.00 in" while NWS's
+// own hourly forecast for that same hour called thunderstorms and a storm was
+// overhead. When the merged NWS forecast for this hour is both convective and
+// confident, prefer it over the model.
+//
+// The floor is what keeps this honest: a 30% scattered-convection afternoon means
+// storms somewhere in the county, not necessarily on this rooftop, and promoting
+// that to a headline "Thunderstorm" would cry wolf all summer. Marked `forecast`
+// rather than `station`/`warning` so a clear radar sweep — an actual observation
+// — still outranks it in liveWeatherCode.
+const FORECAST_POP_FLOOR = 60
+
+function preferForecastHour(data) {
+  const c = data.current
+  if (!c || !c.nws_hourly) return             // non-US: no authoritative overlay
+  if (c.weather_code_confirmed) return        // a station already measured this
+  const code = c.forecast_hour_code
+  if (code == null || precipTier(code) === 0) return
+  if (precipTier(c.weather_code ?? -1) > 0) return   // model already says precip
+  if ((c.forecast_hour_pop ?? 0) < FORECAST_POP_FLOOR) return
+  c.weather_code = code
+  c.weather_code_confirmed = true
+  c.weather_code_source = 'forecast'
 }
 
 // Open-Meteo's model-driven current conditions can miss convective storms
@@ -350,11 +431,7 @@ function confirmCurrentCode(data, alerts) {
     data.current.severe_storm = true
   }
 
-  const local = now.toLocaleString('sv', { timeZone: data.timezone })
-  const hourKey = `${local.slice(0, 10)}T${local.slice(11, 13)}:00`
-  const idx = data.hourly?.time?.indexOf(hourKey) ?? -1
-  const hourCode = idx !== -1 ? data.hourly.weather_code?.[idx] : null
-
+  const hourCode = data.current?.forecast_hour_code ?? null
   const currentCode = data.current?.weather_code
   const best = precipTier(hourCode ?? -1) >= precipTier(currentCode ?? -1) ? hourCode : currentCode
   if (best != null && precipTier(best) > 0) {
@@ -486,15 +563,25 @@ export function useWeather(initialLoading = false) {
           // station must not short-circuit the walk (verified during heavy
           // showers over Bel Air MD: K0W3 was 2.5 h stale with "Fog/Mist" and
           // KAPG said "Cloudy" while KMTN was reporting Rain).
+          //
+          // MAX_STATION_KM bounds that walk. Without it, "keep going until
+          // someone reports weather" will eventually always find someone — the
+          // farther the search runs, the likelier a hit and the less it has to do
+          // with this location. Distance is checked before the request, so far
+          // stations cost nothing. `limit` is generous because the filter, not
+          // the list length, is what ends the walk now.
           const obsPromise = (async () => {
             const stationsUrl = pointsData.properties?.observationStations
             if (!stationsUrl) return null
-            const sRes = await fetch(`${stationsUrl}?limit=4`, { headers: NWS_HEADERS })
+            const sRes = await fetch(`${stationsUrl}?limit=8`, { headers: NWS_HEADERS })
             if (!sRes.ok) return null
             const stations = (await sRes.json()).features ?? []
             for (const s of stations) {
               const id = s.properties?.stationIdentifier
               if (!id) continue
+              const [sLon, sLat] = s.geometry?.coordinates ?? []
+              if (sLat == null || sLon == null) continue
+              if (distanceKm(loc.latitude, loc.longitude, sLat, sLon) > MAX_STATION_KM) continue
               try {
                 const oRes = await fetch(`https://api.weather.gov/stations/${id}/observations/latest`, { headers: NWS_HEADERS })
                 if (!oRes.ok) continue
@@ -514,6 +601,12 @@ export function useWeather(initialLoading = false) {
             const d = await nwsHourlyRes.value.json()
             mergeNWSHourly(data.hourly, d.properties?.periods ?? [], data.timezone)
             nwsHourlyMerged = true
+            // Marks the hourly codes as NWS-sourced (so the Open-Meteo minutely
+            // nowcast stops vetoing them) and puts this hour's forecast within
+            // reach of the current-condition helpers. Both must be set before
+            // alignDailyWithHourly below, which re-runs the nowcast check.
+            if (data.current) data.current.nws_hourly = true
+            stampForecastHour(data)
           }
           if (nwsForecastRes.status === 'fulfilled' && nwsForecastRes.value.ok) {
             const d = await nwsForecastRes.value.json()
@@ -531,6 +624,10 @@ export function useWeather(initialLoading = false) {
             data.current.weather_code_confirmed = true
             data.current.weather_code_source = 'station'
           }
+
+          // Nothing measured this hour — fall back to NWS's own forecast for it
+          // rather than Open-Meteo's model. No-ops if a station just reported.
+          preferForecastHour(data)
         } catch { /* non-fatal */ }
       }
 

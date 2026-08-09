@@ -8,7 +8,8 @@ import {
 } from '../../utils/conditions'
 import { useMeasure } from './chartUtils'
 import { Sparkline } from './Sparkline'
-import { currentHourIndex, daylightLength, HPA_PER_INHG, METERS_PER_MILE } from './webData'
+import { currentHourIndex, daylightLength, METERS_PER_MILE } from './webData'
+import { formatUnitDelta, unitSuffix, unitText } from '../../utils/units'
 
 // A panel's 24-hour history strip: the sparkline plus the two end labels, which
 // are what make it a chart rather than a decoration.
@@ -67,7 +68,7 @@ function StatRow({ items }) {
   )
 }
 
-export function DetailsPage({ weather, unit, airQuality, colorCoding, onNavigate }) {
+export function DetailsPage({ weather, unit, units, airQuality, colorCoding, onNavigate }) {
   const { current, daily, hourly, timezone } = weather
   const mono = !colorCoding.details
   const tint = (c) => (mono ? 'var(--text-primary)' : c)
@@ -152,8 +153,8 @@ export function DetailsPage({ weather, unit, airQuality, colorCoding, onNavigate
         <Panel
           icon={<WindTurbine size={19} style={{ color: tint(windInfo.color) }} />}
           title="WIND"
-          value={Math.round(windSpeed)}
-          unit=" mph"
+          value={unitText('wind', windSpeed, units)}
+          unit={` ${unitSuffix('wind', units)}`}
           status={`From the ${windDir}`}
           note={getWindNote(windSpeed)}
           color={tint(windInfo.color)}
@@ -164,11 +165,11 @@ export function DetailsPage({ weather, unit, airQuality, colorCoding, onNavigate
             timezone={timezone}
             color={tint(windInfo.color)}
             step={5}
-            format={(v) => `${Math.round(v)} mph`}
+            format={(v) => `${unitText('wind', v, units)} ${unitSuffix('wind', units)}`}
           />
           <StatRow
             items={[
-              { label: 'Gusts', value: current.wind_gusts_10m != null ? `${Math.round(current.wind_gusts_10m)} mph` : null },
+              { label: 'Gusts', value: current.wind_gusts_10m != null ? `${unitText('wind', current.wind_gusts_10m, units)} ${unitSuffix('wind', units)}` : null },
               { label: 'Direction', value: `${windDir} · ${Math.round(current.wind_direction_10m)}°` },
             ]}
           />
@@ -177,8 +178,8 @@ export function DetailsPage({ weather, unit, airQuality, colorCoding, onNavigate
         <Panel
           icon={<Gauge size={18} />}
           title="PRESSURE"
-          value={(pressure / HPA_PER_INHG).toFixed(2)}
-          unit=" inHg"
+          value={unitText('pressure', pressure, units)}
+          unit={` ${unitSuffix('pressure', units)}`}
           status={presInfo.label}
           note={presTrend?.note ?? 'Surface pressure at your location.'}
           color={tint(presInfo.color)}
@@ -189,7 +190,7 @@ export function DetailsPage({ weather, unit, airQuality, colorCoding, onNavigate
             timezone={timezone}
             color={tint(presInfo.color)}
             step={2}
-            format={(v) => (v / HPA_PER_INHG).toFixed(2)}
+            format={(v) => unitText('pressure', v, units)}
           />
           <StatRow
             items={[
@@ -198,11 +199,13 @@ export function DetailsPage({ weather, unit, airQuality, colorCoding, onNavigate
                 value: presTrend ? (
                   <span className="web-detail-trend">
                     <TrendIcon size={14} aria-hidden="true" />
-                    {presTrend.label} {presTrend.delta > 0 ? '+' : ''}{presTrend.delta.toFixed(1)} hPa
+                    {presTrend.label} {formatUnitDelta('pressure', presTrend.delta, units)}
                   </span>
                 ) : null,
               },
-              { label: 'Absolute', value: `${Math.round(pressure)} hPa` },
+              units.pressure === 'hPa'
+                ? null
+                : { label: 'Absolute', value: `${Math.round(pressure)} hPa` },
             ]}
           />
         </Panel>
@@ -210,19 +213,19 @@ export function DetailsPage({ weather, unit, airQuality, colorCoding, onNavigate
         <Panel
           icon={<Eye size={18} />}
           title="VISIBILITY"
-          value={visMi != null ? visMi.toFixed(1) : '—'}
-          unit=" mi"
+          value={unitText('visibility', current.visibility, units) ?? '—'}
+          unit={` ${unitSuffix('visibility', units)}`}
           status={visInfo?.label}
           note={visMi != null ? getVisibilityNote(visMi) : 'No visibility reading available here.'}
           color={visInfo ? tint(visInfo.color) : undefined}
         >
           <PanelChart
-            values={nextDay(hourly.visibility).map((v) => (v == null ? null : v / METERS_PER_MILE))}
+            values={nextDay(hourly.visibility)}
             times={times}
             timezone={timezone}
             color={visInfo ? tint(visInfo.color) : 'var(--accent)'}
-            step={2}
-            format={(v) => `${v.toFixed(1)} mi`}
+            step={METERS_PER_MILE}
+            format={(v) => `${unitText('visibility', v, units)} ${unitSuffix('visibility', units)}`}
           />
           <StatRow
             items={[

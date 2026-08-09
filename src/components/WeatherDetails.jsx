@@ -6,12 +6,13 @@ import {
   getAQIInfo, getAQINote, getHumidityInfo, getHumidityNote, getPressureInfo, getPressureTrend,
   getUVNote, getVisibilityInfo, getVisibilityNote, getWindInfo, getWindNote,
 } from '../utils/conditions'
+import { formatUnitDelta, unitSuffix, unitText, unitValue } from '../utils/units'
 
-// The API reports surface pressure in hPa; US convention displays inHg.
-// The thresholds in utils/conditions.js stay in hPa so they keep comparing
-// against the raw values.
-const HPA_PER_INHG = 33.8639
-const toInHg = (hpa) => (hpa / HPA_PER_INHG).toFixed(2)
+// Metres per mile, for the miles the visibility thresholds in
+// utils/conditions.js are written in. That is deliberately separate from the
+// visibility *display* unit: the bands are fixed physical distances, so they
+// keep comparing against miles whatever the tile is showing.
+const METERS_PER_MILE = 1609.34
 
 // Shared hero block at the top of an expanded detail: the current reading, its
 // condition label, and a note explaining it.
@@ -128,7 +129,7 @@ const REVEAL_MS = 520
 // width/height in App.css.
 const FILL_BASE = 360
 
-export function WeatherDetails({ current, daily, hourly, timezone, unit, airQuality, colorCoding = true }) {
+export function WeatherDetails({ current, daily, hourly, timezone, unit, units, airQuality, colorCoding = true }) {
   const [expanded, setExpanded] = useState(null)
   const [closing, setClosing] = useState(false)
   // Origin + radius of the circular reveal, in px relative to the details card.
@@ -197,7 +198,9 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
   }
 
   const windDir = getWindDirection(current.wind_direction_10m)
-  const visMi   = (current.visibility / 1609.34).toFixed(1)
+  // Miles, for the condition bands only — the tile and panel below render
+  // current.visibility through the chosen display unit instead.
+  const visMi   = current.visibility / METERS_PER_MILE
   const sunrise = formatTime(daily.sunrise[0], timezone)
   const sunset  = formatTime(daily.sunset[0], timezone)
 
@@ -224,7 +227,7 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
 
   const humInfo  = getHumidityInfo(current.relative_humidity_2m)
   const presInfo = getPressureInfo(current.surface_pressure)
-  const visInfo  = getVisibilityInfo(parseFloat(visMi))
+  const visInfo  = getVisibilityInfo(visMi)
   const windInfo = getWindInfo(current.wind_speed_10m)
 
   // Hourly window
@@ -274,7 +277,7 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
   const presTrend  = getPressureTrend(hourly, hStart)
 
   // Visibility
-  const visValues = hourly?.visibility ? sliceNext(hourly.visibility, 6).map(v => v / 1609.34) : []
+  const visValues = hourly?.visibility ? sliceNext(hourly.visibility, 6) : []
   const visTimes  = visValues.length > 0 ? sliceNext(hourly.time, 6) : []
 
   const cardDefs = {
@@ -287,7 +290,7 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
     },
     wind: {
       icon: <WindTurbine size={19} />, label: 'Wind',
-      value: `${Math.round(current.wind_speed_10m)} mph`,
+      value: `${unitText('wind', current.wind_speed_10m, units)} ${unitSuffix('wind', units)}`,
       sub: windDir,
       color: windInfo.color,
       onClick: (e) => openDetail('wind', e), isExpanded: expanded === 'wind',
@@ -295,14 +298,14 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
     pressure: {
       icon: <Gauge size={19} />, label: 'Pressure',
       // "29.92 inHg" is too wide for the tile at full size — shrink just the unit.
-      value: <>{toInHg(current.surface_pressure)}<span className="detail-value-unit"> inHg</span></>,
+      value: <>{unitText('pressure', current.surface_pressure, units)}<span className="detail-value-unit"> {unitSuffix('pressure', units)}</span></>,
       sub: <span style={{ color: presInfo.color, fontWeight: 600 }}>{presInfo.label}</span>,
       color: presInfo.color,
       onClick: (e) => openDetail('pressure', e), isExpanded: expanded === 'pressure',
     },
     visibility: {
       icon: <Eye size={19} />, label: 'Visibility',
-      value: `${visMi} mi`,
+      value: `${unitText('visibility', current.visibility, units)} ${unitSuffix('visibility', units)}`,
       sub: <span style={{ color: visInfo.color, fontWeight: 600 }}>{visInfo.label}</span>,
       color: visInfo.color,
       onClick: (e) => openDetail('visibility', e), isExpanded: expanded === 'visibility',
@@ -394,12 +397,12 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
         return (
           <>
             <DetailSummary
-              value={Math.round(current.wind_speed_10m)} unit=" mph"
+              value={unitText('wind', current.wind_speed_10m, units)} unit={` ${unitSuffix('wind', units)}`}
               label={`From the ${windDir}`} color={windInfo.color}
               note={getWindNote(current.wind_speed_10m)}
             />
             <DetailStats items={[
-              { label: 'Gusts', value: current.wind_gusts_10m != null ? `${Math.round(current.wind_gusts_10m)} mph` : null },
+              { label: 'Gusts', value: current.wind_gusts_10m != null ? `${unitText('wind', current.wind_gusts_10m, units)} ${unitSuffix('wind', units)}` : null },
               { label: 'Direction', value: `${windDir} (${Math.round(current.wind_direction_10m)}°)` },
             ]} />
             {windTimes.length > 0 && (
@@ -415,7 +418,7 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
                         size={wInfo.size}
                         style={{ color: wInfo.color, transform: `rotate(${degrees}deg)`, flexShrink: 0 }}
                       />
-                      <span className="uv-tl-val" style={{ color: wInfo.color }}>{Math.round(speed)}</span>
+                      <span className="uv-tl-val" style={{ color: wInfo.color }}>{unitValue('wind', speed, units)}</span>
                       <span className="uv-tl-lbl" style={{ color: 'var(--text-secondary)' }}>{getWindDirection(degrees)}</span>
                     </div>
                   )
@@ -429,7 +432,7 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
         return (
           <>
             <DetailSummary
-              value={toInHg(current.surface_pressure)} unit=" inHg"
+              value={unitText('pressure', current.surface_pressure, units)} unit={` ${unitSuffix('pressure', units)}`}
               label={presInfo.label} color={presInfo.color}
               note={presTrend?.note ?? 'Pressure is near the seasonal average.'}
             />
@@ -437,7 +440,7 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
               { label: 'Trend', value: presTrend?.label },
               {
                 label: '3 hr change',
-                value: presTrend ? `${presTrend.delta > 0 ? '+' : '−'}${Math.abs(presTrend.delta / HPA_PER_INHG).toFixed(2)} inHg` : null,
+                value: presTrend ? formatUnitDelta('pressure', presTrend.delta, units) : null,
               },
             ]} />
             {presTimes.length > 0 && (
@@ -448,7 +451,7 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
                   return (
                     <div key={i} className="uv-timeline-item">
                       <span className="uv-tl-time">{fmt(time, i)}</span>
-                      <span className="uv-tl-val uv-tl-val--sm" style={{ color: info.color }}>{toInHg(val)}</span>
+                      <span className="uv-tl-val uv-tl-val--sm" style={{ color: info.color }}>{unitText('pressure', val, units)}</span>
                       <span className="uv-tl-lbl" style={{ color: info.color }}>{info.label}</span>
                     </div>
                   )
@@ -462,19 +465,19 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, airQual
         return (
           <>
             <DetailSummary
-              value={visMi} unit=" mi"
+              value={unitText('visibility', current.visibility, units)} unit={` ${unitSuffix('visibility', units)}`}
               label={visInfo.label} color={visInfo.color}
-              note={getVisibilityNote(parseFloat(visMi))}
+              note={getVisibilityNote(visMi)}
             />
             {visTimes.length > 0 && (
               <div className="uv-timeline">
                 {visTimes.map((time, i) => {
                   const val  = visValues[i] ?? 0
-                  const info = getVisibilityInfo(val)
+                  const info = getVisibilityInfo(val / METERS_PER_MILE)
                   return (
                     <div key={i} className="uv-timeline-item">
                       <span className="uv-tl-time">{fmt(time, i)}</span>
-                      <span className="uv-tl-val uv-tl-val--sm" style={{ color: info.color }}>{val.toFixed(1)}</span>
+                      <span className="uv-tl-val uv-tl-val--sm" style={{ color: info.color }}>{unitText('visibility', val, units)}</span>
                       <span className="uv-tl-lbl" style={{ color: info.color }}>{info.label}</span>
                     </div>
                   )

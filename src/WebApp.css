@@ -796,11 +796,12 @@
   min-width: 0;
 }
 
-/* No width cap here any more. Capping the width shrank the drawing and centred
-   it, leaving the card nearly as tall with a small chart marooned in it — the
-   height follows the viewBox ratio, so the ratio is what had to change. The
-   web pages pass `wide` to PrecipNowcast for a 480-unit box instead of 300,
-   which is a chart of the same width and two-thirds the height. */
+/* No width cap on the nowcast, and no height rule either: the web pages pass
+   `wide` to PrecipNowcast, which drops the scaled viewBox for a real-pixel
+   drawing at a fixed height. Capping the width here would shrink the chart and
+   centre it in a card that stayed just as tall; a scaled viewBox, which is what
+   `wide` used to select, grew the whole drawing — type included — with the
+   window. The height belongs to the component now. */
 
 /* 20px all round is the phone card's padding, where the nowcast is one of a
    stack you scroll past. Here it sits in a column beside the hourly and weekly

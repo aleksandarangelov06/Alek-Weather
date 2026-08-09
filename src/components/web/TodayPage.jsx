@@ -7,7 +7,8 @@ import {
   displayPrecipChance, formatHour, formatTime, getUVLabel, getWeatherInfo, getWindDirection,
   liveWeatherCode, nowcastHourlyCode, precipTier, tempStyle, toTemp,
 } from '../../utils/weatherCodes'
-import { currentHourIndex, METERS_PER_MILE, sliceHourly, weekdayLabel } from './webData'
+import { currentHourIndex, sliceHourly, weekdayLabel } from './webData'
+import { formatPrecip, formatVisibility, formatWind } from '../../utils/units'
 
 function GlanceTile({ icon: Icon, label, value, sub, color }) {
   return (
@@ -44,7 +45,7 @@ function PreviewCard({ title, onOpen, openLabel, className, children }) {
 // `showOverview` and `hasActiveAlert` back out of the props and rendering
 // <WeatherOverview> again.
 export function TodayPage({
-  weather, location, alerts, unit, radarClear, lastUpdated, loading,
+  weather, location, alerts, unit, units, radarClear, lastUpdated, loading,
   colorCoding, nowcastMode,
   saved, onSave, onRemove, isHome, hasHome, onGoHome, onSetHome, onUnsetHome, onRefresh,
   onNavigate,
@@ -55,7 +56,6 @@ export function TodayPage({
 
   const uv = getUVLabel(current.uv_index ?? 0)
   const windDir = getWindDirection(current.wind_direction_10m)
-  const visMi = current.visibility != null ? (current.visibility / METERS_PER_MILE).toFixed(1) : null
   const rainToday = daily.precipitation_probability_max?.[0]
 
   return (
@@ -109,12 +109,12 @@ export function TodayPage({
               icon={CloudRain}
               label="Precipitation"
               value={rainToday != null ? `${rainToday}%` : '—'}
-              sub={daily.precipitation_sum?.[0] != null ? `${daily.precipitation_sum[0].toFixed(2)} in expected` : 'Chance today'}
+              sub={daily.precipitation_sum?.[0] != null ? `${formatPrecip(daily.precipitation_sum[0], units)} expected` : 'Chance today'}
             />
             <GlanceTile
               icon={Wind}
               label="Wind"
-              value={`${Math.round(current.wind_speed_10m)} mph`}
+              value={formatWind(current.wind_speed_10m, units)}
               sub={`${windDir}${current.wind_gusts_10m != null ? ` · gusts ${Math.round(current.wind_gusts_10m)}` : ''}`}
             />
             <GlanceTile
@@ -138,7 +138,7 @@ export function TodayPage({
             <GlanceTile
               icon={Eye}
               label="Visibility"
-              value={visMi != null ? `${visMi} mi` : '—'}
+              value={formatVisibility(current.visibility, units)}
               sub="Ground level"
             />
             <GlanceTile
@@ -152,8 +152,8 @@ export function TodayPage({
         </div>
       </div>
 
-      {/* Wide viewBox: the same chart drawn into a flatter box, so it fills the
-          page at a fraction of the height the phone proportions gave it. */}
+      {/* `wide`: the same chart drawn in real pixels at a fixed height, so it
+          fills the page's width without its height chasing it. */}
       <PrecipNowcast
         minutely={weather.minutely_15}
         currentTime={current.time}

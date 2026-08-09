@@ -1,6 +1,7 @@
 import { Sun, Moon, Cloud, CloudSun, CloudFog, CloudRain, CloudSnow, CloudLightning, CloudSunRain, Thermometer, Shirt, Wind, Snowflake, Umbrella, Footprints } from 'lucide-react'
 import { WindTurbine } from './WindTurbine'
 import { getWeatherInfo, liveWeatherCode, nowcastHourlyCode, displayPrecipChance, precipTier, tempColor } from '../utils/weatherCodes'
+import { formatWind, unitSuffix, unitValue } from '../utils/units'
 
 // Maps the emoji icon key from getWeatherInfo() to a tintable lucide line icon,
 // so the current-conditions line can share the clothing line's look and take a
@@ -133,7 +134,7 @@ function timeDesc(slotIndex, currentMinute, hourlyTimes, start, timezone) {
   return `around ${fmtClock(slotHour)}`
 }
 
-export function WeatherOverview({ hourly, daily, current, minutely, radarClear = null, timezone, hasActiveAlert, unit, airQuality = null, showInsight = true, showConditions = true, showAirQuality = true, showClothing = true, colorCode = true }) {
+export function WeatherOverview({ hourly, daily, current, minutely, radarClear = null, timezone, hasActiveAlert, unit, units, airQuality = null, showInsight = true, showConditions = true, showAirQuality = true, showClothing = true, colorCode = true }) {
   const now = new Date()
   const currentMinute = parseInt(
     now.toLocaleString('en-CA', { minute: '2-digit', timeZone: timezone }),
@@ -1112,10 +1113,13 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
       }
       if (peak >= 24) {
         const when = timeDesc(peakIdx, currentMinute, hourly.time, start, timezone)
-        const mph = Math.round(peak / 5) * 5
+        // Rounded to a friendly step in mph, the scale the thresholds above are
+        // written in, and only then converted: "up to 25 mph" becomes "up to
+        // 40 km/h" rather than the 40.2 a converted-then-rounded figure gives.
+        const gust = formatWind(Math.round(peak / 5) * 5, units)
         insights.push(peak >= 35
-          ? { level: 'warning', text: `Very windy ${when}, with winds up to ${mph} mph.` }
-          : { level: 'notice',  text: `Windy ${when}, with winds reaching ${mph} mph.` })
+          ? { level: 'warning', text: `Very windy ${when}, with winds up to ${gust}.` }
+          : { level: 'notice',  text: `Windy ${when}, with winds reaching ${gust}.` })
       }
     }
 
@@ -1293,7 +1297,8 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
     const tempPhrase = `${showLow ? 'Low' : 'High'} near ${toDisplay(tempF)}${degUnit}`
 
     // Wind: prevailing direction (circular mean) and a 5-mph-rounded range over
-    // the next 12 hours. Speeds stay in mph, matching the other wind insights.
+    // the next 12 hours. The comparisons and the rounding stay in mph, matching
+    // the other wind insights; only the two endpoints are converted for display.
     let windPhrase = ''
     let wlo = Infinity, whi = 0, sx = 0, sy = 0, n = 0
     for (let i = 0; i < Math.min(12, codes.length); i++) {
@@ -1310,8 +1315,9 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
         const dir = n ? compassDir(Math.atan2(sy, sx) * 180 / Math.PI) : null
         const lo5 = Math.max(5, Math.round(wlo / 5) * 5)
         const hi5 = Math.round(whi / 5) * 5
-        const range = hi5 <= lo5 ? `${hi5}` : `${lo5} to ${hi5}`
-        windPhrase = dir ? ` Winds ${dir} at ${range} mph.` : ` Winds at ${range} mph.`
+        const loD = unitValue('wind', lo5, units), hiD = unitValue('wind', hi5, units)
+        const range = `${hi5 <= lo5 ? `${hiD}` : `${loD} to ${hiD}`} ${unitSuffix('wind', units)}`
+        windPhrase = dir ? ` Winds ${dir} at ${range}.` : ` Winds at ${range}.`
       }
     }
 

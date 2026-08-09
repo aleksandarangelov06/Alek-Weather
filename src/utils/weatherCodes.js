@@ -54,6 +54,10 @@ export function getWeatherInfo(code, isNight = false, severe = false) {
 // real probability — it only ever raises the number, never lowers it).
 export const RAIN_CODES = new Set([51, 53, 55, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99])
 export const SNOW_CODES = new Set([71, 73, 75, 77, 85, 86])
+// Thunder is a lightning claim, not a precipitation one — no amount of radar
+// reflectivity establishes it, so these codes need a source that actually
+// observed or forecast thunder (a station report, a warning, a confident hour).
+export const THUNDER_CODES = new Set([95, 96, 99])
 
 // 0 none · 1 light · 2 moderate · 3 heavy · 4 severe
 const PRECIP_TIER = {
@@ -137,18 +141,29 @@ function shiftHours(localTimeStr, hours) {
 // If the nowcast shows negligible precip across the entire slot window, downgrade
 // a precipitation code to a sky condition. Non-precip codes pass through unchanged.
 // Safe to call for any slot: returns the original code unchanged whenever the slot
-// is beyond the nowcast horizon, or minutely data doesn't cover that hour.
+// is beyond the nowcast horizon, minutely data doesn't cover that hour, or the
+// hourly codes came from NWS.
 //
-// The horizon matters: Open-Meteo's minutely model is routinely dry when NWS
-// forecasts convection (verified over Bel Air MD during heavy showers — NWS said
-// 70% "Showers and Thunderstorms Likely" for every hour of the afternoon while
-// minutely_15 read 0.00 throughout, which zeroed out the whole day's forecast).
-// Near-term that disagreement is worth acting on; hours out it is just a second
-// model overruling the authoritative one, so leave those slots alone.
+// Both escapes exist for the same reason — this check is only ever meant to let
+// Open-Meteo's minutely model reality-check Open-Meteo's own hourly codes, which
+// come from the same forecast system. Beyond the horizon, or wherever NWS codes
+// have been merged in, it is a second model overruling the authoritative one.
+//
+// Open-Meteo's minutely model is routinely bone dry straight through NWS
+// convection. Verified twice over Bel Air MD: once during heavy showers with NWS
+// at 70% "Showers and Thunderstorms Likely" all afternoon, and again during a
+// thunderstorm with NWS calling 55 / 99 / 45% for the next three hours — both
+// times minutely_15 read 0.00 for every slot. Capping the horizon alone did not
+// fix that, it only moved the damage onto the three hours the user is standing
+// in, so NWS-sourced codes now skip the check outright.
 export function nowcastHourlyCode(code, minutely, slotTimeStr, current) {
   if (precipTier(code) === 0) return code
   if (!minutely?.time?.length || !minutely?.precipitation?.length) return code
   if (!current?.time) return code
+  // Set by fetchWeather once mergeNWSHourly has overwritten the hourly arrays.
+  // A single flag is enough: this check already returns early beyond
+  // NOWCAST_HORIZON_HOURS, and NWS's hourly forecast always covers that window.
+  if (current.nws_hourly) return code
   if (slotTimeStr > shiftHours(current.time, NOWCAST_HORIZON_HOURS)) return code
   // A station is measuring precipitation here right now, so the minutely series
   // is demonstrably wrong at this location and can't be trusted to veto the
@@ -187,6 +202,37 @@ export function liveWeatherCode(current, minutely, radarClear = null) {
   // can briefly show gaps between sweeps or convective cells.
   if (radarClear === true && current.weather_code_source !== 'warning') {
     return precipTier(code) > 0 ? skyCode(current.cloud_cover) : code
+  }
+  // The mirror image: radar sees an echo directly over the location, so something
+  // IS falling here no matter what the model says. useRadarPrecip has always
+  // reported this state and nothing ever consumed it — only "clear" was acted on.
+  // That asymmetry is what left "Partly Cloudy" on screen over Bel Air MD with a
+  // saturated echo overhead, every station stale or silent, and no alert issued:
+  // radar was the one source that had it right and its answer was discarded.
+  //
+  // The forecast's own code for this hour says what kind of precipitation it is
+  // (it is the local forecast, just not confident enough on its own); plain rain
+  // or snow by temperature is the fallback when it offers nothing.
+  if (radarClear === false) {
+    // Already a precipitation code: radar corroborates it, so short-circuit the
+    // rate logic below exactly as a station-confirmed code does. Otherwise the
+    // dry minutely series that caused this whole class of bug would still get to
+    // downgrade a code radar just confirmed.
+    if (precipTier(code) > 0) return code
+    // The forecast's code for this hour supplies the type — drizzle vs rain vs
+    // snow — but only where it claims something reflectivity can actually stand
+    // behind. Thunder is not that: radar sees precipitation, not lightning, and a
+    // convective code that reached here is one preferForecastHour already judged
+    // too low-confidence to promote (anything at/above FORECAST_POP_FLOOR would
+    // have been set on `current` and returned above). Minting "Heavy
+    // Thunderstorm" out of an echo and a 20%-chance forecast is the same
+    // over-claim as the old code's 0%, pointed the other way — verified over Bel
+    // Air MD, where NWS still carried 96 for hours after the storm passed and
+    // only light rain was left falling.
+    const forecast = current.forecast_hour_code
+    if (forecast != null && precipTier(forecast) > 0 && !THUNDER_CODES.has(forecast)) return forecast
+    const snow = current.temperature_2m != null && current.temperature_2m <= 32 // °F
+    return snow ? 71 : 61
   }
   // Confirmed by an active warning (or a station obs when radar isn't clearing
   // it): trust it over the model-driven minutely nowcast, which is routinely

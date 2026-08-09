@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import { X } from 'lucide-react'
 import { getWeatherInfo, formatDay, formatHour, formatTime, getUVLabel, liveWeatherCode, nowcastHourlyCode, precipTier, toTemp, tempColor, tempStyle, displayPrecipChance, SUN_ORANGE } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
+import { formatPrecip, formatWind } from '../utils/units'
 
 // Keep in step with --reveal-dur in App.css, which is where the reasoning for the
 // number lives — the cover stays mounted this long while the circle shrinks back
@@ -49,7 +50,7 @@ function coverTitle(date) {
   return `${name}, ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
 }
 
-export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = true, glow = true, frost = true, current, minutely, radarClear = null }) {
+export function DailyForecast({ daily, hourly, timezone, unit, units, colorCoding = true, glow = true, frost = true, current, minutely, radarClear = null }) {
   const [expanded, setExpanded] = useState(null)
   const [closing, setClosing] = useState(false)
   // Origin + radius of the circular reveal, in px relative to the daily card.
@@ -332,11 +333,11 @@ export function DailyForecast({ daily, hourly, timezone, unit, colorCoding = tru
             <div className="detail-stats">
               <div className="detail-stat">
                 <span className="detail-stat-label">Precip</span>
-                <span className="detail-stat-value" style={colorCoding && precipSum != null ? { color: precipColor(precipSum) } : undefined}>{precipSum != null ? `${precipSum.toFixed(2)} in` : '—'}</span>
+                <span className="detail-stat-value" style={colorCoding && precipSum != null ? { color: precipColor(precipSum) } : undefined}>{formatPrecip(precipSum, units)}</span>
               </div>
               <div className="detail-stat">
                 <span className="detail-stat-label">Wind</span>
-                <span className="detail-stat-value" style={colorCoding && windMax != null ? { color: windColor(windMax) } : undefined}>{windMax != null ? `${Math.round(windMax)} mph` : '—'}</span>
+                <span className="detail-stat-value" style={colorCoding && windMax != null ? { color: windColor(windMax) } : undefined}>{formatWind(windMax, units)}</span>
               </div>
               <div className="detail-stat">
                 <span className="detail-stat-label">Humidity</span>
