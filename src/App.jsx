@@ -211,6 +211,7 @@ const COLOR_CODING_KEY  = 'alek-weather-color-coding'
 const DEFAULT_COLOR_CODING = { current: true, hourly: true, daily: true, overview: true, details: true, glow: true, frost: true }
 const OVERVIEW_PARTS_KEY = 'alek-weather-overview-parts'
 const DEFAULT_OVERVIEW_PARTS = { insight: true, conditions: true, airQuality: true, clothing: true }
+const ICON_MOTION_KEY   = 'alek-weather-icon-motion'
 const RADAR_ENHANCED_KEY = 'alek-weather-radar-enhanced'
 // How the radar timeline presents its two feeds.
 //   'combined'  one scrubber running observed → forecast, divided at now
@@ -266,6 +267,11 @@ function App() {
   const [nowcastMode, setNowcastMode] = useState(() => localStorage.getItem(NOWCAST_MODE_KEY) ?? 'auto')
   const [weatherAnimations, setWeatherAnimations] = useState(() => localStorage.getItem('alek-weather-animations') !== 'false')
   const [gyroscope, setGyroscope] = useState(() => localStorage.getItem('alek-weather-gyroscope') !== 'false')
+  // Separate from weatherAnimations, which is the sky backdrop and the canvas
+  // effects behind the whole app. This is only the weather icons' own motion —
+  // falling rain, drifting cloud, the lightning flash — so it can be turned off
+  // by someone who still wants the sky, and vice versa.
+  const [iconMotion, setIconMotion] = useState(() => localStorage.getItem(ICON_MOTION_KEY) !== 'false')
   // Defaults on: radar is the only source that observes precipitation over the
   // location itself, and it has caught storms every model and nearby station
   // missed. `!== 'false'` so anyone who explicitly turned it off stays off.
@@ -400,6 +406,16 @@ function App() {
   useEffect(() => {
     if (IS_ANDROID_APP) document.documentElement.setAttribute('data-native', 'android')
   }, [])
+
+  // Icon motion is switched off at the root rather than by prop, because the
+  // animations are bound in CSS by container and never pass through a component.
+  // Only the "off" state is marked: an absent attribute is the default, so the
+  // icons animate before this effect has run rather than after.
+  useEffect(() => {
+    const root = document.documentElement
+    if (iconMotion) root.removeAttribute('data-icon-motion')
+    else root.setAttribute('data-icon-motion', 'off')
+  }, [iconMotion])
 
   // Apply dark mode theme
   useEffect(() => {
@@ -610,6 +626,11 @@ function App() {
   const changeWeatherAnimations = (val) => {
     setWeatherAnimations(val)
     localStorage.setItem('alek-weather-animations', String(val))
+  }
+
+  const changeIconMotion = (val) => {
+    setIconMotion(val)
+    localStorage.setItem(ICON_MOTION_KEY, String(val))
   }
 
   const changeGyroscope = (val) => {
@@ -1228,6 +1249,8 @@ function App() {
           onOverviewPartToggle={toggleOverviewPart}
           weatherAnimations={weatherAnimations}
           onWeatherAnimationsChange={changeWeatherAnimations}
+          iconMotion={iconMotion}
+          onIconMotionChange={changeIconMotion}
           gyroscope={gyroscope}
           onGyroscopeChange={changeGyroscope}
           radarEnhanced={radarEnhanced}

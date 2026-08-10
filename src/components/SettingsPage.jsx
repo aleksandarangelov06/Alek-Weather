@@ -630,7 +630,7 @@ function ThemeView({ darkMode, onDarkModeChange, platformTheme, onPlatformThemeC
   )
 }
 
-function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, units, onUnitGroupChange, nowcastMode, onNowcastModeChange, radarMode, onRadarModeChange, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onThemeOpen, onNotificationsOpen, weatherAnimations, onWeatherAnimationsChange, radarEnhanced, onRadarEnhancedChange, installPrompt, onInstall, webShell }) {
+function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, units, onUnitGroupChange, nowcastMode, onNowcastModeChange, radarMode, onRadarModeChange, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onThemeOpen, onNotificationsOpen, weatherAnimations, onWeatherAnimationsChange, iconMotion, onIconMotionChange, radarEnhanced, onRadarEnhancedChange, installPrompt, onInstall, webShell }) {
   return (
     <>
       <div className="settings-group-label">Appearance</div>
@@ -678,6 +678,16 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, units, o
             </div>
           </div>
         )}
+        {/* Its own row rather than a switch inside Weather Effects: that page is
+            about the sky behind the app, and this is the icons on top of it.
+            Someone who turns the backdrop off often still wants the forecast to
+            move, so neither should silently disable the other. */}
+        <div className="settings-row">
+          <div className="settings-row-label">Animated Icons</div>
+          <div className="settings-row-controls">
+            <Toggle id="toggle-icon-motion" checked={iconMotion} onChange={onIconMotionChange} />
+          </div>
+        </div>
       </div>
 
       {/* Temperature is its own state and its own row; the rest are driven off

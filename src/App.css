@@ -1356,6 +1356,185 @@ body {
   :root:not([data-theme="light"]) .app.sky-active .current-icon .weather-icon-fog { color: #b8c2cf; }
 }
 
+/* ── Weather icon palette ──────────────────────────────────────────────────
+   The icons in weatherGlyphs.jsx are redrawn from Fluent, whose cloud and snow
+   art is a fixed near-white lavender. That was chosen for a light chat surface
+   and glows against a dark app background — the one thing the old CDN <img>
+   could never be told about.
+
+   Every pale colour in that palette is a token here, carrying its own light
+   value as the fallback inside the SVG, so light mode is exactly the upstream
+   art and dark mode only redefines the tokens.
+
+   The dark values are a straight 12% RGB dim of the light ones — nothing else.
+   Two earlier attempts were worse than leaving the art alone: scaling lightness
+   in HSL turned the lavenders into vivid violet, and a 40% dim blended toward
+   slate drained them to grey lumps. Multiplying RGB holds the hue exactly, and
+   a light touch is all this needs: the goal is to take the glare off a
+   near-white cloud on a dark ground, not to recolour it.
+
+   Sun, moon, bolt and the storm cloud are deliberately absent: they are already
+   dark-legible and retuning them would flatten the one bright accent each icon
+   has. */
+[data-theme="dark"] {
+  --wi-B7B6FA: #A1A0DC;
+  --wi-CECDFF: #B5B4E0;
+  --wi-D1C8FF: #B8B0E0;
+  --wi-D2D2D2: #B9B9B9;
+  --wi-D5D4DA: #BBBBC0;
+  --wi-DED7FA: #C3BDDC;
+  --wi-E0D3FF: #C5BAE0;
+  --wi-E8E8E9: #CCCCCD;
+  --wi-E9E2FF: #CDC7E0;
+  --wi-EAE0FF: #CEC5E0;
+  --wi-F2F0FF: #D5D3E0;
+  --wi-FCFBFE: #DEDDE0;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --wi-B7B6FA: #A1A0DC;
+    --wi-CECDFF: #B5B4E0;
+    --wi-D1C8FF: #B8B0E0;
+    --wi-D2D2D2: #B9B9B9;
+    --wi-D5D4DA: #BBBBC0;
+    --wi-DED7FA: #C3BDDC;
+    --wi-E0D3FF: #C5BAE0;
+    --wi-E8E8E9: #CCCCCD;
+    --wi-E9E2FF: #CDC7E0;
+    --wi-EAE0FF: #CEC5E0;
+    --wi-F2F0FF: #D5D3E0;
+    --wi-FCFBFE: #DEDDE0;
+  }
+}
+
+/* ── Weather icon motion ───────────────────────────────────────────────────
+   Every glyph ships its moving parts pre-tagged (.wi-mote on individual drops
+   and flakes, .wi-part--* on each layer group), but the keyframes are bound
+   only inside the four containers listed in :is() below — the hero slot, and
+   the three 7-day forecast lists:
+
+     .current-icon    hero, shared by the mobile layout and .web-hero
+     .daily-icon      mobile 7-day rows
+     .web-day-icon    web Daily page rows
+     .web-week-icon   web Today page week strip
+
+   Deliberately absent are .hourly-icon, .web-hcol-icon, .web-table-icon,
+   .web-mini-icon and the rows inside an expanded day. Those render dozens of
+   icons at a time inside a scroller, which is exactly where a dropped frame is
+   most visible; the 7-day lists top out at seven. Adding a container here is
+   the only edit needed to animate a new slot.
+
+   Everything animated below is transform or opacity only: no layout, no paint,
+   no JS timer, and nothing React re-renders. */
+@keyframes wi-drop {
+  0%   { transform: translateY(-2.6px); opacity: 0; }
+  22%  { opacity: 1; }
+  72%  { opacity: 1; }
+  100% { transform: translateY(7.4px); opacity: 0; }
+}
+@keyframes wi-flake {
+  0%   { transform: translate(0, -2px); opacity: 0; }
+  25%  { opacity: 1; }
+  70%  { opacity: 1; }
+  100% { transform: translate(-1.4px, 6px); opacity: 0; }
+}
+@keyframes wi-spin { to { transform: rotate(360deg); } }
+@keyframes wi-drift {
+  0%, 100% { transform: translateX(0); }
+  50%      { transform: translateX(0.45px); }
+}
+/* Two quick strikes then a long dark gap, the way lightning actually reads. */
+@keyframes wi-flash {
+  0%, 46%, 54%, 60%, 100% { opacity: 1; }
+  50%, 57%                { opacity: 0.25; }
+}
+
+/* Falling precipitation. The drops and flakes are individual elements, so the
+   --a/--b/--c stagger is what stops them moving as one rigid block. */
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon) :is(
+  .weather-icon--rain, .weather-icon--sunRain,
+  .weather-icon--storm, .weather-icon--stormStrong
+) .wi-mote {
+  animation: wi-drop 1.35s linear infinite;
+}
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon) .weather-icon--snow .wi-mote {
+  animation: wi-flake 3.2s linear infinite;
+}
+/* Two delays compose here, and they must not overwrite each other:
+   --wi-row-delay offsets a whole row against its neighbours, so seven days of
+   rain don't fall in lockstep and read as one animation; the --a/--b/--c values
+   stagger the drops *within* one icon. Setting a flat animation-delay per row
+   would win on order and flatten the second, so the row contributes a variable
+   and every delay below is a sum. */
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon) .wi-mote--a { animation-delay: var(--wi-row-delay, 0s); }
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon) .wi-mote--b { animation-delay: calc(var(--wi-row-delay, 0s) + 0.45s); }
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon) .wi-mote--c { animation-delay: calc(var(--wi-row-delay, 0s) + 0.9s); }
+.daily-row:nth-child(2n),   .web-day:nth-child(2n),   .web-week-day:nth-child(2n)   { --wi-row-delay: 0.62s; }
+.daily-row:nth-child(3n+1), .web-day:nth-child(3n+1), .web-week-day:nth-child(3n+1) { --wi-row-delay: 1.18s; }
+
+/* Cloud bodies breathe rather than sit dead still. Sub-pixel on purpose: at
+   hero size it reads as drift, and it never competes with the precipitation.
+   Listed per icon rather than applied to every .wi-part--body, because a
+   thermometer and a snowflake also have a body and neither should drift. */
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon) :is(
+  .weather-icon--cloud, .weather-icon--rain, .weather-icon--snow,
+  .weather-icon--storm, .weather-icon--stormStrong,
+  .weather-icon--sunCloud, .weather-icon--sunSmall, .weather-icon--sunRain
+) .wi-part--body {
+  animation: wi-drift 7s ease-in-out infinite;
+  animation-delay: var(--wi-row-delay, 0s);
+}
+
+/* transform-box keeps these in viewBox units, so the origins below are the
+   coordinates the artwork is actually drawn in. */
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon) :is(
+  .weather-icon--sun .wi-part--rays,
+  .weather-icon--snowflake .wi-part--body,
+  .weather-icon--snowflake .wi-part--ring
+) {
+  transform-box: view-box;
+}
+/* The sun's disc is centred at 15.53, 16.19 — not the middle of the viewBox.
+   Spinning about 16,16 puts a visible wobble in the rays. */
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon) .weather-icon--sun .wi-part--rays {
+  transform-origin: 15.53px 16.19px;
+  animation: wi-spin 42s linear infinite;
+}
+/* The flake's own centre, not the viewBox centre — it sits slightly high. */
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon) :is(
+  .weather-icon--snowflake .wi-part--body,
+  .weather-icon--snowflake .wi-part--ring
+) {
+  transform-origin: 16.73px 15.8px;
+  animation: wi-spin 26s linear infinite;
+}
+
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon) .wi-part--bolt {
+  animation: wi-flash 3.4s ease-in-out infinite;
+  animation-delay: var(--wi-row-delay, 0s);
+}
+/* The second bolt carries a transform attribute for its offset, and a CSS
+   transform would replace it. Only its opacity is animated, half a beat after
+   the first, so the two strikes read as one storm rather than a blink. */
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon)
+  .weather-icon--stormStrong .wi-part--bolt:last-of-type {
+  animation-delay: calc(var(--wi-row-delay, 0s) + 0.12s);
+}
+
+/* Off switch, from Settings → Appearance → Animated Icons. Deliberately not
+   scoped to the containers above: this is the one rule that has to reach every
+   animated part wherever it lives, so a slot added to the list above can never
+   escape the setting. Same for reduced motion, which stops the icons whatever
+   the setting says. */
+[data-icon-motion="off"] .weather-icon :is(.wi-mote, .wi-part) {
+  animation: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .weather-icon :is(.wi-mote, .wi-part) {
+    animation: none;
+  }
+}
+
 
 .current-temp {
   font-size: 72px;
@@ -1738,8 +1917,18 @@ body {
   min-width: 0;
 }
 
+/* Hidden while the tile is too narrow for the two-column layout below. Stacked,
+   the two times and the dial between them add three rows under the UV reading,
+   which made the Sun tile far taller than every other tile — and since the
+   details grid stretches a row to its tallest item, that one tile set the height
+   for all of them. Narrow, the tile now shows the same icon/label/value/sub run
+   as its neighbours and reads as one of them; sunrise, sunset and the dial are
+   all still there in the expanded view, at full width.
+
+   Keyed to the same 130px the wide layout uses, so there is one threshold
+   deciding this and not two that can drift apart. */
 .sun-times {
-  display: flex;
+  display: none;
   flex-direction: column;
   align-items: flex-start;
   gap: 4px;
@@ -1771,7 +1960,10 @@ body {
     height: 100%;
   }
 
+  /* Wide enough to carry them: the times come back, in their own right-hand
+     column where they cost the tile no extra height. */
   .sun-times {
+    display: flex;
     align-items: flex-end;
     justify-content: space-between;
   }
@@ -2258,6 +2450,38 @@ body {
      to the column width, the break has somewhere to happen. */
   width: 100%;
   overflow-wrap: break-word;
+}
+
+/* Two rows of three on a phone. Six columns splitting a ~330px card leave about
+   50px each, which is narrower than the word "Moderate" — so the label wrapped
+   mid-word ("Moderat / e"). Three columns roughly doubles that and every label
+   fits whole, using vertical space the expanded card has plenty of.
+
+   Scoped to .detail-cover-body, which is the expanded view. renderDetail's
+   output only ever appears there — a collapsed tile shows a label and value and
+   no timeline at all — so the tiles in the details grid keep their height.
+
+   Grid rather than flex-wrap, and left-aligned rather than centred, because
+   these are consecutive hours: the fourth reading has to start a new row
+   directly under the first. Centring a partial row (the list shrinks below six
+   as the day runs out) would break that reading order.
+
+   Above this width the card is at or near its 480px cap, where six columns are
+   ~70px and the labels fit across a single row. */
+@media (max-width: 479px) {
+  .detail-cover-body .uv-timeline {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px 8px;
+  }
+  /* The fluid floors on these were tuned to squeeze six across. At double the
+     column width they can just sit at their full size. The --sm variant keeps
+     its own smaller size for the wide readings (inHg, visibility) — it needs
+     the extra class here to outrank the rule directly above it. */
+  .detail-cover-body .uv-tl-time { font-size: 13px; }
+  .detail-cover-body .uv-tl-val { font-size: 25px; }
+  .detail-cover-body .uv-tl-val.uv-tl-val--sm { font-size: 16px; }
+  .detail-cover-body .uv-tl-lbl { font-size: 11.5px; }
 }
 
 .uv-no-exposure {
@@ -3502,7 +3726,12 @@ body {
   /* The slot is sized from the card it is standing in for, so the two agree to
      the pixel — but only while the column stays the width it was measured at. A
      rotation mid-transition would reflow the copy inside a slot still holding
-     the old height, and this keeps that from pushing the stack around. */
+     the old height, and this keeps that from pushing the stack around.
+
+     Card-shaped rather than rectangular: the radius is measured off the real card
+     and set inline beside the height (see WeatherRadar), because a square clip
+     over a rounded still cuts its bottom two corners square — the card appeared
+     to change shape as it opened. */
   overflow: hidden;
 }
 
@@ -3565,6 +3794,20 @@ body {
   overflow: hidden;
   transform-origin: 50% 50%;
   will-change: transform, opacity;
+}
+
+/* Armed: laid out, resized, waiting for its tiles, and showing none of it. The
+   circle has no transform of its own — the animation's first keyframe is what
+   makes it small — so without this the armed frames paint the finished
+   full-screen radar and the iris then snaps back to a dot to grow out of. The
+   opening fades in from nothing over its first eighth anyway (IRIS_FADE), so
+   this is the value it starts from rather than a state of its own.
+
+   will-change: opacity above is load-bearing here: Blink skips painting a fully
+   transparent subtree, and skipping it would move the raster of a screen of map
+   onto the first frame of the animation, which is the frame this is all for. */
+:root[data-shell="mobile"] .radar-iris--arm .radar-iris-circle {
+  opacity: 0;
 }
 
 /* The counter-scale, sized to the frame and offset back onto it, so that the two
@@ -4974,6 +5217,24 @@ body {
 :root[data-card-glass="on"][data-shell="mobile"][data-platform="android"] .app .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):is(.radar-expanded, :has(.detail-cover)) {
   backdrop-filter: saturate(1.35);
   -webkit-backdrop-filter: saturate(1.35);
+}
+
+/* And for the radar, while the iris is actually moving, none at all.
+   The reasoning above holds for the day cover, where the card keeps its place and
+   only the circle inside it moves. The radar is the other case: the whole
+   backdrop-filtered box is a screen-sized element being scaled, so it is not the
+   filter that costs — saturate really is a per-pixel pass with no kernel — it is
+   that the element's relation to what is behind it changes on every frame, and a
+   backdrop filter can reuse nothing across that. Each frame is a full-screen read
+   of the backdrop and a full-screen surface to composite it back through, which is
+   the largest thing left on the reveal's budget.
+   Nothing is lost by dropping it: what is behind the card here is .radar-sky, a
+   flat gradient, and a saturate pass over a gradient of one hue is very nearly the
+   gradient. It comes back the moment the circle settles, on a card that is holding
+   still, and the switch is invisible for the same reason. */
+:root[data-shell="mobile"] .app .radar-iris--on .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill).radar-expanded {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 /* The opaque sky layer exists to keep the weather stack out of the glass; peek

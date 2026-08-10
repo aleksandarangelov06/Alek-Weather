@@ -105,15 +105,42 @@ const IRIS_OUT_MS = 520
 const IRIS_STEPS = 96
 // How far the inner layer is ever asked to scale up. The exact inverse of a
 // circle starting at zero is infinite, so the circle starts at 1/this instead —
-// about 30px across on a phone — and fades in rather than growing from a
+// a hundred-odd px across on a phone — and fades in rather than growing from a
 // mathematical point. Chromium rasterises a will-change layer once and scales
-// that bitmap, so the earliest frames are soft; at 30px there is nothing to read
-// into it, and it is sharp long before the circle is big enough to notice.
-// Also the dynamic range the interpolation above has to cover, so keeping it
-// modest is the other half of that fix: 12 starts the circle around 50px rather
-// than 30, which the fade hides either way.
-const IRIS_MAX_INNER = 12
+// that bitmap, so the earliest frames are soft; at that size there is nothing to
+// read into it, and it is sharp long before the circle is big enough to notice.
+//
+// It is also the peak scale of a screen-sized layer, which is the reason it kept
+// coming down. Chromium sizes the raster for a transform animation off the
+// largest scale the animation reaches, so this number is squared in pixels
+// before it is anything else: at 12 the inner layer asks to be rasterised at 144
+// times the area of the screen, which is the kind of number that gets clamped,
+// re-rastered mid-flight, or paid for in memory bandwidth on a phone. Six asks
+// for a quarter of that. What it costs is a circle that starts twice as wide,
+// which the fade over the first eighth of the run covers either way — and a
+// smaller dynamic range for the interpolation above to cover, so the residue
+// between samples falls too.
+const IRIS_MAX_INNER = 6
 const IRIS_FADE = 0.12 // fraction of the run spent fading the circle in
+
+// How long the armed frame will wait for the base map to finish filling itself
+// in before it gives up and opens anyway.
+//
+// Going full-screen is a fourfold increase in map area, so invalidateSize asks
+// for a screenful of tiles that the compact card never needed. They arrive over
+// the next few hundred ms, and every one of them lands as a repaint of the layer
+// the iris is scaling — in dark mode through the invert filter on .map-base-tiles,
+// which is a full-screen filter pass redone on each arrival. That is main-thread
+// and raster work spread across exactly the frames that have to be smooth, and it
+// is why arming the switch alone did not buy the whole win.
+//
+// So the armed frame holds until the base layer says it has them. The wait is
+// invisible rather than merely brief: the circle is transparent for the whole of
+// 'arm' (see .radar-iris--arm), so the screen still shows the stack with the card
+// in it, unchanged, the way it did before the tap. The cap is what keeps a slow
+// network from turning that into a tap that does nothing — past it the iris opens
+// over whatever has arrived, which is the behaviour this had all along.
+const ARM_TILE_WAIT_MS = 180
 
 // cubic-bezier(x1,y1,x2,y2) at t: Newton on x, then evaluate y. Six passes lands
 // well inside a pixel at these sizes.
@@ -626,8 +653,21 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
     // computed style rather than hard-coded, so a theme that changes the gap
     // can't leave this a few pixels out.
     const el = cardRef.current
+    const cs = el && getComputedStyle(el)
     setHold(el
-      ? { height: `${el.offsetHeight}px`, marginBottom: getComputedStyle(el).marginBottom }
+      ? {
+          // getBoundingClientRect, not offsetHeight: the card's height is
+          // fractional at most text sizes and offsetHeight rounds it, so the slot
+          // could come out a fraction of a pixel short — and the placeholder
+          // clips, so short means clipping the bottom of the still inside it.
+          height: `${el.getBoundingClientRect().height}px`,
+          marginBottom: cs.marginBottom,
+          // The clip has to be the card's shape, not a rectangle around it. The
+          // slot holds a still of a rounded card and cuts it to its own box, so a
+          // square box squares off the two bottom corners — which is a card that
+          // changes shape the moment you open it.
+          borderRadius: cs.borderRadius,
+        }
       : null)
     holdClone.current = el ? snapshot(el) : null
     history.pushState({ overlay: 'radar' }, '')
@@ -681,7 +721,7 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
   // ahead of the paint that lays the card out.
   useEffect(() => {
     if (phase !== 'arm') return
-    let inner
+    let inner, cap, unhook
     const outer = requestAnimationFrame(() => {
       // Also done by the 80ms timeout further down, but that one would land in the
       // middle of the iris. Leaflet bails early on a size it has already seen, so
@@ -696,9 +736,24 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
       if (box && tapPoint.current) {
         setRevealStyle(irisGeometry(tapPoint.current.x, tapPoint.current.y, box))
       }
-      inner = requestAnimationFrame(() => setPhase('in'))
+      // Then let the tiles the resize just asked for land before the circle
+      // moves — see ARM_TILE_WAIT_MS. isLoading() is true from the moment
+      // invalidateSize adds a tile above, and the load event is Leaflet saying
+      // the grid is complete; a fully cached grid answers false here and opens
+      // on the next frame, as it always did.
+      inner = requestAnimationFrame(() => {
+        const base = baseTileRef.current
+        const go = () => { clearTimeout(cap); unhook?.(); unhook = null; setPhase('in') }
+        if (!base?.isLoading?.()) { setPhase('in'); return }
+        base.once('load', go)
+        unhook = () => base.off('load', go)
+        cap = setTimeout(go, ARM_TILE_WAIT_MS)
+      })
     })
-    return () => { cancelAnimationFrame(outer); cancelAnimationFrame(inner) }
+    return () => {
+      cancelAnimationFrame(outer); cancelAnimationFrame(inner)
+      clearTimeout(cap); unhook?.()
+    }
   }, [phase])
 
   // Runs the circle and its inverse as one pair of compositor animations.
@@ -709,10 +764,16 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
   // are started in the same tick off the same generated grid, which is what keeps
   // them locked together — a CSS animation pair could drift by a frame at start.
   //
+  // A layout effect, because a plain one runs after the paint it was scheduled by
+  // and the animation's first keyframe is the only thing holding the circle shut.
+  // The render that sets 'in' would otherwise paint once with the circle at its
+  // natural size — the finished full-screen radar — and the iris would then snap
+  // back to a dot and grow out of it. The same frame in reverse on the way out.
+  //
   // The settled state is the circle gone entirely: at rest the card is plain
   // position:fixed again, rather than a screen-sized round box with two
   // will-change layers pinned under it for as long as the radar is up.
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (phase !== 'in' && phase !== 'out') return
     const circle = irisCircleRef.current
     const inner  = irisInnerRef.current
@@ -901,7 +962,14 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
   // in the stack, or settled open — the three wrappers are display:contents and
   // the card lays out exactly as it did before any of this existed.
   const irisOn = !!revealStyle && (phase === 'arm' || phase === 'in' || phase === 'out')
-  const irisC = irisOn ? ' radar-iris--on' : ''
+  // Arming paints the destination — full-screen card, resized map, whatever tiles
+  // have landed — with nothing yet telling the circle to be small, so the class
+  // holds it transparent for the duration. That is what makes the frame free to
+  // wait on (see ARM_TILE_WAIT_MS): the screen it shows is the one the tap landed
+  // on, and the iris still opens out of a shut window.
+  const irisC = irisOn
+    ? ` radar-iris--on${phase === 'arm' ? ' radar-iris--arm' : ''}`
+    : ''
 
   return (
     <>
