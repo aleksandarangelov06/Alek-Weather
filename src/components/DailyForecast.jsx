@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { X } from 'lucide-react'
+import { Droplet, X } from 'lucide-react'
 import { getWeatherInfo, formatDay, formatHour, formatTime, getUVLabel, liveWeatherCode, nowcastHourlyCode, precipTier, toTemp, tempColor, tempStyle, displayPrecipChance, SUN_ORANGE } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
 import { formatPrecip, formatWind } from '../utils/units'
@@ -273,9 +273,25 @@ export function DailyForecast({ daily, hourly, timezone, unit, units, colorCodin
             >
               <span className="daily-icon">
                 <WeatherIcon id={info.icon} alt={info.label} />
-                {p > 0 && <span className="daily-precip-badge">{p}%</span>}
               </span>
               <span className="daily-day">{formatDay(date)}</span>
+              {/* Always rendered, even at 0%, so the grid cell stays occupied —
+                  omitting it would let the temperature range slide left into
+                  this column on dry days. The droplet names the unit: a bare
+                  "45%" could read as humidity or cloud cover, and aria-label
+                  carries that meaning to screen readers, which otherwise hear
+                  only "45%". */}
+              <span
+                className="daily-precip-badge"
+                aria-label={p > 0 ? `${p}% chance of precipitation` : undefined}
+              >
+                {p > 0 && (
+                  <>
+                    <Droplet className="daily-precip-drop" aria-hidden="true" />
+                    <span className="daily-precip-num">{p}%</span>
+                  </>
+                )}
+              </span>
               <div className="daily-range">
                 <div className="daily-range-inner">
                   <span className="daily-low" style={{ ...tempStyle(minTemps[i], colorCoding, 0.4, glow, frost), left: `${pillLeft}%` }}>{low}°</span>

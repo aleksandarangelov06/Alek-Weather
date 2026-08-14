@@ -1358,54 +1358,18 @@ body {
 
 /* ── Weather icon palette ──────────────────────────────────────────────────
    The icons in weatherGlyphs.jsx are redrawn from Fluent, whose cloud and snow
-   art is a fixed near-white lavender. That was chosen for a light chat surface
-   and glows against a dark app background — the one thing the old CDN <img>
-   could never be told about.
+   art is a fixed near-white lavender. Every pale colour in that palette is a
+   `var(--wi-XXXXXX, #XXXXXX)` token in the SVG, carrying its own upstream value
+   as the fallback.
 
-   Every pale colour in that palette is a token here, carrying its own light
-   value as the fallback inside the SVG, so light mode is exactly the upstream
-   art and dark mode only redefines the tokens.
+   Nothing overrides those tokens, in either theme, on purpose: the icons are
+   meant to be the upstream art at full strength everywhere. Dark mode used to
+   redefine all twelve as a 12% RGB dim to take the glare off a near-white cloud
+   on a dark ground, and it read as the icons being muddied rather than eased.
 
-   The dark values are a straight 12% RGB dim of the light ones — nothing else.
-   Two earlier attempts were worse than leaving the art alone: scaling lightness
-   in HSL turned the lavenders into vivid violet, and a 40% dim blended toward
-   slate drained them to grey lumps. Multiplying RGB holds the hue exactly, and
-   a light touch is all this needs: the goal is to take the glare off a
-   near-white cloud on a dark ground, not to recolour it.
-
-   Sun, moon, bolt and the storm cloud are deliberately absent: they are already
-   dark-legible and retuning them would flatten the one bright accent each icon
-   has. */
-[data-theme="dark"] {
-  --wi-B7B6FA: #A1A0DC;
-  --wi-CECDFF: #B5B4E0;
-  --wi-D1C8FF: #B8B0E0;
-  --wi-D2D2D2: #B9B9B9;
-  --wi-D5D4DA: #BBBBC0;
-  --wi-DED7FA: #C3BDDC;
-  --wi-E0D3FF: #C5BAE0;
-  --wi-E8E8E9: #CCCCCD;
-  --wi-E9E2FF: #CDC7E0;
-  --wi-EAE0FF: #CEC5E0;
-  --wi-F2F0FF: #D5D3E0;
-  --wi-FCFBFE: #DEDDE0;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --wi-B7B6FA: #A1A0DC;
-    --wi-CECDFF: #B5B4E0;
-    --wi-D1C8FF: #B8B0E0;
-    --wi-D2D2D2: #B9B9B9;
-    --wi-D5D4DA: #BBBBC0;
-    --wi-DED7FA: #C3BDDC;
-    --wi-E0D3FF: #C5BAE0;
-    --wi-E8E8E9: #CCCCCD;
-    --wi-E9E2FF: #CDC7E0;
-    --wi-EAE0FF: #CEC5E0;
-    --wi-F2F0FF: #D5D3E0;
-    --wi-FCFBFE: #DEDDE0;
-  }
-}
+   The token plumbing stays in the glyphs so a future retune is a block of
+   custom properties here and no edit to the art — but keep in mind that any
+   such override is the thing that darkens the icons in dark mode. */
 
 /* ── Weather icon motion ───────────────────────────────────────────────────
    Every glyph ships its moving parts pre-tagged (.wi-mote on individual drops
@@ -1449,26 +1413,111 @@ body {
   50%, 57%                { opacity: 0.25; }
 }
 
-/* Falling precipitation. The drops and flakes are individual elements, so the
-   --a/--b/--c stagger is what stops them moving as one rigid block. */
+/* ── Per-mote scatter ──────────────────────────────────────────────────────
+   Gives each mote a fall of its own rather than one shared with the group. Two
+   values per mote, both dimensionless so the table works against any base cycle:
+
+     --wi-mote-lag   where in its cycle the mote starts, as a fraction of one
+     --wi-mote-dur   its fall time, as a multiple of the icon's base cycle
+
+   This drives snow only. The rain and storm drops opt out a few rules down and
+   fall in unison, which is the look those icons are meant to have — see the
+   note there. Flakes are the case scatter is right for: sixteen of them at
+   several sizes, drifting, where unison would read as a falling grid.
+
+   The lags are deliberately not evenly spaced. Equal steps across one cycle
+   don't read as independent motes — they read as one wave marching down the
+   icon. The durations matter just as much: with a single shared duration the
+   icon repeats exactly every cycle however the phases are arranged, and the eye
+   finds that loop within seconds. Varying the fall time means no two motes hold
+   a fixed relationship, so they drift apart and never resynchronise.
+
+   Indexing is positional, by :nth-child within the flakes group, so it reaches
+   all sixteen without the art carrying an index of its own. The art used to
+   carry one — three classes, --a/--b/--c — which could not cover sixteen
+   flakes: it cycled, and every repeat fell in perfect lockstep.
+
+   Unscoped on purpose. These are inert custom properties on any icon with no
+   animation bound, and keeping them out of the container list below means a
+   new animated slot needs one edit, not two. */
+.wi-mote:nth-child(1)  { --wi-mote-lag: 0.00; --wi-mote-dur: 1.00; }
+.wi-mote:nth-child(2)  { --wi-mote-lag: 0.37; --wi-mote-dur: 1.14; }
+.wi-mote:nth-child(3)  { --wi-mote-lag: 0.68; --wi-mote-dur: 0.90; }
+.wi-mote:nth-child(4)  { --wi-mote-lag: 0.19; --wi-mote-dur: 1.07; }
+.wi-mote:nth-child(5)  { --wi-mote-lag: 0.83; --wi-mote-dur: 0.96; }
+.wi-mote:nth-child(6)  { --wi-mote-lag: 0.51; --wi-mote-dur: 1.21; }
+.wi-mote:nth-child(7)  { --wi-mote-lag: 0.09; --wi-mote-dur: 0.87; }
+.wi-mote:nth-child(8)  { --wi-mote-lag: 0.74; --wi-mote-dur: 1.10; }
+.wi-mote:nth-child(9)  { --wi-mote-lag: 0.28; --wi-mote-dur: 0.93; }
+.wi-mote:nth-child(10) { --wi-mote-lag: 0.94; --wi-mote-dur: 1.17; }
+.wi-mote:nth-child(11) { --wi-mote-lag: 0.44; --wi-mote-dur: 1.03; }
+.wi-mote:nth-child(12) { --wi-mote-lag: 0.61; --wi-mote-dur: 0.85; }
+.wi-mote:nth-child(13) { --wi-mote-lag: 0.15; --wi-mote-dur: 1.12; }
+.wi-mote:nth-child(14) { --wi-mote-lag: 0.88; --wi-mote-dur: 0.99; }
+.wi-mote:nth-child(15) { --wi-mote-lag: 0.33; --wi-mote-dur: 1.23; }
+.wi-mote:nth-child(16) { --wi-mote-lag: 0.57; --wi-mote-dur: 0.92; }
+
+/* Falling rain. --wi-fall is the icon's base cycle, and the two overrides below
+   are the whole of what separates rain from a storm from a severe one.
+
+   The drops fall in unison, on purpose: lag 0 and dur 1 opt every one of them
+   out of the scatter table above. These declarations sit at (0,3,0) against the
+   table's (0,2,0), so they win on specificity and the table needs no exception
+   written into it — snow keeps reading it untouched.
+
+   Scatter was tried here and looked wrong. Three or four drops are too few to
+   read as a crowd: staggered, they stop being rain falling and become three
+   separate objects each doing its own thing, and the icon loses the single
+   downward beat that says "rain" at 22px. Sixteen flakes are a crowd, which is
+   why snow keeps the scatter and this does not. Speed is the lever that carries
+   intensity here, not phase.
+
+   The delay is negative so the row offset lands mid-cycle rather than holding
+   the drops at their transparent 0% keyframe. --wi-row-delay pushes a whole
+   forecast row out of step with its neighbours, so seven days of rain aren't
+   one animation playing seven times; it composes into the same calc rather than
+   taking its own line, because a flat animation-delay per row would win on
+   order and overwrite everything else here. The --wi-mote-lag term is retained
+   at zero rather than deleted: it costs nothing and putting the scatter back is
+   then a one-line change.
+
+   animation-delay is repeated in both blocks and cannot be lifted into a shared
+   lower-specificity rule: the `animation` shorthand here resets it to 0s, and
+   the shorthand's rule is the more specific of the two. */
 :is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon) :is(
   .weather-icon--rain, .weather-icon--sunRain,
   .weather-icon--storm, .weather-icon--stormStrong
 ) .wi-mote {
-  animation: wi-drop 1.35s linear infinite;
+  --wi-fall: 1.35s;
+  --wi-mote-lag: 0;
+  --wi-mote-dur: 1;
+  animation: wi-drop calc(var(--wi-fall) * var(--wi-mote-dur, 1)) linear infinite;
+  animation-delay: calc(0s - var(--wi-row-delay, 0s) - var(--wi-fall) * var(--wi-mote-lag, 0));
+}
+/* A storm is not just rain with a bolt over it — the rain itself is heavier, and
+   the severe one heavier still, so the three icons read apart at a glance even
+   where the bolt is a few pixels of art.
+
+   Only the base cycle moves — the drops stay in unison at every speed, since
+   everything per-mote above is expressed relative to --wi-fall and rescales
+   with it. Overriding the variable is enough on its own: the animation
+   shorthand that reads it stays up in the block above, because a custom
+   property cascades independently of the declarations that reference it.
+
+   These two match that block's specificity exactly and win on source order, so
+   they must stay below it. --storm does not match --stormStrong; they are
+   separate class names, which is why the block above lists both. */
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon) .weather-icon--storm .wi-mote {
+  --wi-fall: 0.78s;
+}
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon) .weather-icon--stormStrong .wi-mote {
+  --wi-fall: 0.5s;
 }
 :is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon) .weather-icon--snow .wi-mote {
-  animation: wi-flake 3.2s linear infinite;
+  --wi-fall: 3.2s;
+  animation: wi-flake calc(var(--wi-fall) * var(--wi-mote-dur, 1)) linear infinite;
+  animation-delay: calc(0s - var(--wi-row-delay, 0s) - var(--wi-fall) * var(--wi-mote-lag, 0));
 }
-/* Two delays compose here, and they must not overwrite each other:
-   --wi-row-delay offsets a whole row against its neighbours, so seven days of
-   rain don't fall in lockstep and read as one animation; the --a/--b/--c values
-   stagger the drops *within* one icon. Setting a flat animation-delay per row
-   would win on order and flatten the second, so the row contributes a variable
-   and every delay below is a sum. */
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon) .wi-mote--a { animation-delay: var(--wi-row-delay, 0s); }
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon) .wi-mote--b { animation-delay: calc(var(--wi-row-delay, 0s) + 0.45s); }
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon) .wi-mote--c { animation-delay: calc(var(--wi-row-delay, 0s) + 0.9s); }
 .daily-row:nth-child(2n),   .web-day:nth-child(2n),   .web-week-day:nth-child(2n)   { --wi-row-delay: 0.62s; }
 .daily-row:nth-child(3n+1), .web-day:nth-child(3n+1), .web-week-day:nth-child(3n+1) { --wi-row-delay: 1.18s; }
 
@@ -1695,7 +1744,10 @@ body {
 
 .daily-row {
   display: grid;
-  grid-template-columns: 54px 50px 1fr;
+  /* icon · day · precip chance · temperature range. The chance column is a
+     fixed width, not auto, so it does not resize row to row with the digit
+     count and stagger the range track down the list. */
+  grid-template-columns: 54px 50px 42px 1fr;
   align-items: center;
   gap: 10px;
   padding: 9px 6px;
@@ -1754,25 +1806,39 @@ body {
   line-height: 1;
 }
 
-/* Precip chance rides the icon's lower-right corner as a frosted pill.
-   Background/blur keep it readable over any icon art; theme-variable mixes
-   keep it legible on white, dark, and sky-tinted cards alike. */
+/* Precip chance sits in its own column between the day and the range, as bare
+   text. It used to be a frosted pill overlapping the icon's corner, which
+   needed the background and blur to stay readable over the artwork; standing
+   clear it needs none of that, so the number carries itself on colour and
+   weight alone. Centred in the column, which keeps the short values (7%) from
+   stranding themselves against one edge. */
 .daily-precip-badge {
-  position: absolute;
-  right: -9px;
-  bottom: -3px;
-  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: -0.2px;
   line-height: 1;
-  padding: 3px 6px;
-  border-radius: 999px;
   color: var(--accent);
-  background: color-mix(in srgb, var(--card-bg) 72%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.14);
+}
+
+/* The droplet is filled, not outlined: at 9px a 2px-stroke outline reads as a
+   smudge, while a solid silhouette still reads as a raindrop. Sized in px
+   rather than em so it does not drift if the badge's font-size is tuned. */
+.daily-precip-drop {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  fill: currentColor;
+  stroke: none;
+}
+
+/* Tabular figures so 7%, 45% and 100% occupy predictable widths and the
+   badges down the column stop jittering in size row to row. */
+.daily-precip-num {
+  font-variant-numeric: tabular-nums;
 }
 
 /* Dark Sky–style temperature pills: a single track whose pill's left/width map

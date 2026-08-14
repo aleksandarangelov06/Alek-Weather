@@ -448,9 +448,10 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
     // Sky tally (precip and fog count as cloud) plus humidity/temp averages.
     let clear = 0, partly = 0, cloud = 0, fogHours = 0
     let rhSum = 0, rhN = 0, tSum = 0, tN = 0
-    const rain = { hours: 0, showery: 0, steady: 0, maxTier: 0 }
-    const snow = { hours: 0, maxTier: 0 }
+    const rain = { hours: 0, showery: 0, steady: 0, maxTier: 0, first: -1 }
+    const snow = { hours: 0, maxTier: 0, first: -1 }
     let iceHours = 0, thunderHours = 0, thunderHeavy = false
+    let fogFirst = -1, iceFirst = -1, thunderFirst = -1
 
     for (const i of win) {
       const c = codes[i]
@@ -461,19 +462,28 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
 
       const tier = precipTier(c)
       if (tier === 0) {
-        if (FOG_CODES.has(c)) { fogHours++; cloud++ }
+        if (FOG_CODES.has(c)) { fogHours++; cloud++; if (fogFirst < 0) fogFirst = i }
         else if (c === 3) cloud++
         else if (c === 2) partly++
         else clear++
         continue
       }
       cloud++ // any precipitation implies cloudy skies
-      if ([95, 96, 99].includes(c)) { thunderHours++; if (c === 96 || c === 99) thunderHeavy = true }
-      else if (SNOW_CODES.has(c)) { snow.hours++; snow.maxTier = Math.max(snow.maxTier, tier) }
-      else if (ICE_CODES.has(c)) iceHours++
+      if ([95, 96, 99].includes(c)) {
+        thunderHours++
+        if (c === 96 || c === 99) thunderHeavy = true
+        if (thunderFirst < 0) thunderFirst = i
+      }
+      else if (SNOW_CODES.has(c)) {
+        snow.hours++
+        snow.maxTier = Math.max(snow.maxTier, tier)
+        if (snow.first < 0) snow.first = i
+      }
+      else if (ICE_CODES.has(c)) { iceHours++; if (iceFirst < 0) iceFirst = i }
       else {
         rain.hours++
         rain.maxTier = Math.max(rain.maxTier, tier)
+        if (rain.first < 0) rain.first = i
         if ([51, 53, 80, 81, 82].includes(c)) rain.showery++; else rain.steady++
       }
     }
@@ -485,17 +495,59 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
     // Quantifier for countable events (showers, thunderstorms).
     const many = (n) => n <= 1 ? 'a' : n === 2 ? 'a couple of' : n <= 4 ? 'a few' : 'several'
 
+    // When a look-ahead slot falls, in the same vocabulary the day-arc narrative
+    // uses. Without this the summary named events but never said when they hit
+    // ("Cloudy and humid with a heavy thunderstorm."). A slot inside the period
+    // already underway gets "later this afternoon", so a storm three hours out
+    // never reads as one happening now.
+    //
+    // The small hours count as 'night', not 'morning' — 2am must never render as
+    // "tomorrow morning". Past midnight is still the same night to someone
+    // reading this in the evening, so it gets "overnight" rather than a
+    // "tomorrow" label that overshoots by a full day.
+    const periodOf = (h) => h < 5 ? 'night' : h < 12 ? 'morning' : h < 17 ? 'afternoon' : h < 21 ? 'evening' : 'night'
+    const whenLabel = (i) => {
+      const t = hourly.time?.[start + i]
+      if (!t) return null
+      if (i === 0) return 'right now'
+      const h = parseInt(t.slice(11, 13), 10)
+      const p = periodOf(h)
+      if (!t.startsWith(todayStr)) return h < 5 ? 'overnight' : `tomorrow ${p}`
+      if (p === periodOf(parseInt(currentHourStr, 10))) return p === 'night' ? 'later tonight' : `later this ${p}`
+      return p === 'night' ? 'tonight' : `this ${p}`
+    }
+
+    // Start time for a plan-changing event. "around" is doing real work: these
+    // come from hourly slots, so the true onset is somewhere inside the hour and
+    // a bare "at 3pm" would overstate what the forecast knows. Slots past
+    // midnight are still the same night to an evening reader, so they say
+    // "tonight" instead of "tomorrow" — which would overshoot by a full day.
+    const clockLabel = (i) => {
+      const t = hourly.time?.[start + i]
+      if (!t) return null
+      if (i === 0) return 'right now'
+      const h = parseInt(t.slice(11, 13), 10)
+      if (t.startsWith(todayStr)) return `beginning around ${fmtClock(h)}`
+      return h < 5 ? `beginning around ${fmtClock(h)} tonight` : `beginning around ${fmtClock(h)} tomorrow`
+    }
+
     // Each event carries a severity rank so the sentence lists them worst-last.
+    // `clock: true` marks the plan-changing ones — precipitation you'd reschedule
+    // around, which earn an explicit start time ("beginning around 3pm") rather
+    // than a vaguer period label. Fog is ambient: it creeps in and lifts without
+    // a start hour worth naming, so it keeps the period wording.
     const events = []
 
     if (fogHours >= 2 && rain.hours === 0 && snow.hours === 0 && thunderHours === 0)
-      events.push({ rank: 0, text: 'areas of fog' })
+      events.push({ rank: 0, at: fogFirst, clock: false, text: 'areas of fog' })
 
     if (rain.hours > 0) {
       const heavy = rain.maxTier >= 3
       if (rain.showery >= rain.steady) {
         events.push({
           rank: 1 + rain.maxTier,
+          at: rain.first,
+          clock: true,
           text: rain.hours === 1
             ? (heavy ? 'a heavy shower' : 'a shower')
             : `${many(rain.hours)} ${heavy ? 'heavy showers' : 'showers'}`,
@@ -503,6 +555,8 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
       } else {
         events.push({
           rank: 1 + rain.maxTier,
+          at: rain.first,
+          clock: true,
           text: heavy
             ? (rain.hours >= 3 ? 'periods of heavy rain' : 'heavy rain')
             : (rain.hours >= 3 ? 'periods of rain' : rain.maxTier <= 1 ? 'a little rain' : 'some rain'),
@@ -514,6 +568,8 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
       const heavy = snow.maxTier >= 3
       events.push({
         rank: 2 + snow.maxTier,
+        at: snow.first,
+        clock: true,
         text: snow.hours >= 3
           ? (heavy ? 'periods of heavy snow' : 'periods of snow')
           : heavy ? 'heavy snow' : snow.maxTier <= 1 ? 'a little snow' : 'some snow',
@@ -521,11 +577,13 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
     }
 
     if (iceHours > 0)
-      events.push({ rank: 6, text: iceHours >= 2 ? 'freezing rain' : 'a bit of freezing rain' })
+      events.push({ rank: 6, at: iceFirst, clock: true, text: iceHours >= 2 ? 'freezing rain' : 'a bit of freezing rain' })
 
     if (thunderHours > 0)
       events.push({
         rank: 8,
+        at: thunderFirst,
+        clock: true,
         text: thunderHeavy ? 'a heavy thunderstorm'
           : thunderHours === 1 ? 'a thunderstorm'
           : `${many(thunderHours)} thunderstorms`,
@@ -545,7 +603,33 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
     const head = humid ? `${base} and humid` : base
 
     events.sort((a, b) => a.rank - b.rank)
-    const list = events.map(e => e.text)
+
+    // The worst event always gets a time — it's the one worth planning around.
+    // A second time goes on the earliest event when it leads the worst by 2+
+    // hours, because "showers and a heavy thunderstorm beginning around 3pm"
+    // reads as though the showers hold off until 3pm too. Anything closer than
+    // that shares the one label rather than turning the sentence into a
+    // timetable.
+    const worst = events[events.length - 1]
+    const timeFor = (e) => e.at >= 0 ? (e.clock ? clockLabel(e.at) : whenLabel(e.at)) : null
+
+    let lead = null
+    if (worst.clock && worst.at >= 0) {
+      const earliest = events.reduce((a, b) => (b.clock && b.at >= 0 && b.at < a.at ? b : a), worst)
+      if (earliest !== worst && worst.at - earliest.at >= 2) lead = earliest
+    }
+
+    const leadLabel = lead ? timeFor(lead) : null
+    let worstLabel = timeFor(worst)
+    // Don't say "beginning" twice in one sentence; the second start reads as
+    // "and a heavy thunderstorm around 3pm".
+    if (leadLabel?.startsWith('beginning ') && worstLabel?.startsWith('beginning '))
+      worstLabel = worstLabel.slice('beginning '.length)
+
+    const list = events.map((e) => {
+      const label = e === worst ? worstLabel : e === lead ? leadLabel : null
+      return label ? `${e.text} ${label}` : e.text
+    })
     const tail = list.length === 0 ? ''
       : list.length === 1 ? ` with ${list[0]}`
       : ` with ${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`

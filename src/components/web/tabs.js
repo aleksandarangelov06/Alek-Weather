@@ -5,10 +5,16 @@ const TAB_KEY = 'alek-weather-web-tab'
 // Only the pages the app actually has data for. There is deliberately no
 // Monthly / Allergies / Pollen tab: the forecast API is capped at 7 days and
 // nothing in the app fetches pollen, so those would be empty shells.
+//
+// There is no Hourly tab either, and that one is a removal rather than an
+// absence: the hours are on Today, in the strip at the top of the page, and a
+// whole tab holding a 72-row table of the same forecast earned its place in the
+// bar less than the pages either side of it did. Dropping the id from this list
+// is all it takes to retire a page — useWebTab validates saved ids against
+// TABS, so anyone whose browser has 'hourly' in localStorage lands on Today.
 export const TABS = [
   { id: 'today',   label: 'Today'       },
-  { id: 'hourly',  label: 'Hourly'      },
-  { id: 'daily',   label: '7 Day'       },
+  { id: 'daily',   label: 'Outlook'     },
   { id: 'details', label: 'Details'     },
   { id: 'radar',   label: 'Radar'       },
   { id: 'air',     label: 'Air Quality' },

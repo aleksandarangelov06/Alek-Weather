@@ -94,7 +94,7 @@ export function DailyPage({ weather, unit, units, colorCoding }) {
     <div className="web-page">
       <div className="card web-chart-card">
         <div className="web-page-head">
-          <h2 className="web-page-title">7-day forecast</h2>
+          <h2 className="web-page-title">Outlook</h2>
         </div>
         <WeekChart daily={daily} timezone={timezone} unit={unit} colorCoding={colorCoding.daily} />
       </div>

@@ -519,7 +519,8 @@ export function useWeather(initialLoading = false) {
         fetch(`${NWS_POINTS_URL}/${loc.latitude.toFixed(4)},${loc.longitude.toFixed(4)}`, { headers: NWS_HEADERS }),
       ])
 
-      if (weatherResult.status === 'rejected' || !weatherResult.value.ok) throw new Error()
+      if (weatherResult.status === 'rejected') throw weatherResult.reason
+      if (!weatherResult.value.ok) throw new Error(`Open-Meteo forecast returned ${weatherResult.value.status}`)
       const data = await weatherResult.value.json()
 
       // Parse alerts up front: an active warning corroborates the
@@ -649,7 +650,10 @@ export function useWeather(initialLoading = false) {
           setAirQuality({ ...aqiData.current, hourly: aqiData.hourly ?? null })
       }
 
-    } catch {
+    } catch (e) {
+      // Log the cause: a network/DNS fault and a bad API response both surface
+      // as the same user-facing message, and are otherwise indistinguishable.
+      console.error('Weather fetch failed:', e)
       if (fetchIdRef.current === fetchId) setError('Failed to fetch weather data. Please try again.')
     } finally {
       if (fetchIdRef.current === fetchId) setLoading(false)

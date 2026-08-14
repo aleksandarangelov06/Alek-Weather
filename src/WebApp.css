@@ -117,12 +117,14 @@
 }
 
 /* Page content scrolls underneath, so the header needs a backdrop of its own —
-   without one, table rows read straight through the tab bar. It is fully opaque
-   with a hard bottom edge rather than a fade: the Hourly page parks its own
-   sticky column head directly below, and a fade would leave a band where rows
-   show through between the two. A soft drop shadow keeps the edge from reading
-   as a drawn border. With weather effects off this flat panel is the page
-   background, so it is invisible; .header-sky below covers the sky case. */
+   without one, page content reads straight through the tab bar. It is fully
+   opaque with a hard bottom edge rather than a fade, so that anything parking
+   itself directly below can meet that edge without a band between the two: the
+   retired Hourly page's sticky column head was the case that set this, and the
+   Outlook page's rows are the one it still holds for. A soft drop shadow keeps
+   the edge from reading as a drawn border. With weather effects off this flat
+   panel is the page background, so it is invisible; .header-sky below covers
+   the sky case. */
 .app-header--tabs::before {
   content: '';
   position: absolute;
@@ -203,69 +205,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .web-tabs-wrap { animation: none; }
-}
-
-/* The same bar used inside a card rather than in the header — the Hourly page's
-   reading menu, which sits at the top of the table it drives. It loses what was
-   specific to living in the header: the entrance animation (it isn't handing
-   over from a wordmark) and the centring (it heads a left-aligned table). */
-.web-tabs-wrap--inline {
-  justify-content: flex-start;
-  animation: none;
-}
-
-/* Nested in a card, the bar's own .card surface would be the same fill as the
-   card it sits on — invisible, leaving the pills adrift. Sunk instead, so it
-   reads as a control strip set into the card's top. */
-.web-tabs-wrap--inline .web-tabs {
-  background: var(--web-sunken);
-  box-shadow: none;
-  margin-bottom: 0;
-}
-
-/* The reading menu and the column head, pinned under the app header as a single
-   element. They were sticky separately, which meant the head had to park itself
-   at exactly the menu's height — and any disagreement, from a measurement one
-   frame late or a fluid tab font, opened a band that the rows scrolled through
-   in plain view. Sticking the pair as one box removes the arithmetic entirely.
-
-   The background is stated rather than inherited: while scrolling this is the
-   only thing between the rows and the viewport, so anything less than opaque
-   shows the table straight through it. --sky-card is the fill a card takes over
-   a sky and --card-bg the fill it takes otherwise — the pair `.card` resolves. */
-.web-table-stick {
-  position: sticky;
-  top: var(--web-header-h);
-  z-index: 3;
-  background: var(--sky-card, var(--card-bg));
-  /* Square on purpose, with no radius of its own. The card clips it (see
-     overflow: clip on .web-table-card), so at rest the card's own rounded
-     corners shape it and it reads as the top of the card — and once it pins
-     under the header, where the clip is square because the card's corners are
-     far above, it goes square too and meets the header edge to edge. A radius
-     here would instead leave two wedges of page background between the header
-     and the block for the rows to show through. */
-}
-
-/* A strip of the same fill carried up behind the app header. --web-header-h is
-   a measured pixel height, and the block's top edge has to land on the header's
-   bottom edge exactly: a fractional layout, a zoom level, or a measurement
-   arriving a frame late leaves a sliver with nothing behind it, which is where
-   the rows showed through. Rather than chase the arithmetic to the pixel, the
-   block paints past where the header ends; the header sits at z-index 6 against
-   this block's 3, so the overlap stays hidden behind it. */
-.web-table-stick::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 100%;
-  height: 16px;
-  background: inherit;
-}
-
-.web-table-menu {
-  padding: 12px 12px 0;
 }
 
 .web-tabs {
@@ -517,7 +456,8 @@
 
 /* The page's own cards manage their spacing through the flex gap. */
 .web-page > .card,
-.web-page .web-hero > .card,
+.web-page .web-today-grid > .card,
+.web-page .web-widget > .card,
 .web-page .web-cols > .card,
 .web-page .web-col-stack > .card,
 .web-page .web-detail-grid > .card {
@@ -639,17 +579,6 @@
   background: rgba(255, 255, 255, 0.16);
 }
 
-.web-num {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.web-unit {
-  color: var(--text-tertiary);
-  font-size: 0.85em;
-  font-weight: 400;
-}
-
 .web-empty {
   display: flex;
   flex-direction: column;
@@ -662,21 +591,102 @@
 
 /* ── Today ───────────────────────────────────────────────────────────────── */
 
-/* The current card is a summary, not the page: it holds one temperature and a
-   condition, where the tiles beside it hold eight readings. Giving it a third
-   of the band was leaving it mostly air on a wide window, so it takes the
-   narrower track and the glance grid takes the width it can actually use. */
-.web-hero {
+/* Today is one grid of two tracks, not a hero band with rows under it: the four
+   widgets are draggable, so any of them can end up in either place. The current
+   card is a summary — one temperature and a condition, where the tiles beside it
+   hold eight readings — so it takes the narrow track, and whatever shares its
+   row takes the width it can actually use. Anything on a row of its own spans
+   both tracks (.web-widget--full), and the widgets size themselves off that
+   class further down. */
+.web-today-grid {
   display: grid;
   grid-template-columns: minmax(260px, 0.78fr) minmax(0, 2.2fr);
   gap: 16px;
   align-items: stretch;
 }
 
-.web-hero > .card {
+/* The nowcast is not draggable and has no wrapper: it renders nothing when
+   there is no rain to plot, and an empty wrapper would still open a grid row. */
+.web-today-grid > .nowcast-card {
+  grid-column: 1 / -1;
+}
+
+.web-widget {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.web-widget--full {
+  grid-column: 1 / -1;
+}
+
+/* The card fills its slot, so two widgets sharing a row are the same height. */
+.web-widget > .card {
+  flex: 1;
+}
+
+.web-widget--dragging {
+  opacity: 0.45;
+  z-index: 5;
+}
+
+.web-widget > .current-card {
   display: flex;
   flex-direction: column;
   justify-content: center;
+}
+
+/* Above the card's top edge, in the grid gap: all four of these cards have
+   something in every corner already. Hidden until the widget is hovered, and
+   whenever it has keyboard focus — it is the only way to pick a card up. */
+.web-widget-handle {
+  position: absolute;
+  top: -11px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  padding: 3px 12px;
+  border: none;
+  border-radius: 999px;
+  background: var(--card-bg);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.16);
+  color: var(--text-tertiary);
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+  touch-action: none;
+}
+
+.web-widget-handle:active {
+  cursor: grabbing;
+}
+
+.web-widget:hover .web-widget-handle,
+.web-widget-handle:focus-visible {
+  opacity: 1;
+}
+
+.web-widget:hover .web-widget-handle:hover,
+.web-widget-handle:focus-visible {
+  color: var(--accent);
+}
+
+/* Over a sky the handle sits on the sky itself for the current card, which is a
+   transparent surface — the card fill it borrows above is the wrong tone there. */
+.sky-lvl-slight .web-widget-handle,
+.sky-lvl-medium .web-widget-handle,
+.sky-lvl-dark .web-widget-handle,
+.sky-lvl-darkest .web-widget-handle {
+  background: rgba(255, 255, 255, 0.26);
+  color: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .web-widget-handle { transition: none; }
 }
 
 /* The mobile current card is sized for a phone hero, where it is the whole
@@ -685,29 +695,29 @@
    no type is resized, so the readings keep the weight they had.
    Fluid rather than stepped: stepping the padding at a breakpoint is exactly
    where a layout looks broken just before it snaps. */
-.web-hero .current-card {
+.web-today-grid .current-card {
   padding: clamp(12px, 1.6vw, 18px) clamp(16px, 2.2vw, 24px);
   gap: 2px;
 }
 
 /* 16px above and below the glyph is a phone's spacing; at this size the icon
    already separates itself from the text on either side. */
-.web-hero .current-icon {
+.web-today-grid .current-icon {
   margin: 6px 0 4px;
 }
 
-.web-hero .current-condition {
+.web-today-grid .current-condition {
   margin-top: 6px;
 }
 
-.web-hero .current-feels {
+.web-today-grid .current-feels {
   margin-top: 6px;
 }
 
 /* Sized against its own column rather than the viewport: the reading only has
    to dominate this card, and at 78px it was setting the height of the whole
    band. */
-.web-hero .current-temp {
+.web-today-grid .current-temp {
   font-size: clamp(46px, 5.4vw, 62px);
   line-height: 1.02;
 }
@@ -715,7 +725,7 @@
 /* WeatherIcon draws itself at 1em with the size as an inline style, so it is
    sized by the font-size of whatever holds it — a width on the img or svg is
    an author rule losing to an inline one, and does nothing. */
-.web-hero .current-icon {
+.web-today-grid .current-icon {
   font-size: clamp(54px, 6.2vw, 74px);
 }
 
@@ -963,6 +973,94 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* ── Today: how a widget sizes itself for the slot it was dropped in ──────── */
+
+/* Everything here is keyed off .web-widget--full, which TodayPage puts on any
+   widget holding a whole row. Scoped to the two-track width on purpose: below
+   1280px the grid is one column and every widget is full, so these rules would
+   fire on a layout that has no wide slot to spend. The narrow tiers below keep
+   their own counts. */
+@media (min-width: 1280px) {
+  /* Sharing the row with the current card. Both strips were drawn for the whole
+     page width; here they have roughly two thirds of it, so the tiles come down
+     a size rather than the row spilling to a second line. Column flow rather
+     than a fixed count — the hourly strip drops to nine tiles when it lands
+     here (TodayPage), and this way the grid doesn't have to be told. */
+  .web-widget:not(.web-widget--full) .web-mini-hours,
+  .web-widget:not(.web-widget--full) .web-week-days {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  /* Both cards in a shared row are the height of the taller one, and the
+     current card centres itself in whatever it gets. A preview card has to fill
+     the same height the way the glance grid already does, or a short strip
+     leaves the row ending in a band of empty card. */
+  .web-widget:not(.web-widget--full) > .web-preview {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .web-widget:not(.web-widget--full) .web-mini-hours,
+  .web-widget:not(.web-widget--full) .web-week-days {
+    flex: 1;
+  }
+
+  .web-widget:not(.web-widget--full) .web-mini-hour,
+  .web-widget:not(.web-widget--full) .web-week-day {
+    justify-content: center;
+  }
+
+  .web-widget:not(.web-widget--full) .web-mini-hour {
+    padding: 12px 2px 10px;
+    gap: 5px;
+  }
+
+  .web-widget:not(.web-widget--full) .web-mini-icon { font-size: 34px; }
+  .web-widget:not(.web-widget--full) .web-mini-temp { font-size: 18px; }
+  .web-widget:not(.web-widget--full) .web-mini-time { font-size: 12px; }
+
+  .web-widget:not(.web-widget--full) .web-week-day {
+    padding: 12px 6px 10px;
+    gap: 5px;
+  }
+
+  .web-widget:not(.web-widget--full) .web-week-icon { font-size: 42px; }
+  .web-widget:not(.web-widget--full) .web-week-high { font-size: 19px; }
+  .web-widget:not(.web-widget--full) .web-week-low  { font-size: 15px; }
+  .web-widget:not(.web-widget--full) .web-week-cond { font-size: 11.5px; }
+  .web-widget:not(.web-widget--full) .web-week-dayname { font-size: 12px; }
+
+  /* On a row of its own the glance grid has four times the width it needs for
+     four columns, and stacking two rows of tiles there just makes the card tall
+     and empty. Eight across is one tile per reading. The values are the only
+     thing that doesn't ellipsize — they carry two temperatures at their widest
+     — so they come down a step to survive a 100°/88° day in a narrower tile. */
+  .web-widget--full .web-glance-grid {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
+
+  .web-widget--full .web-glance-value {
+    font-size: clamp(15px, 1.4vw, 19px);
+  }
+
+  /* And the current card, when it is the one holding the row: it was sized down
+     to share a band, so give the reading back the room. */
+  .web-widget--full .current-card {
+    padding: clamp(16px, 2vw, 26px) clamp(16px, 2.2vw, 24px);
+  }
+
+  .web-widget--full .current-temp {
+    font-size: clamp(56px, 6.4vw, 84px);
+  }
+
+  .web-widget--full .current-icon {
+    font-size: clamp(64px, 7.2vw, 94px);
+  }
+}
+
 /* ── Charts ──────────────────────────────────────────────────────────────── */
 
 .web-chart {
@@ -1060,118 +1158,6 @@
 
 /* ── Hourly overview chart ───────────────────────────────────────────────── */
 
-/* ── Focused reading cell ────────────────────────────────────────────────── */
-
-/* The single reading a narrowed table shows: a bar for the shape of the series
-   and the number itself. The bar leads because the eye reads the run of them
-   down the column as a profile — the same job the chart used to do, folded into
-   the row rather than stacked above it. */
-/* The track and bar are lifted from the 7 Day page's temperature rows — same
-   7px height, same --daily-bar-bg channel, same gradient — so the two pages
-   read as the same kind of thing. The numbers differ on purpose: there a row
-   shows a low and a high at equal weight, here one hour's reading leads at 18px
-   with the day's range small on either side of the bar. Every column is a fixed
-   width so a reading gaining a digit shifts nothing. */
-.web-focus-cell {
-  --web-focus-value-w: 82px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--web-focus-value-w);
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-
-/* Wind and gusts: "5 mph SE" needs more room than a temperature, more still now
-   the number itself is 18px. */
-.web-focus-cell--wide {
-  --web-focus-value-w: 122px;
-}
-
-/* The unit rides with the small figures rather than the big one — at 0.85em of
-   an 18px number it read as part of the reading instead of a label on it. */
-.web-focus-value .web-unit {
-  font-size: 12.5px;
-  font-weight: 400;
-}
-
-/* Temperature carries two extra figures: the day's low at the bar's left end,
-   and the day's high after a slash, which puts the hour in the context of the
-   day it belongs to. The left column fits a three-digit reading, and the value
-   column the whole "85° / 91°" pair at the size the hour's number is set in —
-   both sized so nothing reflows when the numbers gain a digit. */
-.web-focus-cell--range {
-  --web-focus-value-w: 112px;
-  grid-template-columns: 40px minmax(0, 1fr) var(--web-focus-value-w);
-}
-
-/* Deliberately smaller and quieter than the reading itself — context for the
-   bar's left end, not a second number competing with the one the row is about. */
-.web-focus-low {
-  font-size: 12.5px;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-tertiary);
-  text-align: right;
-}
-
-/* Same size and weight as the low at the other end of the bar: the two are a
-   pair, the day's range the hour sits inside, and only the hour's own reading
-   is meant to be read at full size. */
-.web-focus-max {
-  font-size: 12.5px;
-  font-weight: 400;
-  color: var(--text-tertiary);
-}
-
-
-.web-focus-track {
-  position: relative;
-  min-width: 0;
-  height: 7px;
-  border-radius: 999px;
-  background: var(--daily-bar-bg);
-}
-
-/* Every reading is a magnitude from nothing, so every bar grows from the track's
-   left end and only its width varies. Down the column those widths are the
-   shape of the series. */
-.web-focus-bar {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  border-radius: 999px;
-  background: var(--accent);
-  transition: width 0.18s ease;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .web-focus-bar { transition: none; }
-}
-
-/* Precipitation and humidity are water, and read as the same blue they do
-   everywhere else on the page; wind gets its own weight so gusts and sustained
-   wind are not two identical-looking columns. */
-.web-focus-bar--precip,
-.web-focus-bar--humidity { background: var(--web-precip); }
-.web-focus-bar--gust     { opacity: 0.65; }
-
-/* The reading the row exists for, and the only thing in the cell set at full
-   size — the day's low and high flanking it are deliberately small, so this can
-   run larger than the 7 Day page's equivalent without crowding anything. */
-.web-focus-value {
-  text-align: right;
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-primary);
-}
-
-.web-focus-value--zero {
-  color: var(--text-tertiary);
-  opacity: 0.5;
-}
-
 .web-hchart-frame {
   position: relative;
   display: flex;
@@ -1214,7 +1200,7 @@
    and the thumb padded away from the edges with a transparent border so it
    floats clear of the frame instead of butting against the rounded corner.
 
-   Shared with the hour strip inside an open day on the 7 Day page, which is the
+   Shared with the hour strip inside an open day on the Outlook page, which is
    same thing — a row of hours scrolling sideways inside a card — and had been
    left with the platform's default bar, a grey trough with square end caps
    drawn hard against the card's bottom edge. The declarations live here rather
@@ -1627,177 +1613,7 @@
   .web-switch-knob { transition: none; }
 }
 
-/* ── Hourly table ────────────────────────────────────────────────────────── */
-
-/* `clip`, never `hidden`: CSS resolves overflow-hidden into a scroll container,
-   and the sticky block at the top of this card would then pin itself to a box
-   that never scrolls instead of to the viewport. `clip` clips the same overflow
-   without creating a scrollport — the same distinction .app--web-tabs relies on
-   further up this file.
-
-   What it clips: that block paints a strip of its own fill upward, to cover the
-   seam between itself and the app header. Unclipped, at rest, the strip is a
-   square band poking out past the card's rounded top corners. Clipping to the
-   card's own rounded box hides it until the card has scrolled far enough for
-   the strip to be inside the card, which is exactly when it is needed. It also
-   keeps the rows from painting into the corner arcs.
-
-   No padding of its own either — the reading menu at the top brings its own,
-   and the rows run to the card's edges. */
-.web-table-card {
-  overflow: clip;
-  padding: 0 0 12px;
-  /* The head and every row share one template, and the table has two shapes:
-     seven columns in Overview, three when the menu narrows it to a single
-     reading. Holding the tracks in a custom property means the narrow-window
-     tiers below restate one value per breakpoint instead of one per shape, and
-     the head can never drift out of step with the rows. */
-  --web-table-cols: 86px minmax(160px, 1.4fr) 74px 78px 132px 96px 60px;
-  /* The table's gutter, for the same reason. The day headings sit outside the
-     grid (they are a flex row, not a seven-column one) and so had to repeat the
-     padding by hand; when the narrow tiers below tightened it for the head and
-     the rows, the headings kept the wide value and the date drifted a gutter's
-     width to the right of the Time column it labels. One property, read by all
-     three, is what keeps them on the same line. */
-  --web-table-pad: 20px;
-}
-
-.web-table-card--focus {
-  --web-table-cols: 86px minmax(160px, 1.4fr) minmax(0, 2.4fr);
-}
-
-.web-table-head,
-.web-table-row {
-  display: grid;
-  grid-template-columns: var(--web-table-cols);
-  align-items: center;
-  gap: 12px;
-  padding: 0 var(--web-table-pad);
-}
-
-.web-table-head {
-  padding-top: 14px;
-  padding-bottom: 12px;
-  /* No corner radius: the reading menu occupies the card's top edge now, so
-     this is a band between two things rather than the lid of the card. */
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.7px;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-  border-bottom: 1px solid var(--web-line);
-  /* Not sticky itself — .web-table-stick above pins it along with the menu, as
-     one box, so no offset has to be kept in step with anything. */
-}
-
-/* The day divider is the table's only real heading, so it gets the air to act
-   like one: a clear break above it, tight to the rows it introduces. */
-/* Aligned to the same gutter as the rows, so the day name starts exactly where
-   the Time column does and reads as that column's heading. */
-.web-table-day {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 22px var(--web-table-pad) 6px;
-  font-family: var(--font-display), var(--font);
-}
-
-/* ...except the first, which sits directly under the column head and would
-   otherwise open the table with a band of empty space. */
-.web-table-group:first-of-type .web-table-day {
-  padding-top: 14px;
-}
-
-.web-table-dayname {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.web-table-daydate {
-  font-size: 12.5px;
-  color: var(--text-tertiary);
-}
-
-/* 46px rather than the old 42: at 14px type the rows were closer together than
-   the text was tall, which is what made a long table hard to track across.
-   Height and font size move together — the ratio is the readable part. */
-/* No hover state: the rows aren't interactive, so a highlight that followed the
-   pointer only suggested they were. The "now" row below still carries the same
-   fill, which now marks that row alone rather than competing with whatever the
-   pointer happened to be over. */
-.web-table-row {
-  height: 46px;
-  font-size: 14.5px;
-  color: var(--text-primary);
-}
-
-.web-table-row--now {
-  background: var(--web-sunken);
-  font-weight: 600;
-}
-
-/* The time is the row's label, not one of its readings — it carries the display
-   face and a little more weight so the eye can run down that column and land on
-   an hour without reading the numbers beside it. */
-.web-table-time {
-  font-family: var(--font-display), var(--font);
-  font-weight: 500;
-  color: var(--text-secondary);
-  font-variant-numeric: tabular-nums;
-}
-
-.web-table-row--now .web-table-time {
-  color: var(--text-primary);
-}
-
-.web-table-cond {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--text-secondary);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.web-table-icon {
-  font-size: 24px;
-  line-height: 1;
-  display: flex;
-}
-
-/* The one reading Overview leads with, on the same face as the focused value
-   so switching between the two views doesn't restyle the temperature. */
-.web-table-temp {
-  font-family: var(--font-display), var(--font);
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.web-table-precip {
-  color: var(--web-precip);
-}
-
-.web-table-precip--high { font-weight: 700; }
-.web-table-precip--zero { color: var(--text-tertiary); opacity: 0.5; }
-
-.web-table-wind {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-
-.web-wind-arrow {
-  color: var(--text-tertiary);
-  flex: 0 0 auto;
-}
-
-/* ── 7 day ───────────────────────────────────────────────────────────────── */
+/* ── Outlook ─────────────────────────────────────────────────────────────── */
 
 .web-days-card {
   padding: 6px 8px;
@@ -2557,7 +2373,11 @@
 /* ── Narrower desktops ───────────────────────────────────────────────────── */
 
 @media (max-width: 1279px) {
-  .web-hero,
+  /* One track: nothing sits beside anything down here, so every widget is on a
+     row of its own. TodayPage watches the same 1280px line and stops pairing —
+     the widget-size rules that go with a shared row all live in the min-width
+     block below this one, so they simply don't apply here. */
+  .web-today-grid,
   .web-cols {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -2570,20 +2390,6 @@
      rows of seven keeps the tile size rather than the row count. */
   .web-mini-hours {
     grid-template-columns: repeat(7, minmax(0, 1fr));
-  }
-
-  .web-table-card {
-    --web-table-cols: 76px minmax(120px, 1.3fr) 64px 68px 116px 84px 52px;
-    --web-table-pad: 14px;
-  }
-
-  .web-table-card--focus {
-    --web-table-cols: 76px minmax(120px, 1.3fr) minmax(0, 2.4fr);
-  }
-
-  .web-table-head,
-  .web-table-row {
-    gap: 8px;
   }
 
   .web-day-row {
@@ -2624,20 +2430,6 @@
     grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
-  .web-table-card {
-    --web-table-cols: 68px minmax(90px, 1.2fr) 56px 60px 100px 72px 44px;
-    --web-table-pad: 12px;
-  }
-
-  .web-table-card--focus {
-    --web-table-cols: 68px minmax(90px, 1.2fr) minmax(0, 2.4fr);
-  }
-
-  .web-table-head,
-  .web-table-row {
-    gap: 6px;
-  }
-
   .web-day-row {
     grid-template-columns: 76px 54px minmax(70px, 1fr) 44px minmax(120px, 1.4fr) 18px;
     gap: 8px;
@@ -2648,24 +2440,6 @@
 }
 
 @media (max-width: 767px) {
-  /* Humidity and UV are the two columns the hourly table can lose without
-     becoming a different table: temperature, precipitation and wind are what
-     the page is read for. Head and row share a child order, so one rule hides
-     the column in both. Overview only — a focused table has three columns and
-     nothing to spare, and the menu is how you reach those readings here. */
-  .web-table-card:not(.web-table-card--focus) .web-table-head > :nth-child(n + 6),
-  .web-table-card:not(.web-table-card--focus) .web-table-row > :nth-child(n + 6) {
-    display: none;
-  }
-
-  .web-table-card {
-    --web-table-cols: 58px minmax(0, 1fr) 48px 52px 78px;
-  }
-
-  .web-table-card--focus {
-    --web-table-cols: 58px minmax(0, 1fr) minmax(0, 2fr);
-  }
-
   /* Same trade on the daily rows: the written condition goes, since the icon
      beside it already carries that meaning. The high/low bar stays — it is the
      row's whole point. */
