@@ -6,6 +6,132 @@ import 'leaflet/dist/leaflet.css'
 const FRAMES_URL = 'https://api.rainviewer.com/public/weather-maps.json'
 const TILE_URL   = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
 
+// Observed radar, where NOAA covers it: the MRMS mosaic behind radar.weather.gov,
+// served straight from NWS rather than through a third party. No key, CORS open,
+// ~5-minute sweeps with a four-hour rolling window — against RainViewer's free
+// tier that is finer, fresher, twice the history, and free of the zoom ceiling
+// below. RainViewer stays as the fallback and as the only option outside the US.
+//
+// It is an ArcGIS ImageServer, not an XYZ cache, so there are no tiles to ask
+// for: each one is an exportImage render of that tile's bbox. See MrmsLayer.
+const MRMS_BASE  = 'https://mapservices.weather.noaa.gov/eventdriven/rest/services/radar/radar_base_reflectivity_time/ImageServer'
+const MRMS_QUERY = `${MRMS_BASE}/query?where=1%3D1&outFields=idp_validtime&returnGeometry=false&orderByFields=idp_validtime%20DESC&resultRecordCount=200&f=json`
+// How many sweeps back the observed timeline runs. Sweeps land every ~6 minutes
+// (measured: alternating 6 and 8), so this is ~100 minutes — about the span
+// RainViewer's free tier gave, at finer steps than its 10-minute frames. The
+// service keeps ~2 hours reachable in one query, which is the real ceiling here;
+// the four-hour window it advertises needs paging this doesn't do.
+const MRMS_FRAMES = 15
+
+// One sweep is stored as several rasters — CONUS, Alaska, Hawaii, the Caribbean,
+// Guam — each stamped with its own valid time a few seconds off the others. Asking
+// for a bare instant matches at most one of them and renders a near-empty image, so
+// frames are clustered by this gap and requested as a `from,to` range, which is what
+// makes the service mosaic the regions together. Measured spread within a sweep is
+// under a minute; the gap between sweeps is ~5, so there is a wide margin either way.
+const MRMS_CLUSTER_MS = 150000
+
+// Where MRMS tiles stop being fetched and start being upscaled by the browser.
+//
+// Unlike a tile cache, every request here is a render the server performs, so the
+// grid getting four times denser per zoom level is four times the work asked of a
+// free public service — and past the data's own resolution it buys nothing, because
+// the extra pixels are the server's resampling rather than detail. MRMS is ~1 km,
+// which is roughly zoom 8, so 10 is already oversampled enough to stay crisp on a
+// retina screen and everything beyond it scales a tile that was going to be smooth
+// regardless. Still well past RADAR_NATIVE_MAX, which is the ceiling this replaces.
+const MRMS_NATIVE_MAX = 10
+
+// MRMS coverage, as the regions the mosaic actually contains. Outside them the
+// render is blank, so those locations stay on RainViewer.
+const MRMS_REGIONS = [
+  [21, 53, -134, -60],    // CONUS
+  [50, 73, -180, -129],   // Alaska
+  [17, 24, -162, -153],   // Hawaii
+  [16, 20, -68, -63],     // Puerto Rico / Caribbean
+  [12, 15, 143, 147],     // Guam
+]
+const inMrmsDomain = (lat, lon) =>
+  MRMS_REGIONS.some(([s, n, w, e]) => lat >= s && lat <= n && lon >= w && lon <= e)
+
+// Web Mercator half-circumference: the edge of the XYZ grid in projected metres.
+const MERC_R = 20037508.342789244
+
+// A tile layer over an ImageServer. Leaflet asks for {z}/{x}/{y}; exportImage wants
+// a bbox, a size and a time — so the URL is built per tile rather than templated.
+// The maths is the standard XYZ scheme and needs no map instance: at zoom z the grid
+// is 2^z tiles across the full projected width, so tile x starts at -MERC_R + x*span
+// and tile y counts down from +MERC_R.
+//
+// Rendering is server-side, which is the other half of losing the zoom cap: past the
+// data's own resolution it resamples rather than refusing, so deep zooms come back
+// soft instead of coming back as "zoom level not supported".
+const MrmsLayer = L.TileLayer.extend({
+  getTileUrl(coords) {
+    const span = (2 * MERC_R) / 2 ** coords.z
+    const minX = -MERC_R + coords.x * span
+    const maxY = MERC_R - coords.y * span
+    const q = new URLSearchParams({
+      bbox: `${minX},${maxY - span},${minX + span},${maxY}`,
+      bboxSR: '3857',
+      imageSR: '3857',
+      size: '256,256',
+      format: 'png32',
+      transparent: 'true',
+      time: this.options.timeRange,
+      f: 'image',
+    })
+    return `${MRMS_BASE}/exportImage?${q}`
+  },
+})
+
+// The observed half from MRMS: the sweep times, newest first, clustered into frames.
+// Returns oldest-first to match the direction the timeline runs, or [] on any
+// failure — every caller treats that as "fall back to RainViewer".
+async function fetchMrmsFrames() {
+  const data = await fetch(MRMS_QUERY).then(r => r.json())
+  // Deliberately not deduplicated: `n` below has to count rasters, and two regions
+  // of one sweep can share a timestamp exactly. Collapsing those would undercount
+  // the sweep and get it thrown out as incomplete. Clustering absorbs duplicates
+  // anyway — a repeated time has a gap of zero, so it joins the cluster it belongs to.
+  const times = (data.features ?? [])
+    .map(f => f.attributes?.idp_validtime)
+    .filter(Number.isFinite)
+    .sort((a, b) => b - a)
+
+  // Walk newest→oldest, breaking a cluster whenever the gap says a new sweep began.
+  // `n` is how many regions that sweep has published, which the trim below reads.
+  const clusters = []
+  for (const t of times) {
+    const last = clusters[clusters.length - 1]
+    if (last && last.from - t <= MRMS_CLUSTER_MS) { last.from = t; last.n++ }
+    else clusters.push({ from: t, to: t, n: 1 })
+    // Past the quota the earlier clusters are closed, so older sweeps have nothing
+    // left to say. The spares absorb whatever the filter below drops.
+    if (clusters.length > MRMS_FRAMES + 3) break
+  }
+
+  // Keep only sweeps that published every region, because a partial one renders as
+  // a partial map — the regions that made it drawn, the rest of the country blank.
+  // Both ends of the list produce them, for unrelated reasons: the newest sweep is
+  // still arriving (its regions publish a few seconds apart), and the oldest is
+  // wherever the query's record limit happened to cut, which lands mid-sweep as
+  // often as not. A count short of the fullest sweep catches both, and the newest
+  // one heals itself on the next mount a minute later.
+  const full = Math.max(...clusters.map(c => c.n))
+
+  return clusters
+    .filter(c => c.n === full)
+    .slice(0, MRMS_FRAMES)
+    .reverse()
+    .map(c => ({
+      key: `mrms:${c.to}`,
+      src: 'mrms',
+      time: Math.round(c.to / 1000), // the sweep's own clock, for the caption
+      range: `${c.from},${c.to}`,
+    }))
+}
+
 // Future radar: NOAA HRRR forecast reflectivity served as free XYZ tiles by the
 // Iowa Environmental Mesonet (CORS-enabled, no key). RainViewer's free nowcast
 // array is unreliable (frequently empty), so HRRR provides the forecast frames.
@@ -24,10 +150,18 @@ const MAP_MAX_ZOOM     = 12
 const RADAR_NATIVE_MAX = 7 // RainViewer's 512px radar tiles cap here; higher returns "zoom level not supported"
 const RADAR_OPACITY     = 0.65
 const RADAR_WINDOW      = 2 // frames either side of current kept attached to the map
-const LEGEND_COLORS = ['#43a4c3', '#326985', '#ffd900', '#ff3300', '#d193c9']
-// HRRR futurecast tiles use the standard NWS reflectivity ramp (green → yellow
-// → orange → red), not RainViewer's palette, so the legend swaps with the frames.
-const LEGEND_COLORS_FUTURE = ['#02fd02', '#0173c5', '#fdf802', '#fd9500', '#fd0000']
+// Two palettes, because two of the three feeds draw with the standard NWS
+// reflectivity ramp (green → yellow → orange → red) and one doesn't. MRMS and HRRR
+// are both NOAA products and share it; RainViewer has its own and ignores the
+// colour-scheme parameter on the free tier, so it can't be brought into line. The
+// legend follows whichever tiles are on screen — see legendColors below.
+//
+// The upside of the MRMS switch is that the ramp now holds across the handoff for
+// US locations: observed and forecast are both NWS-ramped, so scrubbing past now no
+// longer changes the colours under the cursor. Only the RainViewer fallback still
+// does, and that is the case where there was no forecast half to reach anyway.
+const LEGEND_RAINVIEWER = ['#43a4c3', '#326985', '#ffd900', '#ff3300', '#d193c9']
+const LEGEND_NWS        = ['#02fd02', '#0173c5', '#fdf802', '#fd9500', '#fd0000']
 
 // Scroll pixels needed per zoom level, tuned separately per input device: a
 // mouse wheel fires big discrete notches (needs a large value or it races),
@@ -306,10 +440,10 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
   // Both halves of the timeline as fetched, kept apart rather than pre-joined:
   // the Observed/Forecast toggle is a slice of this, so switching views is a
   // re-derive rather than a re-fetch.
-  //   rv       RainViewer frames, observed followed by its own nowcast (if any)
-  //   pastLen  how many of those are observed
-  //   fut      HRRR forecast steps, after the last RainViewer frame
-  const [feed, setFeed] = useState({ rv: [], pastLen: 0, fut: [] })
+  //   past  observed frames — MRMS where NOAA covers it, RainViewer otherwise
+  //   cast  RainViewer's own nowcast, when the free API bothers to send one
+  //   fut   HRRR forecast steps, continuing on from whatever the two above cover
+  const [feed, setFeed] = useState({ past: [], cast: [], fut: [] })
   // Which side the toggle is on, in split mode. Unread in combined mode, where
   // there are no sides.
   const [view, setView] = useState('observed')
@@ -372,41 +506,67 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      let rvFrames = [], pastLen = 0
-      try {
-        const data = await fetch(FRAMES_URL).then(r => r.json())
-        const past = data.radar.past ?? []
-        const cast = data.radar.nowcast ?? []
-        pastLen = past.length
-        // URL is /{size}/{z}/{x}/{y}/{color}/{smooth}_{snow}.png. RainViewer's
-        // free API ignores the color and snow flags, but smoothing works.
-        rvFrames = [...past, ...cast].map(f => ({
+      const { latitude: lat, longitude: lon } = location
+      const wantMrms = inMrmsDomain(lat, lon)
+      const wantHrrr = inHrrrDomain(lat, lon)
+
+      // All three at once. They have no data dependency on each other — only the
+      // trimming below does — and the slowest of them is what the card waits on, so
+      // running them in sequence would have made that the sum instead of the max.
+      const [rvRes, mrmsRes, hrrrRes] = await Promise.allSettled([
+        fetch(FRAMES_URL).then(r => r.json()),
+        wantMrms ? fetchMrmsFrames() : Promise.resolve([]),
+        wantHrrr ? fetch(HRRR_META_URL).then(r => r.json()) : Promise.resolve(null),
+      ])
+
+      // RainViewer, split into its two halves. The URL is
+      // /{size}/{z}/{x}/{y}/{color}/{smooth}_{snow}.png — the free API ignores the
+      // colour and snow flags, but smoothing works.
+      let rvPast = [], rvCast = []
+      if (rvRes.status === 'fulfilled') {
+        const data = rvRes.value
+        const mk = (f) => ({
           key: f.path,
+          src: 'rv',
           time: f.time,
           url: `${data.host}${f.path}/512/{z}/{x}/{y}/2/1_0.png`,
-        }))
-      } catch {}
-
-      const futFrames = []
-      if (inHrrrDomain(location.latitude, location.longitude)) {
+        })
         try {
-          const meta = await fetch(HRRR_META_URL).then(r => r.json())
-          const init = Date.parse(meta.model_init_utc) / 1000
-          const nowSec = Date.now() / 1000
-          const lastRv = rvFrames.length ? rvFrames[rvFrames.length - 1].time : nowSec
-          if (Number.isFinite(init)) {
-            for (let m = HRRR_STEP_MIN; m <= HRRR_MAX_MIN; m += HRRR_STEP_MIN) {
-              const t = init + m * 60
-              if (t <= lastRv + 60) continue          // already covered by RainViewer
-              if (t > nowSec + HRRR_HORIZON_SEC) break // keep the timeline short
-              futFrames.push({ key: `hrrr:${m}`, time: t, url: HRRR_TILE_URL(m) })
-            }
-          }
+          rvPast = (data.radar.past ?? []).map(mk)
+          rvCast = (data.radar.nowcast ?? []).map(mk)
         } catch {}
       }
 
-      if (cancelled || (rvFrames.length === 0 && futFrames.length === 0)) return
-      setFeed({ rv: rvFrames, pastLen, fut: futFrames })
+      // Observed: MRMS when it answered, RainViewer when it didn't. The fallback is
+      // per-fetch rather than per-location, so an MRMS outage inside the US degrades
+      // to the feed this always used instead of to an empty card.
+      const mrmsPast = mrmsRes.status === 'fulfilled' ? mrmsRes.value : []
+      const past = mrmsPast.length > 0 ? mrmsPast : rvPast
+      const newest = past[past.length - 1]
+
+      // HRRR steps, picking up after whatever the timeline already covers — the
+      // RainViewer nowcast when there is one, otherwise the last observed frame.
+      // Both have to count: the combined timeline lays these out in time order, so
+      // a step that lands before the last nowcast frame would put the track out of
+      // sequence. The model run can be 1–3h old, so its early steps are usually in
+      // the past already and get skipped regardless.
+      const futFrames = []
+      if (hrrrRes.status === 'fulfilled' && hrrrRes.value) {
+        const init = Date.parse(hrrrRes.value.model_init_utc) / 1000
+        const nowSec = Date.now() / 1000
+        const covered = (rvCast.length ? rvCast[rvCast.length - 1] : newest)?.time ?? nowSec
+        if (Number.isFinite(init)) {
+          for (let m = HRRR_STEP_MIN; m <= HRRR_MAX_MIN; m += HRRR_STEP_MIN) {
+            const t = init + m * 60
+            if (t <= covered + 60) continue         // already on the timeline
+            if (t > nowSec + HRRR_HORIZON_SEC) break // keep the timeline short
+            futFrames.push({ key: `hrrr:${m}`, src: 'hrrr', time: t, url: HRRR_TILE_URL(m) })
+          }
+        }
+      }
+
+      if (cancelled || (past.length === 0 && rvCast.length === 0 && futFrames.length === 0)) return
+      setFeed({ past, cast: rvCast, fut: futFrames })
     })()
     return () => { cancelled = true }
   }, [location.latitude, location.longitude])
@@ -438,17 +598,16 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
   // downstream — tick styling, the divider, the caption, the starting index —
   // is derived from it rather than from which side is showing.
   const { frames, pastCount } = useMemo(() => {
-    const { rv, pastLen, fut } = feed
-    const past = rv.slice(0, pastLen)
+    const { past, cast, fut } = feed
     if (combined) {
-      return { frames: [...rv, ...fut], pastCount: pastLen }
+      return { frames: [...past, ...cast, ...fut], pastCount: past.length }
     }
-    // Falling back when there is no observed half covers RainViewer failing
-    // while HRRR answered: a forecast-only timeline beats an empty card.
+    // Falling back when there is no observed half covers both observed feeds
+    // failing while HRRR answered: a forecast-only timeline beats an empty card.
     if ((view === 'forecast' || past.length === 0) && fut.length > 0) {
       // pastCount 0: every frame here is a forecast, so every tick is styled as
       // one and the starting-index effect below lands on the first of them.
-      return { frames: [...rv.slice(pastLen), ...fut], pastCount: 0 }
+      return { frames: [...cast, ...fut], pastCount: 0 }
     }
     return { frames: past, pastCount: past.length }
   }, [feed, view, combined])
@@ -569,10 +728,14 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
     const getLayer = (frame, attach) => {
       let layer = layerCache.current.get(frame.key)
       if (!layer) {
-        layer = L.tileLayer(
-          frame.url,
-          { opacity: 0, zIndex: 200, maxZoom: MAP_MAX_ZOOM, maxNativeZoom: RADAR_NATIVE_MAX, crossOrigin: true, className: 'radar-tiles' }
-        )
+        const opts = { opacity: 0, zIndex: 200, maxZoom: MAP_MAX_ZOOM, crossOrigin: true, className: 'radar-tiles' }
+        // MRMS builds each tile's URL from its coords (see MrmsLayer) and takes no
+        // template. Its cap is its own — see MRMS_NATIVE_MAX — because it is there
+        // to bound how much rendering the request asks for, not because the server
+        // would refuse the way RainViewer's does past RADAR_NATIVE_MAX.
+        layer = frame.src === 'mrms'
+          ? new MrmsLayer('', { ...opts, timeRange: frame.range, maxNativeZoom: MRMS_NATIVE_MAX })
+          : L.tileLayer(frame.url, { ...opts, maxNativeZoom: RADAR_NATIVE_MAX })
         layer.on('load', () => { layer._radarLoaded = true })
         layerCache.current.set(frame.key, layer)
       }
@@ -932,13 +1095,14 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
 
   if (frames.length === 0) return null
 
-  // The legend tracks the tiles actually on screen: HRRR frames draw with the
-  // NWS reflectivity ramp, while RainViewer frames (past and any nowcast) keep
-  // RainViewer's palette. The palettes can't be reconciled — RainViewer's free
-  // tier ignores the colour-scheme parameter in the tile URL — so instead of
-  // hiding the switch the legend blocks ease between the two ramps.
-  const isHrrrFrame  = !!frames[idx]?.key?.startsWith('hrrr:')
-  const legendColors = isHrrrFrame ? LEGEND_COLORS_FUTURE : LEGEND_COLORS
+  // The legend tracks the tiles actually on screen. MRMS and HRRR are both NOAA
+  // and both draw with the NWS reflectivity ramp; RainViewer keeps its own, and
+  // the two can't be reconciled — its free tier ignores the colour-scheme
+  // parameter in the tile URL — so instead of hiding the switch the legend blocks
+  // ease between the two ramps. Read off the frame's source rather than its key,
+  // so a feed can't change its key format and silently take the legend with it.
+  const frameSrc     = frames[idx]?.src
+  const legendColors = frameSrc === 'rv' ? LEGEND_RAINVIEWER : LEGEND_NWS
 
   // Observed → forecast boundary, marked on the scrubber so the palette change
   // reads as a deliberate handoff rather than a glitch. Combined only: in split
@@ -954,9 +1118,14 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
   // frame is gone from it, and with it the reason to caption the side instead.
   // The legend tracks the tiles rather than this, because that is a statement
   // about their colours.
+  const SOURCE_NAMES = {
+    mrms: 'NOAA MRMS radar',
+    rv:   'RainViewer radar',
+    hrrr: 'NOAA HRRR model',
+  }
   const sourceLabel = idx >= pastCount
-    ? `Forecast · ${isHrrrFrame ? 'NOAA HRRR model' : 'RainViewer nowcast'}`
-    : 'Observed · RainViewer radar'
+    ? `Forecast · ${frameSrc === 'hrrr' ? SOURCE_NAMES.hrrr : 'RainViewer nowcast'}`
+    : `Observed · ${SOURCE_NAMES[frameSrc] ?? SOURCE_NAMES.rv}`
 
   // Whether the circle is a box at all. Only while it is moving: at rest — shut
   // in the stack, or settled open — the three wrappers are display:contents and
