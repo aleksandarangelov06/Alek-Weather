@@ -22,8 +22,8 @@ android {
         // versionCode must increase on every published build; versionName is
         // the human one, kept in step with ANDROID_VERSION in
         // src/utils/version.js, which Settings displays inside the APK.
-        versionCode 8
-        versionName "0.8"
+        versionCode 9
+        versionName "0.9"
     }
 
     signingConfigs {
