@@ -162,7 +162,33 @@ const LEGEND_NWS        = ['#02fd02', '#0173c5', '#fdf802', '#fd9500', '#fd0000'
 const TICK_W   = 16
 const TAP_SLOP = 4 // px of travel below which a pointer down/up is still a tap
 
+// ...and the width at which the filmstrip stops being the right answer for a
+// full-size radar. It earns its keep where a dozen-odd frames can't be told
+// apart across the track; given a monitor's worth of room they can, and a strip
+// of fixed-width columns instead sits as a ~200px cluster marooned in the middle
+// of the bar. Above this the full-size scrubber falls back to the card's
+// whole-timeline layout, which spans whatever width it is given. A width and not
+// a device class on purpose: what decides it is how much track there is, so a
+// half-width window gets the filmstrip on the same machine a maximised one
+// doesn't.
+const WIDE_TRACK_MQ = '(min-width: 900px)'
+
 const clampIdx = (v, len) => Math.max(0, Math.min(len - 1, v))
+
+// Live answer to a media query. The scrubber picks its layout and its pointer
+// arithmetic off the same boolean, so this has to re-render on a resize — a CSS
+// query alone would move the ticks while the drag maths carried on in the old
+// mode.
+function useMediaQuery(query) {
+  const [matches, setMatches] = useState(() => window.matchMedia(query).matches)
+  useEffect(() => {
+    const mq = window.matchMedia(query)
+    const onChange = () => setMatches(mq.matches)
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [query])
+  return matches
+}
 
 // The compact card's scrubber, where the whole timeline spans the track and a
 // position across it is a position in time.
@@ -1088,9 +1114,17 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
   // below and the Observed/Forecast toggle.
   const fullSize = expanded || fill
 
-  // Two scrubbers, picked by how much screen the radar has.
-  //
-  // Full-size — expanded or fill — it is a filmstrip under a fixed playhead: the
+  // Two scrubbers, picked by how much *track* the radar has — which is not the
+  // same question as how much screen. A full-size radar on a phone is still a
+  // ~390px bar, and a compact card in the stack is narrower again; a monitor is
+  // neither. So the filmstrip is for the narrow full-size case only, and a wide
+  // one joins the card on the whole-timeline layout. (Two statements, not one
+  // expression: behind the && the hook would stop being called the moment the
+  // radar opened.)
+  const wideTrack = useMediaQuery(WIDE_TRACK_MQ)
+  const stripScrubber = fullSize && !wideTrack
+
+  // Narrow and full-size, it is a filmstrip under a fixed playhead: the
   // frame being shown sits at the centre of the track and the ticks travel past
   // it, so the gesture is "drag the timeline" from anywhere on the bar instead of
   // "grab the one tick that is the handle". Two things follow.
@@ -1107,24 +1141,26 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
   // drag would stutter between them. Released, it goes back to null and the strip
   // settles onto the active frame under CSS transition.
   //
-  // The compact card in the stack keeps the scrubber it always had: the whole
-  // timeline laid out across the track at once, tapped or dragged to a position
-  // that is read straight off the width. Nothing there is asking to be worked —
-  // the card is a glance, and its own tap target is "open me" — and laying the
-  // timeline out whole is what makes it readable at a glance in the first place.
-  // A filmstrip in a 300px-wide card would show a third of the run and want a
-  // swipe before it said anything.
+  // Otherwise — the compact card in the stack, and any full-size radar wider
+  // than WIDE_TRACK_MQ — the scrubber the card always had: the whole timeline
+  // laid out across the track at once, tapped or dragged to a position that is
+  // read straight off the width. In the card that is because nothing there is
+  // asking to be worked — it is a glance, and its own tap target is "open me" —
+  // and a filmstrip in a 300px card would show a third of the run and want a
+  // swipe before it said anything. On a monitor it is the opposite reason: there
+  // is room to show the run whole, and a mouse would rather click where it wants
+  // to go than drag a strip there.
   const handlePointerDown = useCallback((e) => {
     setPlaying(false)
     e.currentTarget.setPointerCapture(e.pointerId)
-    if (!fullSize) {
+    if (!stripScrubber) {
       dragRef.current = { whole: true }
       setIdx(idxAcrossTrack(e.clientX, e.currentTarget, frames.length))
       return
     }
     dragRef.current = { x0: e.clientX, from: idx, moved: false }
     setDrag(idx)
-  }, [fullSize, idx, frames.length])
+  }, [stripScrubber, idx, frames.length])
 
   const handlePointerMove = useCallback((e) => {
     const d = dragRef.current
@@ -1364,28 +1400,33 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
           </div>
         )}
 
-        {/* Full-size, the whole bar is the grab handle: a pointer down anywhere on
-            it takes hold of the strip, and the strip slides under a playhead fixed
-            at the centre, carrying the frames past it. What is centred is what is
-            on the map. The track clips and fades its own edges, so the timeline
-            reads as continuing past both of them rather than ending there.
+        {/* Full-size and narrow, the whole bar is the grab handle: a pointer down
+            anywhere on it takes hold of the strip, and the strip slides under a
+            playhead fixed at the centre, carrying the frames past it. What is
+            centred is what is on the map. The track clips and fades its own edges,
+            so the timeline reads as continuing past both of them rather than
+            ending there.
 
             The strip is offset by half a tick beyond the frame's own position:
             translating by -(pos + 0.5) columns puts the middle of that column —
             the tick itself — on the centre line, where translating by -pos would
             put its leading edge there and leave every tick half a column late.
 
-            In the compact card the same markup lays out the old way: the strip is
-            an ordinary full-width flex row of stretched columns, with no transform
-            of its own, and the modifier class is what switches between the two. */}
+            Everywhere else the same markup lays out the other way: the strip is an
+            ordinary full-width flex row of stretched columns with no transform of
+            its own, so the timeline spans the track whatever the track measures,
+            and the active tick is the playhead moving across it. --strip and
+            --wide are the two dressings of that row — the card takes neither and
+            keeps the compact defaults. */}
         <div
           className={[
             'radar-tick-track',
-            fullSize && 'radar-tick-track--strip',
-            fullSize && drag !== null && 'radar-tick-track--dragging',
+            stripScrubber && 'radar-tick-track--strip',
+            stripScrubber && drag !== null && 'radar-tick-track--dragging',
+            fullSize && !stripScrubber && 'radar-tick-track--wide',
           ].filter(Boolean).join(' ')}
           ref={trackRef}
-          style={fullSize ? { '--radar-tick-w': `${TICK_W}px` } : undefined}
+          style={stripScrubber ? { '--radar-tick-w': `${TICK_W}px` } : undefined}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
@@ -1393,7 +1434,7 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
         >
           <div
             className="radar-tick-strip"
-            style={fullSize
+            style={stripScrubber
               ? { transform: `translate3d(${-((drag ?? idx) + 0.5) * TICK_W}px, 0, 0)` }
               : undefined}
           >

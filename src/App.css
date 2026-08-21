@@ -5934,6 +5934,64 @@ body {
   pointer-events: none;
 }
 
+/* ── …and full-size on a wide screen, where the run fits across the track ──
+   Above WIDE_TRACK_MQ (900px, the same number in WeatherRadar.jsx) the full-size
+   scrubber drops the filmstrip and takes the card's whole-timeline layout, which
+   needs no rules of its own — the strip is a plain flex row of equal-share
+   columns, so it spans whatever it is given. What it does need is scaling up: at
+   card size the marks are ~25px apart and read as a run, but stretched across a
+   monitor the same dozen frames land 130px apart and read as scattered ticks
+   rather than a timeline. A rail joins them back up, and the marks themselves get
+   the extra weight the width can carry. */
+.radar-tick-track--wide {
+  min-height: 56px;
+  padding-bottom: 24px;
+}
+
+/* Drawn in the inactive ticks' own colour and centred on the line their feet sit
+   on, so it reads as their baseline rather than as a second element behind them.
+   Behind the ticks in paint order, and out of the pointer's way — the track
+   itself is the click target. */
+.radar-tick-track--wide::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 22px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--bar-track-bg);
+  pointer-events: none;
+}
+
+.radar-tick-track--wide .radar-tick {
+  width: 3px;
+  height: 14px;
+  /* The playhead is the active tick, which at this size hops ~130px a frame as
+     playback advances. Growing and shrinking the two ticks into each other
+     covers the hop — the width and height are what the active state changes, and
+     the base rule transitions neither. */
+  transition: background 0.12s, width 0.12s, height 0.12s;
+}
+
+.radar-tick-track--wide .radar-tick--hour { height: 24px; }
+
+.radar-tick-track--wide .radar-tick--active {
+  width: 8px;
+  height: 34px;
+}
+
+.radar-tick-track--wide .radar-now-divider { height: 40px; }
+
+.radar-tick-track--wide .radar-tick-label {
+  bottom: -22px;
+  font-size: 11px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .radar-tick-track--wide .radar-tick { transition: none; }
+}
+
 /* ── Locate button (floating on map, expanded mode only) ── */
 .radar-locate-btn {
   position: absolute;
