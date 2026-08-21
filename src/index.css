@@ -58,3 +58,8 @@ body {
   background: var(--accent-light, rgba(59, 130, 246, 0.1));
   color: var(--accent, #3b82f6);
 }
+/* Destructive action on the reset confirmation step. */
+.error-boundary-btn--danger {
+  background: var(--cond-red, #ef4444);
+  color: #fff;
+}

@@ -389,7 +389,7 @@ export function TodayPage({
 
   return (
     <div className="web-page">
-      <WeatherAlerts alerts={alerts} />
+      <WeatherAlerts alerts={alerts} location={location} />
 
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={order} strategy={rectSortingStrategy}>

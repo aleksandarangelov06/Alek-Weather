@@ -15,7 +15,7 @@ const RANK = { Extreme: 0, Severe: 1 }
 // the marker that follows you: a pill beside the page tabs that opens the alert
 // in place, so no tab is a dead end for it. Not rendered on Today itself, where
 // the full banner is already on screen.
-export function WebAlertPill({ alerts, tab }) {
+export function WebAlertPill({ alerts, tab, location }) {
   const [open, setOpen] = useState(false)
 
   const severe = (alerts ?? [])
@@ -44,7 +44,7 @@ export function WebAlertPill({ alerts, tab }) {
       </button>
 
       {open && createPortal(
-        <AlertModal alert={top} onClose={() => setOpen(false)} />,
+        <AlertModal alert={top} location={location} onClose={() => setOpen(false)} />,
         document.getElementById('alert-portal-root') ?? document.body
       )}
     </>

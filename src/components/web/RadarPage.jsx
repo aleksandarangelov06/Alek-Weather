@@ -1,4 +1,4 @@
-import { WeatherRadar } from '../WeatherRadar'
+import { WeatherRadar } from '../WeatherRadarLazy'
 
 // No page heading here, unlike the other tabs: the map is the page, and a
 // heading would be 60px of the screen it is supposed to fill. The card stretches

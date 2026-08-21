@@ -700,10 +700,11 @@
   gap: 2px;
 }
 
-/* 16px above and below the glyph is a phone's spacing; at this size the icon
-   already separates itself from the text on either side. */
+/* Only the space above. The gap under the glyph is an em of its own font-size
+   (see .current-icon in App.css), so it has already scaled itself down for this
+   column — a shorthand here would reset it and put a second number in play. */
 .web-today-grid .current-icon {
-  margin: 6px 0 4px;
+  margin-top: 6px;
 }
 
 .web-today-grid .current-condition {
@@ -3088,4 +3089,86 @@
 /* The head already sets the distance to the first group. */
 :root[data-shell="desktop"] .settings-page.settings-page--modal .settings-body > .settings-group-label:first-child {
   margin-top: 8px;
+}
+
+/* ── Web loading skeleton ────────────────────────────────────────────────── */
+
+/* The structure comes from the real layout classes the skeleton reuses (see
+   WebLoadingScreen.jsx); what is left to size here are the leaves that stand in
+   for text, and the panels that stand in for charts and the map.
+
+   .loading-screen already fades its cards in and the shared .skeleton-line /
+   .skeleton-circle / .skeleton-tile rules in App.css supply the shimmer, so
+   nothing below repeats either. */
+
+.web-shell.loading-screen {
+  animation: web-page-in 0.28s ease both;
+}
+
+/* Text stand-ins, in the sizes the tiles actually use: a caption, a label, a
+   reading, a heading. Centred because every tile that holds them is. */
+.skeleton-web-xs { width: 60%; height: 10px; }
+.skeleton-web-sm { width: 72%; height: 12px; }
+.skeleton-web-md { width: 54%; height: 16px; }
+.skeleton-web-lg { width: 84%; height: 18px; }
+.skeleton-web-icon { width: 30px; height: 30px; }
+
+.web-glance-tile > .skeleton-line,
+.web-mini-hour > .skeleton-line,
+.web-week-day > .skeleton-line {
+  align-self: center;
+}
+
+/* The current card is transparent in the real layout too, so the skeleton must
+   not draw a card behind it where the page has none. */
+.skeleton-web-current {
+  background: transparent;
+  box-shadow: none;
+  align-items: center;
+  justify-content: center;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Page heading (Outlook, Conditions in detail, Air quality) — sized to the
+   h2 it replaces rather than to the longest of those words. */
+.skeleton-web-title { width: 210px; height: 26px; border-radius: 9px; }
+
+/* Charts and the dial have no internal structure worth faking; one panel at the
+   height the real one occupies is what keeps the page from jumping. */
+.skeleton-web-chart { height: 190px; border-radius: 14px; }
+.skeleton-web-panel-chart { height: 120px; border-radius: 12px; margin-top: 14px; }
+.skeleton-web-dial { height: 148px; border-radius: 14px; }
+.skeleton-web-hero { width: 40%; height: 34px; border-radius: 10px; }
+
+.skeleton-web-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.skeleton-web-para { width: 100%; height: 13px; }
+.skeleton-web-para--short { width: 62%; }
+
+/* Daily rows: the grid comes from .web-day-row, so these only set how much of
+   each track is inked. The row is a div here, so the button's pointer cursor
+   has to come back off. */
+.skeleton-web-day-row {
+  cursor: default;
+}
+.skeleton-web-day-icon { width: 44px; height: 44px; justify-self: center; }
+.skeleton-web-bar { width: 100%; height: 8px; border-radius: 4px; }
+
+/* Pollutant wells stack a name, its bar and a description. */
+.web-poll > .skeleton-line + .skeleton-line { margin-top: 10px; }
+.skeleton-web-track { width: 100%; height: 6px; border-radius: 999px; }
+
+/* Radar is a single full-bleed panel: the map fills the window, so the
+   placeholder has to as well or the page collapses to nothing while it loads.
+   No rounding, for the same reason .app--web-radar strips it off .radar-fill —
+   the panel runs to the edge of the window and up under the header. */
+.skeleton-web-radar {
+  flex: 1;
+  min-height: 320px;
+  border-radius: 0;
 }

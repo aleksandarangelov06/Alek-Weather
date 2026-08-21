@@ -109,18 +109,22 @@ import { CurrentWeather } from './components/CurrentWeather'
 import { HourlyForecast } from './components/HourlyForecast'
 import { DailyForecast } from './components/DailyForecast'
 import { WeatherDetails } from './components/WeatherDetails'
-import { WeatherRadar } from './components/WeatherRadar'
+import { WeatherRadar } from './components/WeatherRadarLazy'
 import { WeatherCanvas } from './components/WeatherCanvas'
 import { PrecipNowcast } from './components/PrecipNowcast'
 import { WeatherAlerts } from './components/WeatherAlerts'
 import { WeatherOverview } from './components/WeatherOverview'
-import { SettingsPage, MAX_CARD_TRANSPARENCY } from './components/SettingsPage'
+import { SettingsPage } from './components/SettingsPageLazy'
+import { preloadSettings } from './components/settingsChunk'
+import { MAX_CARD_TRANSPARENCY } from './utils/appearance'
 import { WebLayout } from './components/web/WebLayout'
 import { WebTabs } from './components/web/WebTabs'
 import { WebAlertPill } from './components/web/WebAlertPill'
 import { TABS as WEB_TABS, useWebTab } from './components/web/tabs'
 import { SplashHome } from './components/web/SplashHome'
+import { SplashCities } from './components/SplashCities'
 import { LoadingScreen } from './components/LoadingScreen'
+import { WebLoadingScreen } from './components/web/WebLoadingScreen'
 import { liveWeatherCode } from './utils/weatherCodes'
 import { loadUnits, saveUnit } from './utils/units'
 import { APP_VERSION, IS_ANDROID_APP } from './utils/version'
@@ -180,6 +184,14 @@ const SEARCH_CLOSE_MS = 220
 // Passed to App.css as the --long-press-ms custom property so the fill animation
 // always matches this value.
 const LONG_PRESS_MS = 2000
+
+// How old a reading may be before the app quietly refetches it. A radar sweep
+// lands every ~6 minutes and minutely_15 steps every 15, so ten minutes is about
+// the point past which the current condition can be describing weather that has
+// already moved on. The check runs every minute; nothing is fetched until the
+// reading is actually stale.
+const STALE_MS = 10 * 60 * 1000
+const STALE_CHECK_MS = 60 * 1000
 
 // Corrupted localStorage (partial write, manual edit) must never crash the app
 // during the initial render — fall back to defaults instead.
@@ -326,6 +338,9 @@ function App() {
   const searchAreaRef = useRef(null)
   const searchHoldTimer = useRef(null)
   const searchLongPressed = useRef(false)
+  // Guards the staleness refresh: a fetch slower than STALE_CHECK_MS would
+  // otherwise have a second one firing on top of it.
+  const refreshingRef = useRef(false)
   const [searchHolding, setSearchHolding] = useState(false)
   const [blockOrder, setBlockOrder] = useState(() => {
     const saved = loadJSON(BLOCK_ORDER_KEY)
@@ -354,7 +369,10 @@ function App() {
   } = useWeather(HAS_SAVED_CITY)
 
   // Radar cross-check for the current condition (opt-in "Radar enhanced accuracy").
-  const radarClear = useRadarPrecip(location, radarEnhanced)
+  // Keyed to `lastUpdated` so the sweep it reads is always the one behind the
+  // reading on screen — a refreshed condition with a stale radar verdict is the
+  // same inconsistency in a different place.
+  const radarClear = useRadarPrecip(location, radarEnhanced, lastUpdated)
 
   const { cities, save, remove, isSaved, home, setHome, unsetHome, isHome } = useSavedCities()
   const { recents, addRecent, removeRecent } = useRecentSearches()
@@ -511,6 +529,40 @@ function App() {
   useEffect(() => {
     if (INITIAL_CITY) fetchWeather(INITIAL_CITY)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep the reading current while the app is open.
+  //
+  // Weather was fetched exactly once per location — on mount, or when one was
+  // picked — and never again without a tap on refresh. A tab left open or a PWA
+  // resumed from the background therefore kept showing the sky as it was when it
+  // was last opened, with no indication beyond the "Updated N min ago" line. That
+  // is the inconsistency between the cards and the radar: WeatherRadar fetches
+  // its own frames every time it mounts, so the map was live while the condition
+  // card was hours old — over Bel Air MD it read "Slight Rain" (a station report
+  // from a shower that had since passed) beside a radar showing nothing at all.
+  //
+  // Refetch silently once the reading is older than a radar sweep, on whichever
+  // comes first: the app coming back to the foreground, or the poll below. Both
+  // check staleness rather than acting outright, so switching tabs a dozen times
+  // costs nothing.
+  useEffect(() => {
+    if (!location || !weather) return
+    const refreshIfStale = () => {
+      if (document.hidden || refreshingRef.current) return
+      if (Date.now() - (lastUpdated?.getTime() ?? 0) < STALE_MS) return
+      refreshingRef.current = true
+      Promise.resolve(fetchWeather(location, { silent: true }))
+        .finally(() => { refreshingRef.current = false })
+    }
+    const timer = setInterval(refreshIfStale, STALE_CHECK_MS)
+    document.addEventListener('visibilitychange', refreshIfStale)
+    window.addEventListener('focus', refreshIfStale)
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', refreshIfStale)
+      window.removeEventListener('focus', refreshIfStale)
+    }
+  }, [location, weather, lastUpdated, fetchWeather])
 
   // Close search overlay on Escape key
   useEffect(() => {
@@ -864,7 +916,15 @@ function App() {
   // The tab bar takes the logo's place in the header, but only once there is
   // something to navigate: with no city loaded, and while the splash logo is
   // still flying into the header, the header keeps its wordmark.
-  const headerTabs = webLayout && !!weather && !loading && splashPhase === 'done'
+  //
+  // Deliberately not gated on `loading`. A city switch keeps the previous
+  // reading in state while the next one is fetched, so gating on it tore the
+  // bar out mid-switch and slid the wordmark back in, only to reverse both a
+  // moment later — a header jump on top of the page one. The tabs stay, the
+  // skeleton under them follows whichever is selected, and switching pages
+  // mid-fetch stays possible. First load is still covered: `weather` is null
+  // until data arrives, so there is genuinely nothing to navigate yet.
+  const headerTabs = webLayout && !!weather && splashPhase === 'done'
 
   // --web-header-h is what everything parked under the sticky header offsets
   // itself by: the Hourly page's own sticky column head (top) and the radar's
@@ -927,7 +987,7 @@ function App() {
   ) : (
     <>
       <div className="weather-left">
-        <WeatherAlerts alerts={alerts} />
+        <WeatherAlerts alerts={alerts} location={location} />
         <CurrentWeather
           current={weather.current}
           minutely={weather.minutely_15}
@@ -1012,22 +1072,22 @@ function App() {
             role={splashPhase === 'done' && weather ? 'button' : undefined}
             aria-label={splashPhase === 'done' && weather ? 'Go to home' : undefined}
             aria-hidden={headerTabs || undefined}
-          ></span>
+          >Alek Weather</span>
           {headerTabs && (
             <div className="web-tabs-row">
               <WebTabs tabs={WEB_TABS} active={webTab} onChange={setWebTab} />
-              <WebAlertPill alerts={alerts} tab={webTab} />
+              <WebAlertPill alerts={alerts} tab={webTab} location={location} />
             </div>
           )}
         </div>
-        <button className="settings-btn" onClick={showSettings ? closeSettings : openSettings} aria-label="Settings">
+        <button className="settings-btn" onPointerDown={preloadSettings} onClick={showSettings ? closeSettings : openSettings} aria-label="Settings">
           <Settings size={22} />
         </button>
       </header>
 
       <div className="app-grid">
         <main className="main-content">
-          {loading && <LoadingScreen />}
+          {loading && (webLayout ? <WebLoadingScreen tab={webTab} /> : <LoadingScreen />)}
           {error && !loading && (
             error.startsWith('geo:') ? (
               <div className="location-error-card">
@@ -1134,6 +1194,21 @@ function App() {
           </div>
           {splashPhase === 'visible' && !webSplash && (
             <div className="splash-overlay" onClick={openSearch} aria-label="Search for a city" role="button" />
+          )}
+          {/* Outside .splash-bg on purpose: that layer is inert and sits under
+              the tap-anywhere overlay, so cards drawn inside it could not be
+              tapped at all. A sibling after the overlay takes its own taps and
+              leaves the rest of the poster opening the search. */}
+          {!webSplash && (
+            <SplashCities
+              recents={recents}
+              savedCities={cities}
+              unit={unit}
+              exiting={splashPhase === 'exit'}
+              busy={loading}
+              onSelect={handleSplashCitySelect}
+              isHome={isHome}
+            />
           )}
         </>
       )}

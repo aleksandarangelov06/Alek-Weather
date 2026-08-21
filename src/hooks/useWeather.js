@@ -11,6 +11,14 @@ const NWS_POINTS_URL = 'https://api.weather.gov/points'
 const NWS_HEADERS = { 'User-Agent': 'AlekWeatherApp/1.0 (angelov6+alekweather@terpmail.umd.edu)' }
 
 // NWS icon code → WMO weather code
+//
+// The `_hi` and `_sct` suffixes are *coverage*, not intensity: per the NWS icon
+// legend, `rain_showers_hi` is "Rain Showers (Isolated/Scattered)" and `tsra_hi`
+// is "Thunderstorm (Isolated)" — the least of each family, not the worst. Reading
+// them as an intensity ladder is what turned a 20%-chance isolated-showers hour
+// into "Violent Showers" (82) and an isolated-storm hour into "Heavy
+// Thunderstorm" (96). WMO has no coverage axis, so each maps to the same code as
+// its base condition and the probability column carries the coverage.
 const NWS_ICON_TO_WMO = {
   skc: 0, wind_skc: 0, hot: 0, cold: 0,
   few: 1, wind_few: 1,
@@ -21,20 +29,23 @@ const NWS_ICON_TO_WMO = {
   drizzle: 51,
   rain: 61,
   rain_showers: 80,
-  rain_showers_hi: 82,
+  rain_showers_hi: 80,
   tsra_sct: 95, tsra: 95,
-  tsra_hi: 96,
+  tsra_hi: 95,
   snow: 71,
-  snow_showers: 85, snow_showers_hi: 86,
+  snow_showers: 85, snow_showers_hi: 85,
   fzra: 67, sleet: 77, blizzard: 75,
   tornado: 99, hurricane: 99,
 }
 
-// When a period has two conditions, pick the more severe one
+// When a period has two conditions, pick the more severe one. Ordered by
+// severity, so each family's coverage variants sit below the family itself —
+// widespread thunderstorms outrank isolated ones, not the reverse.
 const NWS_ICON_PRIORITY = [
-  'tornado', 'hurricane', 'tsra_hi', 'tsra', 'tsra_sct',
-  'blizzard', 'rain_showers_hi', 'snow_showers_hi',
-  'rain', 'rain_showers', 'snow', 'snow_showers', 'fzra', 'sleet',
+  'tornado', 'hurricane', 'tsra', 'tsra_sct', 'tsra_hi',
+  'blizzard',
+  'rain', 'rain_showers', 'rain_showers_hi',
+  'snow', 'snow_showers', 'snow_showers_hi', 'fzra', 'sleet',
   'drizzle', 'ice_fog', 'fog', 'haze', 'dust', 'smoke',
   'ovc', 'wind_ovc', 'bkn', 'wind_bkn', 'sct', 'wind_sct',
   'few', 'wind_few', 'skc', 'wind_skc', 'hot', 'cold',
@@ -504,13 +515,20 @@ export function useWeather(initialLoading = false) {
     setError(null)
   }, [])
 
-  const fetchWeather = useCallback(async (loc) => {
+  // `silent` refetches in place: no loading screen, no torn-down air quality or
+  // alerts, and a failure leaves the last good reading on screen instead of
+  // replacing it with an error card. It is what the staleness refresh in App.jsx
+  // uses — a background poll must never blank the app or shout about a dropped
+  // connection the user didn't ask anything of.
+  const fetchWeather = useCallback(async (loc, { silent = false } = {}) => {
     geoActiveRef.current = false
     const fetchId = ++fetchIdRef.current
-    setLoading(true)
-    setError(null)
-    setAirQuality(null)
-    setAlerts([])
+    if (!silent) {
+      setLoading(true)
+      setError(null)
+      setAirQuality(null)
+      setAlerts([])
+    }
     try {
       const [weatherResult, aqiResult, alertsResult, nwsPointsResult] = await Promise.allSettled([
         fetch(`${WEATHER_URL}?latitude=${loc.latitude}&longitude=${loc.longitude}&${PARAMS}`),
@@ -641,6 +659,7 @@ export function useWeather(initialLoading = false) {
       setLocation(loc)
       setLastUpdated(new Date())
       setAlerts(alertFeatures)
+      setError(null)  // a silent refresh skips the clear up top; success clears it here
 
       if (aqiResult.status === 'fulfilled' && aqiResult.value.ok) {
         const aqiData = await aqiResult.value.json()
@@ -654,9 +673,9 @@ export function useWeather(initialLoading = false) {
       // Log the cause: a network/DNS fault and a bad API response both surface
       // as the same user-facing message, and are otherwise indistinguishable.
       console.error('Weather fetch failed:', e)
-      if (fetchIdRef.current === fetchId) setError('Failed to fetch weather data. Please try again.')
+      if (!silent && fetchIdRef.current === fetchId) setError('Failed to fetch weather data. Please try again.')
     } finally {
-      if (fetchIdRef.current === fetchId) setLoading(false)
+      if (!silent && fetchIdRef.current === fetchId) setLoading(false)
     }
   }, [])
 

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { TriangleAlert, X, ChevronRight } from 'lucide-react'
+import { TriangleAlert, X, ChevronRight, Map } from 'lucide-react'
 import { resolveStyle } from '../utils/alertStyle'
+import { AlertAreaMap } from './AlertAreaMapLazy'
 
 function formatExpires(iso) {
   if (!iso) return null
@@ -43,7 +44,11 @@ function linkify(text) {
   return nodes
 }
 
-export function AlertModal({ alert, onClose }) {
+export function AlertModal({ alert, location, onClose }) {
+  // The area map, opened from the button in the header below and closed back to
+  // the sheet rather than out of it — the sheet is what you were reading, and
+  // the map is a look at one line of it.
+  const [showMap, setShowMap] = useState(false)
   useEffect(() => {
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -54,6 +59,7 @@ export function AlertModal({ alert, onClose }) {
   const cfg = resolveStyle(props)
 
   return (
+    <>
     <div className="alert-backdrop" onClick={onClose}>
       <div className="alert-sheet" onClick={e => e.stopPropagation()}>
         <div className="alert-sheet-fixed">
@@ -62,9 +68,19 @@ export function AlertModal({ alert, onClose }) {
               <TriangleAlert size={18} style={{ color: cfg.color, flexShrink: 0 }} />
               <span className="alert-sheet-event" style={{ color: cfg.color }}>{props.event}</span>
             </div>
-            <button className="alert-close-btn" onClick={onClose} aria-label="Close">
-              <X size={18} />
-            </button>
+            <div className="alert-sheet-actions">
+              <button
+                className="alert-map-btn"
+                onClick={() => setShowMap(true)}
+                aria-label="Show affected area on map"
+                title="Show affected area on map"
+              >
+                <Map size={17} />
+              </button>
+              <button className="alert-close-btn" onClick={onClose} aria-label="Close">
+                <X size={18} />
+              </button>
+            </div>
           </div>
 
           <div className="alert-sheet-meta">
@@ -98,15 +114,34 @@ export function AlertModal({ alert, onClose }) {
         </div>
       </div>
     </div>
+
+    {/* Above the sheet rather than inside it — a map in a scrolling column is a
+        map you fight the page for. Portalled to the same root the sheet is on,
+        so it clears the app's stacking contexts too, and mounted as a sibling of
+        the backdrop rather than a child: a portal still bubbles its events
+        through the React tree it was written in, so inside the backdrop every
+        click on the map would reach that onClick and shut the sheet. */}
+    {showMap && createPortal(
+      <AlertAreaMap key={alert.id} alert={alert} location={location} onClose={() => setShowMap(false)} />,
+      document.getElementById('alert-portal-root') ?? document.body
+    )}
+    </>
   )
 }
 
-export function WeatherAlerts({ alerts }) {
+export function WeatherAlerts({ alerts, location }) {
   const [selected, setSelected] = useState(null)
+  // The alert whose ground is being shown, opened straight from its row. The
+  // sheet has its own button for the same map (see AlertModal); this is the one
+  // that doesn't ask you to read the alert first, because "where is it" is
+  // often the whole question — half these alerts are county lists you are on
+  // the edge of.
+  const [mapped, setMapped] = useState(null)
 
   if (!alerts || alerts.length === 0) return null
 
   const selectedAlert = alerts.find(a => a.id === selected)
+  const mappedAlert   = alerts.find(a => a.id === mapped)
 
   return (
     <>
@@ -125,35 +160,54 @@ export function WeatherAlerts({ alerts }) {
             // of its own now.
             const critical = /warning$/i.test((props.event ?? '').trim())
             return (
-              <button
-                key={alert.id}
-                className="alert-row"
-                onClick={() => setSelected(alert.id)}
-              >
-                <div
-                  className={`alert-row-icon${critical ? ' alert-row-icon--critical' : ''}`}
-                  style={{ background: cfg.bg, '--alert-color': cfg.color }}
+              // The row and the map button are siblings rather than one inside
+              // the other: a button nested in a button is invalid, and the row
+              // is a button because tapping anywhere along it opens the alert.
+              <div key={alert.id} className="alert-row-wrap">
+                <button
+                  className="alert-row"
+                  onClick={() => setSelected(alert.id)}
                 >
-                  <TriangleAlert size={14} style={{ color: cfg.color }} />
-                </div>
-                <div className="alert-row-text">
-                  <span className="alert-row-event">{props.event}</span>
-                  {props.areaDesc && (
-                    <span className="alert-row-area">{props.areaDesc.split(';')[0]}</span>
-                  )}
-                </div>
-                <span className="alert-chip" style={{ color: cfg.color, background: cfg.bg }}>
-                  {cfg.label}
-                </span>
-                <ChevronRight size={14} className="alert-row-chevron" />
-              </button>
+                  <div
+                    className={`alert-row-icon${critical ? ' alert-row-icon--critical' : ''}`}
+                    style={{ background: cfg.bg, '--alert-color': cfg.color }}
+                  >
+                    <TriangleAlert size={14} style={{ color: cfg.color }} />
+                  </div>
+                  <div className="alert-row-text">
+                    <span className="alert-row-event">{props.event}</span>
+                    {props.areaDesc && (
+                      <span className="alert-row-area">{props.areaDesc.split(';')[0]}</span>
+                    )}
+                  </div>
+                  <span className="alert-chip" style={{ color: cfg.color, background: cfg.bg }}>
+                    {cfg.label}
+                  </span>
+                  <ChevronRight size={14} className="alert-row-chevron" />
+                </button>
+                {/* The shortcut to the ground the alert covers, without reading
+                    the alert first — the sheet carries the same button. */}
+                <button
+                  className="alert-map-btn"
+                  onClick={() => setMapped(alert.id)}
+                  aria-label={`Show the area affected by the ${props.event} on a map`}
+                  title="Show affected area on map"
+                >
+                  <Map size={16} />
+                </button>
+              </div>
             )
           })}
         </div>
       </div>
 
       {selectedAlert && createPortal(
-        <AlertModal alert={selectedAlert} onClose={() => setSelected(null)} />,
+        <AlertModal alert={selectedAlert} location={location} onClose={() => setSelected(null)} />,
+        document.getElementById('alert-portal-root') ?? document.body
+      )}
+
+      {mappedAlert && createPortal(
+        <AlertAreaMap key={mappedAlert.id} alert={mappedAlert} location={location} onClose={() => setMapped(null)} />,
         document.getElementById('alert-portal-root') ?? document.body
       )}
     </>

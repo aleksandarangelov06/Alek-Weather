@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } fr
 import { Minimize2, Play, Pause, Navigation, ZoomIn, ZoomOut } from 'lucide-react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import { MRMS_BASE, inMrmsDomain } from '../utils/mrms'
 
 const FRAMES_URL = 'https://api.rainviewer.com/public/weather-maps.json'
 const TILE_URL   = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
@@ -14,7 +15,8 @@ const TILE_URL   = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.p
 //
 // It is an ArcGIS ImageServer, not an XYZ cache, so there are no tiles to ask
 // for: each one is an exportImage render of that tile's bbox. See MrmsLayer.
-const MRMS_BASE  = 'https://mapservices.weather.noaa.gov/eventdriven/rest/services/radar/radar_base_reflectivity_time/ImageServer'
+// The endpoint and its coverage regions live in utils/mrms.js — useRadarPrecip
+// samples the same mosaic for the current-condition check.
 const MRMS_QUERY = `${MRMS_BASE}/query?where=1%3D1&outFields=idp_validtime&returnGeometry=false&orderByFields=idp_validtime%20DESC&resultRecordCount=200&f=json`
 // How many sweeps back the observed timeline runs. Sweeps land every ~6 minutes
 // (measured: alternating 6 and 8), so this is ~100 minutes — about the span
@@ -41,18 +43,6 @@ const MRMS_CLUSTER_MS = 150000
 // retina screen and everything beyond it scales a tile that was going to be smooth
 // regardless. Still well past RADAR_NATIVE_MAX, which is the ceiling this replaces.
 const MRMS_NATIVE_MAX = 10
-
-// MRMS coverage, as the regions the mosaic actually contains. Outside them the
-// render is blank, so those locations stay on RainViewer.
-const MRMS_REGIONS = [
-  [21, 53, -134, -60],    // CONUS
-  [50, 73, -180, -129],   // Alaska
-  [17, 24, -162, -153],   // Hawaii
-  [16, 20, -68, -63],     // Puerto Rico / Caribbean
-  [12, 15, 143, 147],     // Guam
-]
-const inMrmsDomain = (lat, lon) =>
-  MRMS_REGIONS.some(([s, n, w, e]) => lat >= s && lat <= n && lon >= w && lon <= e)
 
 // Web Mercator half-circumference: the edge of the XYZ grid in projected metres.
 const MERC_R = 20037508.342789244
@@ -162,6 +152,24 @@ const RADAR_WINDOW      = 2 // frames either side of current kept attached to th
 // does, and that is the case where there was no forecast half to reach anyway.
 const LEGEND_RAINVIEWER = ['#43a4c3', '#326985', '#ffd900', '#ff3300', '#d193c9']
 const LEGEND_NWS        = ['#02fd02', '#0173c5', '#fdf802', '#fd9500', '#fd0000']
+
+// Scrubber geometry. One frame is one fixed-width column, rather than a share of
+// however wide the track happens to be: the strip slides under a centred playhead
+// and runs off both ends of the track, so its width is the timeline's length and
+// not the card's. TICK_W is the same number as --radar-tick-w in the stylesheet —
+// the CSS lays the columns out, this converts a swipe in pixels into frames, and
+// the two have to agree or the strip drifts under the finger.
+const TICK_W   = 16
+const TAP_SLOP = 4 // px of travel below which a pointer down/up is still a tap
+
+const clampIdx = (v, len) => Math.max(0, Math.min(len - 1, v))
+
+// The compact card's scrubber, where the whole timeline spans the track and a
+// position across it is a position in time.
+const idxAcrossTrack = (clientX, el, len) => {
+  const rect = el.getBoundingClientRect()
+  return Math.round(Math.max(0, Math.min(1, (clientX - rect.left) / rect.width)) * (len - 1))
+}
 
 // Scroll pixels needed per zoom level, tuned separately per input device: a
 // mouse wheel fires big discrete notches (needs a large value or it races),
@@ -427,7 +435,10 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
   const activeKey   = useRef(null)
   const wantedKey   = useRef(null) // latest frame requested; guards stale async loads
   const trackRef    = useRef(null)
-  const isDragging  = useRef(false)
+  // Live state of a scrubber drag: where the finger went down, which frame was
+  // centred under it at that moment, and whether it has travelled far enough to
+  // count as a swipe rather than a tap. Null between drags — see handlePointerDown.
+  const dragRef     = useRef(null)
   const cardRef     = useRef(null)
   // Where the page was scrolled to when the radar was tapped, and whether that is
   // a position worth putting back. See the layout effect that reads them.
@@ -448,6 +459,9 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
   // there are no sides.
   const [view, setView] = useState('observed')
   const [idx, setIdx]             = useState(0)
+  // Fractional frame position while a scrubber drag is in flight, null at rest.
+  // See handlePointerDown.
+  const [drag, setDrag]           = useState(null)
   const [playing, setPlaying]     = useState(false)
   const [expanded, setExpanded]   = useState(false)
   const [mapReady, setMapReady]   = useState(false)
@@ -1069,21 +1083,79 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
   const handleZoomIn  = useCallback(() => mapInst.current?.zoomIn(),  [])
   const handleZoomOut = useCallback(() => mapInst.current?.zoomOut(), [])
 
+  // The two surfaces the radar gets a screen to itself on, as against the compact
+  // card in the weather stack. Several controls turn on here — see the scrubber
+  // below and the Observed/Forecast toggle.
+  const fullSize = expanded || fill
+
+  // Two scrubbers, picked by how much screen the radar has.
+  //
+  // Full-size — expanded or fill — it is a filmstrip under a fixed playhead: the
+  // frame being shown sits at the centre of the track and the ticks travel past
+  // it, so the gesture is "drag the timeline" from anywhere on the bar instead of
+  // "grab the one tick that is the handle". Two things follow.
+  //
+  // A frame's position is no longer a fraction of the track's width, so the
+  // arithmetic is in ticks: every column is TICK_W wide (the CSS reads the same
+  // number off --radar-tick-w), and moving the strip one column's worth of pixels
+  // moves the timeline exactly one frame — the same swipe means the same amount
+  // of time however wide the screen is.
+  //
+  // And the position under the finger is fractional. `drag` carries it so the
+  // strip can follow the finger continuously while setIdx snaps to the nearest
+  // frame; without it the strip would only ever sit on whole frames and a slow
+  // drag would stutter between them. Released, it goes back to null and the strip
+  // settles onto the active frame under CSS transition.
+  //
+  // The compact card in the stack keeps the scrubber it always had: the whole
+  // timeline laid out across the track at once, tapped or dragged to a position
+  // that is read straight off the width. Nothing there is asking to be worked —
+  // the card is a glance, and its own tap target is "open me" — and laying the
+  // timeline out whole is what makes it readable at a glance in the first place.
+  // A filmstrip in a 300px-wide card would show a third of the run and want a
+  // swipe before it said anything.
   const handlePointerDown = useCallback((e) => {
-    isDragging.current = true
     setPlaying(false)
     e.currentTarget.setPointerCapture(e.pointerId)
-    const rect = e.currentTarget.getBoundingClientRect()
-    setIdx(Math.round(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * (frames.length - 1)))
-  }, [frames.length])
+    if (!fullSize) {
+      dragRef.current = { whole: true }
+      setIdx(idxAcrossTrack(e.clientX, e.currentTarget, frames.length))
+      return
+    }
+    dragRef.current = { x0: e.clientX, from: idx, moved: false }
+    setDrag(idx)
+  }, [fullSize, idx, frames.length])
 
   const handlePointerMove = useCallback((e) => {
-    if (!isDragging.current) return
-    const rect = trackRef.current.getBoundingClientRect()
-    setIdx(Math.round(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)) * (frames.length - 1)))
+    const d = dragRef.current
+    if (!d) return
+    if (d.whole) {
+      setIdx(idxAcrossTrack(e.clientX, trackRef.current, frames.length))
+      return
+    }
+    const dx = e.clientX - d.x0
+    // A few pixels of slop, so a tap that shivers is still a tap.
+    if (Math.abs(dx) > TAP_SLOP) d.moved = true
+    // Dragging left (negative dx) walks the timeline forward, the way a filmstrip
+    // pulled leftwards brings later frames to the centre.
+    const pos = clampIdx(d.from - dx / TICK_W, frames.length)
+    setDrag(pos)
+    setIdx(Math.round(pos))
   }, [frames.length])
 
-  const handlePointerUp = useCallback(() => { isDragging.current = false }, [])
+  // On the filmstrip, a tap that never became a swipe still means something: the
+  // tick under it is asking to be the one in the middle. Measured from the centre
+  // of the track, since that is where the frame it started from was sitting.
+  const handlePointerUp = useCallback((e) => {
+    const d = dragRef.current
+    dragRef.current = null
+    if (d && !d.whole && !d.moved && trackRef.current) {
+      const rect = trackRef.current.getBoundingClientRect()
+      const off  = (e.clientX - rect.left - rect.width / 2) / TICK_W
+      setIdx(Math.round(clampIdx(d.from + off, frames.length)))
+    }
+    setDrag(null)
+  }, [frames.length])
 
   // Hangs the still inside the placeholder as it mounts. Only ever appends: the
   // clone goes out of the document with its parent, and appendChild will move it
@@ -1292,35 +1364,61 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
           </div>
         )}
 
+        {/* Full-size, the whole bar is the grab handle: a pointer down anywhere on
+            it takes hold of the strip, and the strip slides under a playhead fixed
+            at the centre, carrying the frames past it. What is centred is what is
+            on the map. The track clips and fades its own edges, so the timeline
+            reads as continuing past both of them rather than ending there.
+
+            The strip is offset by half a tick beyond the frame's own position:
+            translating by -(pos + 0.5) columns puts the middle of that column —
+            the tick itself — on the centre line, where translating by -pos would
+            put its leading edge there and leave every tick half a column late.
+
+            In the compact card the same markup lays out the old way: the strip is
+            an ordinary full-width flex row of stretched columns, with no transform
+            of its own, and the modifier class is what switches between the two. */}
         <div
-          className="radar-tick-track"
+          className={[
+            'radar-tick-track',
+            fullSize && 'radar-tick-track--strip',
+            fullSize && drag !== null && 'radar-tick-track--dragging',
+          ].filter(Boolean).join(' ')}
           ref={trackRef}
+          style={fullSize ? { '--radar-tick-w': `${TICK_W}px` } : undefined}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
         >
-          {frames.map((frame, i) => {
-            const d    = new Date(frame.time * 1000)
-            const prev = i > 0 ? new Date(frames[i - 1].time * 1000) : null
-            const isHour = prev !== null && d.getHours() !== prev.getHours()
-            return (
-              <div key={i} className="radar-tick-col">
-                {showDivider && i === pastCount && <span className="radar-now-divider" aria-hidden="true" />}
-                <div className={[
-                  'radar-tick',
-                  i === idx      && 'radar-tick--active',
-                  isHour         && 'radar-tick--hour',
-                  i >= pastCount && 'radar-tick--forecast',
-                ].filter(Boolean).join(' ')} />
-                {isHour && (
-                  <span className="radar-tick-label">
-                    {d.toLocaleTimeString('en-US', { hour: 'numeric', timeZone: timezone })}
-                  </span>
-                )}
-              </div>
-            )
-          })}
+          <div
+            className="radar-tick-strip"
+            style={fullSize
+              ? { transform: `translate3d(${-((drag ?? idx) + 0.5) * TICK_W}px, 0, 0)` }
+              : undefined}
+          >
+            {frames.map((frame, i) => {
+              const d    = new Date(frame.time * 1000)
+              const prev = i > 0 ? new Date(frames[i - 1].time * 1000) : null
+              const isHour = prev !== null && d.getHours() !== prev.getHours()
+              return (
+                <div key={i} className="radar-tick-col">
+                  {showDivider && i === pastCount && <span className="radar-now-divider" aria-hidden="true" />}
+                  <div className={[
+                    'radar-tick',
+                    i === idx      && 'radar-tick--active',
+                    isHour         && 'radar-tick--hour',
+                    i >= pastCount && 'radar-tick--forecast',
+                  ].filter(Boolean).join(' ')} />
+                  {isHour && (
+                    <span className="radar-tick-label">
+                      {d.toLocaleTimeString('en-US', { hour: 'numeric', timeZone: timezone })}
+                    </span>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </div>
 
         <div className="radar-legend">

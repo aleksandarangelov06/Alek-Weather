@@ -3,6 +3,7 @@ import { ArrowLeft, ChevronRight, ChevronDown, X, Info } from 'lucide-react'
 import { APP_VERSION, ANDROID_VERSION, IS_ANDROID_APP } from '../utils/version'
 import { IS_PHONE } from '../utils/device'
 import { UNIT_GROUPS, UNIT_GROUP_KEYS } from '../utils/units'
+import { MAX_CARD_TRANSPARENCY } from '../utils/appearance'
 
 function SettingRow({ label, children }) {
   return (
@@ -434,13 +435,6 @@ const MATERIAL_SEEDS = [
   { value: '#b3261e', label: 'Red'     },
   { value: '#8c4a60', label: 'Rose'    },
 ]
-
-// The most transparent a card may get. Past this the label on it is reading
-// against the sky animation rather than against a surface, and the card has
-// stopped being a card. Exported because App.jsx clamps the stored value to it
-// — a value past this one would mix the fill at a negative opacity, which is
-// not a color, which is a card with no background at all.
-export const MAX_CARD_TRANSPARENCY = 50
 
 // The transparency control itself, shared by the two phone styles. Both thin
 // their card stack over the same sky, so the row, its peek behaviour and the

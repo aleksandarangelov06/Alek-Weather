@@ -1,4 +1,5 @@
-import { Sun, Moon, Cloud, CloudSun, CloudFog, CloudRain, CloudSnow, CloudLightning, CloudSunRain, Thermometer, Shirt, Wind, Snowflake, Umbrella, Footprints } from 'lucide-react'
+import { Sun, Moon, Cloud, CloudSun, CloudFog, CloudRain, CloudSnow, CloudLightning, CloudSunRain, Thermometer, Shirt, Wind, Snowflake, Umbrella } from 'lucide-react'
+import { TankTop, Shorts, LongSleeve, Hoodie, Jacket, Coat, Parka, Beanie, Mitten, Boot } from './clothingGlyphs'
 import { WindTurbine } from './WindTurbine'
 import { getWeatherInfo, liveWeatherCode, nowcastHourlyCode, displayPrecipChance, precipTier, tempColor } from '../utils/weatherCodes'
 import { formatWind, unitSuffix, unitValue } from '../utils/units'
@@ -601,6 +602,13 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
       : (isDay ? 'Mostly sunny' : 'Mostly clear')
 
     const head = humid ? `${base} and humid` : base
+
+    // Nothing plan-changing in the window. The guard above returns early on an
+    // empty list only when it isn't humid, so a muggy but otherwise uneventful
+    // day reaches here with no events to name — and everything below reads
+    // events[events.length - 1], which is undefined for an empty list. The sky
+    // descriptor is the whole summary: "Cloudy and humid."
+    if (events.length === 0) return { level: 'neutral', text: `${head}.`, rich: false }
 
     events.sort((a, b) => a.rank - b.rank)
 
@@ -1422,37 +1430,38 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
   })()
 
   // ── Clothing suggestion ───────────────────────────────────────────────────
-  // A plain-language "what to wear" line driven by the feels-like temperature,
-  // with a rain/snow add-on when precipitation is likely enough to plan around.
+  // A short "what to wear" phrase driven by the feels-like temperature, with a
+  // rain/snow add-on when precipitation is likely enough to plan around.
   const clothingLine = (() => {
     const feels = current?.apparent_temperature ?? current?.temperature_2m
     if (feels == null) return null
 
-    // Icon reflects the primary garment for the temperature; a meaningful chance
-    // of rain/snow overrides it with the accessory the text tells you to grab.
-    let advice, Icon
-    if (feels >= 100)     { advice = 'Dangerously hot; wear minimal, loose, light-colored clothing and keep water close.'; Icon = Sun }
-    else if (feels >= 90) { advice = 'Very warm; a t-shirt and shorts are ideal.';                     Icon = Sun }
-    else if (feels >= 80) { advice = 'Warm; a t-shirt and light bottoms are comfortable.';            Icon = Shirt }
-    else if (feels >= 70) { advice = 'Mild and pleasant; a t-shirt or light top is all you need.';    Icon = Shirt }
-    else if (feels >= 60) { advice = 'A little cool; a long-sleeve shirt or light layer works well.'; Icon = Shirt }
-    else if (feels >= 50) { advice = 'A light jacket or sweater is about right.';                      Icon = Wind }
-    else if (feels >= 40) { advice = 'Chilly; wear a warm jacket.';                                    Icon = Wind }
-    else if (feels >= 30) { advice = 'Cold; layer a coat over a sweater.';                             Icon = Wind }
-    else if (feels >= 20) { advice = 'Very cold; bundle up with a heavy coat, hat, and gloves.';       Icon = Snowflake }
-    else if (feels >= 10) { advice = 'Frigid; wear heavy winter layers with a hat, gloves, and scarf.'; Icon = Snowflake }
-    else                  { advice = 'Bitterly cold; limit time outside and wear your warmest layers.'; Icon = Snowflake }
+    // Icon names the garment for the temperature band. A meaningful chance of
+    // rain or snow adds a second icon for the accessory to grab, rather than
+    // replacing the first — what to wear and what to carry are two answers.
+    let advice, Icon, Accessory = null
+    if (feels >= 100)     { advice = 'Stay cool, drink water'; Icon = TankTop }
+    else if (feels >= 90) { advice = 'T-shirt and shorts';     Icon = Shorts }
+    else if (feels >= 80) { advice = 'T-shirt weather';        Icon = Shirt }
+    else if (feels >= 70) { advice = 'Light clothes';          Icon = Shirt }
+    else if (feels >= 60) { advice = 'Light layers';           Icon = LongSleeve }
+    else if (feels >= 50) { advice = 'Light jacket';           Icon = Hoodie }
+    else if (feels >= 40) { advice = 'Warm jacket';            Icon = Jacket }
+    else if (feels >= 30) { advice = 'Coat and layers';        Icon = Coat }
+    else if (feels >= 20) { advice = 'Heavy layers';           Icon = Parka }
+    else if (feels >= 10) { advice = 'Heavy layers, hat and gloves';       Icon = Beanie }
+    else                  { advice = 'Warmest layers, limit time outside'; Icon = Mitten }
 
     const rawP = daily?.precipitation_probability_max?.[0]
     const dCode = daily?.weather_code?.[0]
     if (rawP != null) {
       const p = dCode != null ? displayPrecipChance(dCode, rawP) : rawP
       if (p >= 40) {
-        if (dCode != null && SNOW_CODES.has(dCode)) { advice += ' Wear boots for the snow.'; Icon = Footprints }
-        else                                        { advice += ' Bring an umbrella.';        Icon = Umbrella }
+        if (dCode != null && SNOW_CODES.has(dCode)) { advice += ', wear boots';       Accessory = Boot }
+        else                                        { advice += ', bring an umbrella'; Accessory = Umbrella }
       }
     }
-    return { text: advice, Icon, feels }
+    return { text: advice, Icon, Accessory, feels }
   })()
 
   // Live current-conditions icon + color: the sky icon comes from the "right now"
@@ -1504,12 +1513,21 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
         <div className="overview-detail">
           <div className="overview-detail-label">CLOTHING</div>
           <div className="overview-detail-row">
-            <clothingLine.Icon
-              size={18}
-              className="overview-detail-icon"
-              style={colorCode ? { color: tempColor(clothingLine.feels) } : undefined}
-              aria-hidden="true"
-            />
+            <span className="overview-detail-icons">
+              <clothingLine.Icon
+                size={18}
+                className="overview-detail-icon"
+                style={colorCode ? { color: tempColor(clothingLine.feels) } : undefined}
+                aria-hidden="true"
+              />
+              {clothingLine.Accessory && (
+                <clothingLine.Accessory
+                  size={18}
+                  className="overview-detail-icon overview-detail-icon--accessory"
+                  aria-hidden="true"
+                />
+              )}
+            </span>
             <span>{clothingLine.text}</span>
           </div>
         </div>

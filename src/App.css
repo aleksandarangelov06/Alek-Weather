@@ -1329,11 +1329,46 @@ body {
   margin-top: 2px;
 }
 
+/* WeatherIcon draws itself at 1em with the size as an inline style, so the glyph
+   is sized by the font-size here — a width on the img or svg is an author rule
+   losing to an inline one, and does nothing. The web surfaces set their own
+   (see .web-today-grid and .web-widget--full in WebApp.css), where the icon is
+   sized against its column rather than against the phone card.
+
+   The glyph never fills that square: the Fluent art carries its own margin
+   inside the viewBox, most of it above and below the cloud. So the font-size
+   runs well ahead of the size the icon looks, and the margins here are set
+   against the drawing rather than against the box — the apparent gap above the
+   temperature is a good deal larger than the 4px says. */
+/* The hero glyph.
+
+   The SVG is an inline element sized in em, so it sat on a text baseline and
+   the line box added leading under it that has nothing to do with the drawing
+   — a band of dead space between the icon and the reading, and one that moved
+   with the font rather than with the art. `display: block` takes it out of
+   inline flow: the box is then exactly the 1em square, this div is exactly as
+   tall as the icon, and the margin below is the whole of the gap.
+
+   That matters most on the storm and rain glyphs. Their drops fall past the
+   bottom of the 32-unit viewBox while still fully opaque (see wi-drop), and an
+   SVG viewport clips by default, so the rain ends on a hard flat edge at the
+   box bottom. Since that edge is where the art stops, the gap below is now a
+   single deliberate number rather than leading plus a margin.
+
+   In em, so it tracks the icon: the same rule serves a 132px hero on the phone
+   and a ~60px one in the web layout's narrow column, and neither needs its own
+   figure. */
 .current-icon {
-  font-size: 76px;
+  font-size: 132px;
   line-height: 1;
-  margin: 16px 0 16px;
+  margin: 2px 0 0.16em;
   user-select: none;
+}
+
+.current-icon .weather-icon,
+.current-icon .weather-icon-fog {
+  display: block;
+  margin-inline: auto;
 }
 
 /* Inline fog icon (WeatherIcon) — currentColor is set to a mid-tone that keeps
@@ -1586,12 +1621,12 @@ body {
 
 
 .current-temp {
-  font-size: 72px;
+  font-size: 58px;
   font-weight: 300;
   font-family: var(--font-display);
   color: var(--text-primary);
   line-height: 1;
-  letter-spacing: -2px;
+  letter-spacing: -1.6px;
 }
 
 .current-condition {
@@ -2949,6 +2984,151 @@ body {
   white-space: nowrap;
 }
 
+/* ── Splash recents (phone) ──────────────────────────────────────────────────
+   The desktop splash is a home screen — a search field over a grid of the
+   places you've been (see .splash-home in WebApp.css). The phone splash stays
+   a poster you tap anywhere on, but it gets the same shortcut in miniature:
+   the last two locations, live conditions on them, one tap to the forecast.
+
+   Fixed rather than parented to .splash-bg because that layer is inert and
+   sits under the tap-anywhere overlay; z-index clears the overlay so these
+   take their own taps, and stays well under the search sheet (299) so opening
+   the search still covers them. Bottom-anchored above the version line, which
+   keeps a phone-height gap to the centred wordmark on any screen. */
+.splash-mini {
+  --splash-mini-surface: rgba(255, 255, 255, 0.55);
+  --splash-mini-border: rgba(255, 255, 255, 0.6);
+  position: fixed;
+  z-index: 5;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(var(--sa-bottom) + 52px);
+  width: min(420px, calc(100vw - 32px));
+  display: flex;
+  gap: 10px;
+}
+
+[data-theme="dark"] .splash-mini {
+  --splash-mini-surface: rgba(255, 255, 255, 0.08);
+  --splash-mini-border: rgba(255, 255, 255, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .splash-mini {
+    --splash-mini-surface: rgba(255, 255, 255, 0.08);
+    --splash-mini-border: rgba(255, 255, 255, 0.12);
+  }
+}
+
+/* Clears out ahead of the logo so the wordmark flies to the header alone. */
+.splash-mini--exit {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+/* A city is being fetched: the splash still covers the loading skeleton, so it
+   goes inert and the card that was tapped keeps its spinner lit. */
+.splash-mini--busy {
+  pointer-events: none;
+}
+
+.splash-mini--busy .splash-mini-card:not(.splash-mini-card--opening) {
+  opacity: 0.5;
+  transition: opacity 0.2s ease;
+}
+
+.splash-mini-card {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 11px 13px 10px;
+  border-radius: 18px;
+  border: 1px solid var(--splash-mini-border);
+  background: var(--splash-mini-surface);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  font-family: var(--font);
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.12s ease, opacity 0.2s ease;
+}
+
+.splash-mini-card:active {
+  transform: scale(0.97);
+}
+
+.splash-mini-name {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* The names are the one part that can outgrow a half-width card. */
+.splash-mini-name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.splash-mini-home {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.splash-mini-sub {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Reserved height: the conditions arrive a moment after the names, and the
+   pair shouldn't jump when they land. */
+.splash-mini-now {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  margin-top: 5px;
+}
+
+.splash-mini-icon {
+  display: flex;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.splash-mini-temp {
+  font-size: 24px;
+  font-weight: 300;
+  letter-spacing: -1px;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.splash-mini-temp--unknown {
+  opacity: 0.4;
+}
+
+.splash-mini-spinner {
+  width: 20px;
+  height: 20px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash-mini-card:active {
+    transform: none;
+  }
+}
+
 [data-theme="dark"] .splash-logo-img-light { display: none; }
 [data-theme="dark"] .splash-logo-img-dark  { display: block; }
 
@@ -4047,11 +4227,24 @@ body {
   gap: 10px;
 }
 
+/* The clothing line can carry two icons: the garment, plus an umbrella or boot
+   when there's rain or snow to plan around. Group them tighter than the row's
+   own 10px gap so they read as one unit against the text. */
+.overview-detail-icons {
+  display: flex;
+  flex-shrink: 0;
+  gap: 5px;
+}
+
 .overview-detail-icon {
   flex-shrink: 0;
   margin-top: 1px;
   color: var(--accent);
 }
+
+/* Accessory tints cool regardless of the garment's temperature colour, so
+   "carry this" stays visually separate from "wear this". */
+.overview-detail-icon--accessory { color: var(--cond-blue); }
 
 .overview-item {
   display: flex;
@@ -4839,12 +5032,14 @@ body {
   background: color-mix(in srgb, var(--md-primary) 50%, transparent);
 }
 
-/* The active frame is the M3 slider handle: a full-height bar in the primary
-   colour with the slider's own rounded ends, no glow. */
+/* The active frame is the M3 slider handle: a full-height capsule in the primary
+   colour, fully rounded, no glow. Follows the width of the capsule it overrides
+   rather than the 4px of a Material track, so the handle reads as round on this
+   shell too. */
 :root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-tick--active {
-  width: 4px;
+  width: 6px;
   height: 32px;
-  border-radius: 2px;
+  border-radius: 999px;
   background: var(--md-primary);
   box-shadow: none;
 }
@@ -5606,16 +5801,28 @@ body {
   .radar-view-btn { transition: none; }
 }
 
-/* ── Radar tick scrubber ── */
+/* ── Radar tick scrubber ──
+   The compact card's version, and the base both share: the whole timeline laid
+   out across the track at once, every frame a column of equal share, tapped or
+   dragged to a position that is read straight off the width. */
 .radar-tick-track {
+  position: relative;
   display: flex;
   align-items: flex-end;
   min-height: 48px;
   padding-bottom: 22px;
   cursor: pointer;
+  /* Horizontal drags belong to the scrubber, vertical ones to the page. */
   touch-action: pan-y;
   user-select: none;
   -webkit-user-select: none;
+}
+
+.radar-tick-strip {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
 }
 
 .radar-tick-col {
@@ -5624,6 +5831,58 @@ body {
   flex-direction: column;
   align-items: center;
   position: relative;
+}
+
+/* ── …and full-size, where it becomes a filmstrip ──
+   Expanded or fill, the radar has a screen to itself and the scrubber is worth
+   working rather than glancing at. The track turns into a window; the strip
+   inside it is as wide as the timeline is long and slides behind that window, so
+   the frame on the map is always the one at the centre and a swipe anywhere on
+   the bar moves the timeline. Columns take a fixed width from JS
+   (--radar-tick-w, = TICK_W) because the drag arithmetic converts pixels to
+   frames with it — equal-share columns would make a swipe mean different amounts
+   of time on different screen widths.
+
+   overflow and the mask are a pair: overflow keeps the strip inside the track
+   (and stops the mask's gradient from tiling outside it), and the mask dissolves
+   the ends rather than cutting them, so the timeline reads as running on past
+   both edges instead of stopping at them. */
+.radar-tick-track--strip {
+  display: block;
+  overflow: hidden;
+  cursor: grab;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 14%, #000 86%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 14%, #000 86%, transparent 100%);
+}
+
+.radar-tick-track--dragging { cursor: grabbing; }
+
+/* Anchored to the centre of the track and to the same baseline the ticks sit on
+   in the card — bottom clears the padding the hour labels hang in, so the labels
+   still land inside the track and survive the overflow clip.
+
+   The transform is the frame position and nothing else, so it can be handed to
+   the compositor. It eases when the timeline moves on its own — playback, the
+   arrow keys, a tap, the settle after a release — and is cut to nothing while a
+   finger is down, where anything but 1:1 with the pointer reads as lag. */
+.radar-tick-track--strip .radar-tick-strip {
+  position: absolute;
+  left: 50%;
+  bottom: 22px;
+  flex: none;
+  will-change: transform;
+  transition: transform 0.22s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.radar-tick-track--dragging .radar-tick-strip { transition: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .radar-tick-track--strip .radar-tick-strip { transition: none; }
+}
+
+.radar-tick-track--strip .radar-tick-col {
+  width: var(--radar-tick-w, 16px);
+  flex: none;
 }
 
 .radar-tick {
@@ -5637,11 +5896,13 @@ body {
 .radar-tick--hour    { height: 20px; background: var(--text-tertiary); }
 .radar-tick--forecast { background: var(--accent-light); }
 /* Current frame: the same accent blue as the play button, set apart from the
-   paler forecast ticks by extra width, height, and a glow. */
+   paler forecast ticks by extra width, height, and a glow. A capsule rather than
+   a bar — wide enough that the round caps read as round, which at the 4px of a
+   tick they never quite did. */
 .radar-tick--active  {
-  width: 4px;
+  width: 6px;
   height: 30px;
-  border-radius: 2px;
+  border-radius: 999px;
   background: var(--accent);
   box-shadow: 0 0 6px color-mix(in srgb, var(--accent) 70%, transparent);
 }
@@ -5787,11 +6048,21 @@ body {
   gap: 6px;
 }
 
+/* The row and its map button, side by side. The button is outside the row's own
+   surface rather than on it, so the two read as two targets — the row opens the
+   alert, the button opens the ground it covers. */
+.alert-row-wrap {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
 .alert-row {
   display: flex;
   align-items: center;
   gap: 10px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   background: var(--hover-subtle);
   border: none;
   border-radius: 12px;
@@ -5872,6 +6143,54 @@ body {
 .alert-row-chevron {
   color: var(--text-tertiary);
   flex-shrink: 0;
+}
+
+/* "Where is this?" — on an alert row and again in the sheet's header, where it
+   sits beside the close button. Same tinted-surface treatment as the row it
+   stands next to, so it belongs to the alert rather than floating over it, and
+   it takes the alert's own colour on hover: the map it opens is drawn in that
+   colour. */
+.alert-map-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 38px;
+  background: var(--hover-subtle);
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: background 0.15s, color 0.15s;
+}
+
+.alert-map-btn:hover {
+  background: var(--hover-medium);
+  color: var(--text-primary);
+}
+
+/* The row's copy is a desktop convenience. On the phone the alerts card is a
+   list you tap through, and a second target on every row crowds the one that
+   matters — the row itself. The map is still one tap further in, from the
+   button in the sheet's header, which is where a phone reader is already
+   heading. */
+:root[data-shell="mobile"] .alert-row-wrap .alert-map-btn {
+  display: none;
+}
+
+/* In the sheet header it is one of a pair with the close button, and matches it:
+   a 30px circle rather than a full-height tile. */
+.alert-sheet-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.alert-sheet-actions .alert-map-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
 }
 
 /* ── Alert bottom sheet ── */
@@ -6200,6 +6519,147 @@ body {
   .alert-sheet-expires    { font-size: 13px; }
 }
 
+/* ── Alert area map ──
+   The alert's ground, full-screen. Above the sheet (z 600) because it opens
+   from it and closes back to it, and full-bleed because an outline is a shape:
+   a thumbnail of it says nothing the county list didn't already say. */
+.alert-map-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 700;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  animation: alertFadeIn 0.2s ease;
+}
+
+.alert-map-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  /* Clears the status bar / notch on the phone shells, where this is the
+     topmost surface on the screen. */
+  padding-top: max(12px, env(safe-area-inset-top));
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.alert-map-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.alert-map-event {
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.alert-map-area {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.alert-map-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.alert-map {
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+}
+
+/* The outline. Colour comes from here rather than from Leaflet's style options
+   because resolveStyle() returns var(--cond-*) references: handed to Leaflet
+   those become SVG presentation attributes, which browsers don't resolve var()
+   in. As a stylesheet rule the custom property works normally — and an author
+   rule also beats the presentation attribute Leaflet writes, so its default
+   blue never shows through. */
+.alert-area-shape {
+  stroke: var(--alert-color, var(--cond-red));
+  fill: var(--alert-color, var(--cond-red));
+}
+
+/* One line of state over the map — loading, unmappable, or partial. Sits at the
+   bottom, clear of the zoom control in the corner. */
+.alert-map-note {
+  position: absolute;
+  left: 50%;
+  bottom: max(14px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 500;
+  margin: 0;
+  max-width: calc(100% - 28px);
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+/* Leaflet's own zoom control, in the app's clothes: two round chips in the
+   radar's palette rather than the joined white box Leaflet ships, whose
+   white-on-white is invisible against a dark map anyway.
+
+   Everything here is selected through .alert-map-wrap for the specificity, not
+   for the scope. Leaflet's stylesheet rides in the lazily-loaded map chunk, so
+   it lands in the document after App.css and wins every tie — and its
+   .leaflet-touch rules are exactly as specific as a plain .alert-map one would
+   be. One more class puts these out of reach of that. */
+.alert-map-wrap .alert-map .leaflet-bar {
+  border: none;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.alert-map-wrap .alert-map .leaflet-bar a,
+.alert-map-wrap .alert-map .leaflet-bar a:first-child,
+.alert-map-wrap .alert-map .leaflet-bar a:last-child {
+  width: 36px;
+  height: 36px;
+  line-height: 36px;
+  border: none;
+  border-radius: 50%;
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  font-size: 20px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.alert-map-wrap .alert-map .leaflet-bar a:hover {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+.alert-map-wrap .alert-map .leaflet-bar a.leaflet-disabled {
+  opacity: 0.45;
+  background: var(--card-bg);
+  color: var(--text-tertiary);
+}
+
+/* Not on the phone, where pinch is the zoom and two chips laid over a map that
+   is already only a screen wide are cost without a use. */
+:root[data-shell="mobile"] .alert-map-wrap .alert-map .leaflet-bar {
+  display: none;
+}
+
 /* ── Precipitation Nowcast ── */
 .nowcast-header {
   display: flex;
@@ -6327,4 +6787,78 @@ body {
 }
 @media (prefers-reduced-motion: reduce) {
   .weather-left, .weather-right { animation: none; }
+}
+
+/* ── Mobile: circular backgrounds behind the icon buttons ──────────────────
+   The phone app has no hover, so the header's location and settings buttons
+   and the current card's home / save / refresh buttons read as bare glyphs
+   floating on the sky with nothing marking where to tap. A filled circle
+   behind each one gives them a visible target without adding chrome.
+
+   Two tints, picked by the same condition the icon colours already use:
+   .sky-active means the icons are drawn white over a sky, so the circle is
+   white too — a dark tint would read as a smudge on a bright sky. Without it
+   (splash, effects off) the icons are theme-coloured on a flat --bg, and the
+   neutral hover tokens already flip with the theme.
+
+   Placed after the Android and iOS sections so the sizes below outrank the
+   Material shape rules, which set these same buttons' radius and padding. */
+:root[data-shell="mobile"] .app {
+  --icon-circle-bg: var(--hover-medium);
+  --icon-circle-press: var(--hover-clear);
+}
+
+:root[data-shell="mobile"] .app.sky-active {
+  --icon-circle-bg: rgba(255, 255, 255, 0.16);
+  --icon-circle-press: rgba(255, 255, 255, 0.28);
+}
+
+/* At desktop widths the mobile shell's current card becomes an opaque card
+   (see the min-width: 1100px block in Current weather), so its buttons are no
+   longer over the sky and want the neutral tint back. The header still is. */
+@media (min-width: 1100px) {
+  :root[data-shell="mobile"] .app .current-card {
+    --icon-circle-bg: var(--hover-medium);
+    --icon-circle-press: var(--hover-clear);
+  }
+}
+
+:root[data-shell="mobile"] .app .app-header :is(.header-icon-btn, .settings-btn),
+:root[data-shell="mobile"] .app .current-card :is(.fav-btn, .save-btn, .refresh-btn) {
+  background: var(--icon-circle-bg);
+  border-radius: 50%;
+  padding: 0;
+  justify-content: center;
+  flex-shrink: 0;
+  /* .settings-btn transitions colour only, so name background here too — it
+     changes on press and when the sky comes and goes. */
+  transition: color 0.15s, background 0.15s;
+  /* The hold-to-locate and hold-for-home fills are ::before circles that grow
+     past the button box. Unclipped over a filled circle they read as a blob
+     spilling onto the sky; clipped they fill the circle itself. */
+  overflow: hidden;
+}
+
+:root[data-shell="mobile"] .app .app-header :is(.header-icon-btn, .settings-btn):active,
+:root[data-shell="mobile"] .app .current-card :is(.fav-btn, .save-btn, .refresh-btn):active {
+  background: var(--icon-circle-press);
+}
+
+/* One size per pair so the two circles at either end of a row match, rather
+   than tracking whatever their icons happen to measure (24 vs 22, 17 vs 18).
+   40px is the Material icon-button target and comfortable on iOS too. */
+:root[data-shell="mobile"] .app .app-header :is(.header-icon-btn, .settings-btn) {
+  width: 40px;
+  height: 40px;
+}
+
+:root[data-shell="mobile"] .app .current-card :is(.fav-btn, .save-btn) {
+  width: 32px;
+  height: 32px;
+}
+
+/* Smaller: this one sits inline with the "updated" line, not on its own row. */
+:root[data-shell="mobile"] .app .current-card .refresh-btn {
+  width: 26px;
+  height: 26px;
 }

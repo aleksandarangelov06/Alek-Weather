@@ -107,11 +107,18 @@ export function PrecipNowcast({ minutely, currentTime, mode = 'auto', current = 
     // signals: the measured preceding-hour total (current.precipitation, inch;
     // ÷4 → in/15min), and the intensity implied by the live weather code when the
     // model reports no amount at all — this location's case, where the code says
-    // Heavy Rain while every precip figure reads 0. Gated on rainingNow so a
-    // just-ended shower's lingering hourly total doesn't fabricate a spike.
+    // Heavy Rain while every precip figure reads 0.
+    //
+    // The code half only counts when the code rests on something that was
+    // *observed* — a station report, an active warning, or an echo on radar. A
+    // model-only code is a category, not a measurement, and drawing TIER_RATE from
+    // one puts an invented spike on a chart whose whole y-axis is measured inches:
+    // over a dry, sunny Bel Air MD the model's "Violent Showers" (tier 4) painted
+    // the band ceiling across a minutely series that read 0.00 the entire hour.
     if (rainingNow) {
+      const observed = current?.weather_code_confirmed || radarClear === false
       const measured = (current?.precipitation ?? 0) / 4
-      const fromCode = TIER_RATE[precipTier(liveCode)] ?? 0
+      const fromCode = observed ? (TIER_RATE[precipTier(liveCode)] ?? 0) : 0
       const observedNow = Math.max(measured, fromCode)
       if (observedNow > pts[0].p) pts[0] = { ...pts[0], p: observedNow, y: yFor(observedNow, CB, CH) }
     }
@@ -119,9 +126,13 @@ export function PrecipNowcast({ minutely, currentTime, mode = 'auto', current = 
     const allDry = pts.every(p => p.p < 0.001)
     // Meaningful rain in the next hour = the nowcast reaches at least the LIGHT
     // band. A flat trace of drizzle (below LIGHT_P) doesn't count as "it'll rain".
-    const willRain = pts.some(p => p.p >= LIGHT_P)
+    // Read from the forward points only: pts[0] is now, and letting the seeded
+    // now-point answer "is rain coming" made the card promise the next hour on the
+    // strength of the current minute.
+    const willRain = pts.slice(1).some(p => p.p >= LIGHT_P)
     return { pts, allDry, willRain }
-  }, [minutely, currentTime, rainingNow, liveCode, current?.precipitation, CX, CW, CB, CH])
+  }, [minutely, currentTime, rainingNow, liveCode, current?.precipitation,
+    current?.weather_code_confirmed, radarClear, CX, CW, CB, CH])
 
   if (!data) return null
   if (mode === 'off') return null
