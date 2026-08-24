@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef } from 'react'
 import { nowcastHourlyCode, precipTier, livePrecipRate } from '../utils/weatherCodes'
+import { gridHourly, gridHourlyAccum, gridHourlySpans } from '../utils/nwsGrid'
 
 const GEO_URL = 'https://geocoding-api.open-meteo.com/v1/search'
 const WEATHER_URL = 'https://api.open-meteo.com/v1/forecast'
@@ -66,6 +67,15 @@ function parseNWSIcon(iconUrl) {
   }
 }
 
+// Returns the icon code that ranks higher (more severe) in NWS_ICON_PRIORITY.
+function pickMoreSevere(a, b) {
+  if (!b) return a
+  const ia = NWS_ICON_PRIORITY.indexOf(a), ib = NWS_ICON_PRIORITY.indexOf(b)
+  if (ia === -1) return b
+  if (ib === -1) return a
+  return ia <= ib ? a : b
+}
+
 // NWS wind direction (cardinal) → degrees
 const CARDINAL_TO_DEG = {
   N: 0, NNE: 22, NE: 45, ENE: 68,
@@ -81,15 +91,6 @@ function parseWindMph(str) {
   return nums ? Math.max(...nums.map(Number)) : null
 }
 
-// Returns the icon code that ranks higher (more severe) in NWS_ICON_PRIORITY.
-function pickMoreSevere(a, b) {
-  if (!b) return a
-  const ia = NWS_ICON_PRIORITY.indexOf(a), ib = NWS_ICON_PRIORITY.indexOf(b)
-  if (ia === -1) return b
-  if (ib === -1) return a
-  return ia <= ib ? a : b
-}
-
 // Convert a NWS startTime ISO string to a local "YYYY-MM-DDTHH:00" key.
 function nwsLocalKey(isoString, timezone) {
   return new Date(isoString)
@@ -98,11 +99,102 @@ function nwsLocalKey(isoString, timezone) {
     .slice(0, 13) + ':00'
 }
 
-// Overwrite Open-Meteo hourly arrays with NWS data for US locations.
+// The slot key for the hour the user is currently in, in the location's own
+// zone — the same "YYYY-MM-DDTHH:00" shape Open-Meteo's hourly array uses.
+function currentHourKey(timezone) {
+  const local = new Date().toLocaleString('sv', { timeZone: timezone })
+  return `${local.slice(0, 10)}T${local.slice(11, 13)}:00`
+}
+
+// The span at which NWS has stopped forecasting hour by hour and is publishing
+// one figure for a whole part of the day. Six is its own standard block.
+const BLOCK_SPAN_HOURS = 6
+
+// Which gridpoint elements decide an hourly field's resolution. Where a field
+// has more than one, the finest of them wins at each hour, because the field is
+// as detailed as its most detailed input.
+//
+// weather_code is the one that matters and the one that is easy to get wrong.
+// Judged on `weather` alone it looks hopelessly coarse — that element is sparse
+// by design, and a settled week is a single entry saying "nothing" for seventy
+// hours. But the icon is not just precipitation: sky cover is what separates
+// sunny from overcast, it is published hourly, and it is what actually varies
+// across a dry afternoon. Reading `weather` on its own put the icon on
+// Open-Meteo for all but the next two hours; reading both puts it on NWS for
+// three days.
+//
+// `is_day` is deliberately absent: it is solar geometry, exact at any range.
+const FIELD_ELEMENTS = {
+  temperature_2m:            ['temperature'],
+  apparent_temperature:      ['apparentTemperature', 'heatIndex', 'windChill'],
+  relative_humidity_2m:      ['relativeHumidity'],
+  wind_speed_10m:            ['windSpeed'],
+  wind_direction_10m:        ['windDirection'],
+  wind_gusts_10m:            ['windGust'],
+  visibility:                ['visibility'],
+  precipitation_probability: ['probabilityOfPrecipitation'],
+  weather_code:              ['weather', 'skyCover'],
+}
+
+// The finest span covering each hour across a field's backing elements.
+function fieldSpans(grid, elements, timezone) {
+  const out = new Map()
+  for (const element of elements) {
+    for (const [key, span] of gridHourlySpans(grid[element], timezone)) {
+      const best = out.get(key)
+      if (best == null || span < best) out.set(key, span)
+    }
+  }
+  return out
+}
+
+// Per field, the first hour from now at which NWS stops forecasting it hour by
+// hour. NWS supplies that field up to this point; Open-Meteo — which models
+// every hour out to seven days — supplies it from there on.
+//
+// The cut is monotonic: once a field goes to blocks it stays on Open-Meteo,
+// even if a finer entry turns up again later in the week. Switching back and
+// forth hour by hour would squeeze a little more NWS out of the range at the
+// cost of a row that visibly zigzags between two sources that never agree
+// exactly, which is a bad trade for a strip someone reads at a glance.
+function nwsFieldHorizons(grid, timezone) {
+  const now = currentHourKey(timezone)
+  const out = {}
+  for (const [field, elements] of Object.entries(FIELD_ELEMENTS)) {
+    let horizon = null
+    for (const [key, span] of fieldSpans(grid, elements, timezone)) {
+      if (key < now || span < BLOCK_SPAN_HOURS) continue
+      if (horizon == null || key < horizon) horizon = key
+    }
+    out[field] = horizon
+  }
+  return out
+}
+
+// Whether NWS still backs `field` at `key`. No horizons at all means the
+// gridpoint never loaded, and then NWS is used as far as it reaches — the old
+// behaviour, and better than dropping it entirely.
+function nwsCovers(horizons, field, key) {
+  if (!horizons) return true
+  const horizon = horizons[field]
+  return horizon == null || key < horizon
+}
+
+// Overwrite Open-Meteo hourly arrays with NWS data for US locations, wherever
+// NWS publishes a value. Open-Meteo is the fallback, not a rival: it keeps the
+// hours NWS doesn't reach — the past day the app carries, and the tail beyond
+// this product's range — and every field NWS never publishes at all.
+//
 // NWS hourly is authoritative for weather_code, precipitation_probability,
-// temperature, wind, humidity, and is_day. UV, cloud cover, pressure, and
-// visibility are not available from NWS hourly so Open-Meteo values are kept.
-function mergeNWSHourly(hourly, periods, timezone) {
+// temperature, wind, humidity, and is_day. The fields this product doesn't
+// publish — feels-like, gusts, visibility — come from the raw gridpoint behind
+// it, merged in mergeNWSGridHourly below.
+//
+// Each field runs only as far as NWS is still forecasting it hour by hour, and
+// that differs sharply between them: temperature stays hourly for the whole
+// week, while visibility is published in blocks from the first hour. Past its
+// own horizon a field keeps Open-Meteo's values (see nwsFieldHorizons).
+function mergeNWSHourly(hourly, periods, timezone, horizons) {
   const lookup = new Map()
   for (const period of periods) {
     const key = nwsLocalKey(period.startTime, timezone)
@@ -118,16 +210,93 @@ function mergeNWSHourly(hourly, periods, timezone) {
     })
   }
   for (let i = 0; i < hourly.time.length; i++) {
-    const nws = lookup.get(hourly.time[i].slice(0, 13) + ':00')
+    const key = hourly.time[i].slice(0, 13) + ':00'
+    const nws = lookup.get(key)
     if (!nws) continue
-    if (nws.wmoCode  != null) hourly.weather_code[i]            = nws.wmoCode
-    if (nws.prob     != null) hourly.precipitation_probability[i] = nws.prob
-    if (nws.temp     != null) hourly.temperature_2m[i]          = nws.temp
-    if (nws.windSpd  != null) hourly.wind_speed_10m[i]          = nws.windSpd
-    if (nws.windDir  != null) hourly.wind_direction_10m[i]      = nws.windDir
-    if (nws.humidity != null) hourly.relative_humidity_2m[i]    = nws.humidity
-    if (nws.isDay    != null) hourly.is_day[i]                  = nws.isDay
+    const put = (field, value) => {
+      if (value != null && hourly[field] && nwsCovers(horizons, field, key)) hourly[field][i] = value
+    }
+    put('weather_code',              nws.wmoCode)
+    put('precipitation_probability', nws.prob)
+    put('temperature_2m',            nws.temp)
+    put('wind_speed_10m',            nws.windSpd)
+    put('wind_direction_10m',        nws.windDir)
+    put('relative_humidity_2m',      nws.humidity)
+    // No horizon: day and night are astronomy, exact at any range.
+    if (nws.isDay != null) hourly.is_day[i] = nws.isDay
   }
+}
+
+// The gridpoint elements the app actually reads, expanded to one value per local
+// hour and converted to the app's canonical units. Built once and shared by the
+// three merges below so the payload is walked once, not three times.
+//
+// Two elements the app wants have no NWS source at all, and both stay
+// Open-Meteo's. There is no UV index at any NWS endpoint. And `pressure` is in
+// the grid schema but offices publish it empty (verified against LWX) — the
+// only NWS barometer is on the observation stations, and those read at their
+// own elevation, not the user's: over Bel Air MD (120 m) the nearest field
+// (KMTN, 7 m) reported 1013 hPa against Open-Meteo's 998 for the location
+// itself. That gap is altitude, not a better measurement, and taking it would
+// have stood the pressure tile 15 hPa above the chart drawn underneath it from
+// the hourly series.
+function nwsGridMaps(grid, timezone) {
+  return {
+    feels: gridHourly(grid.apparentTemperature, timezone),
+    heat:  gridHourly(grid.heatIndex, timezone),
+    chill: gridHourly(grid.windChill, timezone),
+    gust:  gridHourly(grid.windGust, timezone),
+    vis:   gridHourly(grid.visibility, timezone),
+    sky:   gridHourly(grid.skyCover, timezone),
+    dew:   gridHourly(grid.dewpoint, timezone),
+    qpf:   gridHourlyAccum(grid.quantitativePrecipitation, timezone),
+  }
+}
+
+// Fill the hourly fields /forecast/hourly doesn't carry. Everything here is
+// keyed the same way mergeNWSHourly keys its lookup, so the two land on the
+// same slots and an hour is either wholly NWS or wholly Open-Meteo per field.
+//
+// heatIndex/windChill back up apparentTemperature because the grid publishes
+// the feels-like family seasonally: outside the ranges where one applies the
+// element is present but null, and the other is what has the number.
+function mergeNWSGridHourly(hourly, maps, horizons) {
+  for (let i = 0; i < hourly.time.length; i++) {
+    const key = hourly.time[i].slice(0, 13) + ':00'
+    const put = (field, value) => {
+      if (value != null && hourly[field] && nwsCovers(horizons, field, key)) hourly[field][i] = value
+    }
+    put('apparent_temperature', maps.feels.get(key) ?? maps.heat.get(key) ?? maps.chill.get(key))
+    put('wind_gusts_10m', maps.gust.get(key))
+    put('visibility', maps.vis.get(key))
+  }
+}
+
+// NWS's forecast day runs 06:00 to 06:00, not midnight to midnight. Its
+// "Tonight" period carries the evening and the small hours together, and belongs
+// to the evening it started from — not to the calendar date most of its hours
+// happen to fall in.
+//
+// Bucketing by calendar date instead is what put a 2 a.m. thunderstorm onto the
+// *next* day's card: verified over Bel Air MD, where NWS published "Tonight
+// 74%" and "Sunday 36%, Mostly Sunny", and the app showed Sunday as 74% off
+// that single overnight hour while Sunday's own afternoon sat at 1%.
+const NWS_DAY_START_HOUR = 6
+
+// "YYYY-MM-DD" + 1 day. Noon UTC keeps the arithmetic clear of every DST edge —
+// no local midnight is ever skipped or repeated in the middle of a day.
+function nextDate(date) {
+  const d = new Date(`${date}T12:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + 1)
+  return d.toISOString().slice(0, 10)
+}
+
+// Whether an hourly slot ("YYYY-MM-DDTHH:00") belongs to `date`'s NWS forecast
+// day: from 06:00 on the date through 05:00 the following morning.
+function inNWSForecastDay(slotTime, date) {
+  const hour = Number(slotTime.slice(11, 13))
+  if (slotTime.startsWith(date)) return hour >= NWS_DAY_START_HOUR
+  return hour < NWS_DAY_START_HOUR && slotTime.startsWith(nextDate(date))
 }
 
 // WMO code severity for finding the worst condition in a day.
@@ -144,14 +313,23 @@ function wmoSeverity(code) {
 }
 
 // After NWS hourly data has been merged into `hourly`, re-derive the daily
-// weather code and precipitation probability from the hourly arrays so that
-// DailyForecast, HourlyForecast, and WeatherOverview always agree.
+// weather code from the hourly arrays so that DailyForecast, HourlyForecast,
+// and WeatherOverview always agree.
 //
 // The NWS period-summary (/forecast) and hourly (/forecast/hourly) endpoints
 // are produced by different systems and routinely disagree — e.g. the daily
 // period may say "75 % thunderstorms" while the hourly breakdown shows only
-// clouds. Re-deriving from hourly makes the three views internally consistent.
-function alignDailyWithHourly(daily, hourly, minutely, current, timezone) {
+// clouds. Re-deriving the code from hourly makes the three views internally
+// consistent, and lets the nowcast correction reach the daily summary.
+//
+// Precipitation probability is deliberately NOT re-derived when the NWS daily
+// periods merged. A day's POP is not the maximum of its hours: NWS publishes
+// one figure per day/night period, and taking the peak hour instead reports the
+// single worst hour as the whole day — 74% for a day NWS itself calls 36% and
+// "Mostly Sunny". `nwsDailyMerged` says whether that authoritative figure is
+// already in place; when it isn't (non-US, or that fetch failed) the hourly max
+// is still the best available answer and is used as before.
+function alignDailyWithHourly(daily, hourly, minutely, current, timezone, nwsDailyMerged, codeHorizon) {
   // Only look at future/current slots — past NWS codes can no longer be
   // nowcast-corrected and would inflate the daily summary with phantom events.
   const nowLocal = new Date().toLocaleString('sv', { timeZone: timezone })
@@ -159,12 +337,15 @@ function alignDailyWithHourly(daily, hourly, minutely, current, timezone) {
 
   for (let i = 0; i < daily.time.length; i++) {
     const date = daily.time[i]
+    // Once the hourly codes are Open-Meteo's, re-deriving from them would
+    // overwrite the day NWS actually published.
+    if (codeHorizon != null && date >= codeHorizon.slice(0, 10)) break
     let maxProb = null
     let peakCode = null
     let peakSev = -1
     for (let j = 0; j < hourly.time.length; j++) {
       const slotTime = hourly.time[j]
-      if (!slotTime.startsWith(date)) continue
+      if (!inNWSForecastDay(slotTime, date)) continue
       if (slotTime < currentSlot) continue  // skip past hours
 
       const rawCode = hourly.weather_code?.[j]
@@ -181,15 +362,18 @@ function alignDailyWithHourly(daily, hourly, minutely, current, timezone) {
       const sev = wmoSeverity(code)
       if (sev > peakSev) { peakSev = sev; peakCode = code }
     }
-    if (maxProb != null) daily.precipitation_probability_max[i] = maxProb
+    if (!nwsDailyMerged && maxProb != null) daily.precipitation_probability_max[i] = maxProb
     if (peakCode != null) daily.weather_code[i] = peakCode
   }
 }
 
 // Overwrite Open-Meteo daily arrays with NWS forecast data for US locations.
 // NWS gives day/night period pairs; we map them to daily hi/lo temps, weather
-// codes, and max precipitation probability. UV, precip totals, sunrise/sunset
-// are not available from NWS so Open-Meteo values are kept.
+// codes, and max precipitation probability. Precip totals and the day's peak
+// wind come from the gridpoint instead, in deriveDailyFromNWS below — the
+// period summaries carry neither as a number. Sunrise/sunset stay Open-Meteo's
+// (they are astronomy, identical whoever forecasts the weather) and so does UV,
+// which NWS does not publish at all.
 function mergeNWSDaily(daily, periods, timezone) {
   // Group day/night periods by calendar date
   const dayMap = new Map()
@@ -223,6 +407,41 @@ function mergeNWSDaily(daily, periods, timezone) {
     const np = night?.probabilityOfPrecipitation?.value ?? null
     if (dp != null || np != null)
       daily.precipitation_probability_max[i] = Math.max(dp ?? 0, np ?? 0)
+  }
+}
+
+// Daily precipitation total and peak wind, the two daily numbers the NWS period
+// summaries express only as prose.
+//
+// Precipitation is the delicate one. NWS publishes quantitative precipitation
+// out to roughly three days and then stops, and the grid begins at the current
+// hour — so a date the grid only partly covers would report part of a day as
+// the whole of it, and today would lose whatever already fell before now.
+// Overriding only a date whose every hour the grid covers is what keeps that
+// honest: today and the far end of the week stay on Open-Meteo's totals, which
+// do span the whole day, and the days in between come from NWS.
+//
+// Peak wind is taken from the already-merged hourly array rather than the grid,
+// so it agrees with the wind column the user can scroll through. On today that
+// array is Open-Meteo before the current hour and NWS after it — the day's peak
+// is a fact about the whole day, and dropping the morning to keep the row pure
+// would report a calm afternoon as the day's maximum.
+function deriveDailyFromNWS(daily, hourly, maps) {
+  for (let i = 0; i < daily.time.length; i++) {
+    const date = daily.time[i]
+    let hours = 0, covered = 0, total = 0, windMax = null
+    for (let j = 0; j < hourly.time.length; j++) {
+      if (!hourly.time[j].startsWith(date)) continue
+      hours++
+      const q = maps.qpf.get(hourly.time[j].slice(0, 13) + ':00')
+      if (q != null) { total += q; covered++ }
+      const w = hourly.wind_speed_10m?.[j]
+      if (w != null) windMax = windMax == null ? w : Math.max(windMax, w)
+    }
+    if (hours > 0 && covered === hours && daily.precipitation_sum)
+      daily.precipitation_sum[i] = Math.round(total * 100) / 100
+    if (windMax != null && daily.wind_speed_10m_max)
+      daily.wind_speed_10m_max[i] = windMax
   }
 }
 
@@ -371,22 +590,50 @@ function obsToWmoCode(obs) {
   return ageMin <= limit ? code : null
 }
 
-// Copy the forecast code + probability for the current hour onto `current`.
+// Copy the current hour's merged NWS values onto `current`.
 //
-// mergeNWSHourly writes into `hourly` only, so on US locations the authoritative
-// NWS read on the hour the user is actually living in was sitting one array away
-// from the headline and nothing could reach it: `current.weather_code` could only
-// ever be overridden by a station observation or an active warning. Stamping it
-// here puts it within reach of liveWeatherCode too, without threading the hourly
-// arrays through every component that renders a current condition.
-function stampForecastHour(data) {
+// The merges above write into `hourly` only, so on US locations the
+// authoritative NWS read on the hour the user is actually living in sits one
+// array away from the headline with nothing able to reach it. For the weather
+// code that meant `current.weather_code` could only ever be overridden by a
+// station observation or an active warning; for everything else it meant the
+// big number at the top of the screen stayed Open-Meteo's while the first
+// column of the hourly row beneath it — the same hour — was NWS's, and the two
+// could plainly disagree. Stamping the slot here fixes both, and puts the code
+// within reach of liveWeatherCode without threading the hourly arrays through
+// every component that renders a current condition.
+//
+// `maps` is optional: the gridpoint is a separate request from the hourly
+// forecast and either can fail on its own, so a missing grid costs the two
+// fields only it carries and leaves the rest merged.
+function stampCurrentFromNWS(data, maps) {
   if (!data.current) return
-  const local = new Date().toLocaleString('sv', { timeZone: data.timezone })
-  const hourKey = `${local.slice(0, 10)}T${local.slice(11, 13)}:00`
+  const hourKey = currentHourKey(data.timezone)
   const idx = data.hourly?.time?.indexOf(hourKey) ?? -1
   if (idx === -1) return
-  data.current.forecast_hour_code = data.hourly.weather_code?.[idx] ?? null
-  data.current.forecast_hour_pop  = data.hourly.precipitation_probability?.[idx] ?? null
+  const hourly = data.hourly
+  data.current.forecast_hour_code = hourly.weather_code?.[idx] ?? null
+  data.current.forecast_hour_pop  = hourly.precipitation_probability?.[idx] ?? null
+
+  // Only fields the NWS merges actually wrote. `weather_code` is deliberately
+  // not among them: the current condition has its own ladder — a station that
+  // measured it, then an active warning, then this hour's forecast — and
+  // preferForecastHour further down is the rung that reads it, under a
+  // confidence floor. Overwriting it here would jump the queue and promote a
+  // 20%-chance forecast to an observed fact.
+  const put = (field, value) => { if (value != null) data.current[field] = value }
+  put('temperature_2m',       hourly.temperature_2m?.[idx])
+  put('apparent_temperature', hourly.apparent_temperature?.[idx])
+  put('relative_humidity_2m', hourly.relative_humidity_2m?.[idx])
+  put('wind_speed_10m',       hourly.wind_speed_10m?.[idx])
+  put('wind_direction_10m',   hourly.wind_direction_10m?.[idx])
+  put('wind_gusts_10m',       hourly.wind_gusts_10m?.[idx])
+  put('visibility',           hourly.visibility?.[idx])
+  put('is_day',               hourly.is_day?.[idx])
+  if (maps) {
+    put('dew_point_2m', maps.dew.get(hourKey))
+    put('cloud_cover',  maps.sky.get(hourKey))
+  }
 }
 
 // With no station report and no active warning, the current condition falls all
@@ -562,14 +809,16 @@ export function useWeather(initialLoading = false) {
       }
 
       // For US locations, overlay NWS data on top of Open-Meteo.
-      // Points call already ran in parallel; if it succeeded we fire hourly + daily
-      // forecast fetches in parallel, then merge both before rendering.
+      // Points call already ran in parallel; if it succeeded we fire the hourly,
+      // daily and gridpoint fetches in parallel, then merge all three before
+      // rendering.
       // Every step is non-fatal: any failure silently keeps the Open-Meteo values.
       if (nwsPointsResult.status === 'fulfilled' && nwsPointsResult.value.ok) {
         try {
           const pointsData = await nwsPointsResult.value.json()
           const hourlyUrl   = pointsData.properties?.forecastHourly
           const forecastUrl = pointsData.properties?.forecast
+          const gridUrl     = pointsData.properties?.forecastGridData
 
           // Latest real observation from nearby stations, fetched in parallel
           // with the forecast calls; failures fall through to the model
@@ -611,29 +860,64 @@ export function useWeather(initialLoading = false) {
             return null
           })().catch(() => null)
 
-          const [nwsHourlyRes, nwsForecastRes] = await Promise.allSettled([
+          const [nwsHourlyRes, nwsForecastRes, nwsGridRes] = await Promise.allSettled([
             hourlyUrl   ? fetch(hourlyUrl,   { headers: NWS_HEADERS }) : Promise.reject(),
             forecastUrl ? fetch(forecastUrl, { headers: NWS_HEADERS }) : Promise.reject(),
+            gridUrl     ? fetch(gridUrl,     { headers: NWS_HEADERS }) : Promise.reject(),
           ])
+          // The gridpoint carries the fields the two text products don't, and
+          // its entry spans are what say how far each field stays an hourly
+          // forecast before NWS drops to blocks and Open-Meteo takes over.
+          let gridMaps = null, horizons = null
+          if (nwsGridRes.status === 'fulfilled' && nwsGridRes.value.ok) {
+            const d = await nwsGridRes.value.json()
+            if (d.properties) {
+              gridMaps = nwsGridMaps(d.properties, data.timezone)
+              horizons = nwsFieldHorizons(d.properties, data.timezone)
+            }
+          }
+
           let nwsHourlyMerged = false
           if (nwsHourlyRes.status === 'fulfilled' && nwsHourlyRes.value.ok) {
             const d = await nwsHourlyRes.value.json()
-            mergeNWSHourly(data.hourly, d.properties?.periods ?? [], data.timezone)
+            mergeNWSHourly(data.hourly, d.properties?.periods ?? [], data.timezone, horizons)
             nwsHourlyMerged = true
-            // Marks the hourly codes as NWS-sourced (so the Open-Meteo minutely
-            // nowcast stops vetoing them) and puts this hour's forecast within
-            // reach of the current-condition helpers. Both must be set before
-            // alignDailyWithHourly below, which re-runs the nowcast check.
-            if (data.current) data.current.nws_hourly = true
-            stampForecastHour(data)
+            // Marks the hourly codes as NWS-sourced, so the Open-Meteo minutely
+            // nowcast stops vetoing them — true only while the codes actually are
+            // NWS's. Must be set before alignDailyWithHourly below, which re-runs
+            // the nowcast check.
+            if (data.current && nwsCovers(horizons, 'weather_code', currentHourKey(data.timezone))) {
+              data.current.nws_hourly = true
+            }
           }
+          if (gridMaps) mergeNWSGridHourly(data.hourly, gridMaps, horizons)
+
+          // Both hourly merges have to land before the current hour is stamped
+          // off the array they write.
+          if (nwsHourlyMerged || gridMaps) stampCurrentFromNWS(data, gridMaps)
+
+          // The daily card is NWS's own day/night forecast — the resolution it
+          // actually publishes for a day, and the one weather.gov shows. Days
+          // NWS doesn't reach keep Open-Meteo's.
+          let nwsDailyMerged = false
           if (nwsForecastRes.status === 'fulfilled' && nwsForecastRes.value.ok) {
             const d = await nwsForecastRes.value.json()
             mergeNWSDaily(data.daily, d.properties?.periods ?? [], data.timezone)
+            nwsDailyMerged = true
           }
-          // Re-derive daily code + probability from the merged hourly data so
-          // all three forecast views (daily, hourly, overview) agree.
-          if (nwsHourlyMerged) alignDailyWithHourly(data.daily, data.hourly, data.minutely_15, data.current, data.timezone)
+          // Re-derive the daily code from the merged hourly data so the daily,
+          // hourly and overview views agree, and so the nowcast correction
+          // reaches the daily summary. The chance of rain is left out of it —
+          // alignDailyWithHourly takes that from NWS's own published day — and
+          // so are the days whose hourly codes have passed to Open-Meteo, which
+          // would otherwise overwrite NWS's published day with a re-derivation.
+          if (nwsHourlyMerged) {
+            alignDailyWithHourly(data.daily, data.hourly, data.minutely_15, data.current,
+                                 data.timezone, nwsDailyMerged, horizons?.weather_code)
+          }
+          // Precip total and peak wind read the merged hourly array, so this
+          // runs after every hourly merge above.
+          if (gridMaps) deriveDailyFromNWS(data.daily, data.hourly, gridMaps)
 
           // A station actually observing precipitation overrides the model's
           // current condition outright — measured beats predicted.

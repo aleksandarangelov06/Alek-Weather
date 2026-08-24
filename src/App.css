@@ -487,13 +487,15 @@ body {
 /* Press-and-hold to use my location: a circle fills under the icon over
    --long-press-ms (set inline from App.jsx) to signal progress. */
 .header-icon-btn > svg,
-.header-icon-btn > .header-loc-icons {
+.header-icon-btn > .header-search-icons {
   position: relative;
   z-index: 1;
 }
 
-/* Crossfade between Library (splash) and MapPin (weather loaded) icons */
-.header-loc-icons {
+/* Crossfade between the two things this button does: it opens the saved
+   locations while the splash is up (Building2), and the search once a city is
+   loaded (Search). */
+.header-search-icons {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -501,7 +503,7 @@ body {
   height: 24px;
 }
 
-.header-loc-icons > svg {
+.header-search-icons > svg {
   position: absolute;
   top: 0;
   left: 0;
@@ -4019,15 +4021,31 @@ body {
   display: contents;
 }
 
-/* Moving. The frame takes the same `inset: 0` the card takes when expanded, so
+/* Framed. The frame takes the same `inset: 0` the card takes when expanded, so
    it lands on precisely the box the card is about to fill — that is what makes
    the geometry independent of what `position: fixed` happens to resolve against
-   here (see irisGeometry). Everything below is offset inside this box. */
-:root[data-shell="mobile"] .radar-iris--on {
+   here (see irisGeometry). Everything below is offset inside this box.
+
+   It stays a box for as long as the card is away being full-screen, not only
+   while the circle is moving, and that is the difference between the two classes:
+   --framed is the box, --on is the box with a circle in it. Collapsing the frame
+   the moment the reveal finished used to hand .radar-sky and the card back to
+   `position: fixed`, and Chromium composites a fixed element that overlaps
+   composited content — so a screen-sized layer was *created* on precisely the
+   frame that three others (this frame, the 1180px circle and its counter-scale)
+   were destroyed. One commit's worth of compositor restructure under a
+   full-screen map is what read as the flash once the radar finished opening.
+   Holding the frame leaves every layer below it on the footing it already had.
+
+   z-index is the card's own 400 rather than the 399 this sat at, because the
+   group now outlives the animation and has to land where the settled card used
+   to. The sky inside keeps 399, which is what orders those two against each
+   other; nothing else in the file uses either number. */
+:root[data-shell="mobile"] .radar-iris--framed {
   display: block;
   position: fixed;
   inset: 0;
-  z-index: 399;
+  z-index: 400;
 }
 
 /* The window: round, clipping, and the only thing that scales. Its box comes
@@ -4067,9 +4085,12 @@ body {
 
 /* Inside a transformed ancestor `fixed` resolves against that ancestor, which
    would size both layers to the circle. They fill the counter-scaled layer
-   instead — the same rect, reached a different way. */
-:root[data-shell="mobile"] .radar-iris--on .radar-expanded,
-:root[data-shell="mobile"] .radar-iris--on .radar-sky {
+   instead — the same rect, reached a different way. Keyed on --framed rather than
+   --on, so it holds for as long as the card is full-screen: the containing block
+   is then the same box before and after the reveal settles, and neither element
+   changes position mode on that frame. */
+:root[data-shell="mobile"] .radar-iris--framed .radar-expanded,
+:root[data-shell="mobile"] .radar-iris--framed .radar-sky {
   position: absolute;
 }
 
@@ -4087,7 +4108,7 @@ body {
      setting being turned on midway. Collapsing the wrappers back to display:
      contents drops the circle and leaves the card full-screen, which is the
      settled state of a reveal that is not going to animate. */
-  :root[data-shell="mobile"] .radar-iris--on,
+  :root[data-shell="mobile"] :is(.radar-iris--framed, .radar-iris--on),
   :root[data-shell="mobile"] .radar-iris--on .radar-iris-circle,
   :root[data-shell="mobile"] .radar-iris--on .radar-iris-inner {
     display: contents;
@@ -4851,14 +4872,33 @@ body {
    the root by App.jsx and defaulting to solid just above. Two surfaces stay
    out of it: .current-card is already a bare glass hero with no fill to thin,
    and the settings cards have their own opaque page under them, so making them
-   see-through would only fade them into it.
+   see-through would only fade them into it. The open day/detail cover is a
+   third — see the rule under this one.
 
    The 0.8s cross-fade the base .card rule carries is for sky changes, which
    these fills no longer follow, and it makes the slider feel like it lags the
    drag; a short transition is all this needs. */
-:root[data-shell="mobile"][data-platform="android"] .app :is(.card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill), .detail-cover-fill) {
+:root[data-shell="mobile"][data-platform="android"] .app .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill) {
   background: color-mix(in srgb, var(--md-card-fill) var(--md-card-alpha), transparent);
-  transition: background 0.18s ease;
+  transition: background 0.18s ease, box-shadow 0.18s ease;
+}
+
+/* The reveal fill takes that same fill undiluted, and this is the one surface in
+   the stack where that isn't an inconsistency. The slider thins cards so the sky
+   and the weather canvas show through from *behind* the stack. The cover has no
+   such backdrop: what sits behind it is the card's own content — the 7-day list,
+   the details grid — a few pixels below, inside the same box. At any alpha under
+   solid those rows read straight through the numbers on top of them, and no blur
+   helps, because backdrop-filter on the card filters the page behind the card,
+   not siblings within it.
+
+   So the card keeps the slider's alpha and the lid over it goes solid. Nothing
+   is given up: once the circle is full it covers the card edge to edge, so all
+   the transparency could ever have revealed there is the card's own rows. The
+   nested tiles inside stay on --hover-subtle, a translucent overlay, which now
+   composites against this fill and keeps the tonal step it was drawn for. */
+:root[data-shell="mobile"][data-platform="android"] .app .detail-cover-fill {
+  background: var(--md-card-fill);
 }
 
 /* Blur what shows through, so a thinned card reads as frosted glass rather
@@ -4873,6 +4913,96 @@ body {
 :root[data-card-glass="on"][data-shell="mobile"][data-platform="android"] .app .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill) {
   backdrop-filter: blur(18px) saturate(1.35);
   -webkit-backdrop-filter: blur(18px) saturate(1.35);
+}
+
+/* The edge of the glass. Blur alone makes a card see-through but not glassy:
+   with the fill thinned there is nothing left marking where the sheet ends,
+   so the stack reads as text floating on a smeared sky. The header buttons
+   already solved this — a hairline rim, a specular line along the top edge,
+   and a shadow underneath — and these are the same material, so they get the
+   same three, sized for a card.
+
+   None of it touches the Material identity: the fill is still the container
+   tone at --md-card-alpha, the corners are still the shape scale, and this
+   whole block is gated on data-card-glass, so a solid Android card is exactly
+   as flat as it was. The lift is the one thing that would be out of place at
+   full opacity — tone is the elevation in M3 — but tone can only carry
+   elevation while there is tone to read, and a card you can see the sky
+   through has given that up; the shadow is what puts it back over the page.
+
+   Drawn as inset shadows rather than a border so nothing reflows when the
+   slider leaves zero. Order matters: the specular line is listed first so it
+   sits over the rim along the top edge instead of under it. */
+:root[data-card-glass="on"][data-shell="mobile"][data-platform="android"] {
+  --md-glass-rim: rgba(255, 255, 255, 0.34);
+  --md-glass-gloss: rgba(255, 255, 255, 0.45);
+  --md-glass-lift: rgba(0, 0, 0, 0.12);
+  --md-glass-veil: rgb(255 255 255 / calc((100% - var(--md-card-alpha)) * 0.5));
+}
+
+[data-theme="dark"]:root[data-card-glass="on"][data-shell="mobile"][data-platform="android"] {
+  --md-glass-rim: rgba(255, 255, 255, 0.13);
+  --md-glass-gloss: rgba(255, 255, 255, 0.16);
+  --md-glass-lift: rgba(0, 0, 0, 0.34);
+  --md-glass-veil: rgb(0 0 0 / calc((100% - var(--md-card-alpha)) * 0.5));
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-card-glass="on"][data-shell="mobile"][data-platform="android"]:not([data-theme="light"]) {
+    --md-glass-rim: rgba(255, 255, 255, 0.13);
+    --md-glass-gloss: rgba(255, 255, 255, 0.16);
+    --md-glass-lift: rgba(0, 0, 0, 0.34);
+    --md-glass-veil: rgb(0 0 0 / calc((100% - var(--md-card-alpha)) * 0.5));
+  }
+}
+
+:root[data-card-glass="on"][data-shell="mobile"][data-platform="android"] .app .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill),
+:root[data-card-glass="on"][data-shell="mobile"][data-platform="android"] .splash-mini-card {
+  box-shadow:
+    inset 0 1px 0 var(--md-glass-gloss),
+    inset 0 0 0 1px var(--md-glass-rim),
+    0 2px 10px var(--md-glass-lift);
+}
+
+/* ── Keeping the text on the glass readable ──
+   A thinned card is not a lighter card, it is a card mixed with whatever is
+   behind it — and at the far end of the slider that is half sky. Over a night
+   sky a light-scheme container lands somewhere in the middle, and Material's
+   text tones are drawn for the container, not for the middle: the body copy
+   goes murky and the tertiary labels ('CURRENT CONDITIONS') nearly vanish.
+
+   Two things fix it, both scaled by how far the slider actually went — at a
+   few percent of transparency nothing below changes, and the numbers grow to
+   full strength at the clamp:
+
+   A veil, first: a wash of the scheme's own extreme — white under light, black
+   under dark — laid over the thinned fill. It pulls the composite back toward
+   the tone the text was drawn against instead of letting it drift to mid-grey.
+   It costs a little of the effect (at the clamp the sky reads through at ~39%
+   rather than 50%), which is the trade for text that can be read at all.
+
+   Then the text tones themselves, pushed toward --md-on-surface. Because that
+   token flips with the scheme, one expression compensates in both directions:
+   darker text under light, lighter under dark, which is the high-contrast
+   direction in each. The section labels move too, but only part of the way —
+   they are --md-primary, and taking them all the way would trade the accent
+   colour for legibility when a fraction of it buys the legibility. */
+:root[data-card-glass="on"][data-shell="mobile"][data-platform="android"] .app .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill),
+:root[data-card-glass="on"][data-shell="mobile"][data-platform="android"] .splash-mini-card {
+  background-image: linear-gradient(var(--md-glass-veil), var(--md-glass-veil));
+}
+
+:root[data-card-glass="on"][data-shell="mobile"][data-platform="android"] .app,
+:root[data-card-glass="on"][data-shell="mobile"][data-platform="android"] .splash-mini {
+  /* How far the fill has been thinned: 0% at the top of the slider, 50% at the
+     clamp (MAX_CARD_TRANSPARENCY in appearance.js). */
+  --md-thinned: calc(100% - var(--md-card-alpha));
+  --text-secondary: color-mix(in srgb, var(--md-on-surface) var(--md-thinned), var(--md-on-surface-variant));
+  --text-tertiary: color-mix(in srgb, var(--md-on-surface-variant) calc(74% + var(--md-thinned) * 0.52), transparent);
+}
+
+:root[data-card-glass="on"][data-shell="mobile"][data-platform="android"] .app .section-label {
+  color: color-mix(in srgb, var(--md-on-surface) calc(var(--md-thinned) * 0.7), var(--md-primary));
 }
 
 /* Restore the hover fill the container rules above would otherwise outrank. */
@@ -5080,6 +5210,51 @@ body {
   font-size: 11px;
   letter-spacing: 0.4px;
   color: color-mix(in srgb, var(--md-on-surface-variant) 80%, transparent);
+}
+
+/* ── Splash location cards ──
+   The two cards on the phone splash are drawn outside .app — the splash is up
+   before the stack exists — so none of the rules above reach them, and they
+   kept the frosted-white glass the iOS style is built on. In Material they are
+   containers like any other: an opaque tonal fill, no outline, extra-large
+   corners, and a state layer on press instead of a scale. They follow the
+   transparency slider for the same reason the stack does — thinning the fill
+   is what lets the poster's sky through — and take the blur only once it is
+   actually thinned. */
+:root[data-shell="mobile"][data-platform="android"] .splash-mini {
+  --splash-mini-surface: color-mix(in srgb, var(--md-surface-container) var(--md-card-alpha), transparent);
+  --splash-mini-border: transparent;
+}
+
+:root[data-shell="mobile"][data-platform="android"] .splash-mini-card {
+  padding: 14px 16px 13px;
+  border-radius: var(--radius);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  transition: background 0.15s ease, opacity 0.2s ease;
+}
+
+:root[data-card-glass="on"][data-shell="mobile"][data-platform="android"] .splash-mini-card {
+  -webkit-backdrop-filter: blur(18px) saturate(1.35);
+  backdrop-filter: blur(18px) saturate(1.35);
+}
+
+/* M3 washes a pressed container with the on-surface colour rather than
+   shrinking it. */
+:root[data-shell="mobile"][data-platform="android"] .splash-mini-card:active {
+  transform: none;
+  background: color-mix(in srgb, var(--md-on-surface) 12%, var(--splash-mini-surface));
+}
+
+/* Material has no ultra-light weights and no negative tracking: the name drops
+   to medium and the temperature to regular at its own size. */
+:root[data-shell="mobile"][data-platform="android"] .splash-mini-name {
+  font-weight: 500;
+}
+
+:root[data-shell="mobile"][data-platform="android"] .splash-mini-temp {
+  font-weight: 400;
+  letter-spacing: 0;
 }
 
 /* ── Platform style: iOS 26 (Liquid Glass) ──
@@ -5470,32 +5645,44 @@ body {
    of the day card still showing outside the growing circle, for the ~260ms of
    visible sweep; behind the radar is the flat .radar-sky gradient, which blurs
    to very nearly itself, so there it is invisible. */
-:root[data-platform="ios"] .app .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline):is(.radar-expanded, :has(.detail-cover)) {
+:root[data-platform="ios"] .app .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline):has(.detail-cover) {
   -webkit-backdrop-filter: saturate(180%);
   backdrop-filter: saturate(180%);
 }
 
-:root[data-card-glass="on"][data-shell="mobile"][data-platform="android"] .app .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):is(.radar-expanded, :has(.detail-cover)) {
+:root[data-card-glass="on"][data-shell="mobile"][data-platform="android"] .app .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):has(.detail-cover) {
   backdrop-filter: saturate(1.35);
   -webkit-backdrop-filter: saturate(1.35);
 }
 
-/* And for the radar, while the iris is actually moving, none at all.
-   The reasoning above holds for the day cover, where the card keeps its place and
-   only the circle inside it moves. The radar is the other case: the whole
-   backdrop-filtered box is a screen-sized element being scaled, so it is not the
-   filter that costs — saturate really is a per-pixel pass with no kernel — it is
-   that the element's relation to what is behind it changes on every frame, and a
-   backdrop filter can reuse nothing across that. Each frame is a full-screen read
-   of the backdrop and a full-screen surface to composite it back through, which is
-   the largest thing left on the reveal's budget.
-   Nothing is lost by dropping it: what is behind the card here is .radar-sky, a
-   flat gradient, and a saturate pass over a gradient of one hue is very nearly the
-   gradient. It comes back the moment the circle settles, on a card that is holding
-   still, and the switch is invisible for the same reason. */
-:root[data-shell="mobile"] .app .radar-iris--on .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill).radar-expanded {
+/* And for the full-screen radar, none at all — for the whole time it is up,
+   rather than only while the circle is moving.
+
+   The rule this replaces asked for exactly that during the reveal and never once
+   got it. At eleven class-level components the Android glass rule above outranked
+   it, so on the one style where the fill is actually translucent, the reveal ran
+   with a screen-sized backdrop pass live on the card — the thing that block calls
+   the largest item on the reveal's budget — and then had its backdrop root
+   rebuilt at the settle frame, on the same commit that tore down the iris layers.
+   These selectors carry the platform prefixes, so they win where that one lost.
+
+   Dropping it outright rather than restoring it once the circle settles is what
+   makes the boundary a non-event, and it costs nothing to look at: expanded,
+   .radar-map-wrap is flex:1 over the whole card and .radar-map paints an opaque
+   --bg under the tiles, so the card's fill — and anything filtered behind it — is
+   covered edge to edge. Measured, not assumed: the expanded radar renders
+   pixel-identically with the filter forced off. */
+:root[data-card-glass="on"][data-shell="mobile"][data-platform="android"] .app .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill).radar-expanded,
+:root[data-platform="ios"] .app .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline).radar-expanded {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+}
+
+/* Same reasoning for the edge treatment: expanded, the map paints over every
+   pixel of the card, so a rim and a specular top edge would only draw a frame
+   around the screen. */
+:root[data-card-glass="on"][data-shell="mobile"][data-platform="android"] .app .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill).radar-expanded {
+  box-shadow: none;
 }
 
 /* The opaque sky layer exists to keep the weather stack out of the glass; peek
@@ -5833,12 +6020,13 @@ body {
   position: relative;
 }
 
-/* ── …and full-size, where it becomes a filmstrip ──
-   Expanded or fill, the radar has a screen to itself and the scrubber is worth
-   working rather than glancing at. The track turns into a window; the strip
-   inside it is as wide as the timeline is long and slides behind that window, so
-   the frame on the map is always the one at the centre and a swipe anywhere on
-   the bar moves the timeline. Columns take a fixed width from JS
+/* ── …and the Radar tab in a narrow window, where it becomes a filmstrip ──
+   `fill` under WIDE_TRACK_MQ: the page is the radar, and the scrubber is worth
+   working rather than glancing at, but the window is too narrow to lay the run
+   out whole. The track turns into a window; the strip inside it is as wide as the
+   timeline is long and slides behind that window, so the frame on the map is
+   always the one at the centre and a swipe anywhere on the bar moves the
+   timeline. Columns take a fixed width from JS
    (--radar-tick-w, = TICK_W) because the drag arithmetic converts pixels to
    frames with it — equal-share columns would make a swipe mean different amounts
    of time on different screen widths.
@@ -5935,34 +6123,60 @@ body {
 }
 
 /* ── …and full-size on a wide screen, where the run fits across the track ──
-   Above WIDE_TRACK_MQ (900px, the same number in WeatherRadar.jsx) the full-size
-   scrubber drops the filmstrip and takes the card's whole-timeline layout, which
-   needs no rules of its own — the strip is a plain flex row of equal-share
-   columns, so it spans whatever it is given. What it does need is scaling up: at
-   card size the marks are ~25px apart and read as a run, but stretched across a
-   monitor the same dozen frames land 130px apart and read as scattered ticks
-   rather than a timeline. A rail joins them back up, and the marks themselves get
-   the extra weight the width can carry. */
+   Above WIDE_TRACK_MQ (900px, the same number in WeatherRadar.jsx) a full-size
+   radar takes the card's whole-timeline layout, which needs no rules of its own —
+   the strip is a plain flex row of equal-share columns, so it spans whatever it is
+   given. What it does need is scaling up: at card size the marks are ~25px apart
+   and read as a run, but stretched across a monitor the same dozen frames land
+   130px apart, so the marks themselves take the extra weight the width can carry.
+   A rail under them used to be the other half of that; see where it was drawn,
+   below, for why there is no longer one.
+
+   Strictly the width, which is why the class is gated on the query and not on
+   "full-size and not a filmstrip". The phone app's full-screen radar is full-size
+   and no filmstrip, but its track is ~390px against the card's ~356px — it wants
+   the card's dressing, not a monitor's. */
 .radar-tick-track--wide {
+  /* The tallest a tick ever gets, named once so the row below and the active
+     tick's own height cannot drift apart. */
+  --radar-tick-h: 34px;
+  /* How far the ticks' feet sit above the track's bottom edge, which is the room
+     the hour labels hang in below them. */
+  --radar-baseline: 24px;
   min-height: 56px;
-  padding-bottom: 24px;
+  padding-bottom: var(--radar-baseline);
 }
 
-/* Drawn in the inactive ticks' own colour and centred on the line their feet sit
-   on, so it reads as their baseline rather than as a second element behind them.
-   Behind the ticks in paint order, and out of the pointer's way — the track
-   itself is the click target. */
-.radar-tick-track--wide::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 22px;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--bar-track-bg);
-  pointer-events: none;
+/* Pinned to that height, and this is load-bearing rather than tidiness. The row
+   is align-items:flex-end with no height of its own, so it takes the tallest tick
+   in it — and the tick heights below are transitioned. Every frame change then
+   animated the row's height, which animated the track, the controls strip around
+   it, and the map, which is flex:1 and absorbs whatever the strip leaves. Scrub
+   the timeline and the whole map heaved up and down for 120ms per frame: the
+   swing measured 24.5px to 34px on the row and 579px to 581px on the map, and it
+   is worst mid-transition, where the outgoing tick has shrunk and the incoming
+   one has not yet grown, so neither is at full height.
+
+   A fixed box takes the ticks out of their ancestors' sizing altogether. They
+   still grow and shrink inside it, bottom-aligned against the same baseline, so
+   the animation the rule below wants is untouched — it just no longer has the
+   layout hanging off it. */
+.radar-tick-track--wide .radar-tick-strip {
+  height: var(--radar-tick-h);
 }
+
+/* There is no rail. There was one — a full-width bar on the line the ticks' feet
+   sit on, to join marks that land ~130px apart on a monitor back into a timeline —
+   and it is gone because it never earned the room it took. Centred on the feet it
+   sliced the bottom cap off the active capsule; moved under them and lit to read
+   against a sky-tinted strip it stopped being a baseline and became a bar running
+   the width of the window, which is the thing anyone actually noticed about it.
+   Three weights were tried and every one read as a bar.
+   The marks do not need it. The compact scrubber has never had a rail and its run
+   of ticks with hour labels reads as a timeline perfectly well; this dressing
+   already borrows that layout wholesale, so it borrows this too. What --wide keeps
+   is the part that was genuinely about width: heavier marks, and the taller
+   baseline offset below. */
 
 .radar-tick-track--wide .radar-tick {
   width: 3px;
@@ -5978,7 +6192,7 @@ body {
 
 .radar-tick-track--wide .radar-tick--active {
   width: 8px;
-  height: 34px;
+  height: var(--radar-tick-h);
 }
 
 .radar-tick-track--wide .radar-now-divider { height: 40px; }
@@ -6848,10 +7062,15 @@ body {
 }
 
 /* ── Mobile: circular backgrounds behind the icon buttons ──────────────────
-   The phone app has no hover, so the header's location and settings buttons
-   and the current card's home / save / refresh buttons read as bare glyphs
-   floating on the sky with nothing marking where to tap. A filled circle
-   behind each one gives them a visible target without adding chrome.
+   The phone app has no hover, so the header's search and settings buttons and
+   the current card's home and save buttons read as bare glyphs floating on the
+   sky with nothing marking where to tap. A filled circle behind each one gives
+   them a visible target without adding chrome.
+
+   Refresh is deliberately left out of that set. It is not a peer of the other
+   four: it sits inline at the end of the "updated 5m ago" line, at half their
+   size, as a mark on that line rather than a control of its own — and a circle
+   around something that small makes a button out of a footnote.
 
    Two tints, picked by the same condition the icon colours already use:
    .sky-active means the icons are drawn white over a sky, so the circle is
@@ -6864,11 +7083,16 @@ body {
 :root[data-shell="mobile"] .app {
   --icon-circle-bg: var(--hover-medium);
   --icon-circle-press: var(--hover-clear);
+  --icon-circle-ring: color-mix(in srgb, var(--text-primary) 9%, transparent);
+  --icon-circle-shadow: 0 1px 2px rgba(0, 0, 0, 0.10), 0 2px 6px rgba(0, 0, 0, 0.05);
 }
 
 :root[data-shell="mobile"] .app.sky-active {
   --icon-circle-bg: rgba(255, 255, 255, 0.16);
   --icon-circle-press: rgba(255, 255, 255, 0.28);
+  --icon-circle-ring: rgba(255, 255, 255, 0.30);
+  --icon-circle-shadow: 0 1px 2px rgba(0, 0, 0, 0.16), 0 3px 10px rgba(0, 0, 0, 0.10),
+                        inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
 
 /* At desktop widths the mobile shell's current card becomes an opaque card
@@ -6878,11 +7102,13 @@ body {
   :root[data-shell="mobile"] .app .current-card {
     --icon-circle-bg: var(--hover-medium);
     --icon-circle-press: var(--hover-clear);
+    --icon-circle-ring: color-mix(in srgb, var(--text-primary) 9%, transparent);
+    --icon-circle-shadow: 0 1px 2px rgba(0, 0, 0, 0.10), 0 2px 6px rgba(0, 0, 0, 0.05);
   }
 }
 
 :root[data-shell="mobile"] .app .app-header :is(.header-icon-btn, .settings-btn),
-:root[data-shell="mobile"] .app .current-card :is(.fav-btn, .save-btn, .refresh-btn) {
+:root[data-shell="mobile"] .app .current-card :is(.fav-btn, .save-btn) {
   background: var(--icon-circle-bg);
   border-radius: 50%;
   padding: 0;
@@ -6898,7 +7124,7 @@ body {
 }
 
 :root[data-shell="mobile"] .app .app-header :is(.header-icon-btn, .settings-btn):active,
-:root[data-shell="mobile"] .app .current-card :is(.fav-btn, .save-btn, .refresh-btn):active {
+:root[data-shell="mobile"] .app .current-card :is(.fav-btn, .save-btn):active {
   background: var(--icon-circle-press);
 }
 
@@ -6915,8 +7141,65 @@ body {
   height: 32px;
 }
 
-/* Smaller: this one sits inline with the "updated" line, not on its own row. */
-:root[data-shell="mobile"] .app .current-card .refresh-btn {
-  width: 26px;
-  height: 26px;
+/* ── Mobile: giving those circles a body ───────────────────────────────────
+   The tints above mark where to tap, but a flat disc of translucent white is
+   still a painted-on spot rather than something to push. Three things turn it
+   into a button: it blurs what is behind it, so it reads as sitting *over* the
+   sky instead of being a hole in it; a hairline ring and a soft drop shadow
+   lift it off the surface (over a sky the ring is white and picks up an inner
+   top highlight, which is where the light in this app comes from); and the
+   press is physical — the button dips under the finger and its shadow drops
+   away, so it looks pushed *into* the surface rather than merely tinted.
+
+   The timing is deliberately asymmetric. Going down is near-instant, because a
+   press should feel like contact and not like an animation being played at
+   you; coming back up is slower and overshoots a little, which is what reads
+   as a button springing back rather than a state fading out. */
+:root[data-shell="mobile"] .app .app-header :is(.header-icon-btn, .settings-btn),
+:root[data-shell="mobile"] .app .current-card :is(.fav-btn, .save-btn) {
+  border: 1px solid var(--icon-circle-ring);
+  box-shadow: var(--icon-circle-shadow);
+  -webkit-backdrop-filter: blur(12px) saturate(1.3);
+  backdrop-filter: blur(12px) saturate(1.3);
+  transition: color 0.15s, background 0.15s, border-color 0.15s,
+              box-shadow 0.24s ease,
+              border-radius 0.24s ease,
+              transform 0.34s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+:root[data-shell="mobile"] .app .app-header :is(.header-icon-btn, .settings-btn):active,
+:root[data-shell="mobile"] .app .current-card :is(.fav-btn, .save-btn):active {
+  transform: scale(0.88);
+  box-shadow: none;
+  transition: background 0.08s, box-shadow 0.08s ease,
+              border-radius 0.12s ease,
+              transform 0.08s cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+/* Android presses it into a squircle as well as down: M3 Expressive answers a
+   touch by morphing an icon button's shape, and the dip is shallower there to
+   leave room for it. Same gesture, told in the other design language. */
+:root[data-shell="mobile"][data-platform="android"] .app .app-header :is(.header-icon-btn, .settings-btn):active,
+:root[data-shell="mobile"][data-platform="android"] .app .current-card :is(.fav-btn, .save-btn):active {
+  border-radius: 32%;
+  transform: scale(0.92);
+}
+
+/* The gear turns a few degrees as it is pushed — the one icon in the header
+   whose whole subject is a thing that turns. */
+:root[data-shell="mobile"] .app .app-header .settings-btn > svg {
+  transition: transform 0.34s cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+:root[data-shell="mobile"] .app .app-header .settings-btn:active > svg {
+  transform: rotate(35deg);
+  transition: transform 0.12s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root[data-shell="mobile"] .app .app-header :is(.header-icon-btn, .settings-btn):active,
+  :root[data-shell="mobile"] .app .current-card :is(.fav-btn, .save-btn):active,
+  :root[data-shell="mobile"] .app .app-header .settings-btn:active > svg {
+    transform: none;
+  }
 }

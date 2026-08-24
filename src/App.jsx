@@ -94,7 +94,7 @@ const STARS = Array.from({ length: 40 }, () => ({
   dur:   `${(Math.random() * 3 + 2).toFixed(1)}s`,
   delay: `${-(Math.random() * 4).toFixed(1)}s`,
 }))
-import { Settings, MapPin, MapPinOff, ArrowLeft, GripHorizontal, Building2, X } from 'lucide-react'
+import { Settings, Search, MapPin, MapPinOff, ArrowLeft, GripHorizontal, Building2, X } from 'lucide-react'
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -1057,9 +1057,9 @@ function App() {
           onContextMenu={(e) => e.preventDefault()}
           aria-label="Search — hold to use my location"
         >
-          <span className="header-loc-icons">
+          <span className="header-search-icons">
             <Building2 size={24} style={{ opacity: splashPhase !== 'done' ? 1 : 0, pointerEvents: splashPhase !== 'done' ? undefined : 'none' }} />
-            <MapPin  size={24} style={{ opacity: splashPhase === 'done' ? 1 : 0, pointerEvents: splashPhase === 'done' ? undefined : 'none' }} />
+            <Search  size={24} style={{ opacity: splashPhase === 'done' ? 1 : 0, pointerEvents: splashPhase === 'done' ? undefined : 'none' }} />
           </span>
         </button>
         <div className="app-title-wrapper">
@@ -1161,7 +1161,7 @@ function App() {
               <span className="splash-logo-text">Alek Weather</span>
               {splashPhase === 'visible' && !webSplash && (
                 <p className="splash-hint">
-                  {isDesktop ? 'Click or type anywhere to search for a location' : 'Tap anywhere to find a location'}
+                  {isDesktop ? 'Click or type anywhere to search for a location' : 'Tap to find a location'}
                 </p>
               )}
             </div>

@@ -1114,20 +1114,27 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
   // below and the Observed/Forecast toggle.
   const fullSize = expanded || fill
 
-  // Two scrubbers, picked by how much *track* the radar has — which is not the
-  // same question as how much screen. A full-size radar on a phone is still a
-  // ~390px bar, and a compact card in the stack is narrower again; a monitor is
-  // neither. So the filmstrip is for the narrow full-size case only, and a wide
-  // one joins the card on the whole-timeline layout. (Two statements, not one
-  // expression: behind the && the hook would stop being called the moment the
-  // radar opened.)
+  // Which scrubber, by how much *track* the radar has — not by how much screen.
+  // (Two statements, not one expression: behind the && the hook would stop being
+  // called the moment the radar opened.)
+  //
+  // Opening the card is no longer part of the question. The phone app's expanded
+  // radar keeps the scrubber it had in the stack, because that is the one the
+  // reveal opens onto: the card and the full-screen view are the same radar a
+  // tap apart, and swapping the timeline underneath the tap made them read as two
+  // different controls. The bar also barely grows — a ~356px card becomes a
+  // ~390px screen — so there was never the extra track the filmstrip was for.
+  //
+  // That leaves it to `fill`, the web app's Radar tab, in a window too narrow to
+  // lay the run out whole. There the page is the radar and has no compact
+  // counterpart to stay consistent with.
   const wideTrack = useMediaQuery(WIDE_TRACK_MQ)
-  const stripScrubber = fullSize && !wideTrack
+  const stripScrubber = fill && !wideTrack
 
-  // Narrow and full-size, it is a filmstrip under a fixed playhead: the
-  // frame being shown sits at the centre of the track and the ticks travel past
-  // it, so the gesture is "drag the timeline" from anywhere on the bar instead of
-  // "grab the one tick that is the handle". Two things follow.
+  // The filmstrip runs under a fixed playhead: the frame being shown sits at the
+  // centre of the track and the ticks travel past it, so the gesture is "drag the
+  // timeline" from anywhere on the bar instead of "grab the one tick that is the
+  // handle". Two things follow.
   //
   // A frame's position is no longer a fraction of the track's width, so the
   // arithmetic is in ticks: every column is TICK_W wide (the CSS reads the same
@@ -1141,15 +1148,14 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
   // drag would stutter between them. Released, it goes back to null and the strip
   // settles onto the active frame under CSS transition.
   //
-  // Otherwise — the compact card in the stack, and any full-size radar wider
-  // than WIDE_TRACK_MQ — the scrubber the card always had: the whole timeline
-  // laid out across the track at once, tapped or dragged to a position that is
-  // read straight off the width. In the card that is because nothing there is
-  // asking to be worked — it is a glance, and its own tap target is "open me" —
-  // and a filmstrip in a 300px card would show a third of the run and want a
-  // swipe before it said anything. On a monitor it is the opposite reason: there
-  // is room to show the run whole, and a mouse would rather click where it wants
-  // to go than drag a strip there.
+  // Otherwise — the card in the stack, the phone app's full-screen radar, and any
+  // full-size radar wider than WIDE_TRACK_MQ — the scrubber the card always had:
+  // the whole timeline laid out across the track at once, tapped or dragged to a
+  // position that is read straight off the width. At card and phone-screen widths
+  // that is because a filmstrip only shows a slice of the run and wants a swipe
+  // before it says anything, where the whole track answers "when" at a glance. On
+  // a monitor it is the opposite reason: there is room to show the run whole, and
+  // a mouse would rather click where it wants to go than drag a strip there.
   const handlePointerDown = useCallback((e) => {
     setPlaying(false)
     e.currentTarget.setPointerCapture(e.pointerId)
@@ -1235,18 +1241,30 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
     ? `Forecast · ${frameSrc === 'hrrr' ? SOURCE_NAMES.hrrr : 'RainViewer nowcast'}`
     : `Observed · ${SOURCE_NAMES[frameSrc] ?? SOURCE_NAMES.rv}`
 
-  // Whether the circle is a box at all. Only while it is moving: at rest — shut
-  // in the stack, or settled open — the three wrappers are display:contents and
-  // the card lays out exactly as it did before any of this existed.
+  // Whether the circle is a box at all. Only while it is moving: settled open, the
+  // circle and its counter-scale go back to display:contents and what is left is
+  // the full-screen card.
   const irisOn = !!revealStyle && (phase === 'arm' || phase === 'in' || phase === 'out')
+  // Whether the *frame* is a box, which outlasts the circle by the whole time the
+  // radar is up. Shut in the stack it is display:contents like the other two, so
+  // the card lays out exactly as it did before any of this existed; full-screen it
+  // stays the fixed box that .radar-sky and the card are positioned inside.
+  //
+  // Collapsing it the moment the reveal finished was the flash. The card and the
+  // sky went back to `position: fixed`, which Chromium composites when it overlaps
+  // composited content, so a screen-sized layer was created on precisely the frame
+  // that the frame, the 1180px circle and the counter-scale were destroyed — a
+  // whole compositor restructure in one commit, under a full-screen map. Keeping
+  // the frame means the boundary drops two layers and creates none.
+  const irisFramed = !!revealStyle && (expanded || irisOn)
   // Arming paints the destination — full-screen card, resized map, whatever tiles
   // have landed — with nothing yet telling the circle to be small, so the class
   // holds it transparent for the duration. That is what makes the frame free to
   // wait on (see ARM_TILE_WAIT_MS): the screen it shows is the one the tap landed
   // on, and the iris still opens out of a shut window.
-  const irisC = irisOn
-    ? ` radar-iris--on${phase === 'arm' ? ' radar-iris--arm' : ''}`
-    : ''
+  const irisC =
+    (irisFramed ? ' radar-iris--framed' : '') +
+    (irisOn ? ` radar-iris--on${phase === 'arm' ? ' radar-iris--arm' : ''}` : '')
 
   return (
     <>
@@ -1400,10 +1418,11 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
           </div>
         )}
 
-        {/* Full-size and narrow, the whole bar is the grab handle: a pointer down
-            anywhere on it takes hold of the strip, and the strip slides under a
-            playhead fixed at the centre, carrying the frames past it. What is
-            centred is what is on the map. The track clips and fades its own edges,
+        {/* On the Radar tab in a narrow window, the whole bar is the grab handle: a
+            pointer down anywhere on it takes hold of the strip, and the strip
+            slides under a playhead fixed at the centre, carrying the frames past
+            it. What is centred is what is on the map. The track clips and fades
+            its own edges,
             so the timeline reads as continuing past both of them rather than
             ending there.
 
@@ -1417,13 +1436,21 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
             its own, so the timeline spans the track whatever the track measures,
             and the active tick is the playhead moving across it. --strip and
             --wide are the two dressings of that row — the card takes neither and
-            keeps the compact defaults. */}
+            keeps the compact defaults, and so does the phone app's full-screen
+            radar, which is the whole point of it matching the card.
+
+            --wide is gated on the media query rather than on "full-size and not a
+            filmstrip". The two were the same test while the filmstrip covered
+            every narrow full-size radar; now that expanding on a phone is not one,
+            they part company, and it is the width that this was ever about — see
+            the rule, which is there to stop a dozen frames 130px apart on a
+            monitor from reading as scattered ticks. */}
         <div
           className={[
             'radar-tick-track',
             stripScrubber && 'radar-tick-track--strip',
             stripScrubber && drag !== null && 'radar-tick-track--dragging',
-            fullSize && !stripScrubber && 'radar-tick-track--wide',
+            fullSize && wideTrack && 'radar-tick-track--wide',
           ].filter(Boolean).join(' ')}
           ref={trackRef}
           style={stripScrubber ? { '--radar-tick-w': `${TICK_W}px` } : undefined}
