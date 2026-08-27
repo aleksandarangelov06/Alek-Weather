@@ -22,8 +22,8 @@ android {
         // versionCode must increase on every published build; versionName is
         // the human one, kept in step with ANDROID_VERSION in
         // src/utils/version.js, which Settings displays inside the APK.
-        versionCode 9
-        versionName "0.9"
+        versionCode 10
+        versionName "1.0"
 
         // The app ships one string of its own (app_name) and a web UI that is
         // English throughout. Everything else in resources.arsc is appcompat and
