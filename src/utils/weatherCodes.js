@@ -45,13 +45,30 @@ export function getWeatherInfo(code, isNight = false, severe = false) {
 }
 
 // ── Precipitation: condition vs. probability ────────────────────────────────
-// weather_code is Open-Meteo's *deterministic* "it will precipitate" signal;
-// precipitation_probability is a *separate statistical* field that routinely
-// reads 0% for the very same hour the code says rain. We trust the condition:
-// wherever a precip code is shown (rain icon), the chance must never display a
-// contradictory 0%. precipTier gives the code's intensity; displayPrecipChance
-// floors the shown chance to an intensity-based minimum (a display guard, not a
-// real probability — it only ever raises the number, never lowers it).
+// weather_code is a *deterministic* "what it will be doing" signal;
+// precipitation_probability is a *separate statistical* field, and the two can
+// disagree at any given hour. Neither is derived from the other, so the chance
+// shown to the user is always the probability field's own value — never a
+// number inferred from the code.
+//
+// This used to work the other way round: the code's intensity tier set a floor
+// (light 25% · moderate 45% · heavy 60% · severe 75%) that the displayed chance
+// was raised to, on the theory that a rain icon beside "0%" reads as broken.
+// The theory was fine and the mechanism was not. Sampled across eight cities and
+// seven days, the contradiction it was written for — a precip code with no
+// probability behind it — occurred in 2 of 277 precip hours; the floor fired on
+// 76 of them, overwriting a real, non-zero, better-sourced number in 97% of the
+// cases where it did anything at all. Where NWS is merged in it was pure damage,
+// because there code and probability come from the same forecast and never
+// contradict: eight consecutive thunderstorm hours over Bel Air MD carrying
+// 53 · 55 · 62 · 63 · 59 · 51 · 43 · 32% were every one of them displayed as
+// 75%, an evening of distinct forecasts flattened into a single repeated number
+// that belonged to none of them.
+//
+// A rain icon over an honest 15% is a forecast. A rain icon over an invented 75%
+// is a fabrication, and it is the one of the two a reader cannot detect.
+// precipTier survives for what it is genuinely good at — ranking severity and
+// answering "is this a precipitation code" — and no longer sets any number.
 export const RAIN_CODES = new Set([51, 53, 55, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99])
 export const SNOW_CODES = new Set([71, 73, 75, 77, 85, 86])
 // Thunder is a lightning claim, not a precipitation one — no amount of radar
@@ -66,10 +83,6 @@ const PRECIP_TIER = {
 }
 export function precipTier(code) { return PRECIP_TIER[code] ?? 0 }
 
-const CHANCE_FLOOR = [0, 25, 45, 60, 75] // indexed by tier
-export function displayPrecipChance(code, prob) {
-  return Math.max(prob ?? 0, CHANCE_FLOOR[precipTier(code)])
-}
 
 // ── Live "right now" condition from the 15-min nowcast ──────────────────────
 // Open-Meteo's current.weather_code is a categorical, often-lagging snapshot: a

@@ -1,7 +1,7 @@
 import { Sun, Moon, Cloud, CloudSun, CloudFog, CloudRain, CloudSnow, CloudLightning, CloudSunRain, Thermometer, Shirt, Wind, Snowflake, Umbrella } from 'lucide-react'
 import { TankTop, Shorts, LongSleeve, Hoodie, Jacket, Coat, Parka, Beanie, Mitten, Boot } from './clothingGlyphs'
 import { WindTurbine } from './WindTurbine'
-import { getWeatherInfo, liveWeatherCode, nowcastHourlyCode, displayPrecipChance, precipTier, tempColor } from '../utils/weatherCodes'
+import { getWeatherInfo, liveWeatherCode, nowcastHourlyCode, precipTier, tempColor } from '../utils/weatherCodes'
 import { formatWind, unitSuffix, unitValue } from '../utils/units'
 
 // Maps the emoji icon key from getWeatherInfo() to a tintable lucide line icon,
@@ -173,13 +173,11 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
     if (slotTime) codes[i] = nowcastHourlyCode(codes[i], minutely, slotTime, current)
   }
 
-  // Precipitation chance (%) for a slot, floored to the slot's own condition so an
-  // upcoming "rain" insight never appends a contradictory "(0% chance)".
-  const probAt = (slotIndex) => {
-    const code = codes[slotIndex]
-    const raw = hourly.precipitation_probability?.[start + slotIndex]
-    return code != null && precipTier(code) > 0 ? displayPrecipChance(code, raw) : raw
-  }
+  // Precipitation chance (%) for a slot, exactly as forecast. An insight that
+  // names a condition and then quotes a low chance ("showers, 15% chance") is
+  // reporting the forecast, not contradicting itself — and the alternative was
+  // quoting a number no source published.
+  const probAt = (slotIndex) => hourly.precipitation_probability?.[start + slotIndex]
 
   // Indefinite article for a condition label; "" for plurals (e.g. "showers")
   // since "a showers" is wrong.
@@ -667,12 +665,10 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
   }
 
   // Suppress alarming insights for future slots whose probability is too low.
-  // Uses the raw API probability, not the display-floored value from probAt,
-  // so a 2% raw chance on a thunderstorm code isn't inflated to 75% and let through.
   // Slot 0 (happening right now) is always shown regardless of probability.
   const aboveThreshold = (slotIndex, min) => {
     if (slotIndex === 0) return true
-    const raw = hourly.precipitation_probability?.[start + slotIndex]
+    const raw = probAt(slotIndex)
     return raw == null || raw >= min
   }
 
@@ -1126,8 +1122,7 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
 
       const tCode = daily.weather_code[1]
       const tCat = classify(tCode)
-      const tRawProb = daily.precipitation_probability_max?.[1]
-      const tProb = tRawProb != null ? displayPrecipChance(tCode, tRawProb) : null
+      const tProb = daily.precipitation_probability_max?.[1]
       const isSnow = SNOW_CODES.has(tCode)
       const isThunder = [95, 96, 99].includes(tCode)
       // Same tier + same date (tomorrow) as an hourly headline collapses to one.
@@ -1275,8 +1270,7 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
 
     if (evDay !== -1 && insights.length < 4) {
       const code = daily.weather_code[evDay]
-      const raw = daily.precipitation_probability_max?.[evDay]
-      const p = raw != null ? displayPrecipChance(code, raw) : null
+      const p = daily.precipitation_probability_max?.[evDay]
       const day = dayName(evDay)
       const isSnow = SNOW_CODES.has(code)
       const isThunder = [95, 96, 99].includes(code)
@@ -1413,13 +1407,12 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
       }
     }
 
-    // Chance of precipitation: today's peak, floored to the day's condition so
-    // it never contradicts a rain/snow code. Shown only when worth noting.
+    // Chance of precipitation: today's peak as forecast. Shown only when worth
+    // noting.
     let precipPhraseTxt = ''
-    const rawP = daily?.precipitation_probability_max?.[0]
-    if (rawP != null) {
+    const p = daily?.precipitation_probability_max?.[0]
+    if (p != null) {
       const dCode = daily?.weather_code?.[0]
-      const p = dCode != null ? displayPrecipChance(dCode, rawP) : rawP
       if (p >= 20) {
         const kind = dCode != null && SNOW_CODES.has(dCode) ? 'snow' : 'rain'
         precipPhraseTxt = ` Chance of ${kind} ${p}%.`
@@ -1452,10 +1445,9 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
     else if (feels >= 10) { advice = 'Heavy layers, hat and gloves';       Icon = Beanie }
     else                  { advice = 'Warmest layers, limit time outside'; Icon = Mitten }
 
-    const rawP = daily?.precipitation_probability_max?.[0]
+    const p = daily?.precipitation_probability_max?.[0]
     const dCode = daily?.weather_code?.[0]
-    if (rawP != null) {
-      const p = dCode != null ? displayPrecipChance(dCode, rawP) : rawP
+    if (p != null) {
       if (p >= 40) {
         if (dCode != null && SNOW_CODES.has(dCode)) { advice += ', wear boots';       Accessory = Boot }
         else                                        { advice += ', bring an umbrella'; Accessory = Umbrella }

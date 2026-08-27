@@ -2,8 +2,8 @@ import { useState } from 'react'
 import { ChevronDown, Droplets, Sunrise, Sunset, Sun, Wind } from 'lucide-react'
 import { WeatherIcon } from '../WeatherIcon'
 import {
-  displayPrecipChance, formatHour, formatTime, getUVLabel, getWeatherInfo, nowcastHourlyCode,
-  precipTier, tempColor, tempStyle, toTemp,
+  formatHour, formatTime, getUVLabel, getWeatherInfo, nowcastHourlyCode,
+  tempColor, tempStyle, toTemp,
 } from '../../utils/weatherCodes'
 import { niceBounds, smoothPath, useMeasure } from './chartUtils'
 import { formatPrecip, formatWind } from '../../utils/units'
@@ -102,7 +102,7 @@ export function DailyPage({ weather, unit, units, colorCoding }) {
       <div className="card web-days-card">
         {daily.time.map((date, i) => {
           const info = getWeatherInfo(daily.weather_code[i], false)
-          const chance = displayPrecipChance(daily.weather_code[i], daily.precipitation_probability_max?.[i])
+          const chance = daily.precipitation_probability_max?.[i] ?? 0
           const uv = getUVLabel(daily.uv_index_max?.[i] ?? 0)
           const low = daily.temperature_2m_min[i]
           const high = daily.temperature_2m_max[i]
@@ -192,7 +192,7 @@ export function DailyPage({ weather, unit, units, colorCoding }) {
                         hourly.weather_code[hi], weather.minutely_15, hourly.time[hi], current,
                       )
                       const hInfo = getWeatherInfo(code, !hourly.is_day?.[hi])
-                      const hChance = displayPrecipChance(code, precipTier(code) === 0 ? 0 : hourly.precipitation_probability?.[hi])
+                      const hChance = hourly.precipitation_probability?.[hi] ?? 0
                       return (
                         <div key={hourly.time[hi]} className="web-day-hour">
                           <span className="web-day-hour-time">{formatHour(hourly.time[hi], timezone)}</span>

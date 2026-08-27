@@ -8,8 +8,8 @@ import { PrecipNowcast } from '../PrecipNowcast'
 import { WeatherAlerts } from '../WeatherAlerts'
 import { WeatherIcon } from '../WeatherIcon'
 import {
-  displayPrecipChance, formatHour, formatTime, getUVLabel, getWeatherInfo, getWindDirection,
-  liveWeatherCode, nowcastHourlyCode, precipTier, tempStyle, toTemp,
+  formatHour, formatTime, getUVLabel, getWeatherInfo, getWindDirection,
+  liveWeatherCode, nowcastHourlyCode, tempStyle, toTemp,
 } from '../../utils/weatherCodes'
 import { currentHourIndex, sliceHourly, weekdayLabel } from './webData'
 import { formatPrecip, formatVisibility, formatWind } from '../../utils/units'
@@ -288,7 +288,7 @@ export function TodayPage({
                   ? (liveWeatherCode(current, weather.minutely_15, radarClear) ?? next.code[i])
                   : nowcastHourlyCode(next.code[i], weather.minutely_15, time, current)
                 const info = getWeatherInfo(code, !next.isDay[i])
-                const chance = displayPrecipChance(code, precipTier(code) === 0 ? 0 : next.precip[i])
+                const chance = next.precip[i] ?? 0
                 return (
                   <div key={time} className={`web-mini-hour${i === 0 ? ' web-mini-hour--now' : ''}`}>
                     <span className="web-mini-time">{i === 0 ? 'Now' : formatHour(time, timezone)}</span>
@@ -316,10 +316,7 @@ export function TodayPage({
             <div className="web-week-days">
               {daily.time.map((date, i) => {
                 const info = getWeatherInfo(daily.weather_code[i], false)
-                const chance = displayPrecipChance(
-                  daily.weather_code[i],
-                  precipTier(daily.weather_code[i]) === 0 ? 0 : daily.precipitation_probability_max?.[i],
-                )
+                const chance = daily.precipitation_probability_max?.[i] ?? 0
                 return (
                   <div key={date} className={`web-week-day${i === 0 ? ' web-week-day--today' : ''}`}>
                     <span className="web-week-dayname">{i === 0 ? 'Today' : weekdayLabel(date, timezone)}</span>

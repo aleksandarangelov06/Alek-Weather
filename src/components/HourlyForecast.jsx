@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useLayoutEffect, useId } from 'react'
-import { getWeatherInfo, formatHour, liveWeatherCode, nowcastHourlyCode, precipTier, toTemp, tempStyle, tempColor, displayPrecipChance } from '../utils/weatherCodes'
+import { getWeatherInfo, formatHour, liveWeatherCode, nowcastHourlyCode, toTemp, tempStyle, tempColor } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
 
 const GRAPH_HEIGHT = 60
@@ -113,10 +113,14 @@ export function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glo
             ? (liveWeatherCode(current, minutely, radarClear) ?? codes[i])
             : nowcastHourlyCode(codes[i], minutely, hours[i], current)
           const info = getWeatherInfo(displayCode, !isDay[i])
-          // When the corrected code carries no precipitation, zero out the chance
-          // so the display is internally consistent (no "Clear Sky, 75%").
-          const nowPrecip = precipTier(displayCode) === 0 ? 0 : precip[i]
-          const p = displayPrecipChance(displayCode, nowPrecip)
+          // The hour's own forecast probability, shown as published. The icon and
+          // this number answer different questions — "what will it be doing" and
+          // "how likely is precipitation" — so an overcast icon beside 30% is not
+          // a contradiction to be suppressed, it is the forecast. Zeroing it
+          // whenever the corrected code came back non-precip is what put a flat 0%
+          // on hours NWS was publishing at 14%, and on the current hour every time
+          // the live nowcast downgraded its code.
+          const p = precip[i] ?? 0
           return (
             <div key={i} className="hourly-item">
               <span className="hourly-time">{label}</span>

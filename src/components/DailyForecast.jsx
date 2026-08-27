@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { Droplet, X } from 'lucide-react'
-import { getWeatherInfo, formatDay, formatHour, formatTime, getUVLabel, liveWeatherCode, nowcastHourlyCode, precipTier, toTemp, tempColor, tempStyle, displayPrecipChance, SUN_ORANGE } from '../utils/weatherCodes'
+import { getWeatherInfo, formatDay, formatHour, formatTime, getUVLabel, liveWeatherCode, nowcastHourlyCode, toTemp, tempColor, tempStyle, SUN_ORANGE } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
 import { formatPrecip, formatWind } from '../utils/units'
 
@@ -206,12 +206,12 @@ export function DailyForecast({ daily, hourly, timezone, unit, units, colorCodin
       } else {
         code = rawCode
       }
-      const prob = precipTier(code) === 0 ? 0 : hourly.precipitation_probability?.[i]
+      const prob = hourly.precipitation_probability?.[i] ?? 0
       out.push({
         time: slotTime,
         temp: hourly.temperature_2m[i],
         code,
-        precip: displayPrecipChance(code, prob),
+        precip: prob,
         isDay: hourly.is_day?.[i],
       })
     }
@@ -224,7 +224,7 @@ export function DailyForecast({ daily, hourly, timezone, unit, units, colorCodin
   const openIdx = di !== -1 ? dayIndices(expanded) : []
   const openHours = hoursReady && di !== -1 ? hoursForDay(openIdx) : []
   const openPrecip = di !== -1
-    ? (displayPrecipChance(daily.weather_code[di], daily.precipitation_probability_max[di]) ?? 0)
+    ? (daily.precipitation_probability_max[di] ?? 0)
     : 0
   const precipNote = openPrecip > 0
     ? `Up to a ${openPrecip}% chance of precipitation.`
@@ -247,9 +247,9 @@ export function DailyForecast({ daily, hourly, timezone, unit, units, colorCodin
           const info = getWeatherInfo(daily.weather_code[i])
           const high = toTemp(maxTemps[i], unit)
           const low = toTemp(minTemps[i], unit)
-          // Floor against the day's condition so the row's % never undercuts its
-          // own rain icon. This is the day's peak chance, not "right now".
-          const precip = displayPrecipChance(daily.weather_code[i], daily.precipitation_probability_max[i])
+          // The day's peak chance as forecast — not "right now", and not inferred
+          // from the row's icon.
+          const precip = daily.precipitation_probability_max?.[i] ?? 0
 
           // Map this day's low→high onto the week's overall range so pill
           // position and width carry the actual temperature magnitudes. The

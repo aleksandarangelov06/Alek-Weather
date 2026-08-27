@@ -355,8 +355,10 @@ function alignDailyWithHourly(daily, hourly, minutely, current, timezone, nwsDai
       // Slots beyond the minutely window are returned unchanged.
       const code = nowcastHourlyCode(rawCode, minutely, slotTime, current)
 
-      // When nowcast downgrades to non-precip, that slot contributes 0 probability.
-      const p = precipTier(code) === 0 ? 0 : (hourly.precipitation_probability?.[j] ?? null)
+      // The slot's own forecast probability. The nowcast correction above governs
+      // the peak *code* for the day; it has no bearing on how likely precipitation
+      // was forecast to be, so it must not zero this out.
+      const p = hourly.precipitation_probability?.[j] ?? null
       if (p != null) maxProb = maxProb == null ? p : Math.max(maxProb, p)
 
       const sev = wmoSeverity(code)

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Droplet, Sunrise, Sunset } from 'lucide-react'
 import { WeatherIcon } from '../WeatherIcon'
 import {
-  displayPrecipChance, getWeatherInfo, precipTier, tempColor, toTemp, RAIN_CODES, SNOW_CODES,
+  getWeatherInfo, precipTier, tempColor, toTemp, RAIN_CODES, SNOW_CODES,
 } from '../../utils/weatherCodes'
 import { smoothPath } from './chartUtils'
 
@@ -118,7 +118,7 @@ export function HourlyChart({
     return RAIN_CODES.has(code) ? 'rain' : null
   }).filter((r) => r.kind)
 
-  const chanceAt = (i) => displayPrecipChance(codes[i], precipTier(codes[i]) === 0 ? 0 : precip[i])
+  const chanceAt = (i) => precip[i] ?? 0
   const chanceRuns = runsOf(hours, (_, i) => chanceAt(i) > 0)
 
   const syncEdges = () => {
