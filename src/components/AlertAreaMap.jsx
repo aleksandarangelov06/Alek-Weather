@@ -4,11 +4,7 @@ import 'leaflet/dist/leaflet.css'
 import { TriangleAlert, X } from 'lucide-react'
 import { resolveStyle } from '../utils/alertStyle'
 import { loadAlertArea } from '../utils/alertArea'
-
-// The same CARTO Positron base the radar draws on, and the same
-// .map-base-tiles class with it: the theme and sky-level filters in App.css are
-// bound to that class, so the map here darkens with the rest of the app for free.
-const TILE_URL = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
+import { addBasemap } from '../utils/basemap'
 
 // Where to stop when fitting a single small zone. Without a cap, a lone county
 // warning opens at street level, where the outline runs off every edge and the
@@ -91,10 +87,10 @@ export function AlertAreaMap({ alert, location, onClose }) {
       center: location ? [location.latitude, location.longitude] : [39.5, -98.35],
       zoom: location ? 7 : 4,
     })
-    L.tileLayer(TILE_URL, {
-      maxZoom: 20, detectRetina: false, crossOrigin: true,
-      className: 'map-base-tiles', zIndex: 1, updateWhenIdle: true, keepBuffer: 1,
-    }).addTo(map)
+    // The same base the radar draws on, carrying the same .map-base-tiles class:
+    // the theme and sky-level filters in App.css are bound to that class, so the
+    // map here darkens with the rest of the app for free.
+    addBasemap(L, map)
     // Where you are, in the same dot the radar uses — the one thing that turns
     // an outline into an answer about you rather than about the county list.
     if (location) {

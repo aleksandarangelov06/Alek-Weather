@@ -3,9 +3,9 @@ import { Minimize2, Play, Pause, Navigation, ZoomIn, ZoomOut } from 'lucide-reac
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { MRMS_BASE, inMrmsDomain } from '../utils/mrms'
+import { addBasemap } from '../utils/basemap'
 
 const FRAMES_URL = 'https://api.rainviewer.com/public/weather-maps.json'
-const TILE_URL   = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png'
 
 // Observed radar, where NOAA covers it: the MRMS mosaic behind radar.weather.gov,
 // served straight from NWS rather than through a third party. No key, CORS open,
@@ -736,15 +736,15 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
   useEffect(() => {
     const map = mapInst.current
     if (!map || !mapReady) return
-    baseTileRef.current = L.tileLayer(TILE_URL, {
-      maxZoom: 20, detectRetina: false, crossOrigin: true,
-      className: 'map-base-tiles', zIndex: 1,
-      updateWhenIdle: true, // only fetch tiles once panning stops — fewer requests/repaints
-      keepBuffer: 1,        // hold fewer off-screen tiles in memory
-    })
-    baseTileRef.current.addTo(map)
+    // The canvas and its labels are two layers (see utils/basemap). The ref keeps
+    // the canvas alone, because it is the one the reveal animation waits on — the
+    // labels are a thin overlay that lands with it or just after either way.
+    const [base, labels] = addBasemap(L, map)
+    baseTileRef.current = base
     return () => {
-      if (baseTileRef.current) { map.removeLayer(baseTileRef.current); baseTileRef.current = null }
+      map.removeLayer(base)
+      map.removeLayer(labels)
+      baseTileRef.current = null
     }
   }, [mapReady])
 

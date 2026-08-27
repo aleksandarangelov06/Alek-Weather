@@ -17,11 +17,19 @@ const CSP = [
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src https://fonts.gstatic.com",
   // mesonet.agron.iastate.edu serves the HRRR futurecast radar tiles.
-  "img-src 'self' data: blob: https://tilecache.rainviewer.com https://*.basemaps.cartocdn.com https://cdn.jsdelivr.net https://mesonet.agron.iastate.edu",
+  // mapservices.weather.noaa.gov is the MRMS ImageServer — it renders the observed
+  // radar as images (exportImage), so it belongs here as well as in connect-src.
+  // Its absence from this list is why MRMS never drew in a production build: the
+  // tiles were blocked, the sweep query was blocked, and the map fell back to
+  // RainViewer every time without anything appearing to fail.
+  // services.arcgisonline.com serves the Esri Light Gray basemap (see utils/basemap).
+  "img-src 'self' data: blob: https://tilecache.rainviewer.com https://services.arcgisonline.com https://mapservices.weather.noaa.gov https://cdn.jsdelivr.net https://mesonet.agron.iastate.edu",
   // api-bdc.io is BigDataCloud's canonical reverse-geocode host; api.bigdatacloud.net
   // 307-redirects to it, so both are allowed (the redirect target must be permitted too).
   // mesonet.agron.iastate.edu also provides the HRRR run metadata JSON (fetch).
-  "connect-src 'self' https://api.open-meteo.com https://geocoding-api.open-meteo.com https://air-quality-api.open-meteo.com https://api.weather.gov https://api.rainviewer.com https://api.bigdatacloud.net https://api-bdc.io https://mesonet.agron.iastate.edu",
+  // mapservices.weather.noaa.gov is fetched twice over: the radar timeline lists
+  // sweeps with /query, and useRadarPrecip samples one pixel with /identify.
+  "connect-src 'self' https://api.open-meteo.com https://geocoding-api.open-meteo.com https://air-quality-api.open-meteo.com https://api.weather.gov https://api.rainviewer.com https://api.bigdatacloud.net https://api-bdc.io https://mesonet.agron.iastate.edu https://mapservices.weather.noaa.gov",
   "worker-src 'self'",
   "manifest-src 'self'",
   "object-src 'none'",
@@ -102,7 +110,7 @@ export default defineConfig({
             },
           },
           {
-            urlPattern: /^https:\/\/[a-d]\.basemaps\.cartocdn\.com\/.*/i,
+            urlPattern: /^https:\/\/services\.arcgisonline\.com\/.*/i,
             handler: 'CacheFirst',
             options: {
               cacheName: 'map-tiles',
