@@ -509,8 +509,31 @@ class MainActivity : AppCompatActivity() {
         callback.invoke(origin, ok, false)
     }
 
+    /**
+     * Nothing in the page should keep running once the app is off screen.
+     *
+     * A WebView does not infer this from the activity lifecycle: left alone it
+     * keeps its renderer, its timers and its rAF loop alive behind the launcher.
+     * The page always has something to spend that on -- WeatherCanvas drives a
+     * requestAnimationFrame loop for as long as a precipitation code is showing,
+     * which is hundreds of particles redrawn every frame, forever, against a
+     * surface no one is looking at.
+     *
+     * onPause() stops this WebView's own drawing and JS; pauseTimers() stops
+     * timers process-wide, which is the half that catches setInterval/setTimeout.
+     * Neither touches WeatherCheckWorker -- that is a WorkManager job with its own
+     * HTTP, and the background rain notification keeps working exactly as before.
+     */
+    override fun onPause() {
+        web.onPause()
+        web.pauseTimers()
+        super.onPause()
+    }
+
     override fun onResume() {
         super.onResume()
+        web.resumeTimers()
+        web.onResume()
         // Opening the app is the one moment we know the user wants current
         // information. The page re-syncs its settings on mount and that also
         // triggers a check, but this covers a restored WebView that never

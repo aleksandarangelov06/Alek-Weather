@@ -24,6 +24,13 @@ android {
         // src/utils/version.js, which Settings displays inside the APK.
         versionCode 9
         versionName "0.9"
+
+        // The app ships one string of its own (app_name) and a web UI that is
+        // English throughout. Everything else in resources.arsc is appcompat and
+        // WorkManager shipping their own strings in ~85 languages -- "Navigate
+        // up", notification-channel names and the like -- none of which the page
+        // ever surfaces. Keeping only 'en' drops all of them.
+        resourceConfigurations += ['en']
     }
 
     signingConfigs {
@@ -42,10 +49,14 @@ android {
             // Falls back to unsigned if keystore.properties is missing, rather
             // than silently producing a debug-signed "release".
             signingConfig keystoreProps['storeFile'] ? signingConfigs.release : null
-            // No shrinking: the app is a WebView shell, so there is no Kotlin
-            // surface worth minifying and R8 would only risk stripping the
-            // WebView bridge. Revisit if native code grows.
-            minifyEnabled false
+            // Shrinking is on for the libraries, not for this app's Kotlin. The dex
+            // was 78% of the APK and almost all of it is androidx -- appcompat, webkit
+            // and work-runtime, very little of which a single activity reaches.
+            // The WebView bridges are the one thing R8 must not touch; all three are
+            // pinned by name in proguard-rules.pro.
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 

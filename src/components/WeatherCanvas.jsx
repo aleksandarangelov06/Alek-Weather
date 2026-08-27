@@ -28,6 +28,23 @@ const CFG = {
 const TILT_CLAMP = 35
 const TILT_GAIN  = 0.8
 
+// How many distinct opacity steps a scene's particles are drawn at.
+//
+// Every particle used to carry its own random alpha, which meant its own
+// fillStyle/strokeStyle, which meant its own beginPath and its own draw — 325
+// canvas draw calls per frame in a storm, ~19,500 a second, each one a state
+// change the compositor cannot batch. Rounding to a few steps is invisible (the
+// values were random inside one narrow band to begin with) and lets a whole step
+// be drawn as a single path.
+//
+// The rounding is applied to the 0.4–1 *variation factor* rather than to the
+// finished alpha, so every scene gets the same number of steps no matter how
+// faint it is. Quantising the product instead would have flattened fog — whose
+// alphas all sit between 0.07 and 0.18 — onto one step, erasing the depth that
+// makes it read as layered cloud rather than a flat grey wash.
+const ALPHA_STEPS = 6
+const quantFactor = (v) => Math.round(v * ALPHA_STEPS) / ALPHA_STEPS
+
 export function WeatherCanvas({ code, gyro = true }) {
   const scene = sceneFor(code)
   const ref = useRef(null)
@@ -87,25 +104,39 @@ export function WeatherCanvas({ code, gyro = true }) {
         x: rand(0, W()), y: rand(0, H()),
         len: rand(cfg.len[0], cfg.len[1]),
         spd: rand(cfg.speed[0], cfg.speed[1]),
-        alpha: rand(0.4, 1) * cfg.alpha,
+        alpha: quantFactor(rand(0.4, 1)) * cfg.alpha,
       }))
     } else if (scene === 'snow') {
       particles = Array.from({ length: cfg.count }, () => ({
         x: rand(0, W()), y: rand(0, H()),
         r: rand(2, 5), vy: rand(cfg.speed[0], cfg.speed[1]),
         drift: rand(0, Math.PI * 2), ds: rand(0.004, 0.012),
-        alpha: rand(0.4, 1) * cfg.alpha,
+        alpha: quantFactor(rand(0.4, 1)) * cfg.alpha,
       }))
     } else {
       particles = Array.from({ length: cfg.count }, () => ({
         x: rand(0, W()), y: rand(0, H()),
         r: rand(cfg.size[0], cfg.size[1]),
         vx: rand(-1, 1) * cfg.speed, vy: rand(-0.3, 0.3) * cfg.speed,
-        alpha: rand(0.4, 1) * cfg.alpha,
+        alpha: quantFactor(rand(0.4, 1)) * cfg.alpha,
       }))
     }
 
     const [r, g, b] = cfg.color
+
+    // Particles grouped by their quantised alpha, so a frame walks each bucket
+    // once and issues a single draw for it. Built once — alpha never changes, and
+    // the entries hold the same particle objects, so the draw loop still moves the
+    // originals.
+    const byAlpha = new Map()
+    for (const p of particles) {
+      const bucket = byAlpha.get(p.alpha)
+      if (bucket) bucket.push(p)
+      else byAlpha.set(p.alpha, [p])
+    }
+    const buckets = [...byAlpha].map(([alpha, ps]) => ({
+      style: `rgba(${r},${g},${b},${alpha})`, ps,
+    }))
 
     function draw() {
       ctx.clearRect(0, 0, W(), H())
@@ -144,40 +175,50 @@ export function WeatherCanvas({ code, gyro = true }) {
           }
         }
         ctx.lineWidth = 1.5
-        for (const p of particles) {
-          p.x += vx * p.spd; p.y += vy * p.spd
-          // Refill once a drop leaves the bottom or slides off the downwind side.
-          if (p.y > H() + 20 || p.x < -40 || p.x > W() + 40) respawn(p)
+        for (const { style, ps } of buckets) {
           ctx.beginPath()
-          ctx.moveTo(p.x, p.y)
-          ctx.lineTo(p.x - vx * p.len, p.y - vy * p.len)
-          ctx.strokeStyle = `rgba(${r},${g},${b},${p.alpha})`
+          for (const p of ps) {
+            p.x += vx * p.spd; p.y += vy * p.spd
+            // Refill once a drop leaves the bottom or slides off the downwind side.
+            if (p.y > H() + 20 || p.x < -40 || p.x > W() + 40) respawn(p)
+            ctx.moveTo(p.x, p.y)
+            ctx.lineTo(p.x - vx * p.len, p.y - vy * p.len)
+          }
+          ctx.strokeStyle = style
           ctx.stroke()
         }
       } else if (scene === 'snow') {
-        for (const p of particles) {
-          p.drift += p.ds
-          // Faster-falling flakes get carried further by the tilt, like real wind.
-          p.x += Math.sin(p.drift) * 0.4 + windX * (p.vy + 1) * 1.5
-          p.y += p.vy
-          if (p.y > H()) { p.y = -p.r; p.x = rand(0, W()) }
-          if (p.x < -p.r) p.x = W() + p.r
-          if (p.x > W() + p.r) p.x = -p.r
+        for (const { style, ps } of buckets) {
           ctx.beginPath()
-          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2)
-          ctx.fillStyle = `rgba(${r},${g},${b},${p.alpha})`
+          for (const p of ps) {
+            p.drift += p.ds
+            // Faster-falling flakes get carried further by the tilt, like real wind.
+            p.x += Math.sin(p.drift) * 0.4 + windX * (p.vy + 1) * 1.5
+            p.y += p.vy
+            if (p.y > H()) { p.y = -p.r; p.x = rand(0, W()) }
+            if (p.x < -p.r) p.x = W() + p.r
+            if (p.x > W() + p.r) p.x = -p.r
+            // moveTo before arc: without it the path carries a line from wherever
+            // the previous flake's arc ended into the start of this one.
+            ctx.moveTo(p.x + p.r, p.y)
+            ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2)
+          }
+          ctx.fillStyle = style
           ctx.fill()
         }
       } else {
-        for (const p of particles) {
-          p.x += p.vx + windX * 0.6; p.y += p.vy
-          if (p.x < -p.r) p.x = W() + p.r
-          if (p.x > W() + p.r) p.x = -p.r
-          if (p.y < -p.r) p.y = H() + p.r
-          if (p.y > H() + p.r) p.y = -p.r
+        for (const { style, ps } of buckets) {
           ctx.beginPath()
-          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2)
-          ctx.fillStyle = `rgba(${r},${g},${b},${p.alpha})`
+          for (const p of ps) {
+            p.x += p.vx + windX * 0.6; p.y += p.vy
+            if (p.x < -p.r) p.x = W() + p.r
+            if (p.x > W() + p.r) p.x = -p.r
+            if (p.y < -p.r) p.y = H() + p.r
+            if (p.y > H() + p.r) p.y = -p.r
+            ctx.moveTo(p.x + p.r, p.y)
+            ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2)
+          }
+          ctx.fillStyle = style
           ctx.fill()
         }
       }
