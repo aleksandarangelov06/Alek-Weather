@@ -91,6 +91,82 @@ export function getAQINote(aqi) {
   return 'Avoid all outdoor exertion.'
 }
 
+export function getPrecipInfo(pct) {
+  if (pct < 20) return { color: 'var(--cond-green)',  label: 'Unlikely'    }
+  if (pct < 50) return { color: 'var(--cond-yellow)', label: 'Possible'    }
+  if (pct < 80) return { color: 'var(--cond-orange)', label: 'Likely'      }
+  return              { color: 'var(--cond-blue)',    label: 'Very Likely' }
+}
+
+// CAPE (J/kg): the energy available to a rising parcel of air. It is the fuel
+// for thunderstorms, not a forecast of them — something still has to set them
+// off — which is why the notes say "if" rather than "will".
+export function getStormInfo(cape) {
+  if (cape < 300)  return { color: 'var(--cond-green)',  label: 'Minimal'  }
+  if (cape < 1000) return { color: 'var(--cond-lime)',   label: 'Low'      }
+  if (cape < 2500) return { color: 'var(--cond-yellow)', label: 'Moderate' }
+  if (cape < 4000) return { color: 'var(--cond-orange)', label: 'High'     }
+  return                { color: 'var(--cond-red)',     label: 'Extreme'  }
+}
+
+export function getStormNote(cape) {
+  if (cape < 300)  return 'Stable air; thunderstorms are very unlikely.'
+  if (cape < 1000) return 'Some instability; a stray storm is possible.'
+  if (cape < 2500) return 'Enough energy for thunderstorms if they form.'
+  if (cape < 4000) return 'Strong storms are possible if anything sets them off.'
+  return 'Explosive instability; severe storms are possible.'
+}
+
+// Snowfall over a period, in inches of snow (not water equivalent).
+export function getSnowInfo(inches) {
+  if (inches <= 0) return { color: 'var(--cond-green)',  label: 'None'       }
+  if (inches < 1)  return { color: 'var(--cond-blue)',   label: 'Light'      }
+  if (inches < 4)  return { color: 'var(--cond-yellow)', label: 'Moderate'   }
+  if (inches < 8)  return { color: 'var(--cond-orange)', label: 'Heavy'      }
+  return                { color: 'var(--cond-red)',     label: 'Very Heavy' }
+}
+
+// Pollen in grains/m³. Trees, grasses and weeds provoke reactions at very
+// different counts, so each group has its own bands (after the US National
+// Allergy Bureau scale). Trees take the worst of alder, birch and olive, weeds
+// the worst of mugwort and ragweed.
+const POLLEN_GROUPS = {
+  Tree:  { keys: ['alder_pollen', 'birch_pollen', 'olive_pollen'], bands: [15, 90, 1500] },
+  Grass: { keys: ['grass_pollen'],                                 bands: [5, 20, 200] },
+  Weed:  { keys: ['mugwort_pollen', 'ragweed_pollen'],             bands: [10, 50, 500] },
+}
+const POLLEN_LEVELS = [
+  { label: 'None',      color: 'var(--cond-green)'  },
+  { label: 'Low',       color: 'var(--cond-green)'  },
+  { label: 'Moderate',  color: 'var(--cond-yellow)' },
+  { label: 'High',      color: 'var(--cond-orange)' },
+  { label: 'Very High', color: 'var(--cond-red)'    },
+]
+const POLLEN_NOTES = [
+  'No pollen in the air right now.',
+  'Low; only the most sensitive will notice.',
+  'Moderate; allergy sufferers may feel it.',
+  'High; most allergy sufferers will have symptoms.',
+  'Very high; keep windows shut and limit time outside.',
+]
+
+// Per-group levels plus the worst of them, or null where the feed has no
+// pollen at all (anywhere outside Europe).
+export function getPollenInfo(aq) {
+  if (!aq) return null
+  const groups = []
+  for (const [name, { keys, bands }] of Object.entries(POLLEN_GROUPS)) {
+    const readings = keys.map((k) => aq[k]).filter((v) => v != null && Number.isFinite(v))
+    if (!readings.length) continue
+    const count = Math.max(...readings)
+    const level = count < 1 ? 0 : 1 + bands.filter((b) => count >= b).length
+    groups.push({ name, count, level, ...POLLEN_LEVELS[level] })
+  }
+  if (!groups.length) return null
+  const worst = groups.reduce((a, b) => (b.level > a.level ? b : a))
+  return { groups, worst, note: POLLEN_NOTES[worst.level] }
+}
+
 // Pressure trend over the last 3 hours — the part that actually forecasts
 // anything. A ±1 hPa deadband keeps normal noise from reading as a trend.
 export function getPressureTrend(hourly, hStart) {

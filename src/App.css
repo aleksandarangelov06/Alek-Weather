@@ -252,6 +252,34 @@
   --cond-info:   #60a5fa;
 }
 
+/* Dark mode cloud tone. The grey cloud (cloud, and the cloud in sun-cloud and
+   sun-rain) is drawn near-white, which on a black or night-sky surface is the
+   brightest thing on screen and outshines the reading next to it. Pulled down
+   to a mid grey — still clearly a fair-weather cloud, since the storm cloud is
+   a deep indigo of its own (StormGlyph) and stays well apart from it. Each value
+   keeps its upstream highlight-to-shadow order so the cloud keeps its volume.
+   EAE0FF is the small wedge under sun-rain's cloud, sitting on the DED7FA
+   base: left at its light value it shows as a pale arrowhead on the dimmed
+   cloud, so it moves with that base. */
+[data-theme="dark"] {
+  --wi-FCFBFE: #c9c9d3;
+  --wi-E8E8E9: #b5b6bf;
+  --wi-DED7FA: #aea7cc;
+  --wi-EAE0FF: #b1aace;
+  --wi-D5D4DA: #a3a4ae;
+  --wi-D2D2D2: #9a9ba4;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --wi-FCFBFE: #c9c9d3;
+    --wi-E8E8E9: #b5b6bf;
+    --wi-DED7FA: #aea7cc;
+    --wi-EAE0FF: #b1aace;
+    --wi-D5D4DA: #a3a4ae;
+    --wi-D2D2D2: #9a9ba4;
+  }
+}
+
 /* ── Base ── */
 body {
   background: var(--bg);
@@ -410,7 +438,8 @@ body {
    sky, so the white sky icon colour above does not apply inside it — on a light
    panel the close X was all but invisible. Back to the theme's own icon colour. */
 .sky-active :is(.settings-page, .settings-inline) .header-icon-btn { color: var(--text-secondary); }
-.sky-active :is(.settings-page, .settings-inline) .header-icon-btn:hover { color: var(--text-primary); }
+/* No hover recolour here either — the rule set nothing else, so it is gone
+   rather than emptied. The base colour on the line above is what these keep. */
 
 .sky-active .search-overlay { background: var(--sky-card-deep, #2d3f55); }
 .sky-active .search-overlay .search-bar { background: var(--sky-card, #3a5068); border-color: transparent; --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; }
@@ -479,9 +508,20 @@ body {
   touch-action: manipulation; /* avoid long-press text selection / callout while holding */
 }
 
-.header-icon-btn:hover {
-  color: var(--text-primary);
-  background: var(--hover-subtle);
+/* An icon keeps its colour under the cursor and under a finger. What answers a
+   hover is the plate behind it, not the glyph on top: the button is what the
+   pointer is over, and lightening its background says so without the icon
+   changing identity every time the mouse crosses it.
+
+   Still gated on a real pointer, because the background alone has the same
+   problem the colour did. A touchscreen cannot hover, so it delivers a tap as
+   hover as well, and that *sticks* -- nothing moves away afterwards to clear it,
+   so the plate would stay lit until something else was tapped. Touch has its own
+   press language anyway (the circle tints, the button dips and springs back). */
+@media (hover: hover) and (pointer: fine) {
+  .header-icon-btn:hover {
+    background: var(--hover-subtle);
+  }
 }
 
 /* Press-and-hold to use my location: a circle fills under the icon over
@@ -508,6 +548,45 @@ body {
   top: 0;
   left: 0;
   transition: opacity 0.3s ease;
+}
+
+/* Pressing the magnifier sweeps it once before the search overlay drops, the way
+   the cog turns before the settings panel does — App.jsx holds the press for
+   SEARCH_OPEN_MS and hands the same figure back as --glass-sweep-ms. The overlay
+   is fixed to the top of the screen and slides down over the header, so anything
+   left of the sweep once it lands is spent behind it.
+
+   The gesture is the glass being used, not merely wobbled: it lifts a little,
+   angles off to one side, sweeps across, and settles level. That is why the two
+   extremes are unequal — a scan starts wide and comes back short, and matching
+   them would read as a metronome instead.
+
+   Transformed on the wrapper rather than the svg, for two reasons. The two icons
+   inside are absolutely positioned and cross-faded on opacity, so moving the
+   wrapper carries whichever one is showing without touching that transition. And
+   the origin is the lens, not the box: at 24px the circle of Lucide's glass
+   centres near 46%, so pivoting there swings the handle and leaves the lens
+   roughly where the eye already is — pivot at dead centre and the whole thing
+   slides, which reads as a nudge rather than a look. */
+.header-search-icons {
+  transform-origin: 46% 46%;
+}
+
+.header-icon-btn.is-searching .header-search-icons {
+  animation: glass-sweep var(--glass-sweep-ms, 240ms) cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@keyframes glass-sweep {
+  0%   { transform: rotate(0deg)    scale(1); }
+  30%  { transform: rotate(-22deg)  scale(1.12); }
+  70%  { transform: rotate(13deg)   scale(1.12); }
+  100% { transform: rotate(0deg)    scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Matched by sweepThenOpenSearch, which drops the wait too — otherwise the
+     overlay would be held back for a sweep that never happens. */
+  .header-icon-btn.is-searching .header-search-icons { animation: none; }
 }
 
 .header-icon-btn::before {
@@ -1150,13 +1229,28 @@ body {
 .current-card .current-date     { color: rgba(255,255,255,0.8); }
 .current-card .current-temp     { color: #fff; }
 .current-card .current-condition { color: rgba(255,255,255,0.9); }
-.current-card .current-feels    { color: rgba(255,255,255,0.72); }
+.current-card .current-feels    { color: rgba(255,255,255,0.85); }
 .current-card .save-btn         { color: rgba(255,255,255,0.7); }
 .current-card .save-btn.saved   { color: #fff; }
 .current-card .fav-btn          { color: rgba(255,255,255,0.7); }
 .current-card .fav-btn.active   { color: #fff; }
-.current-card .updated-text     { color: rgba(255,255,255,0.6); }
-.current-card .refresh-btn      { color: rgba(255,255,255,0.6); }
+.current-card .updated-text     { color: rgba(255,255,255,0.78); }
+.current-card .refresh-btn      { color: rgba(255,255,255,0.78); }
+
+/* The hero has no surface of its own (mobile, and iOS at any width), so its
+   white readouts sit straight on the sky — and a pale sky (fog, haze, overcast
+   day) leaves them with almost no contrast. A soft downward shadow lifts them off
+   any sky tone. drop-shadow rather than text-shadow so it composes with the
+   temperature's inline heat glow / frost halo instead of being replaced by it;
+   offset-only for the same fake-bold reason as the hourly/daily temps above. */
+@media (max-width: 1099px) {
+  .sky-active .current-card :is(.current-location, .current-date, .current-temp, .current-condition, .current-feels, .updated-text, .refresh-btn) {
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+  }
+}
+:root[data-platform="ios"] .app.sky-active .current-card :is(.current-location, .current-date, .current-temp, .current-condition, .current-feels, .updated-text, .refresh-btn) {
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+}
 
 /* Effects off: current card text reverts to normal theme colors */
 .no-effects .current-card .current-location { color: var(--text-primary); }
@@ -1254,9 +1348,10 @@ body {
   transition: color 0.15s, background 0.15s;
 }
 
-.save-btn:hover {
-  background: var(--accent-light);
-  color: var(--accent);
+@media (hover: hover) and (pointer: fine) {
+  .save-btn:hover {
+    background: var(--accent-light);
+  }
 }
 
 .save-btn.saved {
@@ -1289,9 +1384,10 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-.fav-btn:hover {
-  background: var(--accent-light);
-  color: var(--accent);
+@media (hover: hover) and (pointer: fine) {
+  .fav-btn:hover {
+    background: var(--accent-light);
+  }
 }
 
 .fav-btn.active {
@@ -1351,11 +1447,11 @@ body {
    inline flow: the box is then exactly the 1em square, this div is exactly as
    tall as the icon, and the margin below is the whole of the gap.
 
-   That matters most on the storm and rain glyphs. Their drops fall past the
-   bottom of the 32-unit viewBox while still fully opaque (see wi-drop), and an
-   SVG viewport clips by default, so the rain ends on a hard flat edge at the
-   box bottom. Since that edge is where the art stops, the gap below is now a
-   single deliberate number rather than leading plus a margin.
+   That matters most on the storm and rain glyphs, whose drops end their fall
+   just past the bottom of the 32-unit viewBox, already mostly faded (see
+   wi-drop) and no longer clipped there. The box bottom is still where the art
+   stops, so the gap below is a single deliberate number rather than leading
+   plus a margin.
 
    In em, so it tracks the icon: the same rule serves a 132px hero on the phone
    and a ~60px one in the web layout's narrow column, and neither needs its own
@@ -1411,27 +1507,35 @@ body {
 /* ── Weather icon motion ───────────────────────────────────────────────────
    Every glyph ships its moving parts pre-tagged (.wi-mote on individual drops
    and flakes, .wi-part--* on each layer group), but the keyframes are bound
-   only inside the four containers listed in :is() below — the hero slot, and
-   the three 7-day forecast lists:
+   only inside the six containers listed in :is() below — the hero slot, the
+   three 7-day forecast lists, the web Today page's hour strip, and the splash:
 
-     .current-icon    hero, shared by the mobile layout and .web-hero
-     .daily-icon      mobile 7-day rows
-     .web-day-icon    web Daily page rows
-     .web-week-icon   web Today page week strip
+     .current-icon      hero, shared by the mobile layout and .web-hero
+     .daily-icon        mobile 7-day rows
+     .web-day-icon      web Daily page rows
+     .web-week-icon     web Today page week strip
+     .web-mini-icon     web Today page "Next 12 hours" strip
+     .splash-logo-icon  the splash's weather icon, in place of the logo
 
-   Deliberately absent are .hourly-icon, .web-hcol-icon, .web-table-icon,
-   .web-mini-icon and the rows inside an expanded day. Those render dozens of
-   icons at a time inside a scroller, which is exactly where a dropped frame is
-   most visible; the 7-day lists top out at seven. Adding a container here is
-   the only edit needed to animate a new slot.
+   Deliberately absent are .hourly-icon, .web-hcol-icon, .web-table-icon and the
+   rows inside an expanded day. Those render dozens of icons at a time inside a
+   scroller, which is exactly where a dropped frame is most visible. The 7-day
+   lists top out at seven, and the web hour strip is a fixed 13-column grid that
+   never scrolls. Adding a container here is the only edit needed to animate a
+   new slot.
 
    Everything animated below is transform or opacity only: no layout, no paint,
    no JS timer, and nothing React re-renders. */
+/* A shorter fall than it was (7.4 units down to 5), with the fade starting
+   earlier: the lowest drops sit only ~3 units above the bottom of the 32-unit
+   viewBox, and the old fall carried them past it still fully opaque, where the
+   SVG clipped them flat. Now they are mostly gone by the edge, and what little
+   is left drifts over it (see the overflow rule below) instead of being cut. */
 @keyframes wi-drop {
-  0%   { transform: translateY(-2.6px); opacity: 0; }
-  22%  { opacity: 1; }
-  72%  { opacity: 1; }
-  100% { transform: translateY(7.4px); opacity: 0; }
+  0%   { transform: translateY(-2px); opacity: 0; }
+  20%  { opacity: 1; }
+  55%  { opacity: 1; }
+  100% { transform: translateY(5px); opacity: 0; }
 }
 @keyframes wi-flake {
   0%   { transform: translate(0, -2px); opacity: 0; }
@@ -1457,10 +1561,9 @@ body {
      --wi-mote-lag   where in its cycle the mote starts, as a fraction of one
      --wi-mote-dur   its fall time, as a multiple of the icon's base cycle
 
-   This drives snow only. The rain and storm drops opt out a few rules down and
-   fall in unison, which is the look those icons are meant to have — see the
-   note there. Flakes are the case scatter is right for: sixteen of them at
-   several sizes, drifting, where unison would read as a falling grid.
+   This drives every falling mote: snow's sixteen flakes and the rain and storm
+   drops alike, so each drop falls on its own rather than the row dropping as
+   one block.
 
    The lags are deliberately not evenly spaced. Equal steps across one cycle
    don't read as independent motes — they read as one wave marching down the
@@ -1497,40 +1600,36 @@ body {
 /* Falling rain. --wi-fall is the icon's base cycle, and the two overrides below
    are the whole of what separates rain from a storm from a severe one.
 
-   The drops fall in unison, on purpose: lag 0 and dur 1 opt every one of them
-   out of the scatter table above. These declarations sit at (0,3,0) against the
-   table's (0,2,0), so they win on specificity and the table needs no exception
-   written into it — snow keeps reading it untouched.
-
-   Scatter was tried here and looked wrong. Three or four drops are too few to
-   read as a crowd: staggered, they stop being rain falling and become three
-   separate objects each doing its own thing, and the icon loses the single
-   downward beat that says "rain" at 22px. Sixteen flakes are a crowd, which is
-   why snow keeps the scatter and this does not. Speed is the lever that carries
-   intensity here, not phase.
+   Each drop falls on its own, reading its phase and fall time from the scatter
+   table above like a snowflake does. (They used to opt out with lag 0 / dur 1
+   and fall as one row; staggered reads as rain actually falling.) Speed is
+   still what carries intensity: --wi-fall scales every drop's time together.
 
    The delay is negative so the row offset lands mid-cycle rather than holding
    the drops at their transparent 0% keyframe. --wi-row-delay pushes a whole
    forecast row out of step with its neighbours, so seven days of rain aren't
    one animation playing seven times; it composes into the same calc rather than
    taking its own line, because a flat animation-delay per row would win on
-   order and overwrite everything else here. The --wi-mote-lag term is retained
-   at zero rather than deleted: it costs nothing and putting the scatter back is
-   then a one-line change.
+   order and overwrite everything else here.
 
    animation-delay is repeated in both blocks and cannot be lifted into a shared
    lower-specificity rule: the `animation` shorthand here resets it to 0s, and
    the shorthand's rule is the more specific of the two. */
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon) :is(
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon) :is(
   .weather-icon--rain, .weather-icon--sunRain,
   .weather-icon--storm, .weather-icon--stormStrong
 ) .wi-mote {
   --wi-fall: 1.35s;
-  --wi-mote-lag: 0;
-  --wi-mote-dur: 1;
   animation: wi-drop calc(var(--wi-fall) * var(--wi-mote-dur, 1)) linear infinite;
   animation-delay: calc(0s - var(--wi-row-delay, 0s) - var(--wi-fall) * var(--wi-mote-lag, 0));
 }
+/* An SVG clips to its own box by default, and the drops' fall ends a little
+   past the bottom of it — with clipping on, each drop was sliced flat on that
+   edge mid-fade. Only where the icons animate: a still icon never leaves its box. */
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon) .weather-icon {
+  overflow: visible;
+}
+
 /* A storm is not just rain with a bolt over it — the rain itself is heavier, and
    the severe one heavier still, so the three icons read apart at a glance even
    where the bolt is a few pixels of art.
@@ -1544,25 +1643,25 @@ body {
    These two match that block's specificity exactly and win on source order, so
    they must stay below it. --storm does not match --stormStrong; they are
    separate class names, which is why the block above lists both. */
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon) .weather-icon--storm .wi-mote {
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon) .weather-icon--storm .wi-mote {
   --wi-fall: 0.78s;
 }
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon) .weather-icon--stormStrong .wi-mote {
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon) .weather-icon--stormStrong .wi-mote {
   --wi-fall: 0.5s;
 }
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon) .weather-icon--snow .wi-mote {
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon) .weather-icon--snow .wi-mote {
   --wi-fall: 3.2s;
   animation: wi-flake calc(var(--wi-fall) * var(--wi-mote-dur, 1)) linear infinite;
   animation-delay: calc(0s - var(--wi-row-delay, 0s) - var(--wi-fall) * var(--wi-mote-lag, 0));
 }
-.daily-row:nth-child(2n),   .web-day:nth-child(2n),   .web-week-day:nth-child(2n)   { --wi-row-delay: 0.62s; }
-.daily-row:nth-child(3n+1), .web-day:nth-child(3n+1), .web-week-day:nth-child(3n+1) { --wi-row-delay: 1.18s; }
+.daily-row:nth-child(2n),   .web-day:nth-child(2n),   .web-week-day:nth-child(2n),   .web-mini-hour:nth-child(2n)   { --wi-row-delay: 0.62s; }
+.daily-row:nth-child(3n+1), .web-day:nth-child(3n+1), .web-week-day:nth-child(3n+1), .web-mini-hour:nth-child(3n+1) { --wi-row-delay: 1.18s; }
 
 /* Cloud bodies breathe rather than sit dead still. Sub-pixel on purpose: at
    hero size it reads as drift, and it never competes with the precipitation.
    Listed per icon rather than applied to every .wi-part--body, because a
    thermometer and a snowflake also have a body and neither should drift. */
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon) :is(
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon) :is(
   .weather-icon--cloud, .weather-icon--rain, .weather-icon--snow,
   .weather-icon--storm, .weather-icon--stormStrong,
   .weather-icon--sunCloud, .weather-icon--sunSmall, .weather-icon--sunRain
@@ -1573,8 +1672,11 @@ body {
 
 /* transform-box keeps these in viewBox units, so the origins below are the
    coordinates the artwork is actually drawn in. */
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon) :is(
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon) :is(
   .weather-icon--sun .wi-part--rays,
+  .weather-icon--sunCloud .wi-part--rays,
+  .weather-icon--sunSmall .wi-part--rays,
+  .weather-icon--sunRain .wi-part--rays,
   .weather-icon--snowflake .wi-part--body,
   .weather-icon--snowflake .wi-part--ring
 ) {
@@ -1582,12 +1684,30 @@ body {
 }
 /* The sun's disc is centred at 15.53, 16.19 — not the middle of the viewBox.
    Spinning about 16,16 puts a visible wobble in the rays. */
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon) .weather-icon--sun .wi-part--rays {
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon) .weather-icon--sun .wi-part--rays {
   transform-origin: 15.53px 16.19px;
   animation: wi-spin 42s linear infinite;
 }
+/* The suns behind a cloud turn too, at the clear sun's pace so the set reads as
+   one family. Each is drawn smaller and somewhere else, so each origin is its
+   own disc's centre (the core circle in weatherGlyphs). Only the rays turn: the
+   core is a plain disc, and the cloud stays in front of all of it. */
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon) :is(
+  .weather-icon--sunCloud, .weather-icon--sunSmall, .weather-icon--sunRain
+) .wi-part--rays {
+  animation: wi-spin 42s linear infinite;
+}
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon) .weather-icon--sunCloud .wi-part--rays {
+  transform-origin: 12.14px 14.26px;
+}
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon) .weather-icon--sunSmall .wi-part--rays {
+  transform-origin: 14.38px 16.84px;
+}
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon) .weather-icon--sunRain .wi-part--rays {
+  transform-origin: 9.47px 9.76px;
+}
 /* The flake's own centre, not the viewBox centre — it sits slightly high. */
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon) :is(
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon) :is(
   .weather-icon--snowflake .wi-part--body,
   .weather-icon--snowflake .wi-part--ring
 ) {
@@ -1595,14 +1715,14 @@ body {
   animation: wi-spin 26s linear infinite;
 }
 
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon) .wi-part--bolt {
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon) .wi-part--bolt {
   animation: wi-flash 3.4s ease-in-out infinite;
   animation-delay: var(--wi-row-delay, 0s);
 }
 /* The second bolt carries a transform attribute for its offset, and a CSS
    transform would replace it. Only its opacity is animated, half a beat after
    the first, so the two strikes read as one storm rather than a blink. */
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon)
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon)
   .weather-icon--stormStrong .wi-part--bolt:last-of-type {
   animation-delay: calc(var(--wi-row-delay, 0s) + 0.12s);
 }
@@ -2871,6 +2991,123 @@ body {
   :root:not([data-theme="light"]) .splash-stars { display: block; }
 }
 
+/* The local-weather splash (see useLocalConditions): the sky for where the user
+   is replaces the stock day/night scenery. Placed after the dark-mode rules
+   above so it wins the tie with their :root:not() specificity. */
+.splash-sky {
+  position: absolute;
+  inset: 0;
+  /* A stacking context, so WeatherCanvas's own z-index 1 stays inside it and
+     its particles fall behind the wordmark and search field, not over them. */
+  z-index: 0;
+}
+.splash-bg--sky .splash-clouds,
+.splash-bg--sky .splash-stars { display: none; }
+
+/* Any sky can sit behind this text in either theme — a pale fog in light mode,
+   a rain sky that is dark in both — so it goes white with the same soft lift
+   the hero readouts use, rather than following the theme's text colour. */
+.splash-bg--sky :is(.splash-hint, .splash-version, .splash-home-hint, .splash-recents .section-label) {
+  color: #fff;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+}
+
+/* The headline is the one line read at display size, where a tight offset
+   shadow stops being a lift and becomes a soft second edge on every letter —
+   over falling rain it looked smudged. A wide, faint halo separates it from
+   the sky just as well and leaves the letterforms crisp. Greyscale smoothing
+   for the same reason: white-on-dark bleeds heavier than it is drawn. */
+.splash-bg--sky .splash-logo-text {
+  color: #fff;
+  text-shadow: 0 0 18px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.18);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* "Where this weather is": hung below the wordmark (and the phone hint) rather
+   than in the column, so adding it never re-centres the wordmark that the
+   splash icon is positioned from. */
+.splash-place {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  background: var(--hover-medium);
+  transition: opacity 0.15s ease;
+}
+.splash-logo--exit .splash-place { opacity: 0; }
+.splash-bg--sky .splash-place {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+/* Phone splash, once the weather is known: the line under the icon is the
+   headline ("Rain in 15 minutes"), which runs far longer than the wordmark the
+   display size was set for, so it steps down and may wrap onto a second line
+   rather than overflow a narrow screen. Two lines at this size stay inside the
+   ~2.25rem above-centre clearance the icon is anchored with (.splash-logo-img). */
+.splash-bg:not(.splash-bg--web):has(.splash-wordmark) .splash-logo:not(.splash-logo--exit) .splash-logo-text {
+  font-size: clamp(1.5rem, 6.5vw, 2rem);
+  /* A sentence, not a logo: semibold with the tracking eased off reads cleaner
+     than the wordmark's heavy, tight setting, and balance keeps a wrap from
+     leaving one short word alone on the second line. */
+  font-weight: 600;
+  letter-spacing: -0.3px;
+  line-height: 1.15;
+  white-space: normal;
+  text-wrap: balance;
+  text-align: center;
+  max-width: min(88vw, 420px);
+}
+
+/* The phone wordmark sits in the header row, centred between the saved-cities
+   and settings buttons — exactly where the header's own title fades in when a
+   city opens (.app-title, hidden while the splash is up), at that title's size,
+   so the handover reads as one title rather than two. Header row: 16px of top
+   padding plus a 40px button, so its centre is 36px below the safe area. */
+.splash-bg:not(.splash-bg--web) .splash-wordmark {
+  top: calc(var(--sa-top) + 36px);
+  bottom: auto;
+  transform: translate(-50%, -50%);
+  font-size: 18px;
+  letter-spacing: -0.3px;
+}
+/* The header row's top padding grows with the screen (see .app-header's tablet
+   and desktop tiers), so its centre does too. */
+@media (min-width: 768px) {
+  .splash-bg:not(.splash-bg--web) .splash-wordmark { top: calc(var(--sa-top) + 40px); }
+}
+@media (min-width: 1100px) {
+  .splash-bg:not(.splash-bg--web) .splash-wordmark { top: calc(var(--sa-top) + 44px); }
+}
+
+/* Both layouts: the wordmark steps aside as the splash leaves, so it is not
+   still on screen beside the header title fading in over it. */
+.splash-wordmark--exit {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+/* WeatherIcon draws at 1em, so the logo's width rule becomes a font-size here. */
+.splash-logo-icon {
+  display: block;
+  font-size: clamp(100px, 28vw, 180px);
+  line-height: 0;
+}
+
 @keyframes starTwinkle {
   0%, 100% { opacity: 0.15; transform: scale(1); }
   50%       { opacity: 1;    transform: scale(1.6); }
@@ -3072,6 +3309,11 @@ body {
   color: var(--text-primary);
 }
 
+.splash-mini-here {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
 /* The names are the one part that can outgrow a half-width card. */
 .splash-mini-name-text {
   overflow: hidden;
@@ -3159,8 +3401,34 @@ body {
   flex-shrink: 0;
 }
 
-.settings-btn:hover {
-  color: var(--text-primary);
+/* The cog holds its colour under the cursor. It answers a hover the way the
+   other header buttons do — with the plate behind it — and answers a press by
+   turning, which is a stronger signal than any recolour. */
+
+/* Pressing the cog turns it once, the whole way round, and the settings panel
+   opens as it lands. App.jsx holds the press for SETTINGS_OPEN_MS and passes the
+   same figure back in as --cog-spin-ms, so the turn and the wait cannot drift
+   apart the way two hand-copied durations eventually do.
+
+   Reuses the `spin` keyframe declared with the loading spinner further down: it
+   is a bare rotate(360deg), which is exactly this as well.
+
+   One iteration, no `infinite` — a cog that keeps going reads as a page that is
+   loading rather than a control that was pressed. The standard curve carries it
+   round as a single motion, winding up and settling on the tooth it started on
+   instead of stopping dead. */
+.settings-btn svg {
+  transform-origin: 50% 50%;
+}
+
+.settings-btn.is-opening svg {
+  animation: spin var(--cog-spin-ms, 360ms) cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Matched by openSettings, which drops the wait as well — otherwise the panel
+     would still be held back for a turn that never happens. */
+  .settings-btn.is-opening svg { animation: none; }
 }
 
 
@@ -4267,6 +4535,137 @@ body {
    "carry this" stays visually separate from "wear this". */
 .overview-detail-icon--accessory { color: var(--cond-blue); }
 
+/* ── Overview icon motion ──
+   The weather icons elsewhere move (see .wi-part); these line icons in the
+   Weather Overview card were the only still ones. Each gets a small motion of
+   its own, keyed by lucide's per-icon class and, inside an icon, by its path
+   order in lucide-react 1.20 (bolt is the 2nd path of cloud-lightning, the
+   drops the last of cloud-rain, …) — a lucide upgrade that redraws an icon may
+   need these re-pointed. Gentle and slow on purpose: they sit beside body text
+   and should read as alive, not as something demanding attention. */
+:is(.overview-item-icon, .overview-detail-icon) :is(path, circle) {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* Storm: the bolt flickers on a long beat, like a strike seen through cloud. */
+:is(.overview-item-icon, .overview-detail-icon).lucide-cloud-lightning path:nth-child(2) {
+  animation: ov-bolt 3.2s ease-in-out infinite;
+}
+@keyframes ov-bolt {
+  0%, 60%, 100% { opacity: 1; }
+  64%           { opacity: 0.15; }
+  68%           { opacity: 1; }
+  72%           { opacity: 0.3; }
+  76%           { opacity: 1; }
+}
+
+/* Rain: each streak falls and fades, staggered so it reads as a shower. */
+:is(.overview-item-icon, .overview-detail-icon).lucide-cloud-rain path:not(:first-child),
+:is(.overview-item-icon, .overview-detail-icon).lucide-cloud-sun-rain path:nth-child(n+7) {
+  animation: ov-drop 1.4s ease-in infinite;
+}
+:is(.overview-item-icon, .overview-detail-icon).lucide-cloud-rain path:nth-child(3),
+:is(.overview-item-icon, .overview-detail-icon).lucide-cloud-sun-rain path:nth-child(8) { animation-delay: -0.45s; }
+:is(.overview-item-icon, .overview-detail-icon).lucide-cloud-rain path:nth-child(4) { animation-delay: -0.9s; }
+@keyframes ov-drop {
+  0%   { transform: translateY(-1.5px); opacity: 0; }
+  30%  { opacity: 1; }
+  100% { transform: translateY(2px); opacity: 0; }
+}
+
+/* Snow: the flakes drift down slowly with a little sideways sway. */
+:is(.overview-item-icon, .overview-detail-icon).lucide-cloud-snow path:not(:first-child) {
+  animation: ov-flake 2.6s ease-in-out infinite;
+}
+:is(.overview-item-icon, .overview-detail-icon).lucide-cloud-snow path:nth-child(odd) { animation-delay: -1.3s; }
+@keyframes ov-flake {
+  0%   { transform: translate(0, -1px); opacity: 0.3; }
+  50%  { transform: translate(0.6px, 0.5px); opacity: 1; }
+  100% { transform: translate(0, 2px); opacity: 0.3; }
+}
+
+/* Sun behind cloud: the rays shimmer in turn. */
+:is(.overview-item-icon, .overview-detail-icon):is(.lucide-cloud-sun, .lucide-cloud-sun-rain) path:nth-child(-n+4) {
+  animation: ov-ray 2.4s ease-in-out infinite;
+}
+:is(.overview-item-icon, .overview-detail-icon):is(.lucide-cloud-sun, .lucide-cloud-sun-rain) path:nth-child(2) { animation-delay: -0.6s; }
+:is(.overview-item-icon, .overview-detail-icon):is(.lucide-cloud-sun, .lucide-cloud-sun-rain) path:nth-child(3) { animation-delay: -1.2s; }
+:is(.overview-item-icon, .overview-detail-icon):is(.lucide-cloud-sun, .lucide-cloud-sun-rain) path:nth-child(4) { animation-delay: -1.8s; }
+@keyframes ov-ray {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+/* Clear sky: the sun turns slowly; the moon rocks; a cloud drifts. */
+:is(.overview-item-icon, .overview-detail-icon).lucide-sun {
+  animation: ov-spin 14s linear infinite;
+}
+:is(.overview-item-icon, .overview-detail-icon).lucide-snowflake {
+  animation: ov-spin 10s linear infinite;
+}
+@keyframes ov-spin {
+  to { transform: rotate(360deg); }
+}
+:is(.overview-item-icon, .overview-detail-icon).lucide-moon {
+  animation: ov-rock 4s ease-in-out infinite;
+}
+@keyframes ov-rock {
+  0%, 100% { transform: rotate(-7deg); }
+  50%      { transform: rotate(7deg); }
+}
+:is(.overview-item-icon, .overview-detail-icon).lucide-cloud {
+  animation: ov-drift 4s ease-in-out infinite;
+}
+@keyframes ov-drift {
+  0%, 100% { transform: translateX(-1px); }
+  50%      { transform: translateX(1px); }
+}
+
+/* Fog and wind: the lines slide past each other. */
+:is(.overview-item-icon, .overview-detail-icon).lucide-cloud-fog path:not(:first-child),
+:is(.overview-item-icon, .overview-detail-icon).lucide-wind path {
+  animation: ov-slide 3s ease-in-out infinite;
+}
+:is(.overview-item-icon, .overview-detail-icon):is(.lucide-cloud-fog, .lucide-wind) path:nth-child(even) {
+  animation-direction: reverse;
+}
+@keyframes ov-slide {
+  0%, 100% { transform: translateX(-1.2px); }
+  50%      { transform: translateX(1.2px); }
+}
+
+/* Umbrella: the umbrella holds still and rain lands on it — each drop falls
+   its own --fall onto the canopy (see RainUmbrella) and is gone on contact.
+   The garments and boots on the clothing line stay still: they are advice
+   about what to wear, not weather, so there is nothing for them to act out. */
+.rain-umbrella .umbrella-drop {
+  animation: ov-umbrella-drop 1.5s ease-in infinite;
+}
+@keyframes ov-umbrella-drop {
+  0%   { transform: translateY(0); opacity: 0; }
+  20%  { opacity: 1; }
+  88%  { transform: translateY(var(--fall)); opacity: 1; }
+  100% { transform: translateY(var(--fall)); opacity: 0; }
+}
+
+/* Same two off switches as the weather icons: the Animated Icons setting and
+   the system's reduced-motion preference. */
+/* Stopped, the drops would hang frozen in the air above the canopy, so they
+   are hidden instead and what is left is a plain umbrella. */
+[data-icon-motion="off"] :is(.overview-item-icon, .overview-detail-icon),
+[data-icon-motion="off"] :is(.overview-item-icon, .overview-detail-icon) :is(path, circle) {
+  animation: none;
+}
+[data-icon-motion="off"] .rain-umbrella .umbrella-drop { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  :is(.overview-item-icon, .overview-detail-icon),
+  :is(.overview-item-icon, .overview-detail-icon) :is(path, circle) {
+    animation: none;
+  }
+  .rain-umbrella .umbrella-drop { display: none; }
+}
+
 .overview-item {
   display: flex;
   align-items: center;
@@ -5303,23 +5702,11 @@ body {
   --ios-glass-edge: 15%;
   --ios-glass-lift: calc(100% - 85% * var(--ios-glass-clarity));
   /* glass fills built from the theme's card/bg so they track light & dark */
-  --ios-glass-card: color-mix(in srgb, var(--card-bg) 52%, transparent);
   --ios-glass-track: color-mix(in srgb, var(--card-bg) 34%, transparent);
   --ios-glass-selected: color-mix(in srgb, var(--card-bg) 88%, transparent);
   --ios-glass-rim: rgba(255, 255, 255, 0.55);
   --ios-glass-highlight: rgba(255, 255, 255, 0.75);
   --ios-glass-shadow: rgba(0, 0, 0, 0.12);
-  /* Peak opacity of the diagonal specular sheen on nested glass tiles. Kept
-     restrained: a stronger sheen read as over-glossy and buried the content. */
-  --ios-glass-sheen: rgba(255, 255, 255, 0.08);
-  /* Convex "lens" shading for tiles over an active sky: a faint dome highlight
-     bleeding down from above the top edge plus a cool shade pooling at the
-     bottom, so each tile reads as gently bulged glass instead of a flat cutout.
-     The dome is deliberately soft — a brighter one turned the tiles glossy.
-     Held in one var so the tile and its hover state share the exact stack. */
-  --ios-tile-bulge:
-    radial-gradient(130% 95% at 50% -25%, rgba(255, 255, 255, 0.13) 0%, rgba(255, 255, 255, 0.03) 55%, transparent 72%),
-    linear-gradient(180deg, transparent 58%, rgba(8, 30, 60, 0.09) 100%);
 }
 
 [data-theme="dark"][data-platform="ios"] {
@@ -5328,10 +5715,6 @@ body {
   --ios-glass-rim: rgba(255, 255, 255, 0.14);
   --ios-glass-highlight: rgba(255, 255, 255, 0.12);
   --ios-glass-shadow: rgba(0, 0, 0, 0.4);
-  --ios-glass-sheen: rgba(255, 255, 255, 0.035);
-  --ios-tile-bulge:
-    radial-gradient(130% 95% at 50% -25%, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.015) 55%, transparent 72%),
-    linear-gradient(180deg, transparent 58%, rgba(0, 0, 0, 0.25) 100%);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -5341,10 +5724,6 @@ body {
     --ios-glass-rim: rgba(255, 255, 255, 0.14);
     --ios-glass-highlight: rgba(255, 255, 255, 0.12);
     --ios-glass-shadow: rgba(0, 0, 0, 0.4);
-    --ios-glass-sheen: rgba(255, 255, 255, 0.035);
-    --ios-tile-bulge:
-      radial-gradient(130% 95% at 50% -25%, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.015) 55%, transparent 72%),
-      linear-gradient(180deg, transparent 58%, rgba(0, 0, 0, 0.25) 100%);
   }
 }
 
@@ -5364,16 +5743,22 @@ body {
   background: var(--bg);
 }
 
+/* Card Transparency thins the page as well as the cards on it: with the page
+   held at 78% the cards could only ever show page through them, so the slider
+   did nothing here. It bottoms out at 40%, where the group labels still read
+   over a bright sky. */
 [data-platform="ios"] .settings-sky + .settings-page {
-  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  background: color-mix(in srgb, var(--bg) calc(78% - 38% * var(--ios-glass-clarity)), transparent);
 }
 
 /* Frosted glass cards: translucent fill, backdrop blur, a specular highlight
-   along the top edge, a thin rim, and a soft float shadow. */
+   along the top edge, a thin rim, and a soft float shadow. Fill and blur follow
+   Card Transparency the same way the forecast cards do (--ios-glass-scale and
+   --ios-glass-blur), so the two read as one material at any setting. */
 [data-platform="ios"] :is(.settings-page, .settings-inline, .settings-pill) .settings-card {
-  background: var(--ios-glass-card);
-  -webkit-backdrop-filter: blur(24px) saturate(180%);
-  backdrop-filter: blur(24px) saturate(180%);
+  background: color-mix(in srgb, var(--card-bg) calc(52% * var(--ios-glass-scale)), transparent);
+  -webkit-backdrop-filter: blur(var(--ios-glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--ios-glass-blur)) saturate(180%);
   border-radius: 20px;
   border: 0.5px solid var(--ios-glass-rim);
   box-shadow: 0 6px 22px var(--ios-glass-shadow), inset 0 1px 0 var(--ios-glass-highlight);
@@ -5645,9 +6030,31 @@ body {
    of the day card still showing outside the growing circle, for the ~260ms of
    visible sweep; behind the radar is the flat .radar-sky gradient, which blurs
    to very nearly itself, so there it is invisible. */
-:root[data-platform="ios"] .app .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline):has(.detail-cover) {
+/* Only until the circle lands (--settled, from markCoverSettled): once the
+   cover holds still there is nothing moving in front of the blur, and a cover
+   left sitting on an unblurred card is what made an opened tile read as the
+   card going solid. */
+:root[data-platform="ios"] .app .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline):has(> .detail-cover:not(.detail-cover--settled)) {
   -webkit-backdrop-filter: saturate(180%);
   backdrop-filter: saturate(180%);
+}
+
+/* The cover is the card's own glass, not a lid over it. A solid --card-bg
+   fill turned every opened tile into an opaque sheet whatever Card
+   Transparency said. Instead the circle is a faint wash — enough to see it
+   sweep — over the card's translucent fill, and what it would otherwise have
+   had to hide (the tiles or day rows underneath) fades out under it, which is
+   why the fill no longer needs to be opaque. Opacity on those children
+   composites, so the reveal keeps the same per-frame cost. */
+:root[data-platform="ios"] .app .detail-cover-fill {
+  background: color-mix(in srgb, var(--ios-tile-tint) var(--ios-tile-alpha), transparent);
+}
+:root[data-platform="ios"] .app :is(.card--details, .card--daily) > :not(.detail-cover) {
+  transition: opacity calc(var(--reveal-dur) * 0.6) ease;
+}
+:root[data-platform="ios"] .app :is(.card--details, .card--daily):has(> .detail-cover:not(.detail-cover--closing)) > :not(.detail-cover) {
+  opacity: 0;
+  pointer-events: none;
 }
 
 :root[data-card-glass="on"][data-shell="mobile"][data-platform="android"] .app .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):has(.detail-cover) {
@@ -5705,65 +6112,50 @@ body {
   box-shadow: none;
 }
 
-/* Nested tier: detail tiles and in-card controls get a translucent deep fill
-   with no blur of their own; the parent card already blurs the backdrop, so
-   another blur pass would only cost scroll performance. */
-:root[data-platform="ios"] .app .detail-card {
-  /* Gloss comes from paint-once gradients, never another backdrop-filter:
-     a diagonal specular sheen sweeping from the top-left corner over the
-     translucent fill, a bright inner top edge, and a faint lift shadow.
-     Gradients are rasterized once and cached, so unlike blur they add no
-     per-frame cost. */
-  background:
-    linear-gradient(155deg, var(--ios-glass-sheen) 0%, transparent 45%),
-    color-mix(in srgb, var(--glass-deep) calc(48% * var(--ios-glass-scale)), transparent);
-  border: 0.5px solid color-mix(in srgb, var(--ios-glass-rim) var(--ios-glass-edge), transparent);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--ios-glass-highlight) var(--ios-glass-edge), transparent),
-    0 2px 8px color-mix(in srgb, var(--ios-glass-shadow) var(--ios-glass-lift), transparent);
+/* Nested tier: detail tiles sit one step *above* their card, the way grouped
+   cells and widgets do on iOS — a faint lift of the card's own tone, flat, with
+   a hairline edge and nothing underneath. They used to be the opposite: a
+   darker --glass-deep well with a drop shadow, plus a dome and a dark bottom
+   band over a sky. On a solid card that read as six holes punched in it; with
+   the card cleared away, the shading turned to smudge.
+   The fill thickens as Card Transparency clears the card (--ios-glass-clarity
+   0 → 1), so with the card gone the tiles still carry the grouping on their
+   own. No blur of their own: the parent card already blurs the backdrop, so
+   another pass would only cost scroll performance. */
+:root[data-platform="ios"] .app {
+  --ios-tile-tint: rgb(118, 118, 128);
+  --ios-tile-alpha: calc(9% + 7% * var(--ios-glass-clarity));
+}
+/* White on dark surfaces — dark mode, and every sky, whose cards are dark
+   whatever the theme. Grey over a blue sky would only desaturate it. */
+:root[data-platform="ios"][data-theme="dark"] .app,
+:root[data-platform="ios"] .app.sky-active {
+  --ios-tile-tint: #fff;
+  --ios-tile-alpha: calc(6% + 6% * var(--ios-glass-clarity));
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-platform="ios"]:not([data-theme="light"]) .app {
+    --ios-tile-tint: #fff;
+    --ios-tile-alpha: calc(6% + 6% * var(--ios-glass-clarity));
+  }
 }
 
-/* Hover feedback (lost to the higher-specificity rule above): the same glass
-   stack with a hover wash layered on top. */
+:root[data-platform="ios"] .app .detail-card {
+  background: color-mix(in srgb, var(--ios-tile-tint) var(--ios-tile-alpha), transparent);
+  border: 0.5px solid color-mix(in srgb, var(--ios-tile-tint) calc(var(--ios-tile-alpha) * 0.9), transparent);
+  box-shadow: none;
+}
+
+/* Hover feedback (lost to the higher-specificity rule above): the same fill
+   with the hover wash layered on top. */
 :root[data-platform="ios"] .app .detail-card.detail-expand-tile:hover:not(.detail-expand-tile--active) {
   background:
     linear-gradient(var(--hover-medium), var(--hover-medium)),
-    linear-gradient(155deg, var(--ios-glass-sheen) 0%, transparent 45%),
-    color-mix(in srgb, var(--glass-deep) calc(48% * var(--ios-glass-scale)), transparent);
+    color-mix(in srgb, var(--ios-tile-tint) var(--ios-tile-alpha), transparent);
 }
 
-/* Over an active sky the flat sheen washes out and every tile reads
-   identically, so swap it for the convex lens stack: dome highlight on top,
-   shade pooling below, a pinched inner bottom edge, and a slightly deeper
-   drop shadow lifting the tile off the card. All paint-once gradients and
-   inset shadows; nothing here re-renders per frame. */
-:root[data-platform="ios"] .app.sky-active .detail-card {
-  /* 34%, thinner than the flat-background 48%: the deep tint layered over its
-     own shading read too dark against the sky; thinner glass lets the brighter
-     backdrop light the tile. */
-  background:
-    var(--ios-tile-bulge),
-    color-mix(in srgb, var(--glass-deep) calc(34% * var(--ios-glass-scale)), transparent);
-  /* Half-strength rim: a bright uniform outline flattens the tile into a
-     sticker and drowns the dome shading; dimming it lets the inset top
-     highlight carry the curvature (bright top edge, soft sides). */
-  border-color: color-mix(in srgb, var(--ios-glass-rim) calc(var(--ios-glass-edge) * 0.5), transparent);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--ios-glass-highlight) var(--ios-glass-edge), transparent),
-    inset 0 -1.5px 2px color-mix(in srgb, rgba(0, 0, 0, 0.14) var(--ios-glass-lift), transparent),
-    0 3px 10px color-mix(in srgb, var(--ios-glass-shadow) var(--ios-glass-lift), transparent);
-}
-
-:root[data-platform="ios"] .app.sky-active .detail-card.detail-expand-tile:hover:not(.detail-expand-tile--active) {
-  background:
-    linear-gradient(var(--hover-medium), var(--hover-medium)),
-    var(--ios-tile-bulge),
-    color-mix(in srgb, var(--glass-deep) calc(34% * var(--ios-glass-scale)), transparent);
-}
-
-/* Keep the accent highlight on the expanded tile; the glass fills would
-   otherwise outrank it. .detail-expand-tile is included so this also beats
-   the equal-specificity sky-active bulge rule further down. */
+/* Keep the accent highlight on the expanded tile; the tile fill above would
+   otherwise outrank it. */
 :root[data-platform="ios"] .app .detail-card.detail-expand-tile.detail-expand-tile--active {
   background: var(--accent-light);
 }
@@ -5833,20 +6225,22 @@ body {
   box-shadow: 0 0 2px rgba(0, 0, 0, 0.45);
 }
 
-/* Invert map tiles in dark mode — Positron's gray palette inverts cleanly to a dark map */
+/* Dark mode switches the basemap to OpenFreeMap's dark style. A flag, not a
+   filter: utils/basemap reads --map-scheme off .map-base-tiles and restyles the
+   map, so the dark map is drawn dark rather than inverted from the light one. */
 [data-theme="dark"] .map-base-tiles {
-  filter: invert(1) hue-rotate(180deg);
+  --map-scheme: dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .map-base-tiles {
-    filter: invert(1) hue-rotate(180deg);
+    --map-scheme: dark;
   }
 }
 
 /* In light mode the sky theming can still darken the whole UI (night, storm,
    rain). Match the map to the active sky level: night-like themes get the same
-   dark invert as dark mode, mid-tone day themes (overcast, fog, snow) get a
+   dark style as dark mode, mid-tone day themes (overcast, fog, snow) get a
    subtle dim so the tiles blend with the slate cards instead of glowing white.
    Clear day keeps the untouched light map. */
 [data-theme="light"] .sky-lvl-slight .map-base-tiles,
@@ -5855,7 +6249,7 @@ body {
 }
 [data-theme="light"] .sky-lvl-dark .map-base-tiles,
 [data-theme="light"] .sky-lvl-darkest .map-base-tiles {
-  filter: invert(1) hue-rotate(180deg);
+  --map-scheme: dark;
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]) .sky-lvl-slight .map-base-tiles,
@@ -5864,7 +6258,7 @@ body {
   }
   :root:not([data-theme="dark"]) .sky-lvl-dark .map-base-tiles,
   :root:not([data-theme="dark"]) .sky-lvl-darkest .map-base-tiles {
-    filter: invert(1) hue-rotate(180deg);
+    --map-scheme: dark;
   }
 }
 
@@ -7085,6 +7479,10 @@ body {
   --icon-circle-press: var(--hover-clear);
   --icon-circle-ring: color-mix(in srgb, var(--text-primary) 9%, transparent);
   --icon-circle-shadow: 0 1px 2px rgba(0, 0, 0, 0.10), 0 2px 6px rgba(0, 0, 0, 0.05);
+  /* Held down, the button stops casting and starts catching: the drop shadow is
+     replaced by an inset one, so the dish reads as pressed into the surface
+     rather than as a raised button that merely got smaller. */
+  --icon-circle-shadow-press: inset 0 2px 4px rgba(0, 0, 0, 0.16);
 }
 
 :root[data-shell="mobile"] .app.sky-active {
@@ -7093,6 +7491,85 @@ body {
   --icon-circle-ring: rgba(255, 255, 255, 0.30);
   --icon-circle-shadow: 0 1px 2px rgba(0, 0, 0, 0.16), 0 3px 10px rgba(0, 0, 0, 0.10),
                         inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  /* Deeper over a sky, and the top highlight goes with it — a lit rim is what
+     says "raised", so it cannot survive the press that says "pushed in". */
+  --icon-circle-shadow-press: inset 0 2px 6px rgba(0, 0, 0, 0.26);
+}
+
+/* Splash with a weather sky behind it (data-splash-sky, set from App): the two
+   header circles take the location cards' own surface, so the top and bottom of
+   the poster are one family. Without this, light mode left them as faint grey
+   discs with grey icons — next to invisible over a night or storm sky. The
+   values mirror .splash-mini's per theme, and Android's Material container. */
+/* Not Android: its circles are Material containers on every screen (the
+   Android rule below), and these are more specific than that one, so left
+   unscoped they would win on the home screen and put the glass back there. */
+:root[data-splash-sky][data-shell="mobile"]:not([data-platform="android"]) .app {
+  --icon-circle-bg: rgba(255, 255, 255, 0.55);
+  --icon-circle-press: rgba(255, 255, 255, 0.75);
+  --icon-circle-ring: rgba(255, 255, 255, 0.6);
+}
+:root[data-theme="dark"][data-splash-sky][data-shell="mobile"]:not([data-platform="android"]) .app {
+  --icon-circle-bg: rgba(255, 255, 255, 0.08);
+  --icon-circle-press: rgba(255, 255, 255, 0.16);
+  --icon-circle-ring: rgba(255, 255, 255, 0.12);
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-splash-sky][data-shell="mobile"]:not([data-theme="light"]):not([data-platform="android"]) .app {
+    --icon-circle-bg: rgba(255, 255, 255, 0.08);
+    --icon-circle-press: rgba(255, 255, 255, 0.16);
+    --icon-circle-ring: rgba(255, 255, 255, 0.12);
+  }
+}
+/* Android: the circles are Material containers everywhere — the home screen
+   and the forecast alike — rather than switching to the white glass the iOS
+   style puts over a sky (.app.sky-active above). The same tonal fill as the
+   cards, no outline, Material icon colours, so the header and the hero's home
+   and save buttons look the same on the weather page as they do on the home
+   screen. After the theme and sky rules so it wins over both (same
+   specificity as .app.sky-active, later); the Material tokens flip with the
+   scheme on their own, exactly as the cards' fill does. The desktop-width
+   current card resets its own circles (the min-width: 1100px block above), so
+   it is named here as well. */
+:root[data-shell="mobile"][data-platform="android"] .app,
+:root[data-shell="mobile"][data-platform="android"] .app .current-card {
+  --icon-circle-bg: color-mix(in srgb, var(--md-surface-container) var(--md-card-alpha), transparent);
+  --icon-circle-press: var(--md-surface-container-high);
+  --icon-circle-ring: transparent;
+  --icon-circle-shadow: 0 1px 2px rgba(0, 0, 0, 0.10), 0 2px 6px rgba(0, 0, 0, 0.05);
+  --icon-circle-shadow-press: inset 0 2px 4px rgba(0, 0, 0, 0.16);
+}
+:root[data-shell="mobile"][data-platform="android"] .app :is(.app-header .header-icon-btn, .app-header .settings-btn, .current-card .fav-btn, .current-card .save-btn) {
+  color: var(--md-on-surface-variant);
+}
+/* The on states keep reading as on: Material's primary rather than the white
+   they take over a sky. */
+:root[data-shell="mobile"][data-platform="android"] .app .current-card :is(.fav-btn.active, .save-btn.saved) {
+  color: var(--md-primary);
+}
+
+/* A light-mode surface over a dark sky (night, rain, storm) glares — the
+   cards and buttons are the brightest things on the screen by a long way. Take
+   them down a step. Dark mode's surfaces are already dim, so it is left alone. */
+:root[data-splash-sky="dark"]:not([data-theme="dark"]) :is(
+  .splash-mini-card,
+  .splash-home .splash-city,
+  .splash-home .splash-search,
+  .app .app-header .header-icon-btn,
+  .app .app-header .settings-btn
+) {
+  filter: brightness(0.8);
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-splash-sky="dark"]:not([data-theme="light"]) :is(
+    .splash-mini-card,
+    .splash-home .splash-city,
+    .splash-home .splash-search,
+    .app .app-header .header-icon-btn,
+    .app .app-header .settings-btn
+  ) {
+    filter: none;
+  }
 }
 
 /* At desktop widths the mobile shell's current card becomes an opaque card
@@ -7104,6 +7581,7 @@ body {
     --icon-circle-press: var(--hover-clear);
     --icon-circle-ring: color-mix(in srgb, var(--text-primary) 9%, transparent);
     --icon-circle-shadow: 0 1px 2px rgba(0, 0, 0, 0.10), 0 2px 6px rgba(0, 0, 0, 0.05);
+    --icon-circle-shadow-press: inset 0 2px 4px rgba(0, 0, 0, 0.16);
   }
 }
 
@@ -7162,44 +7640,90 @@ body {
   -webkit-backdrop-filter: blur(12px) saturate(1.3);
   backdrop-filter: blur(12px) saturate(1.3);
   transition: color 0.15s, background 0.15s, border-color 0.15s,
-              box-shadow 0.24s ease,
-              border-radius 0.24s ease,
-              transform 0.34s cubic-bezier(0.34, 1.4, 0.64, 1);
+              box-shadow 0.28s ease,
+              transform 0.4s cubic-bezier(0.34, 1.5, 0.64, 1);
 }
 
 :root[data-shell="mobile"] .app .app-header :is(.header-icon-btn, .settings-btn):active,
 :root[data-shell="mobile"] .app .current-card :is(.fav-btn, .save-btn):active {
-  transform: scale(0.88);
-  box-shadow: none;
-  transition: background 0.08s, box-shadow 0.08s ease,
-              border-radius 0.12s ease,
-              transform 0.08s cubic-bezier(0.4, 0, 0.6, 1);
+  transform: scale(0.86);
+  box-shadow: var(--icon-circle-shadow-press);
+  transition: background 0.06s, box-shadow 0.06s ease,
+              transform 0.06s cubic-bezier(0.4, 0, 0.6, 1);
 }
 
-/* Android presses it into a squircle as well as down: M3 Expressive answers a
-   touch by morphing an icon button's shape, and the dip is shallower there to
-   leave room for it. Same gesture, told in the other design language. */
-:root[data-shell="mobile"][data-platform="android"] .app .app-header :is(.header-icon-btn, .settings-btn):active,
-:root[data-shell="mobile"][data-platform="android"] .app .current-card :is(.fav-btn, .save-btn):active {
-  border-radius: 32%;
-  transform: scale(0.92);
-}
+/* The circle stays a circle all the way down.
+   Android used to morph it into a squircle on press — M3 Expressive answers a
+   touch by changing an icon button's shape — and had to take a shallower dip to
+   leave room for that. But a round target that turns square under the thumb
+   reads as two controls swapped rather than one pushed, and it was the shape
+   change, not the depth, that was carrying the press. Dropping it lets every
+   platform share the deeper dip, which is the part that actually feels like
+   contact. */
 
-/* The gear turns a few degrees as it is pushed — the one icon in the header
-   whose whole subject is a thing that turns. */
-:root[data-shell="mobile"] .app .app-header .settings-btn > svg {
-  transition: transform 0.34s cubic-bezier(0.34, 1.4, 0.64, 1);
-}
+/* The gear used to turn 35 degrees while held and spring back on release. It now
+   turns the whole way round instead, on release, timed to the settings panel —
+   see .settings-btn.is-opening. The two cannot both drive this transform: the
+   press leaves the gear at 35deg, the open animation starts its keyframes at 0,
+   and the gear kicks backwards a couple of frames before it sets off. One
+   rotation, owned by one rule.
 
-:root[data-shell="mobile"] .app .app-header .settings-btn:active > svg {
-  transform: rotate(35deg);
-  transition: transform 0.12s ease-out;
-}
+   The button itself still answers the press — it tints, dips and springs back
+   with every other icon button. What is gone is only the gear's own partial
+   turn, which the full one supersedes. */
 
 @media (prefers-reduced-motion: reduce) {
   :root[data-shell="mobile"] .app .app-header :is(.header-icon-btn, .settings-btn):active,
-  :root[data-shell="mobile"] .app .current-card :is(.fav-btn, .save-btn):active,
-  :root[data-shell="mobile"] .app .app-header .settings-btn:active > svg {
+  :root[data-shell="mobile"] .app .current-card :is(.fav-btn, .save-btn):active {
     transform: none;
   }
+}
+
+/* ── iOS search: the same glass as the cards ──
+   The search panel, its pill and the results list were solid surfaces, so
+   opening search dropped a slab over the page whatever Card Transparency said.
+   Last in the file on purpose: the per-sky and dark-mode search fills above go
+   up to five components, and these have to land over all of them.
+
+   The panel is the forecast cards' glass, fill and blur both following the
+   slider. The pill inside it is a tile, like the detail tiles: a faint lift of
+   the panel rather than a second slab. */
+/* The glass is painted by a pseudo-element behind the content rather than by
+   the panel itself. An element with a backdrop-filter becomes the backdrop
+   root for everything inside it, and the results list lives inside the panel —
+   so its own blur saw only the empty panel and the forecast text came through
+   it sharp. On a ::before, the panel's glass is a sibling of the list instead
+   of its ancestor, and both blur the real page. */
+:root[data-platform="ios"] .app .search-overlay {
+  background: transparent;
+}
+:root[data-platform="ios"] .app .search-overlay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--glass-base) calc(52% * var(--ios-glass-scale)), transparent);
+  -webkit-backdrop-filter: blur(var(--ios-glass-blur)) saturate(180%);
+  backdrop-filter: blur(var(--ios-glass-blur)) saturate(180%);
+  border-bottom: 0.5px solid color-mix(in srgb, var(--ios-glass-rim) var(--ios-glass-edge), transparent);
+}
+:root[data-platform="ios"] .app .search-overlay .search-bar {
+  background: color-mix(in srgb, var(--ios-tile-tint) var(--ios-tile-alpha), transparent);
+  border-color: transparent;
+}
+:root[data-platform="ios"] .app .search-overlay .search-bar.focused {
+  border-color: var(--accent);
+}
+
+/* The results list floats over the forecast — over text, not sky — so it
+   can't thin the way a card does: a 2px blur under 10% fill would leave the
+   city names sitting on the numbers behind them. It keeps a full 24px frost at
+   every setting and only lets the tint go, from 85% down to 45%, so the page
+   colour shows through without its detail. */
+:root[data-platform="ios"] .app .search-dropdown {
+  background: color-mix(in srgb, var(--glass-base) calc(45% + 40% * (1 - var(--ios-glass-clarity))), transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  border: 0.5px solid color-mix(in srgb, var(--ios-glass-rim) var(--ios-glass-edge), transparent);
 }

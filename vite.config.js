@@ -22,14 +22,16 @@ const CSP = [
   // Its absence from this list is why MRMS never drew in a production build: the
   // tiles were blocked, the sweep query was blocked, and the map fell back to
   // RainViewer every time without anything appearing to fail.
-  // services.arcgisonline.com serves the Esri Light Gray basemap (see utils/basemap).
-  "img-src 'self' data: blob: https://tilecache.rainviewer.com https://services.arcgisonline.com https://mapservices.weather.noaa.gov https://cdn.jsdelivr.net https://mesonet.agron.iastate.edu",
+  "img-src 'self' data: blob: https://tilecache.rainviewer.com https://mapservices.weather.noaa.gov https://cdn.jsdelivr.net https://mesonet.agron.iastate.edu",
   // api-bdc.io is BigDataCloud's canonical reverse-geocode host; api.bigdatacloud.net
   // 307-redirects to it, so both are allowed (the redirect target must be permitted too).
   // mesonet.agron.iastate.edu also provides the HRRR run metadata JSON (fetch).
   // mapservices.weather.noaa.gov is fetched twice over: the radar timeline lists
   // sweeps with /query, and useRadarPrecip samples one pixel with /identify.
-  "connect-src 'self' https://api.open-meteo.com https://geocoding-api.open-meteo.com https://air-quality-api.open-meteo.com https://api.weather.gov https://api.rainviewer.com https://api.bigdatacloud.net https://api-bdc.io https://mesonet.agron.iastate.edu https://mapservices.weather.noaa.gov",
+  // tiles.openfreemap.org is the basemap (see utils/basemap). MapLibre fetches
+  // everything — style, vector tiles, fonts, sprite — so it is connect-src only.
+  "connect-src 'self' https://api.open-meteo.com https://geocoding-api.open-meteo.com https://air-quality-api.open-meteo.com https://api.weather.gov https://api.rainviewer.com https://api.bigdatacloud.net https://api-bdc.io https://mesonet.agron.iastate.edu https://mapservices.weather.noaa.gov https://tiles.openfreemap.org",
+  // MapLibre's tile worker is bundled as a same-origin asset, so 'self' covers it.
   "worker-src 'self'",
   "manifest-src 'self'",
   "object-src 'none'",
@@ -110,7 +112,7 @@ export default defineConfig({
             },
           },
           {
-            urlPattern: /^https:\/\/services\.arcgisonline\.com\/.*/i,
+            urlPattern: /^https:\/\/tiles\.openfreemap\.org\/.*/i,
             handler: 'CacheFirst',
             options: {
               cacheName: 'map-tiles',

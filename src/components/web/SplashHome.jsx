@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { House, X } from 'lucide-react'
+import { House, Navigation, X } from 'lucide-react'
 import { SearchBar } from '../SearchBar'
 import { WeatherIcon } from '../WeatherIcon'
 import { useCityConditions, conditionKey } from '../../hooks/useCityConditions'
@@ -58,7 +58,7 @@ export function SplashHome({
   }
 
   return (
-    <div className={`splash-home${exiting ? ' splash-home--exit' : ''}${busy ? ' splash-home--busy' : ''}`}>
+    <div className={`splash-home${exiting ? ' splash-home--exit' : ''}${busy ? ' splash-home--busy' : ''}${cities.length === 0 ? ' splash-home--empty' : ''}`}>
       <div className="splash-search">
         <SearchBar
           key={seed?.n ?? 0}
@@ -84,7 +84,7 @@ export function SplashHome({
             {cities.map((city, i) => {
               const key = conditionKey(city)
               const cond = conditions[key]
-              const info = cond ? getWeatherInfo(cond.code, !cond.isDay) : null
+              const info = cond ? getWeatherInfo(cond.code, !cond.isDay, cond.severe) : null
               const home = isHome?.(city)
               const opening = busy && pending === key
               return (
@@ -93,6 +93,11 @@ export function SplashHome({
                     <span className="splash-city-name">
                       {home && <House size={14} className="splash-city-home" aria-label="Home" />}
                       {city.name}
+                      {/* The most recent place is the one the splash's sky,
+                          icon and headline are showing (see useLocalConditions). */}
+                      {usingRecents && i === 0 && (
+                        <Navigation size={14} className="splash-city-here" aria-label="Showing this weather" />
+                      )}
                     </span>
                     {/* Cities stored from a search keep the country code on
                         `country`, not `country_code` — fall back to it. */}

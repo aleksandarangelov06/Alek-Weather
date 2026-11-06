@@ -160,6 +160,18 @@
   background-attachment: fixed !important;
 }
 
+/* The weather effects the sky strip above covers up, copied back in on top of it
+   by WeatherCanvas (see mirrorToHeader). Same box and layer as .header-sky, and
+   later in the DOM, so it paints over the sky and under the tab bar. */
+.header-fx {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  pointer-events: none;
+}
+
 .sky-active .app-header--tabs::before {
   background: none;
   box-shadow: none;
@@ -230,6 +242,10 @@
    right without shifting it, so switching tabs doesn't make the navigation
    jump as the pill appears and disappears. */
 .web-tabs-row {
+  /* Centred on the window, not the page: --scrollbar-half (set by App) undoes
+     the half-scrollbar the page's centre is offset by whenever it scrolls, so
+     the bar holds still between the splash, which doesn't, and the forecast. */
+  translate: var(--scrollbar-half, 0px) 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -343,6 +359,13 @@
   color: var(--accent);
 }
 
+/* Home sits in the bar but isn't a page, so it never takes the pill. */
+.web-tab--home {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
 .web-tab:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -366,17 +389,22 @@
 
 /* On a tinted sky the accent blue washes out against the blue card, so the
    active pill and its label go white-on-white-wash instead. */
+/* The splash's own sky (data-splash-sky) counts too: the bar stays up across
+   the handoff, and a pill that turned from blue to white as the forecast
+   arrived would undo the point of keeping it. */
 .sky-lvl-slight .web-tab--active,
 .sky-lvl-medium .web-tab--active,
 .sky-lvl-dark .web-tab--active,
-.sky-lvl-darkest .web-tab--active {
+.sky-lvl-darkest .web-tab--active,
+:root[data-splash-sky] .app--web-splash .web-tab--active {
   color: #fff;
 }
 
 .sky-lvl-slight .web-tab-pill,
 .sky-lvl-medium .web-tab-pill,
 .sky-lvl-dark .web-tab-pill,
-.sky-lvl-darkest .web-tab-pill {
+.sky-lvl-darkest .web-tab-pill,
+:root[data-splash-sky] .app--web-splash .web-tab-pill {
   background: rgba(255, 255, 255, 0.2);
 }
 
@@ -438,20 +466,85 @@
 
 /* ── Page frame ──────────────────────────────────────────────────────────── */
 
+/* A page comes in as its cards rather than as one slab: the page fades up
+   quickly, and each card rises into place a beat after the one before it, so
+   the eye follows the layout filling in instead of watching a block jump.
+
+   The page's own animation runs the full length of the card cascade (it is
+   flat after 40%), because its animationend is what WebLayout waits on to let
+   the weather icons move again — ending it with the first cards would restart
+   twenty-odd SVG animations under cards that are still fading, which is the
+   repaint stutter that hold exists to avoid. Opacity and transform only, so
+   every card is composited and none of it costs layout or paint. */
 .web-page {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  animation: web-page-in 0.28s ease both;
+  animation: web-page-in 0.52s ease both;
 }
 
 @keyframes web-page-in {
-  from { opacity: 0; transform: translateY(8px); }
+  0%        { opacity: 0; transform: translateY(6px); }
+  40%, 100% { opacity: 1; transform: none; }
+}
+
+/* Keep the scrollbar's lane reserved whether or not the page scrolls. The
+   splash doesn't scroll and the forecast does, so without this the page lost a
+   scrollbar's width the moment the splash left — after the forecast had been
+   laid out and revealed at the wider size — and everything reflowed in view:
+   "College Park, Maryland" sat on one line through the reveal, then wrapped. A
+   reserved gutter makes both the same width. The tab bar's centring
+   (--scrollbar-half, set in App) still holds: it measures the gutter, which is
+   now just constant. */
+:root[data-shell="desktop"] {
+  scrollbar-gutter: stable;
+}
+
+/* Top-level cards only: a card nested in another rides in with its parent. */
+.web-page .card:not(.card .card) {
+  animation: web-card-in 0.38s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: var(--web-card-delay, 0ms);
+}
+
+@keyframes web-card-in {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Positional by layout slot — the page's rows and the cells of its grids and
+   columns — which reads as the layout filling in left to right and top to
+   bottom. Set on the slot and inherited, because a card is often not the slot
+   itself: on Today each one sits in a .web-widget behind its drag handle, where
+   counting the card would make every one of them "second". Capped so a long
+   page's last cards aren't left waiting: past the fifth they share the last
+   step. */
+:is(.web-page, .web-today-grid, .web-cols, .web-col-stack, .web-detail-grid) > :nth-child(2) { --web-card-delay: 35ms; }
+:is(.web-page, .web-today-grid, .web-cols, .web-col-stack, .web-detail-grid) > :nth-child(3) { --web-card-delay: 70ms; }
+:is(.web-page, .web-today-grid, .web-cols, .web-col-stack, .web-detail-grid) > :nth-child(4) { --web-card-delay: 105ms; }
+:is(.web-page, .web-today-grid, .web-cols, .web-col-stack, .web-detail-grid) > :nth-child(n + 5) { --web-card-delay: 140ms; }
+
+/* Coming in from the splash. The forecast has already been built (and its
+   entrance played) under the splash by the time the splash leaves, so the
+   cascade is replayed for the reveal: a different animation name is what makes
+   the browser start it over. It keeps that name while the forecast is up, so
+   it doesn't replay a third time when the splash unmounts; a tab switch still
+   replays it, since a panel coming back from display: none starts over. */
+.app--revealed .web-page { animation-name: web-page-reveal; }
+.app--revealed .web-page .card:not(.card .card) { animation-name: web-card-reveal; }
+
+@keyframes web-page-reveal {
+  0%        { opacity: 0; transform: translateY(6px); }
+  40%, 100% { opacity: 1; transform: none; }
+}
+
+@keyframes web-card-reveal {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
   to   { opacity: 1; transform: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .web-page { animation: none; }
+  .web-page,
+  .web-page .card:not(.card .card) { animation: none; }
 }
 
 /* The page's own cards manage their spacing through the flex gap. */
@@ -1973,6 +2066,28 @@
   gap: 5px;
 }
 
+/* Fills the room the other cards give their chart, so the stat row below
+   lines up with theirs across a grid row. */
+.web-moon {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 10px;
+  min-height: 80px;
+}
+
+.web-moon-dark {
+  fill: var(--web-sunken);
+  stroke: var(--text-tertiary);
+  stroke-opacity: 0.35;
+  stroke-width: 1;
+}
+
+.web-moon-lit {
+  fill: #ece6d4;
+}
+
 /* The dial's arc and horizon are drawn in currentColor; nothing between here
    and the card sets one, so without this they inherit the document default and
    vanish on a dark or sky-tinted surface. */
@@ -2054,9 +2169,37 @@
    .header-sky strip that repaints the gradient over it. Neither has anything
    left to hide here, and either one would be the one opaque band between the
    map and the top of the window. */
+/* Faded rather than switched off, so the header doesn't drop its backing in
+   one frame as the tab changes. */
+.app-header--tabs::before,
+.header-sky {
+  transition: opacity 0.3s ease;
+}
 .app--web-radar .app-header--tabs::before,
 .app--web-radar .header-sky {
-  display: none;
+  opacity: 0;
+}
+
+/* The scrollbar's lane goes to the map. The page is exactly one screen here,
+   so the reserved gutter (scrollbar-gutter: stable, up top) had nothing left
+   to hold: the scrollbar vanished on the switch and left an empty strip down
+   the right edge beside the map. Releasing the gutter lets the map run to the
+   window's edge.
+   The header is the one thing that persists across the switch, and releasing
+   the gutter widens it, so it pads its right side by the lane it lost
+   (--scrollbar-w, measured in App) and the settings button stays put. That
+   one-sided padding pulls the header's centre left by half a lane, so the tab
+   bar is pushed back by the same half — --scrollbar-half, its usual offset, is
+   0 here with the gutter gone. */
+:root[data-shell="desktop"]:has(.app--web-radar) {
+  scrollbar-gutter: auto;
+  overflow: hidden;
+}
+:root[data-shell="desktop"] .app--web-radar .app-header {
+  padding-inline-end: calc(max(clamp(14px, 3.4vw, 48px), var(--sa-right)) + var(--scrollbar-w, 0px));
+}
+:root[data-shell="desktop"] .app--web-radar .web-tabs-row {
+  translate: calc(var(--scrollbar-w, 0px) / 2) 0;
 }
 
 /* The two header icons lose that backdrop with everything else, and they are
@@ -2129,6 +2272,18 @@
   flex-direction: column;
   flex: 1;
   min-height: 0;
+}
+
+/* The pages you have already visited stay mounted behind the active one (see
+   WebLayout). The rule above would otherwise un-hide every one of them under
+   the radar. */
+.web-shell > .web-panel[hidden] {
+  display: none;
+}
+
+/* Icons hold still while their page fades in (see WebLayout). */
+.web-panel--entering .weather-icon :is(.wi-mote, .wi-part) {
+  animation-play-state: paused;
 }
 
 .app--web-radar .radar-fill {
@@ -2491,17 +2646,137 @@
 
 /* Both moves are withheld from .splash-logo--exit so the fly-to-header
    animation still starts from wherever the logo actually sits. */
-.splash-bg--web .splash-logo:not(.splash-logo--exit) {
-  top: 23%;
+/* The logo, its icon and the search field are placed high to leave the lower
+   half for the recents grid. With no cities to list that half is empty and the
+   group reads as stuck to the top, so --splash-shift moves all three down
+   together until the group (icon top to hint) is centred on the screen. */
+/* Everything hangs off --splash-logo-y, the wordmark's centre. As a bare
+   percentage of the screen it collided on short windows (a laptop at 125–150%
+   zoom is only ~650px tall in CSS pixels): the icon above the wordmark ran off
+   the top edge, and the search field slid up over the location pill below it.
+   So the wordmark has a floor — low enough that the whole icon fits above it
+   with a margin — and the search field keeps clear of the pill whatever the
+   wordmark does. On a tall window neither floor engages and the percentages
+   rule as before. */
+.splash-bg--web {
+  --splash-shift: 0%;
+  --splash-icon: clamp(72px, 8vw, 104px);
+  /* Clears the header, which keeps its tab bar up over the splash (see
+     .app--web-splash): its 24px top padding and 56px bar, plus a margin. */
+  --splash-logo-y: max(
+    calc(23% + var(--splash-shift)),
+    calc(var(--sa-top) + 96px + var(--splash-icon) + 1.9rem)
+  );
 }
 
+/* The tab bar stays up on the web splash so the trip between the splash and
+   the forecast is one bar with a pill moving along it. The bar lives in the
+   header, inside .app, and .app (z 2) sits under the splash (z 3) — so for the
+   splash's lifetime .app is lifted over it. Only the header is meant to show
+   and take clicks up there: .app itself lets clicks through to the splash's
+   search field and cards, and the page area under the header stays hidden,
+   which is where it already was (under an opaque splash) until the splash
+   goes. The header's own sticky backdrop (.app-header--tabs) is not applied
+   here, so the splash sky runs straight up behind the bar. */
+.app--web-splash {
+  z-index: 4;
+  pointer-events: none;
+}
+
+/* Not .splash-bg, which is a child of .app too: it is inert by design (its
+   search field and cards opt back in), and re-enabling it let its scenery —
+   the stars drawn over the cards — swallow clicks meant for the cards. */
+.app--web-splash > :not(.splash-bg) {
+  pointer-events: auto;
+}
+
+.app--web-splash:not(.app--web-splash-exit) .app-grid {
+  visibility: hidden;
+}
+
+/* Leaving the splash: it fades out over the forecast rather than vanishing
+   when it unmounts, and the forecast's cards rise in underneath it (see
+   .app--revealed). The splash layer sits above the page area inside .app, so
+   showing the page area here is enough to have it ready behind the fade. Its
+   icons hold still for the fade, as they do for any page entrance. */
+.app--web-splash-exit .splash-bg {
+  animation: web-splash-out 0.42s ease 0.12s both;
+}
+
+.app--web-splash-exit .weather-icon :is(.wi-mote, .wi-part) {
+  animation-play-state: paused;
+}
+
+@keyframes web-splash-out {
+  to { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app--web-splash-exit .splash-bg { animation: none; }
+}
+
+/* The header keeps its tab-bar layout on the splash, so the bar sits exactly
+   where the forecast will have it — but not its opaque backdrop. */
+.app--web-splash .app-header--tabs::before {
+  display: none;
+}
+
+/* The page under the splash is hidden but still laid out, and a loading
+   forecast is tall enough to put a scrollbar on the window mid-splash, shifting
+   everything on it. Nothing on the splash scrolls the page, so don't. */
+:root:has(.app--web-splash) {
+  overflow: hidden;
+}
+
+.splash-bg--web:has(.splash-home--empty) {
+  --splash-shift: 22%;
+}
+
+.splash-bg--web .splash-logo:not(.splash-logo--exit) {
+  top: var(--splash-logo-y);
+}
+
+/* On the web splash this line is the weather headline, not the wordmark (which
+   sits at the foot of the screen, .splash-wordmark), so it reads as a caption
+   to the icon rather than a title. */
 .splash-bg--web .splash-logo:not(.splash-logo--exit) .splash-logo-text {
-  font-size: clamp(2rem, 4vw, 3rem);
+  font-size: clamp(1.5rem, 2.6vw, 2.1rem);
+  font-weight: 600;
+  letter-spacing: -0.3px;
+}
+
+.splash-wordmark {
+  position: absolute;
+  bottom: calc(var(--sa-bottom) + 44px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  white-space: nowrap;
+  color: var(--text-primary);
+  pointer-events: none;
+}
+
+.splash-bg--sky .splash-wordmark {
+  color: #fff;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
 }
 
 .splash-bg--web .splash-logo-img {
-  width: clamp(72px, 8vw, 104px);
-  bottom: calc(77% + 2.2rem);
+  width: var(--splash-icon);
+  bottom: calc(100% - var(--splash-logo-y) + 1.9rem);
+}
+
+/* Tighter here: the search field sits only ~9% of the screen below the
+   wordmark's centre, not the phone's half-screen. */
+.splash-bg--web .splash-place {
+  margin-top: 8px;
+}
+
+.splash-bg--web .splash-logo-icon {
+  font-size: var(--splash-icon);
 }
 
 .splash-home {
@@ -2511,11 +2786,13 @@
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  top: 32%;
+  /* Below the location pill at least: half the wordmark (1.5rem at its
+     largest), then the pill and its 8px margin (~37px), then a gap. */
+  top: max(calc(32% + var(--splash-shift)), calc(var(--splash-logo-y) + 1.5rem + 48px));
   /* Bottom-anchored rather than auto-height: the recents list scrolls inside
      the leftover space instead of running off the screen, and clears the
      version line at the foot of the splash. */
-  bottom: calc(var(--sa-bottom) + 56px);
+  bottom: calc(var(--sa-bottom) + 88px); /* clears the wordmark and version line */
   width: min(840px, 88vw);
   display: flex;
   flex-direction: column;
@@ -2641,6 +2918,12 @@
 }
 
 .splash-city-home {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+/* Marks the card whose weather the splash is showing (the most recent place). */
+.splash-city-here {
   flex-shrink: 0;
   color: var(--accent);
 }

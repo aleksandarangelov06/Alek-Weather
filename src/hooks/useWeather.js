@@ -1,6 +1,7 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { nowcastHourlyCode, precipTier, livePrecipRate } from '../utils/weatherCodes'
 import { gridHourly, gridHourlyAccum, gridHourlySpans } from '../utils/nwsGrid'
+import { sampleRadar } from './useRadarPrecip'
 
 const GEO_URL = 'https://geocoding-api.open-meteo.com/v1/search'
 const WEATHER_URL = 'https://api.open-meteo.com/v1/forecast'
@@ -713,9 +714,9 @@ function confirmCurrentCode(data, alerts) {
 }
 
 const PARAMS = [
-  'current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,surface_pressure,wind_speed_10m,wind_direction_10m,wind_gusts_10m,dew_point_2m,uv_index,visibility',
-  'hourly=temperature_2m,apparent_temperature,precipitation_probability,weather_code,is_day,uv_index,wind_speed_10m,wind_direction_10m,wind_gusts_10m,relative_humidity_2m,surface_pressure,visibility',
-  'daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,uv_index_max,wind_speed_10m_max,sunrise,sunset',
+  'current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,surface_pressure,wind_speed_10m,wind_direction_10m,wind_gusts_10m,dew_point_2m,uv_index,visibility,snow_depth',
+  'hourly=temperature_2m,apparent_temperature,precipitation_probability,weather_code,is_day,uv_index,wind_speed_10m,wind_direction_10m,wind_gusts_10m,relative_humidity_2m,surface_pressure,visibility,snowfall,cape',
+  'daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,uv_index_max,wind_speed_10m_max,sunrise,sunset,snowfall_sum',
   'minutely_15=precipitation',
   'temperature_unit=fahrenheit',
   'wind_speed_unit=mph',
@@ -726,27 +727,252 @@ const PARAMS = [
 ].join('&')
 
 // Hourly us_aqi + pm2_5 forecast backs the multi-day air-quality insights
-// (e.g. persistent wildfire smoke "through the week"); timezone=auto keeps the
-// hourly timestamps local so they group by calendar day the same way daily does.
+// (e.g. persistent wildfire smoke "through the week"); pm10, carbon_monoxide,
+// nitrogen_dioxide, and aerosol_optical_depth ride along so the overview can
+// tell smoke apart from dust or urban smog. timezone=auto keeps the hourly
+// timestamps local so they group by calendar day the same way daily does.
+// The pollen counts come from CAMS Europe and are null everywhere else.
 const AQI_PARAMS = [
-  'current=us_aqi,pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone',
-  'hourly=us_aqi,pm2_5',
+  'current=us_aqi,pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone,aerosol_optical_depth,alder_pollen,birch_pollen,olive_pollen,grass_pollen,mugwort_pollen,ragweed_pollen',
+  'hourly=us_aqi,pm2_5,pm10,carbon_monoxide,nitrogen_dioxide,aerosol_optical_depth',
   'timezone=auto',
   'forecast_days=5',
 ].join('&')
 
-// `initialLoading` lets the app start in the loading state when it knows a
-// fetch fires on mount (saved-city auto-load), so the empty state never
-// flashes for the frame before that effect runs.
-export function useWeather(initialLoading = false) {
-  const [location, setLocation] = useState(null)
-  const [weather, setWeather] = useState(null)
-  const [airQuality, setAirQuality] = useState(null)
-  const [alerts, setAlerts] = useState([])
-  const [lastUpdated, setLastUpdated] = useState(null)
+// The whole forecast pipeline for one place: Open-Meteo, then the NWS overlay,
+// station observation and warning cross-check that decide the current
+// condition. Shared by useWeather and the splash (useLocalConditions), so the
+// splash can never show a different sky from the forecast it leads into.
+// Throws only when Open-Meteo itself fails; every NWS step is non-fatal.
+// Air quality comes back as its settled fetch, for the caller to parse.
+//
+// The live radar verdict for the point is taken here too, alongside everything
+// else, and carried on the reading as `data.radarClear` (see useRadarPrecip
+// for its true / false / null meaning). It used to be sampled only after the
+// reading was on screen, so for the second that took, the forecast showed the
+// model's unchecked code — a thunderstorm sky and rain particles — before
+// settling on the "Partly Cloudy" the radar check made of it. Arriving with the
+// reading, the first frame is already the checked one. It is always sampled;
+// whether it is applied is the Radar enhanced accuracy setting's call, made by
+// whoever reads the code (App, placeConditions), so the toggle takes effect
+// without a refetch. sampleRadar never rejects.
+export async function loadForecast(loc) {
+  const radarPromise = sampleRadar(loc.latitude, loc.longitude)
+  const [weatherResult, aqiResult, alertsResult, nwsPointsResult] = await Promise.allSettled([
+    fetch(`${WEATHER_URL}?latitude=${loc.latitude}&longitude=${loc.longitude}&${PARAMS}`),
+    fetch(`${AQI_URL}?latitude=${loc.latitude}&longitude=${loc.longitude}&${AQI_PARAMS}`),
+    fetch(`${NOAA_ALERTS_URL}?point=${loc.latitude.toFixed(4)},${loc.longitude.toFixed(4)}`, { headers: NWS_HEADERS }),
+    fetch(`${NWS_POINTS_URL}/${loc.latitude.toFixed(4)},${loc.longitude.toFixed(4)}`, { headers: NWS_HEADERS }),
+  ])
+
+  if (weatherResult.status === 'rejected') throw weatherResult.reason
+  if (!weatherResult.value.ok) throw new Error(`Open-Meteo forecast returned ${weatherResult.value.status}`)
+  const data = await weatherResult.value.json()
+
+  // Parse alerts up front: an active warning corroborates the
+  // current-condition cross-check after the NWS merge below.
+  let alertFeatures = []
+  if (alertsResult.status === 'fulfilled' && alertsResult.value.ok) {
+    try {
+      const alertsData = await alertsResult.value.json()
+      alertFeatures = collapseAlerts(dedupeAlerts(alertsData.features ?? []))
+    } catch { /* non-fatal */ }
+  }
+
+  // Slice daily from today so existing components are unaffected.
+  const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: data.timezone })
+  const todayIdx = data.daily.time.indexOf(todayStr)
+  const start = todayIdx > 0 ? todayIdx : 0
+  if (start > 0) {
+    data.daily = Object.fromEntries(
+      Object.entries(data.daily).map(([k, v]) => [k, Array.isArray(v) ? v.slice(start) : v])
+    )
+  }
+
+  // For US locations, overlay NWS data on top of Open-Meteo.
+  // Points call already ran in parallel; if it succeeded we fire the hourly,
+  // daily and gridpoint fetches in parallel, then merge all three before
+  // rendering.
+  // Every step is non-fatal: any failure silently keeps the Open-Meteo values.
+  if (nwsPointsResult.status === 'fulfilled' && nwsPointsResult.value.ok) {
+    try {
+      const pointsData = await nwsPointsResult.value.json()
+      const hourlyUrl   = pointsData.properties?.forecastHourly
+      const forecastUrl = pointsData.properties?.forecast
+      const gridUrl     = pointsData.properties?.forecastGridData
+
+      // Latest real observation from nearby stations, fetched in parallel
+      // with the forecast calls; failures fall through to the model
+      // pipeline (obsToWmoCode returns null). Small AWOS fields often
+      // report nothing (verified: K0W3 near Bel Air MD was empty during an
+      // active thunderstorm while KMTN two entries later reported +TS +RA),
+      // so walk the list until a station actually reports weather — which
+      // means a report that survives obsToWmoCode, not merely one with a
+      // textDescription. A stale or sky-cover-only report from a nearer
+      // station must not short-circuit the walk (verified during heavy
+      // showers over Bel Air MD: K0W3 was 2.5 h stale with "Fog/Mist" and
+      // KAPG said "Cloudy" while KMTN was reporting Rain).
+      //
+      // MAX_STATION_KM bounds that walk. Without it, "keep going until
+      // someone reports weather" will eventually always find someone — the
+      // farther the search runs, the likelier a hit and the less it has to do
+      // with this location. Distance is checked before the request, so far
+      // stations cost nothing. `limit` is generous because the filter, not
+      // the list length, is what ends the walk now.
+      const obsPromise = (async () => {
+        const stationsUrl = pointsData.properties?.observationStations
+        if (!stationsUrl) return null
+        const sRes = await fetch(`${stationsUrl}?limit=8`, { headers: NWS_HEADERS })
+        if (!sRes.ok) return null
+        const stations = (await sRes.json()).features ?? []
+        for (const s of stations) {
+          const id = s.properties?.stationIdentifier
+          if (!id) continue
+          const [sLon, sLat] = s.geometry?.coordinates ?? []
+          if (sLat == null || sLon == null) continue
+          if (distanceKm(loc.latitude, loc.longitude, sLat, sLon) > MAX_STATION_KM) continue
+          try {
+            const oRes = await fetch(`https://api.weather.gov/stations/${id}/observations/latest`, { headers: NWS_HEADERS })
+            if (!oRes.ok) continue
+            const obs = (await oRes.json()).properties
+            if (obsToWmoCode(obs) != null) return obs
+          } catch { /* try the next station */ }
+        }
+        return null
+      })().catch(() => null)
+
+      const [nwsHourlyRes, nwsForecastRes, nwsGridRes] = await Promise.allSettled([
+        hourlyUrl   ? fetch(hourlyUrl,   { headers: NWS_HEADERS }) : Promise.reject(),
+        forecastUrl ? fetch(forecastUrl, { headers: NWS_HEADERS }) : Promise.reject(),
+        gridUrl     ? fetch(gridUrl,     { headers: NWS_HEADERS }) : Promise.reject(),
+      ])
+      // The gridpoint carries the fields the two text products don't, and
+      // its entry spans are what say how far each field stays an hourly
+      // forecast before NWS drops to blocks and Open-Meteo takes over.
+      let gridMaps = null, horizons = null
+      if (nwsGridRes.status === 'fulfilled' && nwsGridRes.value.ok) {
+        const d = await nwsGridRes.value.json()
+        if (d.properties) {
+          gridMaps = nwsGridMaps(d.properties, data.timezone)
+          horizons = nwsFieldHorizons(d.properties, data.timezone)
+        }
+      }
+
+      let nwsHourlyMerged = false
+      if (nwsHourlyRes.status === 'fulfilled' && nwsHourlyRes.value.ok) {
+        const d = await nwsHourlyRes.value.json()
+        mergeNWSHourly(data.hourly, d.properties?.periods ?? [], data.timezone, horizons)
+        nwsHourlyMerged = true
+        // Marks the hourly codes as NWS-sourced, so the Open-Meteo minutely
+        // nowcast stops vetoing them — true only while the codes actually are
+        // NWS's. Must be set before alignDailyWithHourly below, which re-runs
+        // the nowcast check.
+        if (data.current && nwsCovers(horizons, 'weather_code', currentHourKey(data.timezone))) {
+          data.current.nws_hourly = true
+        }
+      }
+      if (gridMaps) mergeNWSGridHourly(data.hourly, gridMaps, horizons)
+
+      // Both hourly merges have to land before the current hour is stamped
+      // off the array they write.
+      if (nwsHourlyMerged || gridMaps) stampCurrentFromNWS(data, gridMaps)
+
+      // The daily card is NWS's own day/night forecast — the resolution it
+      // actually publishes for a day, and the one weather.gov shows. Days
+      // NWS doesn't reach keep Open-Meteo's.
+      let nwsDailyMerged = false
+      if (nwsForecastRes.status === 'fulfilled' && nwsForecastRes.value.ok) {
+        const d = await nwsForecastRes.value.json()
+        mergeNWSDaily(data.daily, d.properties?.periods ?? [], data.timezone)
+        nwsDailyMerged = true
+      }
+      // Re-derive the daily code from the merged hourly data so the daily,
+      // hourly and overview views agree, and so the nowcast correction
+      // reaches the daily summary. The chance of rain is left out of it —
+      // alignDailyWithHourly takes that from NWS's own published day — and
+      // so are the days whose hourly codes have passed to Open-Meteo, which
+      // would otherwise overwrite NWS's published day with a re-derivation.
+      if (nwsHourlyMerged) {
+        alignDailyWithHourly(data.daily, data.hourly, data.minutely_15, data.current,
+                             data.timezone, nwsDailyMerged, horizons?.weather_code)
+      }
+      // Precip total and peak wind read the merged hourly array, so this
+      // runs after every hourly merge above.
+      if (gridMaps) deriveDailyFromNWS(data.daily, data.hourly, gridMaps)
+
+      // A station actually observing precipitation overrides the model's
+      // current condition outright — measured beats predicted.
+      const obsCode = obsToWmoCode(await obsPromise)
+      if (obsCode != null) {
+        data.current.weather_code = obsCode
+        data.current.weather_code_confirmed = true
+        data.current.weather_code_source = 'station'
+      }
+
+      // Nothing measured this hour — fall back to NWS's own forecast for it
+      // rather than Open-Meteo's model. No-ops if a station just reported.
+      preferForecastHour(data)
+    } catch { /* non-fatal */ }
+  }
+
+  // Cross-check the current condition against active warnings + NWS hourly
+  // so a storm the Open-Meteo model missed still shows as one.
+  confirmCurrentCode(data, alertFeatures)
+
+  data.radarClear = await radarPromise
+
+  return { data, alertFeatures, aqiResult }
+}
+
+// The last reading shown, kept so a launch can paint it immediately instead of
+// sitting on the loading skeleton through the whole Open-Meteo + NWS chain —
+// several seconds on a phone's cold radio. App then refreshes it silently.
+const LAST_READING_KEY = 'alek-weather-last-reading'
+// Past this a reading is more misleading than useful: the "current" hour and
+// the start of the hourly strip have moved on too far, so a launch falls back
+// to the loading skeleton and a fresh fetch.
+const LAST_READING_MAX_AGE_MS = 6 * 60 * 60 * 1000
+
+// The cached reading for `loc`, or null if there is none, it is for another
+// place, or it is too old. Corrupt storage reads as null rather than throwing
+// during the first render.
+function loadLastReading(loc) {
+  if (!loc) return null
+  try {
+    const r = JSON.parse(localStorage.getItem(LAST_READING_KEY) ?? 'null')
+    if (!r?.weather || !r.location) return null
+    if (r.location.latitude !== loc.latitude || r.location.longitude !== loc.longitude) return null
+    if (!(Date.now() - r.updated < LAST_READING_MAX_AGE_MS)) return null
+    return r
+  } catch { return null }
+}
+
+// `initialCity` is the city App auto-loads on mount, if any. With a cached
+// reading for it the hook starts already showing that reading; without one it
+// starts in the loading state, so the empty state never flashes for the frame
+// before the mount fetch runs.
+export function useWeather(initialCity = null) {
+  const [cached] = useState(() => loadLastReading(initialCity))
+  const [location, setLocation] = useState(cached?.location ?? null)
+  const [weather, setWeather] = useState(cached?.weather ?? null)
+  const [airQuality, setAirQuality] = useState(cached?.airQuality ?? null)
+  const [alerts, setAlerts] = useState(cached?.alerts ?? [])
+  const [lastUpdated, setLastUpdated] = useState(cached ? new Date(cached.updated) : null)
   const [searchResults, setSearchResults] = useState([])
   const searchAbortRef = useRef(null)
-  const [loading, setLoading] = useState(!!initialLoading)
+  const [loading, setLoading] = useState(!!initialCity && !cached)
+
+  // Persist every complete reading. Keyed on lastUpdated so it writes once per
+  // fetch, plus once more when air quality lands after it. A full quota just
+  // means the next launch loads the slow way.
+  useEffect(() => {
+    if (!weather || !location || !lastUpdated) return
+    try {
+      localStorage.setItem(LAST_READING_KEY, JSON.stringify({
+        location, weather, alerts, airQuality, updated: lastUpdated.getTime(),
+      }))
+    } catch { /* quota or storage disabled */ }
+  }, [lastUpdated, airQuality]) // eslint-disable-line react-hooks/exhaustive-deps
   const [error, setError] = useState(null)
   const geoActiveRef = useRef(false)
   const fetchIdRef = useRef(0)
@@ -764,6 +990,26 @@ export function useWeather(initialLoading = false) {
     setError(null)
   }, [])
 
+  // Puts the saved reading for `loc` straight back on screen, the way a launch
+  // does. Going Home throws the forecast away, so without this the way back out
+  // sat through the whole fetch chain for a reading still in storage. Returns
+  // when that reading was taken, for the caller to decide whether to refresh,
+  // or null when there is none usable and it has to fetch.
+  const restoreReading = useCallback((loc) => {
+    const r = loadLastReading(loc)
+    if (!r) return null
+    fetchIdRef.current++ // whatever was in flight is for a reading we've left
+    geoActiveRef.current = false
+    setLocation(r.location)
+    setWeather(r.weather)
+    setAirQuality(r.airQuality ?? null)
+    setAlerts(r.alerts ?? [])
+    setLastUpdated(new Date(r.updated))
+    setLoading(false)
+    setError(null)
+    return r.updated
+  }, [])
+
   // `silent` refetches in place: no loading screen, no torn-down air quality or
   // alerts, and a failure leaves the last good reading on screen instead of
   // replacing it with an error card. It is what the staleness refresh in App.jsx
@@ -779,166 +1025,7 @@ export function useWeather(initialLoading = false) {
       setAlerts([])
     }
     try {
-      const [weatherResult, aqiResult, alertsResult, nwsPointsResult] = await Promise.allSettled([
-        fetch(`${WEATHER_URL}?latitude=${loc.latitude}&longitude=${loc.longitude}&${PARAMS}`),
-        fetch(`${AQI_URL}?latitude=${loc.latitude}&longitude=${loc.longitude}&${AQI_PARAMS}`),
-        fetch(`${NOAA_ALERTS_URL}?point=${loc.latitude.toFixed(4)},${loc.longitude.toFixed(4)}`, { headers: NWS_HEADERS }),
-        fetch(`${NWS_POINTS_URL}/${loc.latitude.toFixed(4)},${loc.longitude.toFixed(4)}`, { headers: NWS_HEADERS }),
-      ])
-
-      if (weatherResult.status === 'rejected') throw weatherResult.reason
-      if (!weatherResult.value.ok) throw new Error(`Open-Meteo forecast returned ${weatherResult.value.status}`)
-      const data = await weatherResult.value.json()
-
-      // Parse alerts up front: an active warning corroborates the
-      // current-condition cross-check after the NWS merge below.
-      let alertFeatures = []
-      if (alertsResult.status === 'fulfilled' && alertsResult.value.ok) {
-        try {
-          const alertsData = await alertsResult.value.json()
-          alertFeatures = collapseAlerts(dedupeAlerts(alertsData.features ?? []))
-        } catch { /* non-fatal */ }
-      }
-
-      // Slice daily from today so existing components are unaffected.
-      const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: data.timezone })
-      const todayIdx = data.daily.time.indexOf(todayStr)
-      const start = todayIdx > 0 ? todayIdx : 0
-      if (start > 0) {
-        data.daily = Object.fromEntries(
-          Object.entries(data.daily).map(([k, v]) => [k, Array.isArray(v) ? v.slice(start) : v])
-        )
-      }
-
-      // For US locations, overlay NWS data on top of Open-Meteo.
-      // Points call already ran in parallel; if it succeeded we fire the hourly,
-      // daily and gridpoint fetches in parallel, then merge all three before
-      // rendering.
-      // Every step is non-fatal: any failure silently keeps the Open-Meteo values.
-      if (nwsPointsResult.status === 'fulfilled' && nwsPointsResult.value.ok) {
-        try {
-          const pointsData = await nwsPointsResult.value.json()
-          const hourlyUrl   = pointsData.properties?.forecastHourly
-          const forecastUrl = pointsData.properties?.forecast
-          const gridUrl     = pointsData.properties?.forecastGridData
-
-          // Latest real observation from nearby stations, fetched in parallel
-          // with the forecast calls; failures fall through to the model
-          // pipeline (obsToWmoCode returns null). Small AWOS fields often
-          // report nothing (verified: K0W3 near Bel Air MD was empty during an
-          // active thunderstorm while KMTN two entries later reported +TS +RA),
-          // so walk the list until a station actually reports weather — which
-          // means a report that survives obsToWmoCode, not merely one with a
-          // textDescription. A stale or sky-cover-only report from a nearer
-          // station must not short-circuit the walk (verified during heavy
-          // showers over Bel Air MD: K0W3 was 2.5 h stale with "Fog/Mist" and
-          // KAPG said "Cloudy" while KMTN was reporting Rain).
-          //
-          // MAX_STATION_KM bounds that walk. Without it, "keep going until
-          // someone reports weather" will eventually always find someone — the
-          // farther the search runs, the likelier a hit and the less it has to do
-          // with this location. Distance is checked before the request, so far
-          // stations cost nothing. `limit` is generous because the filter, not
-          // the list length, is what ends the walk now.
-          const obsPromise = (async () => {
-            const stationsUrl = pointsData.properties?.observationStations
-            if (!stationsUrl) return null
-            const sRes = await fetch(`${stationsUrl}?limit=8`, { headers: NWS_HEADERS })
-            if (!sRes.ok) return null
-            const stations = (await sRes.json()).features ?? []
-            for (const s of stations) {
-              const id = s.properties?.stationIdentifier
-              if (!id) continue
-              const [sLon, sLat] = s.geometry?.coordinates ?? []
-              if (sLat == null || sLon == null) continue
-              if (distanceKm(loc.latitude, loc.longitude, sLat, sLon) > MAX_STATION_KM) continue
-              try {
-                const oRes = await fetch(`https://api.weather.gov/stations/${id}/observations/latest`, { headers: NWS_HEADERS })
-                if (!oRes.ok) continue
-                const obs = (await oRes.json()).properties
-                if (obsToWmoCode(obs) != null) return obs
-              } catch { /* try the next station */ }
-            }
-            return null
-          })().catch(() => null)
-
-          const [nwsHourlyRes, nwsForecastRes, nwsGridRes] = await Promise.allSettled([
-            hourlyUrl   ? fetch(hourlyUrl,   { headers: NWS_HEADERS }) : Promise.reject(),
-            forecastUrl ? fetch(forecastUrl, { headers: NWS_HEADERS }) : Promise.reject(),
-            gridUrl     ? fetch(gridUrl,     { headers: NWS_HEADERS }) : Promise.reject(),
-          ])
-          // The gridpoint carries the fields the two text products don't, and
-          // its entry spans are what say how far each field stays an hourly
-          // forecast before NWS drops to blocks and Open-Meteo takes over.
-          let gridMaps = null, horizons = null
-          if (nwsGridRes.status === 'fulfilled' && nwsGridRes.value.ok) {
-            const d = await nwsGridRes.value.json()
-            if (d.properties) {
-              gridMaps = nwsGridMaps(d.properties, data.timezone)
-              horizons = nwsFieldHorizons(d.properties, data.timezone)
-            }
-          }
-
-          let nwsHourlyMerged = false
-          if (nwsHourlyRes.status === 'fulfilled' && nwsHourlyRes.value.ok) {
-            const d = await nwsHourlyRes.value.json()
-            mergeNWSHourly(data.hourly, d.properties?.periods ?? [], data.timezone, horizons)
-            nwsHourlyMerged = true
-            // Marks the hourly codes as NWS-sourced, so the Open-Meteo minutely
-            // nowcast stops vetoing them — true only while the codes actually are
-            // NWS's. Must be set before alignDailyWithHourly below, which re-runs
-            // the nowcast check.
-            if (data.current && nwsCovers(horizons, 'weather_code', currentHourKey(data.timezone))) {
-              data.current.nws_hourly = true
-            }
-          }
-          if (gridMaps) mergeNWSGridHourly(data.hourly, gridMaps, horizons)
-
-          // Both hourly merges have to land before the current hour is stamped
-          // off the array they write.
-          if (nwsHourlyMerged || gridMaps) stampCurrentFromNWS(data, gridMaps)
-
-          // The daily card is NWS's own day/night forecast — the resolution it
-          // actually publishes for a day, and the one weather.gov shows. Days
-          // NWS doesn't reach keep Open-Meteo's.
-          let nwsDailyMerged = false
-          if (nwsForecastRes.status === 'fulfilled' && nwsForecastRes.value.ok) {
-            const d = await nwsForecastRes.value.json()
-            mergeNWSDaily(data.daily, d.properties?.periods ?? [], data.timezone)
-            nwsDailyMerged = true
-          }
-          // Re-derive the daily code from the merged hourly data so the daily,
-          // hourly and overview views agree, and so the nowcast correction
-          // reaches the daily summary. The chance of rain is left out of it —
-          // alignDailyWithHourly takes that from NWS's own published day — and
-          // so are the days whose hourly codes have passed to Open-Meteo, which
-          // would otherwise overwrite NWS's published day with a re-derivation.
-          if (nwsHourlyMerged) {
-            alignDailyWithHourly(data.daily, data.hourly, data.minutely_15, data.current,
-                                 data.timezone, nwsDailyMerged, horizons?.weather_code)
-          }
-          // Precip total and peak wind read the merged hourly array, so this
-          // runs after every hourly merge above.
-          if (gridMaps) deriveDailyFromNWS(data.daily, data.hourly, gridMaps)
-
-          // A station actually observing precipitation overrides the model's
-          // current condition outright — measured beats predicted.
-          const obsCode = obsToWmoCode(await obsPromise)
-          if (obsCode != null) {
-            data.current.weather_code = obsCode
-            data.current.weather_code_confirmed = true
-            data.current.weather_code_source = 'station'
-          }
-
-          // Nothing measured this hour — fall back to NWS's own forecast for it
-          // rather than Open-Meteo's model. No-ops if a station just reported.
-          preferForecastHour(data)
-        } catch { /* non-fatal */ }
-      }
-
-      // Cross-check the current condition against active warnings + NWS hourly
-      // so a storm the Open-Meteo model missed still shows as one.
-      confirmCurrentCode(data, alertFeatures)
+      const { data, alertFeatures, aqiResult } = await loadForecast(loc)
 
       if (fetchIdRef.current !== fetchId) return
       setWeather(data)
@@ -1083,6 +1170,6 @@ export function useWeather(initialLoading = false) {
 
   return {
     location, weather, airQuality, alerts, lastUpdated, searchResults, loading, error,
-    searchCity, selectCity, useMyLocation, setSearchResults, fetchWeather, reset, clearError,
+    searchCity, selectCity, useMyLocation, setSearchResults, fetchWeather, restoreReading, reset, clearError,
   }
 }

@@ -1,12 +1,12 @@
-import { useState, useEffect } from 'react'
 import { MRMS_BASE, inMrmsDomain } from '../utils/mrms'
 
 // "Radar enhanced accuracy" — cross-checks the current condition against live
 // radar: is anything actually echoing over this location right now, whatever the
-// model-driven weather_code says.
+// model-driven weather_code says. Sampled by loadForecast with every reading
+// (it rides along as data.radarClear); the setting decides whether it applies.
 //
-// Returns: null  = unknown (disabled, loading, sampling failed, stale, or a
-//                  return too weak to call either way → no override)
+// Verdict: null  = unknown (sampling failed, stale, or a return too weak to
+//                  call either way → no override)
 //          true  = radar shows no echo over the location (clear)
 //          false = the location sits inside an echo (precip present)
 //
@@ -156,45 +156,33 @@ async function sampleRainViewer(lat, lon, isCancelled) {
   return null                                  // clipping an edge — can't call it
 }
 
-// `token` is the reading this verdict belongs to — App passes `lastUpdated`, so a
-// sample is taken once per successful weather fetch and re-taken on every silent
-// refresh. Sampling only on a location change was its own staleness bug: the
-// verdict outlived the sweep it came from, and an echo seen on arrival went on
-// asserting rain over a location the storm had long since left.
-export function useRadarPrecip(location, enabled, token = null) {
-  const [radarClear, setRadarClear] = useState(null)
+// The setting's storage key, here rather than in App so that the readers outside
+// React — placeConditions, which reads the splash and the location cards — can
+// apply the same setting the forecast does without it being threaded to them.
+export const RADAR_ENHANCED_KEY = 'alek-weather-radar-enhanced'
 
-  useEffect(() => {
-    if (!enabled || !location || !token) { setRadarClear(null); return }
-    let cancelled = false
-    const isCancelled = () => cancelled
-    setRadarClear(null)
+// On unless explicitly turned off, matching App's default.
+export function radarEnhancedOn() {
+  try { return localStorage.getItem(RADAR_ENHANCED_KEY) !== 'false' }
+  catch { return true }
+}
 
-    ;(async () => {
-      const { latitude: lat, longitude: lon } = location
-
-      if (inMrmsDomain(lat, lon)) {
-        let answer = null
-        try {
-          answer = await sampleMrms(lat, lon)
-        } catch { /* service down or malformed — RainViewer below */ }
-        if (cancelled) return
-        if (answer) { setRadarClear(answer.verdict); return }
-      }
-
-      let verdict
-      try {
-        verdict = await sampleRainViewer(lat, lon, isCancelled)
-      } catch {
-        // Network error, or a SecurityError if the tile lacks CORS headers and
-        // taints the canvas — either way, fall back to no override.
-        verdict = null
-      }
-      if (!cancelled) setRadarClear(verdict)
-    })()
-
-    return () => { cancelled = true }
-  }, [enabled, location?.latitude, location?.longitude, token])
-
-  return radarClear
+// The verdict for one point, outside any component: MRMS where it reaches, then
+// RainViewer, with the true / false / null verdict described at the top.
+export async function sampleRadar(lat, lon, isCancelled = () => false) {
+  if (inMrmsDomain(lat, lon)) {
+    let answer = null
+    try {
+      answer = await sampleMrms(lat, lon)
+    } catch { /* service down or malformed — RainViewer below */ }
+    if (isCancelled()) return null
+    if (answer) return answer.verdict
+  }
+  try {
+    return await sampleRainViewer(lat, lon, isCancelled)
+  } catch {
+    // Network error, or a SecurityError if the tile lacks CORS headers and
+    // taints the canvas — either way, fall back to no override.
+    return null
+  }
 }

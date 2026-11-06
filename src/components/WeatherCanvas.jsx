@@ -223,11 +223,50 @@ export function WeatherCanvas({ code, gyro = true }) {
         }
       }
 
+      mirrorToHeader()
       raf = requestAnimationFrame(draw)
     }
 
+    // The desktop tab bar is sticky and has to hide the page scrolling under it,
+    // so its backdrop repaints the sky opaquely (.header-sky) — which hid this
+    // canvas too, leaving a band with no weather in it. The canvas can't simply
+    // go above the header, because then it would also be above the cards. So the
+    // header carries a canvas of its own (.header-fx) over its sky, and each frame
+    // the slice of this one it covers is copied into it: one drawImage. The phone shells
+    // have no such element; the lookup is retried twice a second, not per frame.
+    // The copy is mapped through this canvas's on-screen scale (see below).
+    let mirror = null, lookupIn = 0
+    function mirrorToHeader() {
+      if (!mirror?.isConnected) {
+        mirror = null
+        if (lookupIn-- > 0) return
+        lookupIn = 30
+        mirror = document.querySelector('.header-fx')
+        if (!mirror) return
+      }
+      const box = mirror.getBoundingClientRect()
+      const w = Math.round(box.width), h = Math.round(box.height)
+      if (mirror.width !== w || mirror.height !== h) { mirror.width = w; mirror.height = h }
+      // This canvas is drawn at window.innerWidth, which counts the scrollbar,
+      // but displayed across the page, which doesn't — so on screen it is
+      // squeezed a little. Read the slice through that same squeeze, or the copy
+      // drifts out of line with the canvas below it, worst at the right edge.
+      const sx = canvas.width / (canvas.clientWidth || canvas.width)
+      const sy = canvas.height / (canvas.clientHeight || canvas.height)
+      const mctx = mirror.getContext('2d')
+      mctx.clearRect(0, 0, w, h)
+      if (w > 0 && h > 0) {
+        mctx.drawImage(canvas, box.left * sx, box.top * sy, box.width * sx, box.height * sy, 0, 0, w, h)
+      }
+    }
+
     raf = requestAnimationFrame(draw)
-    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', resize) }
+    return () => {
+      cancelAnimationFrame(raf)
+      window.removeEventListener('resize', resize)
+      // Leave the header's copy empty rather than frozen on the last frame.
+      if (mirror?.isConnected) mirror.getContext('2d').clearRect(0, 0, mirror.width, mirror.height)
+    }
   }, [scene])
 
   if (!scene) return null

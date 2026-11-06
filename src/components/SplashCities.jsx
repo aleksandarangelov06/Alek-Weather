@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { House } from 'lucide-react'
+import { House, Navigation } from 'lucide-react'
 import { WeatherIcon } from './WeatherIcon'
 import { useCityConditions, conditionKey } from '../hooks/useCityConditions'
 import { getWeatherInfo, toTemp } from '../utils/weatherCodes'
@@ -38,7 +38,7 @@ export function SplashCities({ recents, savedCities, unit, exiting, busy, onSele
       {cities.map((city, i) => {
         const key = conditionKey(city)
         const cond = conditions[key]
-        const info = cond ? getWeatherInfo(cond.code, !cond.isDay) : null
+        const info = cond ? getWeatherInfo(cond.code, !cond.isDay, cond.severe) : null
         const home = isHome?.(city)
         const opening = busy && pending === key
         return (
@@ -50,6 +50,12 @@ export function SplashCities({ recents, savedCities, unit, exiting, busy, onSele
             <span className="splash-mini-name">
               {home && <House size={13} className="splash-mini-home" aria-label="Home" />}
               <span className="splash-mini-name-text">{city.name}</span>
+              {/* The most recent place is the one the splash's sky, icon and
+                  headline are showing (see useLocalConditions) — the same mark
+                  the desktop splash puts on its card. */}
+              {recents.length > 0 && i === 0 && (
+                <Navigation size={13} className="splash-mini-here" aria-label="Showing this weather" />
+              )}
             </span>
             {/* Cities stored from a search keep the country code on `country`,
                 not `country_code` — fall back to it. */}

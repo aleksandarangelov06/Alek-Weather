@@ -88,9 +88,9 @@ export function AlertAreaMap({ alert, location, onClose }) {
       zoom: location ? 7 : 4,
     })
     // The same base the radar draws on, carrying the same .map-base-tiles class:
-    // the theme and sky-level filters in App.css are bound to that class, so the
+    // the theme and sky-level rules in App.css are bound to that class, so the
     // map here darkens with the rest of the app for free.
-    addBasemap(L, map)
+    const removeBasemap = addBasemap(L, map)
     // Where you are, in the same dot the radar uses — the one thing that turns
     // an outline into an answer about you rather than about the county list.
     if (location) {
@@ -101,7 +101,7 @@ export function AlertAreaMap({ alert, location, onClose }) {
     }
     mapInst.current = map
     setMapReady(true)
-    return () => { map.remove(); mapInst.current = null; setMapReady(false) }
+    return () => { removeBasemap(); map.remove(); mapInst.current = null; setMapReady(false) }
   }, [location])
 
   // Fetching the ground. Storm-based warnings carry their polygon and land here

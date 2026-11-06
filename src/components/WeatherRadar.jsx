@@ -11,7 +11,8 @@ const FRAMES_URL = 'https://api.rainviewer.com/public/weather-maps.json'
 // served straight from NWS rather than through a third party. No key, CORS open,
 // ~5-minute sweeps with a four-hour rolling window — against RainViewer's free
 // tier that is finer, fresher, twice the history, and free of the zoom ceiling
-// below. RainViewer stays as the fallback and as the only option outside the US.
+// below. It is opt-in, though (Settings › Radar source): RainViewer is the
+// default everywhere, and the only option outside the US.
 //
 // It is an ArcGIS ImageServer, not an XYZ cache, so there are no tiles to ask
 // for: each one is an exportImage render of that tile's bbox. See MrmsLayer.
@@ -122,6 +123,96 @@ async function fetchMrmsFrames() {
     }))
 }
 
+// Single-site NEXRAD: the nearest WSR-88D's super-resolution base reflectivity
+// (Level III N0B — 0.25 km gates, against MRMS's ~1 km grid), as XYZ tiles from
+// the Iowa Environmental Mesonet's RIDGE cache. CORS open, no key, the NWS ramp.
+// Sharp up close but one radar's reach, ~230 km, with the usual blind cone over
+// the site itself — so Auto only uses it zoomed in (see AUTO_HD_ZOOM) and MRMS's
+// seamless mosaic carries the wide view.
+const IEM_RADAR_API = 'https://mesonet.agron.iastate.edu/json/radar.py'
+const NEXRAD_TILE_URL = (site, stamp) =>
+  `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::${site}-N0B-${stamp}/{z}/{x}/{y}.png`
+// Volume scans land every 4–6 minutes, so this is roughly the span MRMS_FRAMES
+// covers, keeping the two timelines comparable when Auto switches between them.
+const NEXRAD_FRAMES = 20
+const NEXRAD_WINDOW_MS = 2 * 60 * 60 * 1000
+// Past 0.25 km gates there is nothing finer to fetch; 11 already oversamples them
+// for a retina screen, and IEM is a university service worth being gentle with.
+const NEXRAD_NATIVE_MAX = 11
+// Where Auto hands over from the MRMS mosaic to the single site. At zoom 8 the
+// card spans ~250 km, about one radar's reach, so the site's coverage edge stays
+// off screen; any wider and the map would show where the radar runs out.
+const AUTO_HD_ZOOM = 8
+// How far apart in time an MRMS sweep and a NEXRAD scan may be and still be the
+// "same" Auto frame. Under one sweep interval, so no sweep is shown twice.
+const AUTO_PAIR_MS = 4 * 60 * 1000
+
+// IEM's API wants minute-precision UTC: 2026-11-06T03:18Z.
+const iemTime = (ms) => new Date(ms).toISOString().slice(0, 16) + 'Z'
+
+// Equirectangular distance in km — plenty to rank radars a few hundred km away.
+function approxKm(lat1, lon1, lat2, lon2) {
+  const rad = Math.PI / 180
+  const x = (lon2 - lon1) * rad * Math.cos(((lat1 + lat2) / 2) * rad)
+  const y = (lat2 - lat1) * rad
+  return 6371 * Math.hypot(x, y)
+}
+
+// The nearest NEXRAD site's recent scans, oldest first, or [] on any failure —
+// callers fall back to MRMS. IEM's "available" list is every radar covering the
+// point, unsorted, and includes the airport TDWRs and the national composite;
+// only the WSR-88Ds carry N0B, so it is filtered to those and ranked by distance.
+async function fetchNexradFrames(lat, lon) {
+  const now = Date.now()
+  const avail = await fetch(`${IEM_RADAR_API}?operation=available&lat=${lat}&lon=${lon}&start=${iemTime(now)}`)
+    .then(r => r.json())
+  const site = (avail.radars ?? [])
+    .filter(r => r.type === 'NEXRAD' && Number.isFinite(r.lat) && Number.isFinite(r.lon))
+    .sort((a, b) => approxKm(lat, lon, a.lat, a.lon) - approxKm(lat, lon, b.lat, b.lon))[0]
+  if (!site) return []
+
+  const list = await fetch(
+    `${IEM_RADAR_API}?operation=list&radar=${site.id}&product=N0B&start=${iemTime(now - NEXRAD_WINDOW_MS)}&end=${iemTime(now)}`,
+  ).then(r => r.json())
+  return (list.scans ?? [])
+    .map(s => s.ts)
+    .filter(ts => typeof ts === 'string' && Number.isFinite(Date.parse(ts)))
+    .slice(-NEXRAD_FRAMES)
+    .map(ts => ({
+      key: `nexrad:${site.id}:${ts}`,
+      src: 'nexrad',
+      site: site.id,
+      time: Math.round(Date.parse(ts) / 1000),
+      // 2026-11-06T03:18Z -> 202611060318, the stamp RIDGE tiles are keyed by.
+      url: NEXRAD_TILE_URL(site.id, ts.replace(/[-T:Z]/g, '')),
+    }))
+}
+
+// Auto's timeline: the NEXRAD scans, each carrying the MRMS sweep nearest it in
+// time so the layer code can draw either one depending on zoom. A scan with no
+// sweep close enough keeps NEXRAD at every zoom rather than leaving a hole.
+function pairAutoFrames(nexrad, mrms) {
+  return nexrad.map(f => {
+    let best = null
+    for (const m of mrms) {
+      const gap = Math.abs(m.time - f.time) * 1000
+      if (gap <= AUTO_PAIR_MS && (!best || gap < best.gap)) best = { m, gap }
+    }
+    return { ...f, src: 'auto', range: best?.m.range ?? null }
+  })
+}
+
+// The feed a frame is actually drawn from. Only Auto frames depend on the zoom;
+// one with no paired sweep stays on NEXRAD throughout.
+const drawnSrc = (frame, hd) =>
+  frame.src !== 'auto' ? frame.src : (hd || !frame.range ? 'nexrad' : 'mrms')
+
+// The layer cache's key. An Auto frame gets one layer per feed, so crossing the
+// zoom threshold builds the other feed's layer under a new key and the normal
+// swap — old frame held until the new one has loaded — covers the handover.
+const layerKey = (frame, hd) =>
+  frame.src === 'auto' ? `${frame.key}|${drawnSrc(frame, hd)}` : frame.key
+
 // Future radar: NOAA HRRR forecast reflectivity served as free XYZ tiles by the
 // Iowa Environmental Mesonet (CORS-enabled, no key). RainViewer's free nowcast
 // array is unreliable (frequently empty), so HRRR provides the forecast frames.
@@ -140,6 +231,19 @@ const MAP_MAX_ZOOM     = 12
 const RADAR_NATIVE_MAX = 7 // RainViewer's 512px radar tiles cap here; higher returns "zoom level not supported"
 const RADAR_OPACITY     = 0.65
 const RADAR_WINDOW      = 2 // frames either side of current kept attached to the map
+
+// The last frame list fetched for each place and feed, so a radar that mounts
+// again — the web Radar tab is built fresh on every visit — opens on a timeline
+// at once instead of on nothing while four feeds answer. Still refetched on
+// every mount; this only decides what is drawn in the meantime. Ten minutes is
+// RainViewer's own frame step, so a cached list is at most one frame behind.
+const FEED_CACHE_MS = 10 * 60 * 1000
+const feedCache = new Map()
+const feedKey = (lat, lon, source) => `${lat},${lon},${source}`
+function cachedFeed(lat, lon, source) {
+  const hit = feedCache.get(feedKey(lat, lon, source))
+  return hit && Date.now() - hit.at < FEED_CACHE_MS ? hit.feed : null
+}
 // Two palettes, because two of the three feeds draw with the standard NWS
 // reflectivity ramp (green → yellow → orange → red) and one doesn't. MRMS and HRRR
 // are both NOAA products and share it; RainViewer has its own and ignores the
@@ -297,8 +401,8 @@ const IRIS_FADE = 0.12 // fraction of the run spent fading the circle in
 // Going full-screen is a fourfold increase in map area, so invalidateSize asks
 // for a screenful of tiles that the compact card never needed. They arrive over
 // the next few hundred ms, and every one of them lands as a repaint of the layer
-// the iris is scaling — in dark mode through the invert filter on .map-base-tiles,
-// which is a full-screen filter pass redone on each arrival. That is main-thread
+// the iris is scaling (a full GL redraw of the basemap, since it moved to
+// MapLibre — see utils/basemap). That is main-thread
 // and raster work spread across exactly the frames that have to be smooth, and it
 // is why arming the switch alone did not buy the whole win.
 //
@@ -393,8 +497,18 @@ function irisGeometry(x, y, box) {
 // The margin goes because the placeholder is already holding it: the clone is a
 // .card and would otherwise contribute a second one inside a slot sized to
 // include the first.
+//
+// The basemap is the exception to "already a tree of <img>": it is a MapLibre
+// canvas, and cloneNode copies a canvas's element but not its pixels — the
+// still came out with a blank map. So canvases are copied across by hand. A
+// WebGL canvas can only be read back in the frame it was drawn in, which is why
+// the caller has MapLibre redraw synchronously just before this.
 function snapshot(el) {
   const clone = el.cloneNode(true)
+  const from = el.querySelectorAll('canvas')
+  clone.querySelectorAll('canvas').forEach((c, i) => {
+    try { c.getContext('2d')?.drawImage(from[i], 0, 0) } catch { /* leave it blank */ }
+  })
   clone.style.marginBottom = '0'
   clone.querySelectorAll('button, a, [tabindex], [role="button"]').forEach(node => {
     node.tabIndex = -1
@@ -452,7 +566,11 @@ const revealAnimates = () =>
 // block in a stack. The map then gets its controls and its pan/zoom straight
 // away instead of hiding them behind tap-to-expand, which only makes sense for
 // a map small enough that a tap can't be a drag.
-export function WeatherRadar({ location, timezone, mode = 'split', fill = false, sky = '' }) {
+// `source` is the observed feed the user picked in Settings: 'rainviewer' (the
+// default), 'auto' (MRMS wide, the nearest NEXRAD site zoomed in), 'mrms' or
+// 'nexrad'. Outside NOAA coverage every choice ends up on RainViewer, the only
+// feed there is.
+export function WeatherRadar({ location, timezone, mode = 'split', source = 'rainviewer', fill = false, sky = '' }) {
   const combined = mode === 'combined'
   const mapRef      = useRef(null)
   const mapInst     = useRef(null)
@@ -480,7 +598,8 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
   //   past  observed frames — MRMS where NOAA covers it, RainViewer otherwise
   //   cast  RainViewer's own nowcast, when the free API bothers to send one
   //   fut   HRRR forecast steps, continuing on from whatever the two above cover
-  const [feed, setFeed] = useState({ past: [], cast: [], fut: [] })
+  const [feed, setFeed] = useState(() =>
+    cachedFeed(location.latitude, location.longitude, source) ?? { past: [], cast: [], fut: [] })
   // Which side the toggle is on, in split mode. Unread in combined mode, where
   // there are no sides.
   const [view, setView] = useState('observed')
@@ -491,6 +610,10 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
   const [playing, setPlaying]     = useState(false)
   const [expanded, setExpanded]   = useState(false)
   const [mapReady, setMapReady]   = useState(false)
+  // Whether the map is zoomed in far enough for Auto to draw the single site.
+  // Tracked as a boolean rather than the zoom itself so the layer effect only
+  // re-runs when the threshold is actually crossed, not on every wheel tick.
+  const [hd, setHd] = useState(true)
 
   // Geometry of the iris — where the circle sits and how far it has to reach,
   // set from the point that was tapped and kept for as long as the card is
@@ -549,14 +672,18 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
       const { latitude: lat, longitude: lon } = location
       const wantMrms = inMrmsDomain(lat, lon)
       const wantHrrr = inHrrrDomain(lat, lon)
+      // NEXRAD is US-only like MRMS. MRMS is still fetched alongside it on the
+      // NEXRAD setting: it is the fallback if IEM is down or has no site here.
+      const wantNexrad = wantMrms && (source === 'auto' || source === 'nexrad')
 
-      // All three at once. They have no data dependency on each other — only the
+      // All at once. They have no data dependency on each other — only the
       // trimming below does — and the slowest of them is what the card waits on, so
       // running them in sequence would have made that the sum instead of the max.
-      const [rvRes, mrmsRes, hrrrRes] = await Promise.allSettled([
+      const [rvRes, mrmsRes, hrrrRes, nexradRes] = await Promise.allSettled([
         fetch(FRAMES_URL).then(r => r.json()),
         wantMrms ? fetchMrmsFrames() : Promise.resolve([]),
         wantHrrr ? fetch(HRRR_META_URL).then(r => r.json()) : Promise.resolve(null),
+        wantNexrad ? fetchNexradFrames(lat, lon) : Promise.resolve([]),
       ])
 
       // RainViewer, split into its two halves. The URL is
@@ -581,7 +708,17 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
       // per-fetch rather than per-location, so an MRMS outage inside the US degrades
       // to the feed this always used instead of to an empty card.
       const mrmsPast = mrmsRes.status === 'fulfilled' ? mrmsRes.value : []
-      const past = mrmsPast.length > 0 ? mrmsPast : rvPast
+      const nexradPast = nexradRes.status === 'fulfilled' ? nexradRes.value : []
+      // The setting picks the feed; each choice falls back down the same chain
+      // (NEXRAD -> MRMS -> RainViewer) so a feed being down never empties the card.
+      // RainViewer, the default, falls back the other way: to MRMS, which is
+      // fetched in the US for exactly that.
+      const nexradPick = source === 'auto' ? pairAutoFrames(nexradPast, mrmsPast) : nexradPast
+      const past = source === 'rainviewer'
+        ? (rvPast.length > 0 ? rvPast : mrmsPast)
+        : nexradPick.length > 0 ? nexradPick
+        : mrmsPast.length > 0 ? mrmsPast
+        : rvPast
       const newest = past[past.length - 1]
 
       // HRRR steps, picking up after whatever the timeline already covers — the
@@ -606,10 +743,12 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
       }
 
       if (cancelled || (past.length === 0 && rvCast.length === 0 && futFrames.length === 0)) return
-      setFeed({ past, cast: rvCast, fut: futFrames })
+      const next = { past, cast: rvCast, fut: futFrames }
+      feedCache.set(feedKey(lat, lon, source), { feed: next, at: Date.now() })
+      setFeed(next)
     })()
     return () => { cancelled = true }
-  }, [location.latitude, location.longitude])
+  }, [location.latitude, location.longitude, source])
 
   // Coming back to split from combined, start on observed rather than resuming
   // whichever side was last looked at — the timeline in between showed both, so
@@ -705,6 +844,8 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
     wheelEl.addEventListener('wheel', onWheel, { capture: true, passive: true })
 
     map.setView([location.latitude, location.longitude], 10)
+    // Starts at 10, past AUTO_HD_ZOOM, which is what `hd`'s initial state says.
+    map.on('zoomend', () => setHd(map.getZoom() >= AUTO_HD_ZOOM))
     // Where you are. A DOM marker rather than the circleMarker this was, because
     // Leaflet zooms by CSS-scaling a pane rather than redrawing it mid-gesture,
     // and which pane decides what that does to the dot. Vectors live in the
@@ -736,14 +877,11 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
   useEffect(() => {
     const map = mapInst.current
     if (!map || !mapReady) return
-    // The canvas and its labels are two layers (see utils/basemap). The ref keeps
-    // the canvas alone, because it is the one the reveal animation waits on — the
-    // labels are a thin overlay that lands with it or just after either way.
-    const [base, labels] = addBasemap(L, map)
-    baseTileRef.current = base
+    // The basemap arrives asynchronously (see utils/basemap); the ref is what the
+    // reveal animation waits on, and until it lands the reveal simply doesn't wait.
+    const remove = addBasemap(L, map, (base) => { baseTileRef.current = base })
     return () => {
-      map.removeLayer(base)
-      map.removeLayer(labels)
+      remove()
       baseTileRef.current = null
     }
   }, [mapReady])
@@ -766,18 +904,20 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
     // map drag laggy. We keep them in the cache (no recreate churn) but detach
     // the far ones so pan/zoom only moves a handful of grids.
     const getLayer = (frame, attach) => {
-      let layer = layerCache.current.get(frame.key)
+      const key = layerKey(frame, hd)
+      let layer = layerCache.current.get(key)
       if (!layer) {
         const opts = { opacity: 0, zIndex: 200, maxZoom: MAP_MAX_ZOOM, crossOrigin: true, className: 'radar-tiles' }
         // MRMS builds each tile's URL from its coords (see MrmsLayer) and takes no
         // template. Its cap is its own — see MRMS_NATIVE_MAX — because it is there
         // to bound how much rendering the request asks for, not because the server
         // would refuse the way RainViewer's does past RADAR_NATIVE_MAX.
-        layer = frame.src === 'mrms'
+        const src = drawnSrc(frame, hd)
+        layer = src === 'mrms'
           ? new MrmsLayer('', { ...opts, timeRange: frame.range, maxNativeZoom: MRMS_NATIVE_MAX })
-          : L.tileLayer(frame.url, { ...opts, maxNativeZoom: RADAR_NATIVE_MAX })
+          : L.tileLayer(frame.url, { ...opts, maxNativeZoom: src === 'nexrad' ? NEXRAD_NATIVE_MAX : RADAR_NATIVE_MAX })
         layer.on('load', () => { layer._radarLoaded = true })
-        layerCache.current.set(frame.key, layer)
+        layerCache.current.set(key, layer)
       }
       if (attach && !map.hasLayer(layer)) layer.addTo(map)
       return layer
@@ -791,7 +931,7 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
     // Detach layers outside the window so the map isn't dragging 13 tile grids.
     const inWindow = new Set()
     for (let d = -win; d <= win; d++) {
-      inWindow.add(frames[((idx + d) % frames.length + frames.length) % frames.length].key)
+      inWindow.add(layerKey(frames[((idx + d) % frames.length + frames.length) % frames.length], hd))
     }
     layerCache.current.forEach((layer, key) => {
       // Never detach the active layer — it's the fallback display until the next frame loads.
@@ -805,18 +945,19 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
 
     const frame = frames[idx]
     if (!frame) return
-    wantedKey.current = frame.key
+    const key = layerKey(frame, hd)
+    wantedKey.current = key
     const layer = getLayer(frame, true)
 
     const show = () => {
-      if (wantedKey.current !== frame.key) return // user moved on before this loaded
+      if (wantedKey.current !== key) return // user moved on before this loaded
       const prev = activeKey.current
-      if (prev && prev !== frame.key) {
+      if (prev && prev !== key) {
         const prevLayer = layerCache.current.get(prev)
         if (prevLayer) prevLayer.setOpacity(0)
       }
       layer.setOpacity(RADAR_OPACITY)
-      activeKey.current = frame.key
+      activeKey.current = key
     }
 
     // Show immediately if tiles are already cached; otherwise keep the old frame
@@ -828,7 +969,7 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
     for (let d = 1; d <= win; d++) {
       getLayer(frames[(idx + d) % frames.length], true)
     }
-  }, [mapReady, frames, idx, playing])
+  }, [mapReady, frames, idx, playing, hd])
 
   // Animation playback. Load-aware: if the next frame's tiles aren't in yet,
   // hold the current frame for another tick instead of advancing past it —
@@ -841,11 +982,11 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
     let holds = 0
     const id = setInterval(() => {
       const next = (idx + 1) % frames.length
-      const layer = layerCache.current.get(frames[next].key)
+      const layer = layerCache.current.get(layerKey(frames[next], hd))
       if (layer?._radarLoaded || ++holds >= 4) setIdx(next)
     }, 450)
     return () => clearInterval(id)
-  }, [playing, frames, idx])
+  }, [playing, frames, idx, hd])
 
   const expand = (e) => {
     pageScroll.current = window.scrollY
@@ -872,6 +1013,9 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
           borderRadius: cs.borderRadius,
         }
       : null)
+    // Draw the basemap now so its canvas still holds the frame when snapshot
+    // reads it (see snapshot).
+    baseTileRef.current?.getMaplibreMap()?.redraw()
     holdClone.current = el ? snapshot(el) : null
     history.pushState({ overlay: 'radar' }, '')
     if (!revealAnimates()) { setExpanded(true); return }
@@ -1084,6 +1228,27 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
     return () => clearTimeout(t)
   }, [expanded, fill, mapReady, location.latitude, location.longitude])
 
+  // Leaflet only re-measures its container on a window resize or when told to.
+  // Every other way the box changes size left the map drawn for the old one,
+  // with the rest of the box an empty grey: the one that showed was opening the
+  // Radar tab from the desktop splash. The page is built under the splash, where
+  // the full-bleed radar layout isn't applied yet (it keys off the tab bar,
+  // which takes over only once the splash has gone), so the map was created a
+  // few hundred pixels short and then left that way when the layout stretched
+  // it. Watching the box itself covers that and anything like it. invalidateSize
+  // is a no-op at a size Leaflet has already seen, so the calls the expand and
+  // collapse paths make on their own stay cheap.
+  useEffect(() => {
+    const el = mapRef.current
+    const map = mapInst.current
+    if (!el || !map) return
+    // Default options: re-centre without animating, so the location dot stays
+    // where it was in the middle rather than drifting with the top-left corner.
+    const ro = new ResizeObserver(() => map.invalidateSize())
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [mapReady])
+
   // The compact card paints on the frame `expanded` goes false, and until something
   // tells it otherwise Leaflet still believes it is the size of the screen — so
   // that frame is a 220px window onto an 800px map, showing a slice of nowhere in
@@ -1207,7 +1372,21 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
     if (node && holdClone.current) node.appendChild(holdClone.current)
   }, [])
 
-  if (frames.length === 0) return null
+  // Nothing to draw yet. In the stack the card stays out until it has frames;
+  // as the web Radar page it *is* the page, and returning nothing left the tab
+  // an empty sky until the feeds answered, then dropped the whole radar in at
+  // once. The page's frame — card, empty map — goes up straight away instead,
+  // the same box the lazy loader's skeleton holds, so the page fades in on the
+  // switch and only the map and controls arrive later.
+  if (frames.length === 0) {
+    return fill ? (
+      <div className="card radar-card radar-fill" aria-busy="true">
+        <div className="radar-map-wrap">
+          <div className="radar-map" />
+        </div>
+      </div>
+    ) : null
+  }
 
   // The legend tracks the tiles actually on screen. MRMS and HRRR are both NOAA
   // and both draw with the NWS reflectivity ramp; RainViewer keeps its own, and
@@ -1215,7 +1394,9 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
   // parameter in the tile URL — so instead of hiding the switch the legend blocks
   // ease between the two ramps. Read off the frame's source rather than its key,
   // so a feed can't change its key format and silently take the legend with it.
-  const frameSrc     = frames[idx]?.src
+  // drawnSrc, not the frame's own src: an Auto frame is MRMS or NEXRAD depending
+  // on the zoom, and the caption has to name the one actually on screen.
+  const frameSrc     = frames[idx] && drawnSrc(frames[idx], hd)
   const legendColors = frameSrc === 'rv' ? LEGEND_RAINVIEWER : LEGEND_NWS
 
   // Observed → forecast boundary, marked on the scrubber so the palette change
@@ -1234,6 +1415,8 @@ export function WeatherRadar({ location, timezone, mode = 'split', fill = false,
   // about their colours.
   const SOURCE_NAMES = {
     mrms: 'NOAA MRMS radar',
+    // Names the site, since which radar it is decides where the coverage ends.
+    nexrad: `NOAA NEXRAD ${frames[idx]?.site ?? ''}`.trim(),
     rv:   'RainViewer radar',
     hrrr: 'NOAA HRRR model',
   }

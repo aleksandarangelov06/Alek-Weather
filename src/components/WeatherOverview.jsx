@@ -1,5 +1,5 @@
-import { Sun, Moon, Cloud, CloudSun, CloudFog, CloudRain, CloudSnow, CloudLightning, CloudSunRain, Thermometer, Shirt, Wind, Snowflake, Umbrella } from 'lucide-react'
-import { TankTop, Shorts, LongSleeve, Hoodie, Jacket, Coat, Parka, Beanie, Mitten, Boot } from './clothingGlyphs'
+import { Sun, Moon, Cloud, CloudSun, CloudFog, CloudRain, CloudSnow, CloudLightning, CloudSunRain, Thermometer, Shirt, Wind, Snowflake } from 'lucide-react'
+import { TankTop, Shorts, LongSleeve, Hoodie, Jacket, Coat, Parka, Beanie, Mitten, Boot, RainUmbrella } from './clothingGlyphs'
 import { WindTurbine } from './WindTurbine'
 import { getWeatherInfo, liveWeatherCode, nowcastHourlyCode, precipTier, tempColor } from '../utils/weatherCodes'
 import { formatWind, unitSuffix, unitValue } from '../utils/units'
@@ -862,8 +862,28 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
       const NAMED_PM = 30   // high enough to name wildfire smoke with confidence
       const POOR_PM  = 35   // "poor" rather than "reduced" air quality
       const HEAVY_PM = 55   // unhealthy — worth a warning
+      // High PM2.5 alone doesn't mean smoke: urban smog, inversions, and dust
+      // all raise it too. Smoke is almost entirely fine particles (PM2.5 is most
+      // of PM10, where dust is mostly coarse) and carries carbon monoxide from
+      // the burn. Traffic/heating smog shares both traits (e.g. Tehran's winter
+      // inversions), but it sits in a shallow surface layer with lots of NO₂,
+      // while a smoke plume fills the whole column (high aerosol optical depth)
+      // and brings little NO₂. Require all of it before blaming wildfires.
+      const SMOKE_RATIO = 0.7  // PM2.5 / PM10
+      const SMOKE_CO    = 300  // µg/m³; clean background sits ~100–250
+      const SMOKE_AOD   = 0.7  // column haze; urban smog rarely tops ~0.5
+      const SMOG_NO2    = 60   // µg/m³; above this the air is traffic-dominated
+      const smokeSignature = (pm25, pm10, co, no2, aod) =>
+        pm25 >= NAMED_PM &&
+        pm10 != null && pm10 > 0 && pm25 / pm10 >= SMOKE_RATIO &&
+        co != null && co >= SMOKE_CO &&
+        aod != null && aod >= SMOKE_AOD &&
+        (no2 == null || no2 <= SMOG_NO2)
       let peakPm = airQuality.pm2_5 ?? 0
       let smokyDays = 0
+      let signatureSeen = smokeSignature(
+        airQuality.pm2_5 ?? 0, airQuality.pm10, airQuality.carbon_monoxide,
+        airQuality.nitrogen_dioxide, airQuality.aerosol_optical_depth)
       const aq = airQuality.hourly
       if (aq?.time && aq?.pm2_5) {
         const perDay = new Map()
@@ -873,6 +893,9 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
           const d = aq.time[j].slice(0, 10)
           if (v > (perDay.get(d) ?? 0)) perDay.set(d, v)
           if (v > peakPm) peakPm = v
+          if (!signatureSeen && smokeSignature(
+            v, aq.pm10?.[j], aq.carbon_monoxide?.[j],
+            aq.nitrogen_dioxide?.[j], aq.aerosol_optical_depth?.[j])) signatureSeen = true
         }
         for (const v of perDay.values()) if (v >= SMOKE_PM) smokyDays++
       }
@@ -881,9 +904,9 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
       const when = smokyDays >= 3 ? 'at times through the week'
         : smokyDays === 2 ? 'over the next couple of days'
         : smokyNow ? 'right now' : 'today'
-      // Name wildfire smoke only once PM2.5 is high enough to be confident; below
-      // that the source is ambiguous, so it reads as generic haze.
-      const named = peakPm >= NAMED_PM
+      // Name wildfire smoke only when some hour shows the smoke signature; other
+      // particulate pollution reads as generic haze.
+      const named = signatureSeen
       const quality = peakPm >= POOR_PM ? 'poor air quality' : 'reduced air quality'
       return {
         heavy: peakPm >= HEAVY_PM,
@@ -1450,7 +1473,7 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
     if (p != null) {
       if (p >= 40) {
         if (dCode != null && SNOW_CODES.has(dCode)) { advice += ', wear boots';       Accessory = Boot }
-        else                                        { advice += ', bring an umbrella'; Accessory = Umbrella }
+        else                                        { advice += ', bring an umbrella'; Accessory = RainUmbrella }
       }
     }
     return { text: advice, Icon, Accessory, feels }

@@ -17,6 +17,14 @@ registerSW({
   },
 })
 
+// Web fonts load without blocking first paint (see index.html). Text renders in
+// the system fallback and swaps once they arrive (display=swap), so a slow or
+// offline launch is never held up waiting on Google.
+const fonts = document.createElement('link')
+fonts.rel = 'stylesheet'
+fonts.href = 'https://fonts.googleapis.com/css2?family=Google+Sans:wght@300;400;500;700&family=Inter:wght@300..700&display=swap'
+document.head.appendChild(fonts)
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ErrorBoundary>

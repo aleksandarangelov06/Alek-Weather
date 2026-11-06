@@ -624,7 +624,7 @@ function ThemeView({ darkMode, onDarkModeChange, platformTheme, onPlatformThemeC
   )
 }
 
-function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, units, onUnitGroupChange, nowcastMode, onNowcastModeChange, radarMode, onRadarModeChange, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onThemeOpen, onNotificationsOpen, weatherAnimations, onWeatherAnimationsChange, iconMotion, onIconMotionChange, radarEnhanced, onRadarEnhancedChange, installPrompt, onInstall, webShell }) {
+function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, units, onUnitGroupChange, nowcastMode, onNowcastModeChange, radarMode, onRadarModeChange, radarSource, onRadarSourceChange, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onThemeOpen, onNotificationsOpen, weatherAnimations, onWeatherAnimationsChange, iconMotion, onIconMotionChange, radarEnhanced, onRadarEnhancedChange, installPrompt, onInstall, webShell }) {
   return (
     <>
       <div className="settings-group-label">Appearance</div>
@@ -752,6 +752,24 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, units, o
             options={[
               { value: 'combined', label: 'Combined' },
               { value: 'split',    label: 'Split'    },
+            ]}
+          />
+        </SettingRow>
+        {/* Which observed feed the map draws, in the US (elsewhere RainViewer
+            is the only one there is). RainViewer is the default. MRMS is
+            NOAA's seamless national mosaic at ~1 km; NEXRAD is the nearest
+            single radar at 0.25 km — sharper, but it ends ~230 km out. Auto
+            draws MRMS zoomed out and NEXRAD zoomed in, which is each one where
+            it is best. */}
+        <SettingRow label="Radar source">
+          <SegmentedControl
+            value={radarSource}
+            onChange={onRadarSourceChange}
+            options={[
+              { value: 'rainviewer', label: 'RainViewer' },
+              { value: 'auto',   label: 'Auto'   },
+              { value: 'mrms',   label: 'MRMS'   },
+              { value: 'nexrad', label: 'NEXRAD' },
             ]}
           />
         </SettingRow>

@@ -7,6 +7,7 @@ import {
   getUVNote, getVisibilityInfo, getVisibilityNote, getWindInfo, getWindNote,
 } from '../utils/conditions'
 import { formatUnitDelta, unitSuffix, unitText, unitValue } from '../utils/units'
+import { markCoverSettled } from '../utils/detailCover'
 
 // Metres per mile, for the miles the visibility thresholds in
 // utils/conditions.js are written in. That is deliberately separate from the
@@ -592,6 +593,7 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, units, 
           }}
           role="dialog"
           aria-label={openDef?.label}
+          onAnimationEnd={markCoverSettled}
         >
           <div className="detail-cover-fill" />
           <div className="detail-cover-head">

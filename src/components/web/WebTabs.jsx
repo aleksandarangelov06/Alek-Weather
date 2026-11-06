@@ -9,8 +9,15 @@ import { useLayoutEffect, useRef, useState } from 'react'
 // place — hence the id and label props. `controls` is for the case where every
 // tab points at one region that changes contents (the hourly table) rather than
 // at a panel per tab; a tab may carry `disabled` when its reading has no data.
+//
+// `home` ({ label, icon, onSelect }) is drawn inside the bar ahead of the tabs
+// without being one — the forecast bar's Home button, which leaves the forecast
+// for the splash rather than switching page. It takes the pill when `active` is
+// 'home' (the splash keeps this bar up, with Home selected), but it is kept out
+// of `tabs` so the arrow keys, which wrap around the tab list, can never land
+// on it: ← from the first page would otherwise throw you out to the splash.
 export function WebTabs({
-  tabs, active, onChange,
+  tabs, active, onChange, home = null,
   idPrefix = 'web-tab', controls, label = 'Forecast pages', className = '',
 }) {
   const listRef = useRef(null)
@@ -78,6 +85,18 @@ export function WebTabs({
             style={{ transform: `translateX(${pill.left}px)`, width: pill.width }}
             aria-hidden="true"
           />
+        )}
+        {home && (
+          <button
+            type="button"
+            ref={(el) => { btnRefs.current.home = el }}
+            className={`web-tab web-tab--home${active === 'home' ? ' web-tab--active' : ''}`}
+            aria-current={active === 'home' ? 'page' : undefined}
+            onClick={home.onSelect}
+          >
+            {home.icon}
+            {home.label}
+          </button>
         )}
         {tabs.map((t) => (
           <button

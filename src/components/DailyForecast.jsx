@@ -3,6 +3,7 @@ import { Droplet, X } from 'lucide-react'
 import { getWeatherInfo, formatDay, formatHour, formatTime, getUVLabel, liveWeatherCode, nowcastHourlyCode, toTemp, tempColor, tempStyle, SUN_ORANGE } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
 import { formatPrecip, formatWind } from '../utils/units'
+import { markCoverSettled } from '../utils/detailCover'
 
 // Keep in step with --reveal-dur in App.css, which is where the reasoning for the
 // number lives — the cover stays mounted this long while the circle shrinks back
@@ -275,22 +276,17 @@ export function DailyForecast({ daily, hourly, timezone, unit, units, colorCodin
                 <WeatherIcon id={info.icon} alt={info.label} />
               </span>
               <span className="daily-day">{formatDay(date)}</span>
-              {/* Always rendered, even at 0%, so the grid cell stays occupied —
-                  omitting it would let the temperature range slide left into
-                  this column on dry days. The droplet names the unit: a bare
-                  "45%" could read as humidity or cloud cover, and aria-label
-                  carries that meaning to screen readers, which otherwise hear
-                  only "45%". */}
+              {/* Shown on every day, 0% included: a blank cell left a dry day
+                  looking like missing data rather than a forecast of no rain.
+                  The droplet names the unit: a bare "45%" could read as
+                  humidity or cloud cover, and aria-label carries that meaning
+                  to screen readers, which otherwise hear only "45%". */}
               <span
                 className="daily-precip-badge"
-                aria-label={p > 0 ? `${p}% chance of precipitation` : undefined}
+                aria-label={`${p}% chance of precipitation`}
               >
-                {p > 0 && (
-                  <>
-                    <Droplet className="daily-precip-drop" aria-hidden="true" />
-                    <span className="daily-precip-num">{p}%</span>
-                  </>
-                )}
+                <Droplet className="daily-precip-drop" aria-hidden="true" />
+                <span className="daily-precip-num">{p}%</span>
               </span>
               <div className="daily-range">
                 <div className="daily-range-inner">
@@ -321,6 +317,7 @@ export function DailyForecast({ daily, hourly, timezone, unit, units, colorCodin
           }}
           role="dialog"
           aria-label={coverTitle(expanded)}
+          onAnimationEnd={markCoverSettled}
         >
           <div className="detail-cover-fill" />
           <div className="detail-cover-head">

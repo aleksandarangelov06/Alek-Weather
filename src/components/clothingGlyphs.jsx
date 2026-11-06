@@ -136,6 +136,27 @@ export function Mitten(props) {
   )
 }
 
+// lucide's `Umbrella` (same three paths) with rain landing on it: three short
+// streaks start above the 24px box and fall onto the canopy, where they vanish.
+// The svg overflows for that, so the drops can enter from above the icon
+// without shrinking the umbrella to make room. Each drop's --fall is how far it
+// travels to meet the canopy at its x — the dome is an arc of radius ~10.3
+// centred at (12, 14.56), so surface y = 14.56 - sqrt(10.28² - (x-12)²).
+// The fall itself is CSS (.umbrella-drop in App.css), so Animated Icons and
+// reduced motion leave it a still umbrella.
+export function RainUmbrella({ className = '', ...props }) {
+  return (
+    <Glyph {...props} className={`rain-umbrella ${className}`.trim()} style={{ overflow: 'visible', ...props.style }}>
+      <path className="umbrella-drop" style={{ '--fall': '9.6px' }} d="M5.5 -5v2" />
+      <path className="umbrella-drop" style={{ '--fall': '7.7px', animationDelay: '-0.5s' }} d="M9 -5v2" />
+      <path className="umbrella-drop" style={{ '--fall': '7.9px', animationDelay: '-1s' }} d="M15.5 -5v2" />
+      <path d="M12 13v7a2 2 0 0 0 4 0" />
+      <path d="M12 2v2" />
+      <path d="M20.992 13a1 1 0 0 0 .97-1.274 10.284 10.284 0 0 0-19.923 0A1 1 0 0 0 3 13z" />
+    </Glyph>
+  )
+}
+
 // Shaft, instep, heel — a rain/snow boot, replacing lucide's `Footprints`,
 // which drew where you'd walked rather than what to put on.
 export function Boot(props) {

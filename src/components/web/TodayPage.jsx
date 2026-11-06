@@ -84,7 +84,7 @@ function buildRows(order, paired) {
 // One draggable slot in the grid. `full` spans both tracks — it is what the
 // widget's own styles key off to decide how much they can spread out, so the
 // sizing follows the drop rather than needing a second source of truth.
-function SortableWidget({ id, name, full, children }) {
+export function SortableWidget({ id, name, full, children }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
   return (
     <div

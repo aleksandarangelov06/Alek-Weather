@@ -1,4 +1,5 @@
-import { lazy, Suspense } from 'react'
+import { lazy, Suspense, useState } from 'react'
+import { loadWeatherRadar, loadedWeatherRadar } from './radarChunk'
 
 // Leaflet plus the map that drives it is ~160 KB — a quarter of the whole
 // bundle — for a card that sits last in the default block order and behind its
@@ -10,7 +11,7 @@ import { lazy, Suspense } from 'react'
 // eager module is the implementation and pulling it in directly puts Leaflet
 // back in the main chunk.
 const WeatherRadarImpl = lazy(() =>
-  import('./WeatherRadar').then(m => ({ default: m.WeatherRadar })),
+  loadWeatherRadar().then(C => ({ default: C })),
 )
 
 // The chunk lands in a few hundred milliseconds at worst, but the stack must
@@ -34,6 +35,12 @@ function RadarSkeleton({ fill }) {
 }
 
 export function WeatherRadar(props) {
+  // Already fetched (the web layout preloads it): render it straight away rather
+  // than through a suspend that would put the skeleton up for a frame. Read
+  // once, at mount — switching between the two paths later would change the
+  // element type and remount the map under the reader.
+  const [Loaded] = useState(loadedWeatherRadar)
+  if (Loaded) return <Loaded {...props} />
   return (
     <Suspense fallback={<RadarSkeleton fill={props.fill} />}>
       <WeatherRadarImpl {...props} />
