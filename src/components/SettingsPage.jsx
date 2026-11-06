@@ -1,7 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
-import { ArrowLeft, ChevronRight, ChevronDown, X, Info } from 'lucide-react'
+import { useState, useEffect, useLayoutEffect, useRef } from 'react'
+import {
+  ArrowLeft, ChevronRight, ChevronDown, X, Info,
+  Palette, Flame, Thermometer, CloudRain, Radar as RadarIcon, Bell, Database, RefreshCw, Trash2,
+} from 'lucide-react'
 import { APP_VERSION, ANDROID_VERSION, IS_ANDROID_APP } from '../utils/version'
-import { IS_PHONE } from '../utils/device'
+import { IS_PHONE, IS_DESKTOP } from '../utils/device'
 import { UNIT_GROUPS, UNIT_GROUP_KEYS } from '../utils/units'
 import { MAX_CARD_TRANSPARENCY } from '../utils/appearance'
 
@@ -101,6 +104,30 @@ function InstallSection({ installPrompt, onInstall }) {
 }
 
 function ClearStorageSection() {
+  const { cleared, confirmDelete, setConfirmDelete, deleting, handleClear, handleDelete } = useClearStorage()
+
+  return (
+    <div className="card settings-card">
+      <button className="settings-row clear-cache-btn" onClick={handleClear} disabled={cleared || deleting}>
+        <div className="settings-row-label">{cleared ? 'Refreshing…' : 'Refresh app'}</div>
+      </button>
+      <button
+        className={`settings-row clear-cache-btn delete-data-btn${confirmDelete ? ' confirming' : ''}`}
+        onClick={handleDelete}
+        onBlur={() => setConfirmDelete(false)}
+        disabled={deleting || cleared}
+      >
+        <div className="settings-row-label">
+          {deleting ? 'Deleting…' : confirmDelete ? 'Tap again to delete all data' : 'Delete data'}
+        </div>
+      </button>
+    </div>
+  )
+}
+
+// Refresh (drop the cached app shell) and delete (factory reset), shared by the
+// phone settings list and the web Settings page, which lay them out differently.
+function useClearStorage() {
   const [cleared, setCleared] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -139,24 +166,18 @@ function ClearStorageSection() {
     setTimeout(() => window.location.reload(), 500)
   }
 
-  return (
-    <div className="card settings-card">
-      <button className="settings-row clear-cache-btn" onClick={handleClear} disabled={cleared || deleting}>
-        <div className="settings-row-label">{cleared ? 'Refreshing…' : 'Refresh app'}</div>
-      </button>
-      <button
-        className={`settings-row clear-cache-btn delete-data-btn${confirmDelete ? ' confirming' : ''}`}
-        onClick={handleDelete}
-        onBlur={() => setConfirmDelete(false)}
-        disabled={deleting || cleared}
-      >
-        <div className="settings-row-label">
-          {deleting ? 'Deleting…' : confirmDelete ? 'Tap again to delete all data' : 'Delete data'}
-        </div>
-      </button>
-    </div>
-  )
+  return { cleared, confirmDelete, setConfirmDelete, deleting, handleClear, handleDelete }
 }
+
+const ABOUT_DESC = 'Alek Weather uses free, open-source weather APIs. Open-Meteo provides the forecast, including the full seven-day outlook. In the US, current conditions and the next day or two of hourly detail come from NWS instead — the range it forecasts hour by hour.'
+
+const ABOUT_APIS = [
+  ['Weather & Forecast', 'api.open-meteo.com'],
+  ['US Current & Hourly', 'api.weather.gov'],
+  ['Weather Alerts', 'api.weather.gov'],
+  ['Air Quality', 'air-quality-api.open-meteo.com'],
+  ['Geocoding', 'geocoding-api.open-meteo.com'],
+]
 
 function AboutSection() {
   const [open, setOpen] = useState(false)
@@ -169,30 +190,14 @@ function AboutSection() {
       </button>
       {open && (
         <div className="about-content">
-          <p className="about-desc">
-            Alek Weather uses free, open-source weather APIs. Open-Meteo provides the forecast, including the full seven-day outlook. In the US, current conditions and the next day or two of hourly detail come from NWS instead — the range it forecasts hour by hour.
-          </p>
+          <p className="about-desc">{ABOUT_DESC}</p>
           <div className="about-apis">
-            <div className="about-api-row">
-              <span className="about-api-name">Weather &amp; Forecast</span>
-              <span className="about-api-url">api.open-meteo.com</span>
-            </div>
-            <div className="about-api-row">
-              <span className="about-api-name">US Current &amp; Hourly</span>
-              <span className="about-api-url">api.weather.gov</span>
-            </div>
-            <div className="about-api-row">
-              <span className="about-api-name">Weather Alerts</span>
-              <span className="about-api-url">api.weather.gov</span>
-            </div>
-            <div className="about-api-row">
-              <span className="about-api-name">Air Quality</span>
-              <span className="about-api-url">air-quality-api.open-meteo.com</span>
-            </div>
-            <div className="about-api-row">
-              <span className="about-api-name">Geocoding</span>
-              <span className="about-api-url">geocoding-api.open-meteo.com</span>
-            </div>
+            {ABOUT_APIS.map(([name, url]) => (
+              <div key={name} className="about-api-row">
+                <span className="about-api-name">{name}</span>
+                <span className="about-api-url">{url}</span>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -624,7 +629,72 @@ function ThemeView({ darkMode, onDarkModeChange, platformTheme, onPlatformThemeC
   )
 }
 
-function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, units, onUnitGroupChange, nowcastMode, onNowcastModeChange, radarMode, onRadarModeChange, radarSource, onRadarSourceChange, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onThemeOpen, onNotificationsOpen, weatherAnimations, onWeatherAnimationsChange, iconMotion, onIconMotionChange, radarEnhanced, onRadarEnhancedChange, installPrompt, onInstall, webShell }) {
+// The radar settings, on their own page off the Tiles card.
+function RadarSettingsView({ radarMode, onRadarModeChange, radarSource, onRadarSourceChange, radarEnhanced, onRadarEnhancedChange, onBack }) {
+  return (
+    <>
+      {onBack && (
+        <button className="back-btn color-coding-back" onClick={onBack} aria-label="Back to settings">
+          <ArrowLeft size={18} />
+          <span>Back</span>
+        </button>
+      )}
+      <p className="color-coding-desc">Choose how the radar map plays back and where its data comes from.</p>
+      <div className="card settings-card">
+        {/* Whether the observed and forecast halves share one scrubber or sit
+            behind a toggle on the map. Only US locations have forecast frames;
+            elsewhere there is no second half to arrange and the radar is an
+            observed timeline whatever this says. */}
+        <SettingRow label="Timeline">
+          <SegmentedControl
+            value={radarMode}
+            onChange={onRadarModeChange}
+            options={[
+              { value: 'combined', label: 'Combined' },
+              { value: 'split',    label: 'Split'    },
+            ]}
+          />
+        </SettingRow>
+        <RadarEnhancedRow checked={radarEnhanced} onChange={onRadarEnhancedChange} />
+      </div>
+      {/* Which observed feed the map draws, in the US (elsewhere RainViewer
+          is the only one there is). RainViewer is the default. MRMS is
+          NOAA's seamless national mosaic at ~1 km; NEXRAD is the nearest
+          single radar at 0.25 km — sharper, but it ends ~230 km out. Auto
+          draws MRMS zoomed out and NEXRAD zoomed in, which is each one where
+          it is best. Four options don't fit beside a label at phone width, so
+          the control gets a card of its own with the label above it. */}
+      <p className="color-coding-desc">Radar source. Outside the US, RainViewer is always used.</p>
+      <div className="card settings-card">
+        <div className="settings-row radar-source-row">
+          <SegmentedControl
+            value={radarSource}
+            onChange={onRadarSourceChange}
+            options={[
+              { value: 'rainviewer', label: 'RainViewer' },
+              { value: 'auto',   label: 'Auto'   },
+              { value: 'mrms',   label: 'MRMS'   },
+              { value: 'nexrad', label: 'NEXRAD' },
+            ]}
+          />
+        </div>
+      </div>
+    </>
+  )
+}
+
+function radarViewProps(bodyProps) {
+  return {
+    radarMode: bodyProps.radarMode,
+    onRadarModeChange: bodyProps.onRadarModeChange,
+    radarSource: bodyProps.radarSource,
+    onRadarSourceChange: bodyProps.onRadarSourceChange,
+    radarEnhanced: bodyProps.radarEnhanced,
+    onRadarEnhancedChange: bodyProps.onRadarEnhancedChange,
+  }
+}
+
+function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, units, onUnitGroupChange, nowcastMode, onNowcastModeChange, onColorCodingOpen, onOverviewOpen, onRadarOpen, onWeatherEffectsOpen, onThemeOpen, onNotificationsOpen, weatherAnimations, onWeatherAnimationsChange, iconMotion, onIconMotionChange, installPrompt, onInstall, webShell }) {
   return (
     <>
       <div className="settings-group-label">Appearance</div>
@@ -737,43 +807,12 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, units, o
             ]}
           />
         </SettingRow>
-      </div>
-
-      <div className="settings-group-label">Radar</div>
-      <div className="card settings-card">
-        {/* Whether the observed and forecast halves share one scrubber or sit
-            behind a toggle on the map. Only US locations have forecast frames;
-            elsewhere there is no second half to arrange and the radar is an
-            observed timeline whatever this says. */}
-        <SettingRow label="Timeline">
-          <SegmentedControl
-            value={radarMode}
-            onChange={onRadarModeChange}
-            options={[
-              { value: 'combined', label: 'Combined' },
-              { value: 'split',    label: 'Split'    },
-            ]}
-          />
-        </SettingRow>
-        {/* Which observed feed the map draws, in the US (elsewhere RainViewer
-            is the only one there is). RainViewer is the default. MRMS is
-            NOAA's seamless national mosaic at ~1 km; NEXRAD is the nearest
-            single radar at 0.25 km — sharper, but it ends ~230 km out. Auto
-            draws MRMS zoomed out and NEXRAD zoomed in, which is each one where
-            it is best. */}
-        <SettingRow label="Radar source">
-          <SegmentedControl
-            value={radarSource}
-            onChange={onRadarSourceChange}
-            options={[
-              { value: 'rainviewer', label: 'RainViewer' },
-              { value: 'auto',   label: 'Auto'   },
-              { value: 'mrms',   label: 'MRMS'   },
-              { value: 'nexrad', label: 'NEXRAD' },
-            ]}
-          />
-        </SettingRow>
-        <RadarEnhancedRow checked={radarEnhanced} onChange={onRadarEnhancedChange} />
+        {/* The radar settings live on their own page (RadarSettingsView), the
+            way Weather Overview's do. */}
+        <button className="settings-row about-row" onClick={onRadarOpen}>
+          <div className="settings-row-label">Radar</div>
+          <ChevronRight size={16} className="about-chevron" />
+        </button>
       </div>
 
       {/* Notifications ride on a native bridge that only exists in the APK.
@@ -806,9 +845,313 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, units, o
   )
 }
 
-const SUB_VIEW_TITLES = { colorcoding: 'Color Coding', overview: 'Weather Overview Settings', effects: 'Weather Effects', theme: 'Theme', notifications: 'Notifications' }
+const SUB_VIEW_TITLES = { colorcoding: 'Color Coding', overview: 'Weather Overview Settings', radar: 'Radar', effects: 'Weather Effects', theme: 'Theme', notifications: 'Notifications' }
 
-export function SettingsPage({ onBack, onDismiss, inline, modal, closing, subView, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onThemeOpen, onNotificationsOpen, onSubViewBack, colorCoding, onColorCodingToggle, overviewParts, onOverviewPartToggle, ...bodyProps }) {
+// ── Web Settings page ─────────────────────────────────────────────────────
+//
+// The web app's Settings tab, laid out for a desktop window rather than a
+// phone column: a list of sections down the left, and the one that's chosen
+// on the right. Every row says what the setting does under its name, with the
+// control on the right — at this width there is room to explain, and a bare
+// "Timeline: Combined / Split" asks you to already know.
+//
+// The phone shells' sub-pages (Theme, Color Coding, …) are sections here, so
+// nothing is more than one click deep.
+
+const WEB_SECTION_KEY = 'alek-weather-web-settings-section'
+
+function WebRow({ label, desc, children, danger }) {
+  return (
+    <div className={`ws-row${danger ? ' ws-row--danger' : ''}`}>
+      <div className="ws-row-text">
+        <div className="ws-row-label">{label}</div>
+        {desc && <div className="ws-row-desc">{desc}</div>}
+      </div>
+      <div className="ws-row-control">{children}</div>
+    </div>
+  )
+}
+
+function WebGroup({ title, children }) {
+  return (
+    <section className="card settings-card ws-group">
+      {title && <h4 className="ws-group-title">{title}</h4>}
+      {children}
+    </section>
+  )
+}
+
+function WebDataSection() {
+  const { cleared, confirmDelete, setConfirmDelete, deleting, handleClear, handleDelete } = useClearStorage()
+  return (
+    <WebGroup>
+      <WebRow label="Refresh app" desc="Reload the latest version of Alek Weather. Your places and settings are kept.">
+        <button className="ws-btn" onClick={handleClear} disabled={cleared || deleting}>
+          <RefreshCw size={15} aria-hidden="true" />
+          {cleared ? 'Refreshing…' : 'Refresh'}
+        </button>
+      </WebRow>
+      <WebRow label="Delete data" desc="Remove every saved place, recent search and setting from this browser. This can't be undone." danger>
+        <button
+          className={`ws-btn ws-btn--danger${confirmDelete ? ' confirming' : ''}`}
+          onClick={handleDelete}
+          onBlur={() => setConfirmDelete(false)}
+          disabled={deleting || cleared}
+        >
+          <Trash2 size={15} aria-hidden="true" />
+          {deleting ? 'Deleting…' : confirmDelete ? 'Click again to confirm' : 'Delete'}
+        </button>
+      </WebRow>
+    </WebGroup>
+  )
+}
+
+function WebSettings({
+  darkMode, onDarkModeChange, platformTheme, onPlatformThemeChange,
+  unit, onUnitChange, units, onUnitGroupChange,
+  nowcastMode, onNowcastModeChange,
+  radarMode, onRadarModeChange, radarSource, onRadarSourceChange, radarEnhanced, onRadarEnhancedChange,
+  weatherAnimations, onWeatherAnimationsChange, iconMotion, onIconMotionChange,
+  colorCoding, onColorCodingToggle, webShell,
+  notifyEnabled, notifyTypes, notifyPermission, onNotifyEnabledChange, onNotifyTypeToggle,
+}) {
+  const sections = [
+    { id: 'appearance', label: 'Appearance', Icon: Palette, desc: 'How the app looks, and what moves.' },
+    { id: 'colors', label: 'Color Coding', Icon: Flame, desc: 'Color readings by how hot, cold or severe they are.' },
+    { id: 'units', label: 'Units', Icon: Thermometer, desc: 'Switching is instant — the forecast is converted, not fetched again.' },
+    { id: 'forecast', label: 'Forecast', Icon: CloudRain, desc: 'What the forecast pages show.' },
+    { id: 'radar', label: 'Radar', Icon: RadarIcon, desc: 'How the radar map plays and where its data comes from.' },
+    ...(IS_ANDROID_APP ? [{ id: 'notifications', label: 'Notifications', Icon: Bell, desc: 'Rain on the way, weather alerts and tomorrow’s outlook.' }] : []),
+    { id: 'data', label: 'App & Data', Icon: Database, desc: 'Keep the app up to date, or start over.' },
+    { id: 'about', label: 'About', Icon: Info, desc: 'Where the weather comes from.' },
+  ]
+
+  const [section, setSectionState] = useState(() => {
+    try {
+      const saved = localStorage.getItem(WEB_SECTION_KEY)
+      if (sections.some(s => s.id === saved)) return saved
+    } catch { /* storage unavailable: start at the top */ }
+    return 'appearance'
+  })
+  const setSection = (id) => {
+    setSectionState(id)
+    try { localStorage.setItem(WEB_SECTION_KEY, id) } catch { /* not remembered, that's all */ }
+  }
+  const current = sections.find(s => s.id === section) ?? sections[0]
+
+  const tiles = webShell ? COLOR_CODING_TILES.filter(t => t.key !== 'overview') : COLOR_CODING_TILES
+
+  let content
+  switch (current.id) {
+    case 'appearance':
+      content = (
+        <>
+          <WebGroup title="Theme">
+            <WebRow label="Color scheme" desc="Light, dark, or follow your system setting.">
+              <SegmentedControl
+                value={darkMode}
+                onChange={onDarkModeChange}
+                options={[
+                  { value: 'off', label: 'Light' },
+                  { value: 'on', label: 'Dark' },
+                  { value: 'system', label: 'System' },
+                ]}
+              />
+            </WebRow>
+            {/* A desktop is always Web, so there is nothing to pick there.
+                Tablets still get the choice. */}
+            {!IS_DESKTOP && (
+              <WebRow label="App style" desc="Web is this desktop layout. iOS and Android switch to the phone designs.">
+                <SegmentedControl
+                  value={platformTheme}
+                  onChange={onPlatformThemeChange}
+                  options={[
+                    { value: 'ios', label: 'iOS' },
+                    { value: 'android', label: 'Android' },
+                    ...(IS_PHONE ? [] : [{ value: 'web', label: 'Web' }]),
+                  ]}
+                />
+              </WebRow>
+            )}
+          </WebGroup>
+          <WebGroup title="Motion">
+            <WebRow label="Weather effects" desc="An animated sky behind the forecast, with rain, snow and fog to match the conditions.">
+              <Toggle id="ws-weather-anim" checked={weatherAnimations} onChange={onWeatherAnimationsChange} />
+            </WebRow>
+            <WebRow label="Animated icons" desc="Let the weather icons move.">
+              <Toggle id="ws-icon-motion" checked={iconMotion} onChange={onIconMotionChange} />
+            </WebRow>
+          </WebGroup>
+        </>
+      )
+      break
+    case 'colors':
+      content = (
+        <>
+          <WebGroup title="Color-coded tiles">
+            {tiles.map(({ key, label }) => (
+              <WebRow key={key} label={label}>
+                <Toggle id={`ws-cc-${key}`} checked={colorCoding[key]} onChange={() => onColorCodingToggle(key)} />
+              </WebRow>
+            ))}
+          </WebGroup>
+          <WebGroup title="Extremes">
+            <WebRow label="Heat glow" desc="A warm glow on color-coded temperatures when it's very hot.">
+              <Toggle id="ws-cc-glow" checked={colorCoding.glow} onChange={() => onColorCodingToggle('glow')} />
+            </WebRow>
+            <WebRow label="Frozen effect" desc="A frosty edge on color-coded temperatures when it's freezing.">
+              <Toggle id="ws-cc-frost" checked={colorCoding.frost} onChange={() => onColorCodingToggle('frost')} />
+            </WebRow>
+          </WebGroup>
+        </>
+      )
+      break
+    case 'units':
+      content = (
+        <WebGroup>
+          <WebRow label="Temperature">
+            <SegmentedControl
+              value={unit}
+              onChange={onUnitChange}
+              options={[{ value: 'F', label: '°F' }, { value: 'C', label: '°C' }]}
+            />
+          </WebRow>
+          {UNIT_GROUP_KEYS.map((group) => (
+            <WebRow key={group} label={UNIT_GROUPS[group].label}>
+              <SegmentedControl
+                value={units[group]}
+                onChange={(value) => onUnitGroupChange(group, value)}
+                options={UNIT_GROUPS[group].options}
+              />
+            </WebRow>
+          ))}
+        </WebGroup>
+      )
+      break
+    case 'forecast':
+      content = (
+        <WebGroup>
+          <WebRow label="Precipitation chart" desc="The minute-by-minute rain and snow chart. Auto shows it only when precipitation is on the way.">
+            <SegmentedControl
+              value={nowcastMode}
+              onChange={onNowcastModeChange}
+              options={[
+                { value: 'on', label: 'On' },
+                { value: 'auto', label: 'Auto' },
+                { value: 'off', label: 'Off' },
+              ]}
+            />
+          </WebRow>
+        </WebGroup>
+      )
+      break
+    case 'radar':
+      content = (
+        <WebGroup>
+          <WebRow label="Timeline" desc="Play past and forecast radar on one scrubber, or switch between them on the map. Forecast frames are US only.">
+            <SegmentedControl
+              value={radarMode}
+              onChange={onRadarModeChange}
+              options={[
+                { value: 'combined', label: 'Combined' },
+                { value: 'split', label: 'Split' },
+              ]}
+            />
+          </WebRow>
+          <WebRow label="Radar source" desc="US only. MRMS is NOAA's national mosaic; NEXRAD is the nearest single radar — sharper, but it ends about 230 km out. Auto uses each where it's best.">
+            <SegmentedControl
+              value={radarSource}
+              onChange={onRadarSourceChange}
+              options={[
+                { value: 'rainviewer', label: 'RainViewer' },
+                { value: 'auto', label: 'Auto' },
+                { value: 'mrms', label: 'MRMS' },
+                { value: 'nexrad', label: 'NEXRAD' },
+              ]}
+            />
+          </WebRow>
+          <WebRow label="Enhanced accuracy" desc="Use the radar to more accurately show the current conditions for your area.">
+            <Toggle id="ws-radar-enhanced" checked={radarEnhanced} onChange={onRadarEnhancedChange} />
+          </WebRow>
+        </WebGroup>
+      )
+      break
+    case 'notifications':
+      content = (
+        <div className="ws-legacy">
+          <NotificationsView
+            notifyEnabled={notifyEnabled}
+            notifyTypes={notifyTypes}
+            permission={notifyPermission}
+            onEnabledChange={onNotifyEnabledChange}
+            onTypeToggle={onNotifyTypeToggle}
+          />
+        </div>
+      )
+      break
+    case 'data':
+      content = (
+        <>
+          {IS_ANDROID_APP && <div className="ws-legacy"><UpdateSection /></div>}
+          <WebDataSection />
+        </>
+      )
+      break
+    case 'about':
+      content = (
+        <>
+          <WebGroup>
+            <p className="ws-about-desc">{ABOUT_DESC}</p>
+          </WebGroup>
+          <WebGroup title="Data sources">
+            {ABOUT_APIS.map(([name, url]) => (
+              <WebRow key={name} label={name}>
+                <span className="ws-api-url">{url}</span>
+              </WebRow>
+            ))}
+          </WebGroup>
+          <div className="ws-footer">
+            <span>Version {APP_VERSION}</span>
+            {IS_ANDROID_APP && <span>Android {ANDROID_VERSION}</span>}
+            <span>Alek Studios&#8482;</span>
+          </div>
+        </>
+      )
+      break
+    default:
+      content = null
+  }
+
+  return (
+    <div className="web-page web-settings-page">
+      <div className="ws-layout">
+        <nav className="card settings-card ws-nav" aria-label="Settings sections">
+          {sections.map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              className={`ws-nav-item${id === current.id ? ' ws-nav-item--active' : ''}`}
+              aria-current={id === current.id ? 'page' : undefined}
+              onClick={() => setSection(id)}
+            >
+              <Icon size={17} aria-hidden="true" />
+              <span>{label}</span>
+            </button>
+          ))}
+        </nav>
+        {/* Keyed so switching sections replays the entrance, like a tab change. */}
+        <div className="ws-content" key={current.id}>
+          <div className="ws-content-head">
+            <h3 className="ws-content-title">{current.label}</h3>
+            <p className="ws-content-desc">{current.desc}</p>
+          </div>
+          {content}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export function SettingsPage({ onBack, onDismiss, inline, page, modal, closing, subView, onColorCodingOpen, onOverviewOpen, onRadarOpen, onWeatherEffectsOpen, onThemeOpen, onNotificationsOpen, onSubViewBack, colorCoding, onColorCodingToggle, overviewParts, onOverviewPartToggle, ...bodyProps }) {
   // Set while the transparency thumb is held, which fades the page down to just
   // that slider (see .settings-page.peeking). A pointer released off the input
   // — dragged past the end of the track, or lifted after the browser handed the
@@ -838,15 +1181,36 @@ export function SettingsPage({ onBack, onDismiss, inline, modal, closing, subVie
   useEffect(() => {
     // Going out is a slide too, so the glass comes off again for it.
     if (closing) { setSettled(false); return }
-    const t = setTimeout(() => setSettled(true), 400)
+    // Past the iOS push (0.44s) plus the arming frames below, so the fallback
+    // never frosts the page while it is still moving.
+    const t = setTimeout(() => setSettled(true), 520)
     return () => clearTimeout(t)
   }, [closing])
+
+  const panelRef = useRef(null)
+
+  // Hold the open animation on its first keyframe for the mount frame. That
+  // frame lays out and paints the whole page, and an animation started on it
+  // loses its opening frames to that work — which is what made the slide look
+  // rough. Two rAFs, because the first still runs ahead of the paint; the
+  // second is the first frame with a painted layer ready to move. Added in a
+  // layout effect so it is on before the browser paints anything. See
+  // .pt-arming in App.css.
+  useLayoutEffect(() => {
+    const el = panelRef.current
+    if (!el) return
+    el.classList.add('pt-arming')
+    let r2
+    const r1 = requestAnimationFrame(() => {
+      r2 = requestAnimationFrame(() => el.classList.remove('pt-arming'))
+    })
+    return () => { cancelAnimationFrame(r1); cancelAnimationFrame(r2); el.classList.remove('pt-arming') }
+  }, [])
 
   // Opening a dialog should hand it the keyboard, or the next Tab carries on
   // through the page behind the backdrop as if nothing had opened. Programmatic
   // focus on a tabindex="-1" container draws no ring (:focus-visible doesn't
   // match it), so this is only felt by whoever is using the keyboard.
-  const panelRef = useRef(null)
   useEffect(() => {
     if (modal) panelRef.current?.focus()
   }, [modal])
@@ -900,6 +1264,8 @@ export function SettingsPage({ onBack, onDismiss, inline, modal, closing, subVie
         onToggle={onOverviewPartToggle}
       />
     )
+  } else if (subView === 'radar') {
+    body = <RadarSettingsView {...radarViewProps(bodyProps)} />
   } else if (subView === 'effects') {
     body = (
       <WeatherEffectsView
@@ -920,7 +1286,12 @@ export function SettingsPage({ onBack, onDismiss, inline, modal, closing, subVie
       />
     )
   } else {
-    body = <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} onOverviewOpen={onOverviewOpen} onWeatherEffectsOpen={onWeatherEffectsOpen} onThemeOpen={onThemeOpen} onNotificationsOpen={onNotificationsOpen} />
+    body = <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} onOverviewOpen={onOverviewOpen} onRadarOpen={onRadarOpen} onWeatherEffectsOpen={onWeatherEffectsOpen} onThemeOpen={onThemeOpen} onNotificationsOpen={onNotificationsOpen} />
+  }
+
+  // The web app's Settings tab: its own desktop layout (see WebSettings).
+  if (page) {
+    return <WebSettings {...bodyProps} colorCoding={colorCoding} onColorCodingToggle={onColorCodingToggle} />
   }
 
   if (inline) {
@@ -989,7 +1360,7 @@ export function SettingsPage({ onBack, onDismiss, inline, modal, closing, subVie
   )
 }
 
-export function SettingsPill({ expanded, onToggle, subView, onColorCodingOpen, onOverviewOpen, onWeatherEffectsOpen, onThemeOpen, onNotificationsOpen, onSubViewBack, colorCoding, onColorCodingToggle, overviewParts, onOverviewPartToggle, ...bodyProps }) {
+export function SettingsPill({ expanded, onToggle, subView, onColorCodingOpen, onOverviewOpen, onRadarOpen, onWeatherEffectsOpen, onThemeOpen, onNotificationsOpen, onSubViewBack, colorCoding, onColorCodingToggle, overviewParts, onOverviewPartToggle, ...bodyProps }) {
   let body
   if (subView === 'colorcoding') {
     body = <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} onBack={onSubViewBack} webShell={bodyProps.webShell} />
@@ -1013,6 +1384,8 @@ export function SettingsPill({ expanded, onToggle, subView, onColorCodingOpen, o
         onBack={onSubViewBack}
       />
     )
+  } else if (subView === 'radar') {
+    body = <RadarSettingsView {...radarViewProps(bodyProps)} onBack={onSubViewBack} />
   } else if (subView === 'effects') {
     body = (
       <WeatherEffectsView
@@ -1035,7 +1408,7 @@ export function SettingsPill({ expanded, onToggle, subView, onColorCodingOpen, o
       />
     )
   } else {
-    body = <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} onOverviewOpen={onOverviewOpen} onWeatherEffectsOpen={onWeatherEffectsOpen} onThemeOpen={onThemeOpen} onNotificationsOpen={onNotificationsOpen} />
+    body = <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} onOverviewOpen={onOverviewOpen} onRadarOpen={onRadarOpen} onWeatherEffectsOpen={onWeatherEffectsOpen} onThemeOpen={onThemeOpen} onNotificationsOpen={onNotificationsOpen} />
   }
 
   return (

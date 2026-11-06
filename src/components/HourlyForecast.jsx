@@ -4,6 +4,12 @@ import { WeatherIcon } from './WeatherIcon'
 
 const GRAPH_HEIGHT = 60
 const GRAPH_PAD = 12
+// Icons drawn on first render: enough to fill the widest card without a blank
+// column. The rest are drawn as they scroll near (see DRAW_AHEAD).
+const INITIAL_DRAWN = 8
+// How many columns past the last one on screen get their icon drawn ahead of
+// time, so a quick swipe doesn't land on blanks.
+const DRAW_AHEAD = 3
 
 // Smooth cubic-bezier path through the points (Catmull-Rom → Bézier).
 function smoothPath(pts) {
@@ -39,6 +45,35 @@ export function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glo
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => el.removeEventListener('wheel', onWheel)
   }, [])
+
+  // Only the hours on screen animate, and icons aren't drawn at all until they
+  // scroll near. An IntersectionObserver against the viewport (root: null)
+  // covers both ways an hour can be hidden: scrolled sideways out of the strip,
+  // which clips it, or the whole card being off screen. On screen, the column
+  // gets data-live, which is what the icon animations in App.css key off.
+  // It's written straight onto the node instead of held in state, so scrolling
+  // never re-renders the strip; React doesn't manage that attribute and leaves
+  // it alone. drawnUpTo only ever grows, so it re-renders a few times at most.
+  const [drawnUpTo, setDrawnUpTo] = useState(INITIAL_DRAWN - 1)
+  const hourCount = Math.min(25, hourly.time.length)
+  useEffect(() => {
+    const row = rowRef.current
+    if (!row || typeof IntersectionObserver === 'undefined') return
+    const io = new IntersectionObserver((entries) => {
+      let furthest = -1
+      for (const e of entries) {
+        if (e.isIntersecting) {
+          e.target.setAttribute('data-live', '')
+          furthest = Math.max(furthest, Number(e.target.dataset.idx))
+        } else {
+          e.target.removeAttribute('data-live')
+        }
+      }
+      if (furthest >= 0) setDrawnUpTo((d) => Math.max(d, furthest + DRAW_AHEAD))
+    })
+    for (const el of row.children) io.observe(el)
+    return () => io.disconnect()
+  }, [hourCount])
 
   const scroll = (dir) => {
     if (!scrollRef.current) return
@@ -122,9 +157,13 @@ export function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glo
           // the live nowcast downgraded its code.
           const p = precip[i] ?? 0
           return (
-            <div key={i} className="hourly-item">
+            <div key={i} className="hourly-item" data-idx={i}>
               <span className="hourly-time">{label}</span>
-              <span className="hourly-icon"><WeatherIcon id={info.icon} alt={info.label} /></span>
+              <span className="hourly-icon">
+                {i <= drawnUpTo
+                  ? <WeatherIcon id={info.icon} alt={info.label} />
+                  : <span className="hourly-icon-placeholder" role="img" aria-label={info.label} />}
+              </span>
               <span className="hourly-temp" style={tempStyle(temps[i], colorCoding, 0.4, glow, frost)}>{toTemp(temps[i], unit)}°</span>
               <span className="hourly-precip">{p}%</span>
             </div>

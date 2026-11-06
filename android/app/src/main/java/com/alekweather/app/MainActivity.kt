@@ -15,6 +15,7 @@ import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
+import androidx.activity.BackEventCompat
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -68,6 +69,53 @@ class MainActivity : AppCompatActivity() {
     private var insetBottomCss = 0f
     private var insetLeftCss = 0f
     private var pageReady = false
+
+    /**
+     * Predictive back. Every in-app overlay (settings, search, saved cities, the
+     * full-screen radar, the alert map) is a history entry in the page, so the
+     * callback is enabled exactly while the WebView can go back — kept in step by
+     * doUpdateVisitedHistory. While it is disabled the system owns the gesture
+     * and plays its own back-to-home preview, which is the right animation for
+     * leaving the app; that is also why it is not simply always-on with a
+     * finish() fallback, which would suppress that preview.
+     *
+     * While enabled, the gesture is streamed to the page as `alekback`
+     * CustomEvents (start / progress / cancel / commit) and the page animates the
+     * overlay being closed (src/utils/predictiveBack.js). The commit is
+     * dispatched before goBack(), and both go through the WebView's queue in
+     * that order, so the page has taken over the overlay's exit before the
+     * popstate that unmounts it arrives. A plain button press (3-button nav, or
+     * Android < 14) sends commit with no start, which the page ignores, so the
+     * overlay's usual close animation runs as before.
+     */
+    private val backCallback = object : OnBackPressedCallback(false) {
+        override fun handleOnBackStarted(backEvent: BackEventCompat) {
+            val edge = if (backEvent.swipeEdge == BackEventCompat.EDGE_LEFT) "left" else "right"
+            emitBack("""{"type":"start","edge":"$edge","progress":0}""")
+        }
+
+        override fun handleOnBackProgressed(backEvent: BackEventCompat) {
+            val edge = if (backEvent.swipeEdge == BackEventCompat.EDGE_LEFT) "left" else "right"
+            emitBack("""{"type":"progress","edge":"$edge","progress":${backEvent.progress}}""")
+        }
+
+        override fun handleOnBackCancelled() {
+            emitBack("""{"type":"cancel"}""")
+        }
+
+        override fun handleOnBackPressed() {
+            emitBack("""{"type":"commit"}""")
+            if (web.canGoBack()) web.goBack() else finish()
+        }
+    }
+
+    private fun emitBack(detailJson: String) {
+        if (!pageReady) return
+        web.evaluateJavascript(
+            "window.dispatchEvent(new CustomEvent('alekback', { detail: $detailJson }))",
+            null,
+        )
+    }
 
     /** Single worker for the update check/download so they never touch the UI thread. */
     private val updateIo = Executors.newSingleThreadExecutor()
@@ -176,6 +224,13 @@ class MainActivity : AppCompatActivity() {
                 pushInsets()
                 watchBarColors()
             }
+
+            // Fires for the page's history.pushState / back as well as real
+            // navigations, so it is where the back callback learns whether there
+            // is an in-app overlay left to close. See [backCallback].
+            override fun doUpdateVisitedHistory(view: WebView, url: String?, isReload: Boolean) {
+                backCallback.isEnabled = view.canGoBack()
+            }
         }
 
         // A service worker's own fetches bypass WebViewClient entirely, so the
@@ -203,14 +258,11 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
-            override fun handleOnBackPressed() {
-                if (web.canGoBack()) web.goBack() else finish()
-            }
-        })
+        onBackPressedDispatcher.addCallback(this, backCallback)
 
         if (savedInstanceState != null) web.restoreState(savedInstanceState)
         else web.loadUrl(START_URL)
+        backCallback.isEnabled = web.canGoBack()
     }
 
     /**

@@ -2,6 +2,46 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { nowcastHourlyCode, precipTier, livePrecipRate } from '../utils/weatherCodes'
 import { gridHourly, gridHourlyAccum, gridHourlySpans } from '../utils/nwsGrid'
 import { sampleRadar } from './useRadarPrecip'
+import { IS_ANDROID_APP } from '../utils/version'
+
+// Where to turn location back on depends on what the app is running in, and
+// "this site in your browser settings" only means anything on a desktop. The
+// Android app holds the permission itself; iPhone and iPad Safari (and a
+// home-screen install, which shares Safari's setting) keep it under Location
+// Services; Chrome and the other Android browsers keep it per site behind the
+// icon at the left of the address bar.
+function geoPlatform() {
+  if (IS_ANDROID_APP) return 'android-app'
+  const ua = navigator.userAgent
+  if (/iPhone|iPad|iPod/.test(ua) || (ua.includes('Macintosh') && navigator.maxTouchPoints > 1)) return 'ios'
+  if (/Android/i.test(ua)) return 'android'
+  return 'desktop'
+}
+
+function geoDeniedMessage() {
+  switch (geoPlatform()) {
+    case 'android-app':
+      return "geo:Location access was denied. Allow it in your phone's Settings → Apps → Alek Weather → Permissions → Location."
+    case 'ios':
+      return 'geo:Location access was denied. Allow it in Settings → Privacy & Security → Location Services → Safari Websites, or in Safari tap the page settings button in the address bar → Website Settings → Location.'
+    case 'android':
+      return 'geo:Location access was denied. Tap the icon at the left of the address bar → Permissions → Location to allow it.'
+    default:
+      return 'geo:Location access was denied. Enable it for this site in your browser settings.'
+  }
+}
+
+function geoUnavailableMessage() {
+  switch (geoPlatform()) {
+    case 'ios':
+      return 'geo:Your location is unavailable. Check that Location Services is on in Settings → Privacy & Security.'
+    case 'android-app':
+    case 'android':
+      return "geo:Your location is unavailable. Check that Location is turned on in your phone's quick settings."
+    default:
+      return 'geo:Your location is unavailable. On Windows, check Settings → Privacy & security → Location is on.'
+  }
+}
 
 const GEO_URL = 'https://geocoding-api.open-meteo.com/v1/search'
 const WEATHER_URL = 'https://api.open-meteo.com/v1/forecast'
@@ -593,6 +633,18 @@ function obsToWmoCode(obs) {
   return ageMin <= limit ? code : null
 }
 
+// A recent report from a station that saw nothing falling. Used only as a veto
+// on promoting a forecast to the current condition, so it gets the longest
+// window: hourly AWOS fields report once an hour, and an hour-old "Partly
+// Cloudy" is still far better evidence about this hour than a 65% chance.
+function obsIsDry(obs) {
+  if (!obs?.timestamp) return false
+  const ageMin = (Date.now() - new Date(obs.timestamp).getTime()) / 60000
+  if (!(ageMin >= 0) || ageMin > MAX_OBS_AGE_MIN.fog) return false
+  if (!obs.textDescription && !(obs.presentWeather?.length)) return false // reported nothing at all
+  return classifyObs(obs, true) == null
+}
+
 // Copy the current hour's merged NWS values onto `current`.
 //
 // The merges above write into `hourly` only, so on US locations the
@@ -661,6 +713,7 @@ function preferForecastHour(data) {
   if (code == null || precipTier(code) === 0) return
   if (precipTier(c.weather_code ?? -1) > 0) return   // model already says precip
   if ((c.forecast_hour_pop ?? 0) < FORECAST_POP_FLOOR) return
+  c.model_weather_code = c.weather_code
   c.weather_code = code
   c.weather_code_confirmed = true
   c.weather_code_source = 'forecast'
@@ -819,11 +872,17 @@ export async function loadForecast(loc) {
       // with this location. Distance is checked before the request, so far
       // stations cost nothing. `limit` is generous because the filter, not
       // the list length, is what ends the walk now.
+      // The walk also notes whether a nearby station recently reported
+      // nothing falling (`dry`). That never overrides anything on its own, but
+      // it stops preferForecastHour promoting a "Chance Rain Showers, 65%"
+      // hour to "Light rain falling" over a town whose own airfield says
+      // partly cloudy — verified over Bel Air MD, K0W3 dry at 13 km.
       const obsPromise = (async () => {
+        let dry = false
         const stationsUrl = pointsData.properties?.observationStations
-        if (!stationsUrl) return null
+        if (!stationsUrl) return { obs: null, dry }
         const sRes = await fetch(`${stationsUrl}?limit=8`, { headers: NWS_HEADERS })
-        if (!sRes.ok) return null
+        if (!sRes.ok) return { obs: null, dry }
         const stations = (await sRes.json()).features ?? []
         for (const s of stations) {
           const id = s.properties?.stationIdentifier
@@ -835,11 +894,12 @@ export async function loadForecast(loc) {
             const oRes = await fetch(`https://api.weather.gov/stations/${id}/observations/latest`, { headers: NWS_HEADERS })
             if (!oRes.ok) continue
             const obs = (await oRes.json()).properties
-            if (obsToWmoCode(obs) != null) return obs
+            if (obsToWmoCode(obs) != null) return { obs, dry }
+            if (obsIsDry(obs)) dry = true
           } catch { /* try the next station */ }
         }
-        return null
-      })().catch(() => null)
+        return { obs: null, dry }
+      })().catch(() => ({ obs: null, dry: false }))
 
       const [nwsHourlyRes, nwsForecastRes, nwsGridRes] = await Promise.allSettled([
         hourlyUrl   ? fetch(hourlyUrl,   { headers: NWS_HEADERS }) : Promise.reject(),
@@ -902,7 +962,8 @@ export async function loadForecast(loc) {
 
       // A station actually observing precipitation overrides the model's
       // current condition outright — measured beats predicted.
-      const obsCode = obsToWmoCode(await obsPromise)
+      const { obs, dry } = await obsPromise
+      const obsCode = obsToWmoCode(obs)
       if (obsCode != null) {
         data.current.weather_code = obsCode
         data.current.weather_code_confirmed = true
@@ -910,8 +971,9 @@ export async function loadForecast(loc) {
       }
 
       // Nothing measured this hour — fall back to NWS's own forecast for it
-      // rather than Open-Meteo's model. No-ops if a station just reported.
-      preferForecastHour(data)
+      // rather than Open-Meteo's model. No-ops if a station just reported, or
+      // if a nearby station just reported that nothing is falling.
+      if (!dry) preferForecastHour(data)
     } catch { /* non-fatal */ }
   }
 
@@ -920,6 +982,17 @@ export async function loadForecast(loc) {
   confirmCurrentCode(data, alertFeatures)
 
   data.radarClear = await radarPromise
+
+  // A forecast-promoted code is a probability, not a reading. When the radar
+  // sees nothing over the point, put the model's code back — whatever the
+  // Radar enhanced accuracy setting says, since that setting governs whether
+  // radar may overrule the model, and this code never came from the model.
+  const cur = data.current
+  if (data.radarClear === true && cur?.weather_code_source === 'forecast') {
+    cur.weather_code = cur.model_weather_code
+    cur.weather_code_confirmed = false
+    cur.weather_code_source = null
+  }
 
   return { data, alertFeatures, aqiResult }
 }
@@ -1091,7 +1164,7 @@ export function useWeather(initialCity = null) {
       try {
         const perm = await navigator.permissions.query({ name: 'geolocation' })
         if (perm.state === 'denied') {
-          setError('geo:Location access was denied. Enable it for this site in your browser settings.')
+          setError(geoDeniedMessage())
           return
         }
       } catch {
@@ -1153,9 +1226,9 @@ export function useWeather(initialCity = null) {
         if (!geoActiveRef.current) return
         geoActiveRef.current = false
         const msg = err.code === 1
-          ? 'geo:Location access was denied. Enable it for this site in your browser settings.'
+          ? geoDeniedMessage()
           : err.code === 2
-            ? 'geo:Your location is unavailable. On Windows, check Settings → Privacy & security → Location is on.'
+            ? geoUnavailableMessage()
             : 'geo:Unable to determine your location. Please try again.'
         setError(msg)
         setLoading(false)

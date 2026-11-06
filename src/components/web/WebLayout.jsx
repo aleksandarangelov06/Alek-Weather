@@ -4,7 +4,7 @@ import { TodayPage } from './TodayPage'
 import { DailyPage } from './DailyPage'
 import { DetailsPage } from './DetailsPage'
 import { RadarPage } from './RadarPage'
-import { AirQualityPage } from './AirQualityPage'
+import { isSnowing } from '../../utils/conditions'
 
 // The page area of the web app. The tab bar itself lives in the header (see
 // App.jsx), so the selection is passed in rather than owned here.
@@ -56,7 +56,7 @@ export function WebLayout(props) {
   // props, so anything it alone needs — radarClear, weatherAnimations — travels
   // in the spread and is deliberately not pulled out here.
   const {
-    weather, location, airQuality, radarMode, radarSource, unit, units, colorCoding, tab, onNavigate,
+    weather, location, airQuality, radarMode, radarSource, unit, units, colorCoding, tab,
   } = props
 
   // Adjusted during render rather than in an effect, so a newly opened tab is
@@ -89,13 +89,11 @@ export function WebLayout(props) {
           units={units}
           airQuality={airQuality}
           colorCoding={colorCoding}
-          onNavigate={onNavigate}
         />
       ))}
       {panel('radar', () => (
-        <RadarPage location={location} timezone={weather.timezone} radarMode={radarMode} radarSource={radarSource} />
+        <RadarPage location={location} timezone={weather.timezone} radarMode={radarMode} radarSource={radarSource} weatherAnimations={props.weatherAnimations} snow={isSnowing(weather.current)} />
       ))}
-      {panel('air', () => <AirQualityPage airQuality={airQuality} timezone={weather.timezone} />)}
     </div>
   )
 }

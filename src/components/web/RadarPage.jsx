@@ -5,10 +5,10 @@ import { WeatherRadar } from '../WeatherRadarLazy'
 // to the whole window, header included — the tab bar floats over the map rather
 // than sitting above it. See .app--web-radar in WebApp.css for the chain of flex
 // rules that gets it there.
-export function RadarPage({ location, timezone, radarMode, radarSource }) {
+export function RadarPage({ location, timezone, radarMode, radarSource, weatherAnimations = true, snow = false }) {
   return (
     <div className="web-page web-page--radar">
-      <WeatherRadar location={location} timezone={timezone} mode={radarMode} source={radarSource} fill />
+      <WeatherRadar location={location} timezone={timezone} mode={radarMode} source={radarSource} rainFx={weatherAnimations} snow={snow} fill />
     </div>
   )
 }

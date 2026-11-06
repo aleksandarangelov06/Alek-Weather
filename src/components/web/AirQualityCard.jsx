@@ -61,7 +61,7 @@ function AqiDial({ aqi, info }) {
 
 // AQI over the whole air-quality forecast window, with the category bands drawn
 // behind the line so a spike's severity is readable without a legend lookup.
-function AqiForecast({ hourly, timezone }) {
+function AqiForecast({ hourly, timezone, tint }) {
   const [ref, width] = useMeasure()
   const times = hourly?.time ?? []
   const values = hourly?.us_aqi ?? []
@@ -143,7 +143,7 @@ function AqiForecast({ hourly, timezone }) {
           return (
             <div key={p.date} className="web-aqi-peak">
               <span className="web-aqi-peak-day">{weekdayLabel(p.date, timezone)}</span>
-              <span className="web-aqi-peak-val" style={{ color: info.color }}>{Math.round(p.peak)}</span>
+              <span className="web-aqi-peak-val" style={{ color: tint(info.color) }}>{Math.round(p.peak)}</span>
               <span className="web-aqi-peak-label">{info.label}</span>
             </div>
           )
@@ -153,19 +153,31 @@ function AqiForecast({ hourly, timezone }) {
   )
 }
 
-export function AirQualityPage({ airQuality, timezone }) {
+// The whole air-quality reading as one full-width card on the Details page:
+// the dial and what it means, the individual pollutants, and the multi-day
+// outlook. It used to be a tab of its own; folding it in keeps the reading next
+// to the other conditions instead of a click away.
+export function AirQualityCard({ airQuality, timezone, tint = (c) => c }) {
+  const head = (color) => (
+    <div className="web-detail-head">
+      <span className="web-detail-head-icon" style={color ? { color } : undefined}>
+        <Leaf size={18} />
+      </span>
+      <span className="section-label">AIR QUALITY</span>
+    </div>
+  )
+
   if (!airQuality || airQuality.us_aqi == null) {
     return (
-      <div className="web-page">
-        <div className="card web-empty">
-          <Leaf size={34} aria-hidden="true" />
-          <p>No air quality data is published for this location.</p>
-        </div>
+      <div className="card web-detail">
+        {head()}
+        <p className="web-detail-note">No air quality data is published for this location.</p>
       </div>
     )
   }
 
   const info = getAQIInfo(airQuality.us_aqi)
+  const color = tint(info.color)
   // The pollutant closest to its own concern level — the one actually driving
   // the index, which the single AQI number hides.
   const driver = POLLUTANTS
@@ -173,15 +185,13 @@ export function AirQualityPage({ airQuality, timezone }) {
     .sort((a, b) => b.ratio - a.ratio)[0]
 
   return (
-    <div className="web-page">
-      <div className="web-page-head">
-        <h2 className="web-page-title">Air quality</h2>
-      </div>
+    <div className="card web-detail web-aqi-card">
+      {head(color)}
 
-      <div className="card web-aqi-hero">
-        <AqiDial aqi={airQuality.us_aqi} info={info} />
+      <div className="web-aqi-hero">
+        <AqiDial aqi={airQuality.us_aqi} info={{ ...info, color }} />
         <div className="web-aqi-copy">
-          <div className="web-aqi-status" style={{ color: info.color }}>{info.label}</div>
+          <div className="web-aqi-status" style={{ color }}>{info.label}</div>
           <p className="web-aqi-note">{getAQINote(airQuality.us_aqi)}</p>
           {driver && driver.ratio >= 0 && (
             <p className="web-aqi-driver">
@@ -201,7 +211,7 @@ export function AirQualityPage({ airQuality, timezone }) {
         </div>
       </div>
 
-      <div className="card">
+      <div className="web-aqi-section">
         <div className="section-label">POLLUTANTS</div>
         <div className="web-poll-grid">
           {POLLUTANTS.map((p) => {
@@ -219,7 +229,7 @@ export function AirQualityPage({ airQuality, timezone }) {
                   </span>
                 </div>
                 <div className="web-poll-track">
-                  <span className="web-poll-fill" style={{ width: `${Math.max(ratio * 100, 2)}%`, background: barInfo.color }} />
+                  <span className="web-poll-fill" style={{ width: `${Math.max(ratio * 100, 2)}%`, background: tint(barInfo.color) }} />
                 </div>
                 <div className="web-poll-desc">{p.desc}</div>
               </div>
@@ -229,9 +239,9 @@ export function AirQualityPage({ airQuality, timezone }) {
       </div>
 
       {airQuality.hourly && (
-        <div className="card">
+        <div className="web-aqi-section">
           <div className="section-label">AQI OUTLOOK</div>
-          <AqiForecast hourly={airQuality.hourly} timezone={timezone} />
+          <AqiForecast hourly={airQuality.hourly} timezone={timezone} tint={tint} />
         </div>
       )}
     </div>

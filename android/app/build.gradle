@@ -22,8 +22,8 @@ android {
         // versionCode must increase on every published build; versionName is
         // the human one, kept in step with ANDROID_VERSION in
         // src/utils/version.js, which Settings displays inside the APK.
-        versionCode 11
-        versionName "1.1"
+        versionCode 12
+        versionName "1.2"
 
         // The app ships one string of its own (app_name) and a web UI that is
         // English throughout. Everything else in resources.arsc is appcompat and
@@ -73,6 +73,10 @@ dependencies {
     // DayNight theme, so the WebView reports prefers-color-scheme correctly
     // to the app's "system" theme setting.
     implementation 'androidx.appcompat:appcompat:1.6.1'
+    // 1.8+ for predictive back: OnBackPressedCallback's handleOnBackStarted /
+    // Progressed / Cancelled, which feed the in-app back animation (see
+    // MainActivity's back callback). appcompat alone pulls in 1.6.
+    implementation 'androidx.activity:activity-ktx:1.8.2'
     // WebViewAssetLoader: serves the bundled build over a real https origin
     // instead of file://, which the CSP and the service worker both require.
     implementation 'androidx.webkit:webkit:1.10.0'

@@ -16,8 +16,14 @@ import { useLayoutEffect, useRef, useState } from 'react'
 // 'home' (the splash keeps this bar up, with Home selected), but it is kept out
 // of `tabs` so the arrow keys, which wrap around the tab list, can never land
 // on it: ← from the first page would otherwise throw you out to the splash.
+//
+// `pages` ([{ id, label, icon, onSelect }]) are the same idea at the other end
+// of the bar: Locations and Settings, which are pages of the app rather than of
+// the forecast. They take the pill like any tab, but sit apart from the forecast
+// pages (after a divider) and outside the arrow-key cycle for the same reason
+// Home does — they don't need a forecast, and the forecast tabs do.
 export function WebTabs({
-  tabs, active, onChange, home = null,
+  tabs, active, onChange, home = null, pages = [], lead = null,
   idPrefix = 'web-tab', controls, label = 'Forecast pages', className = '',
 }) {
   const listRef = useRef(null)
@@ -86,6 +92,25 @@ export function WebTabs({
             aria-hidden="true"
           />
         )}
+        {/* The lead slot (Locations) sits at the very start of the bar, set off
+            from Home and the forecast pages by the same divider Settings gets
+            at the other end. */}
+        {lead && (
+          <>
+            <button
+              type="button"
+              ref={(el) => { btnRefs.current[lead.id] = el }}
+              className={`web-tab web-tab--icon${active === lead.id ? ' web-tab--active' : ''}`}
+              aria-current={active === lead.id ? 'page' : undefined}
+              aria-label={lead.label}
+              title={lead.label}
+              onClick={lead.onSelect}
+            >
+              {lead.icon}
+            </button>
+            <span className="web-tabs-divider" aria-hidden="true" />
+          </>
+        )}
         {home && (
           <button
             type="button"
@@ -112,6 +137,21 @@ export function WebTabs({
             onClick={() => onChange(t.id)}
           >
             {t.label}
+          </button>
+        ))}
+        {pages.length > 0 && <span className="web-tabs-divider" aria-hidden="true" />}
+        {pages.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            ref={(el) => { btnRefs.current[p.id] = el }}
+            className={`web-tab web-tab--icon${active === p.id ? ' web-tab--active' : ''}`}
+            aria-current={active === p.id ? 'page' : undefined}
+            aria-label={p.label}
+            title={p.label}
+            onClick={p.onSelect}
+          >
+            {p.icon}
           </button>
         ))}
       </div>

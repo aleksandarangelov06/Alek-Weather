@@ -17,8 +17,9 @@ export const TABS = [
   { id: 'daily',   label: 'Outlook'     },
   { id: 'details', label: 'Details'     },
   { id: 'radar',   label: 'Radar'       },
-  { id: 'air',     label: 'Air Quality' },
 ]
+// Air Quality was a tab too; it is now one full-width card on Details. A saved
+// 'air' tab falls back to Today like any retired id.
 
 // The selected page. It lives above both the header (which draws the tab bar)
 // and the page area (which draws the tab's contents), so it is owned by App

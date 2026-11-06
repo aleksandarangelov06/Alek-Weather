@@ -59,7 +59,7 @@ export function loadConditions(place) {
         code,
         isDay: cur.is_day !== 0,
         severe: !!cur.severe_storm,
-        headline: weatherHeadline(data, code),
+        headline: weatherHeadline(data, code, place.name),
       }
       cache.set(key, { at: Date.now(), cond })
       return cond

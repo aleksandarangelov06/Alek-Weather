@@ -1,43 +1,39 @@
-import { useEffect, useState } from 'react'
-import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core'
-import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates, useSortable } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import { ArrowRight, CloudRain, Droplets, Eye, GripHorizontal, Sun, Sunrise, Sunset, Thermometer, Wind } from 'lucide-react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { ArrowRight, CloudRain, Droplets, Eye, Sun, Sunrise, Sunset, Thermometer, Wind } from 'lucide-react'
+import { DragHandle, DragLayer, ResetLayout } from './DragLayer'
+import { useCardDrag } from './cardDrag'
+import { applyDrop, keyMove, resolveToday, spans, useTodayLayout } from './todayLayout'
 import { CurrentWeather } from '../CurrentWeather'
 import { PrecipNowcast } from '../PrecipNowcast'
 import { WeatherAlerts } from '../WeatherAlerts'
 import { WeatherIcon } from '../WeatherIcon'
 import {
-  formatHour, formatTime, getUVLabel, getWeatherInfo, getWindDirection,
+  formatHour, formatTime, getUVLabel, SUN_ORANGE, getWeatherInfo, getWindDirection,
   liveWeatherCode, nowcastHourlyCode, tempStyle, toTemp,
 } from '../../utils/weatherCodes'
-import { currentHourIndex, sliceHourly, weekdayLabel } from './webData'
+import { currentHourIndex, METERS_PER_MILE, sliceHourly, weekdayLabel } from './webData'
+import { getHumidityInfo, getPrecipInfo, getVisibilityInfo, getWindInfo } from '../../utils/conditions'
 import { formatPrecip, formatVisibility, formatWind } from '../../utils/units'
 
-const TODAY_ORDER_KEY = 'alek-weather-today-order'
-// Order is the whole layout: the current card takes the narrow track, and
-// whichever widget follows it shares that row. Everything else takes a row of
-// its own. So the default reads as today's page — current + at a glance across
-// the top, then the two strips full width.
-const DEFAULT_ORDER = ['current', 'glance', 'hourly', 'week']
+// The layout itself (rows of one or two cards) lives in todayLayout.js.
 const WIDGET_NAMES = {
   current: 'Current weather',
   glance: 'At a glance',
+  nowcast: 'Precipitation',
   hourly: 'Next hours',
   week: 'Week ahead',
 }
 
-// The width where .web-today-grid still has two tracks — WebApp.css folds it to
-// one column at 1279px. Below that nothing sits beside anything, so the pairing
-// rule switches off and every widget renders at full size.
+// The width where .web-today-grid still has its 12 columns — WebApp.css folds it
+// to one column at 1279px. Below that nothing sits beside anything and every
+// card renders at full size.
 const PAIR_MQ = '(min-width: 1280px)'
 
-// Hours in the strip. Thirteen tiles is a full-width row; sharing a row with the
-// current card leaves about two thirds of that, which is nine tiles at the same
-// size rather than thirteen squeezed ones. The heading counts from whichever is
-// in play, so it never promises hours that aren't drawn.
-const FULL_HOURS = 13
-const COMPACT_HOURS = 9
+// Hours in the strip, by how much of the row the card has. Thirteen tiles fill
+// a full row; beside the current card there's about three quarters of it, and
+// half a row fits seven at the same tile size. The heading counts from
+// whichever is in play, so it never promises hours that aren't drawn.
+const HOURS_BY_SLOT = { full: 13, wide: 9, half: 7, narrow: 5 }
 
 function useMediaQuery(query) {
   const [matches, setMatches] = useState(() => window.matchMedia(query).matches)
@@ -49,65 +45,6 @@ function useMediaQuery(query) {
     return () => mq.removeEventListener('change', onChange)
   }, [query])
   return matches
-}
-
-// Corrupted or stale storage must never crash the page or, worse, hand dnd-kit a
-// list with a duplicate id in it. Unknown ids are dropped and missing ones are
-// appended, so a saved order survives the widget set changing.
-function loadOrder() {
-  let saved
-  try { saved = JSON.parse(localStorage.getItem(TODAY_ORDER_KEY) ?? 'null') }
-  catch { /* corrupted storage falls through to the default */ }
-  if (!Array.isArray(saved)) return DEFAULT_ORDER
-  const kept = [...new Set(saved.filter(id => DEFAULT_ORDER.includes(id)))]
-  if (!kept.length) return DEFAULT_ORDER
-  return [...kept, ...DEFAULT_ORDER.filter(id => !kept.includes(id))]
-}
-
-// The order flattened into rows. The current card is the only narrow widget, so
-// it is the only one that can share a row — with whatever was dropped directly
-// after it. Below the two-track width every widget gets its own row.
-function buildRows(order, paired) {
-  if (!paired) return order.map(id => [id])
-  const rows = []
-  for (let i = 0; i < order.length; i++) {
-    if (order[i] === 'current' && i + 1 < order.length) {
-      rows.push([order[i], order[i + 1]])
-      i++
-    } else {
-      rows.push([order[i]])
-    }
-  }
-  return rows
-}
-
-// One draggable slot in the grid. `full` spans both tracks — it is what the
-// widget's own styles key off to decide how much they can spread out, so the
-// sizing follows the drop rather than needing a second source of truth.
-export function SortableWidget({ id, name, full, children }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
-  return (
-    <div
-      ref={setNodeRef}
-      className={`web-widget${full ? ' web-widget--full' : ''}${isDragging ? ' web-widget--dragging' : ''}`}
-      style={{ transform: CSS.Translate.toString(transform), transition }}
-    >
-      {/* Above the card's top edge rather than inside it: every corner of these
-          four cards is already spoken for — the location line, the section
-          label, the save button, the Outlook link. */}
-      <button
-        type="button"
-        className="web-widget-handle"
-        aria-label={`Move ${name}`}
-        title="Drag to move"
-        {...attributes}
-        {...listeners}
-      >
-        <GripHorizontal size={14} />
-      </button>
-      {children}
-    </div>
-  )
 }
 
 function GlanceTile({ icon: Icon, label, value, sub, color }) {
@@ -158,29 +95,64 @@ export function TodayPage({
 }) {
   const { current, hourly, daily, timezone } = weather
   const paired = useMediaQuery(PAIR_MQ)
-  const [order, setOrder] = useState(loadOrder)
+  const { rows, setRows, reset, isCustom } = useTodayLayout()
+  const gridRef = useRef(null)
 
-  // A few pixels of travel before a drag starts, so a click on the handle stays
-  // a click; the keyboard sensor makes the same moves reachable without one.
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  )
+  // The precipitation chart draws nothing when there's no rain in the next
+  // hour. It's still rendered (hidden) so it can be noticed the moment it has
+  // something to show, but its row is left out until then, so the card it
+  // shares a row with gets the whole width instead of half of an empty row.
+  const [nowcastShown, setNowcastShown] = useState(false)
+  // Checked after every render, since what the chart decides depends on props
+  // it reads itself; the state only changes when the answer does, so it settles.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useLayoutEffect(() => {
+    const has = !!gridRef.current?.querySelector('[data-widget="nowcast"] .nowcast-card')
+    if (has !== nowcastShown) setNowcastShown(has)
+  })
+  const visRows = rows
+    .map(row => row.filter(id => id !== 'nowcast' || nowcastShown))
+    .filter(row => row.length)
 
-  const handleDragEnd = ({ active, over }) => {
-    if (!over || active.id === over.id) return
-    setOrder(prev => {
-      const next = arrayMove(prev, prev.indexOf(active.id), prev.indexOf(over.id))
-      localStorage.setItem(TODAY_ORDER_KEY, JSON.stringify(next))
-      return next
-    })
+  const { drag, start, markMoved } = useCardDrag({
+    containerRef: gridRef,
+    resolve: (id, x, y, cards) => resolveToday(rows, visRows, paired, id, x, y, cards),
+    onDrop: (id, target) => setRows(applyDrop(rows, id, target)),
+  })
+
+  // Arrow keys on a grip move the card; focus follows it to its new place.
+  const refocus = useRef(null)
+  const onKeyMove = (id, dir) => {
+    const next = keyMove(rows, visRows, id, dir)
+    if (next === rows) return
+    markMoved()
+    refocus.current = id
+    setRows(next)
   }
+  useEffect(() => {
+    if (!refocus.current) return
+    gridRef.current?.querySelector(`[data-handle-for="${refocus.current}"]`)?.focus()
+    refocus.current = null
+  })
 
   const uv = getUVLabel(current.uv_index ?? 0)
   const windDir = getWindDirection(current.wind_direction_10m)
   const rainToday = daily.precipitation_probability_max?.[0]
 
-  const renderWidget = (id, compact) => {
+  // The glance tiles use the Details page's colour scales (and its toggle), so
+  // a reading wears the same colour on both pages.
+  const cc = colorCoding.details
+  const visMi = current.visibility != null ? current.visibility / METERS_PER_MILE : null
+  const glanceColor = {
+    precip: rainToday != null ? getPrecipInfo(rainToday).color : undefined,
+    wind: getWindInfo(current.wind_speed_10m).color,
+    humidity: getHumidityInfo(current.relative_humidity_2m).color,
+    visibility: visMi != null ? getVisibilityInfo(visMi).color : undefined,
+    sun: SUN_ORANGE,
+  }
+  const tone = (key) => (cc ? glanceColor[key] : undefined)
+
+  const renderWidget = (id, slot) => {
     switch (id) {
       case 'current':
         return (
@@ -232,36 +204,42 @@ export function TodayPage({
               <GlanceTile
                 icon={CloudRain}
                 label="Precipitation"
+                color={tone('precip')}
                 value={rainToday != null ? `${rainToday}%` : '—'}
                 sub={daily.precipitation_sum?.[0] != null ? `${formatPrecip(daily.precipitation_sum[0], units)} expected` : 'Chance today'}
               />
               <GlanceTile
                 icon={Wind}
                 label="Wind"
+                color={tone('wind')}
                 value={formatWind(current.wind_speed_10m, units)}
                 sub={`${windDir}${current.wind_gusts_10m != null ? ` · gusts ${Math.round(current.wind_gusts_10m)}` : ''}`}
               />
               <GlanceTile
                 icon={Droplets}
                 label="Humidity"
+                color={tone('humidity')}
                 value={`${Math.round(current.relative_humidity_2m)}%`}
                 sub={current.dew_point_2m != null ? `Dew point ${toTemp(current.dew_point_2m, unit)}°` : null}
               />
               <GlanceTile
                 icon={Sunrise}
                 label="Sunrise"
+                color={tone('sun')}
                 value={formatTime(daily.sunrise[0], timezone)}
                 sub="Local time"
               />
               <GlanceTile
                 icon={Sunset}
                 label="Sunset"
+                color={tone('sun')}
                 value={formatTime(daily.sunset[0], timezone)}
                 sub="Local time"
               />
               <GlanceTile
                 icon={Eye}
                 label="Visibility"
+                color={tone('visibility')}
                 value={formatVisibility(current.visibility, units)}
                 sub="Ground level"
               />
@@ -270,14 +248,14 @@ export function TodayPage({
                 label="UV index"
                 value={Math.round(current.uv_index ?? 0)}
                 sub={uv.label}
-                color={colorCoding.details ? uv.color : undefined}
+                color={cc ? uv.color : undefined}
               />
             </div>
           </div>
         )
 
       case 'hourly': {
-        const count = compact ? COMPACT_HOURS : FULL_HOURS
+        const count = HOURS_BY_SLOT[slot] ?? HOURS_BY_SLOT.full
         const start = currentHourIndex(hourly, timezone)
         const next = sliceHourly(hourly, start, count)
         return (
@@ -346,53 +324,63 @@ export function TodayPage({
           </PreviewCard>
         )
 
+      case 'nowcast':
+        // `wide` draws the chart in real pixels at a fixed height, so it fills
+        // whatever width its slot has without its height chasing it.
+        return (
+          <PrecipNowcast
+            minutely={weather.minutely_15}
+            currentTime={current.time}
+            mode={nowcastMode}
+            current={current}
+            radarClear={radarClear}
+            wide
+          />
+        )
+
       default:
         return null
     }
   }
 
-  // One flat child list rather than a wrapper per row: the widgets keep their
+  // One flat child list rather than a wrapper per row: the cards keep their
   // keys at the top level, so a drop moves the DOM node instead of unmounting it
-  // out of one row and remounting it in the next.
-  const rows = buildRows(order, paired)
+  // out of one row and remounting it in the next. Each row's widths add up to
+  // the grid's 12 columns, so the rows line up without any wrapper.
+  const widget = (id, slot, span, hidden) => (
+    <div
+      key={id}
+      data-widget={id}
+      data-card-id={hidden ? undefined : id}
+      className={[
+        'web-widget',
+        slot === 'full' && 'web-widget--full',
+        `web-widget--${slot}`,
+        hidden && 'web-widget--absent',
+        drag?.id === id && 'web-widget--lifted',
+      ].filter(Boolean).join(' ')}
+      style={{ gridColumn: paired ? `span ${span}` : '1 / -1' }}
+    >
+      <DragHandle id={id} name={WIDGET_NAMES[id]} onStart={start} onKeyMove={onKeyMove} />
+      {renderWidget(id, paired ? slot : 'full')}
+    </div>
+  )
+
   const items = []
-  rows.forEach((row, r) => {
-    row.forEach(id => {
-      items.push(
-        <SortableWidget key={id} id={id} name={WIDGET_NAMES[id]} full={row.length === 1}>
-          {renderWidget(id, row.length > 1 && id !== 'current')}
-        </SortableWidget>,
-      )
-    })
-    // The nowcast isn't part of the sortable set — it keeps the place it has
-    // always had, under the first row. `wide` draws the chart in real pixels at
-    // a fixed height, so it fills the page's width without its height chasing
-    // it. It renders nothing when there is no rain to plot, which is why it sits
-    // in the grid directly: an empty wrapper would still open a row of gaps.
-    if (r === 0) {
-      items.push(
-        <PrecipNowcast
-          key="nowcast"
-          minutely={weather.minutely_15}
-          currentTime={current.time}
-          mode={nowcastMode}
-          current={current}
-          radarClear={radarClear}
-          wide
-        />,
-      )
-    }
-  })
+  for (const row of visRows) {
+    const s = spans(row)
+    for (const id of row) items.push(widget(id, paired ? s[id].slot : 'full', s[id].span, false))
+  }
+  if (!nowcastShown) items.push(widget('nowcast', 'full', 12, true))
 
   return (
     <div className="web-page">
       <WeatherAlerts alerts={alerts} location={location} />
 
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={order} strategy={rectSortingStrategy}>
-          <div className="web-today-grid">{items}</div>
-        </SortableContext>
-      </DndContext>
+      <div className="web-today-grid" ref={gridRef}>{items}</div>
+      <DragLayer drag={drag} names={WIDGET_NAMES} />
+
+      <ResetLayout visible={isCustom} onReset={reset} />
     </div>
   )
 }

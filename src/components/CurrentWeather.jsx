@@ -29,7 +29,7 @@ function formatUpdated(date) {
   return `Updated at ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
 }
 
-export function CurrentWeather({ current, minutely, radarClear = null, location, timezone, unit, saved, onSave, onRemove, isHome, hasHome, onGoHome, onSetHome, onUnsetHome, lastUpdated, onRefresh, loading, colorCoding = true, glow = true, frost = true }) {
+export function CurrentWeather({ hideHeader = false, current, minutely, radarClear = null, location, timezone, unit, saved, onSave, onRemove, isHome, hasHome, onGoHome, onSetHome, onUnsetHome, lastUpdated, onRefresh, loading, colorCoding = true, glow = true, frost = true }) {
   // Home button: tapping toggles this location as home (set if it isn't, unset
   // if it is); holding navigates to the saved home — or, when no home exists
   // yet, sets this one (there's nowhere to go). A timer started on pointer-down
@@ -77,6 +77,9 @@ export function CurrentWeather({ current, minutely, radarClear = null, location,
 
   return (
     <div className="card current-card">
+      {/* hideHeader: the phone shells, where the place and date are in the
+          app header and home and save are on the search page. */}
+      {!hideHeader && (
       <div className="current-header">
         <div className="current-fav-group">
           <button
@@ -108,6 +111,7 @@ export function CurrentWeather({ current, minutely, radarClear = null, location,
           <Bookmark size={18} fill={saved ? 'currentColor' : 'none'} />
         </button>
       </div>
+      )}
       <div className="current-icon"><WeatherIcon id={info.icon} alt={info.label} /></div>
       <div className="current-temp" style={currentTempStyle}>{temp}°{unit}</div>
       <div className="current-condition">{info.label}</div>

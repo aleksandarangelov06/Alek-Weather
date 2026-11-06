@@ -4,6 +4,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { MRMS_BASE, inMrmsDomain } from '../utils/mrms'
 import { addBasemap } from '../utils/basemap'
+import { RadarRain } from './RadarRain'
 
 const FRAMES_URL = 'https://api.rainviewer.com/public/weather-maps.json'
 
@@ -325,6 +326,19 @@ function fmtTime(unixSec, timezone) {
   })
 }
 
+// How far the frame on screen is from the present, for the Radar tab's dock:
+// "25 min ago", "in 1 hr 15 min". A clock time alone makes the reader do the
+// subtraction, and on a timeline that straddles now that is the question being
+// asked. Within a few minutes either way it is just "Now".
+function fmtRelative(unixSec, nowSec) {
+  const mins = Math.round((unixSec - nowSec) / 60)
+  if (Math.abs(mins) < 3) return 'Now'
+  const a = Math.abs(mins)
+  const h = Math.floor(a / 60), m = a % 60
+  const span = h ? (m ? `${h} hr ${m} min` : `${h} hr`) : `${m} min`
+  return mins < 0 ? `${span} ago` : `in ${span}`
+}
+
 // The full-screen radar irises open out of the point that was tapped: a circle
 // that is a window onto the real thing, not a disc laid over it.
 //
@@ -413,6 +427,22 @@ const IRIS_FADE = 0.12 // fraction of the run spent fading the circle in
 // network from turning that into a tap that does nothing — past it the iris opens
 // over whatever has arrived, which is the behaviour this had all along.
 const ARM_TILE_WAIT_MS = 180
+
+// The closing twin of that wait, and longer, because what it covers is worse.
+//
+// When the iris has shut, the live card drops back into the stack in place of
+// the still that stood in for it — and its map is not ready to be seen. Leaflet
+// resizes on the spot, but the GL basemap only follows a frame later, and
+// resizing a WebGL canvas clears it, so the first compact frame had a blank map.
+// Worse if the map was zoomed or panned while full-screen: snapping back home
+// throws the radar tiles away and fetches new ones. Either way the card came
+// back empty and then filled in, which was the flash on closing.
+//
+// So the still stays laid over the live card (see .radar-settle) until the map
+// has redrawn at its new size and both layers have their tiles, and only then
+// is taken away. Holding a still costs nothing visible; this cap only stops a
+// slow network from leaving it there indefinitely.
+const SETTLE_MAX_MS = 700
 
 // cubic-bezier(x1,y1,x2,y2) at t: Newton on x, then evaluate y. Six passes lands
 // well inside a pixel at these sizes.
@@ -570,7 +600,7 @@ const revealAnimates = () =>
 // default), 'auto' (MRMS wide, the nearest NEXRAD site zoomed in), 'mrms' or
 // 'nexrad'. Outside NOAA coverage every choice ends up on RainViewer, the only
 // feed there is.
-export function WeatherRadar({ location, timezone, mode = 'split', source = 'rainviewer', fill = false, sky = '' }) {
+export function WeatherRadar({ location, timezone, mode = 'split', source = 'rainviewer', fill = false, sky = '', rainFx = true, snow = false }) {
   const combined = mode === 'combined'
   const mapRef      = useRef(null)
   const mapInst     = useRef(null)
@@ -656,6 +686,17 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
   //   'in'   iris opening
   //   'out'  iris closing, with the card still full-screen behind it
   const [phase, setPhase] = useState(null)
+  // True from the moment a closed card rejoins the stack until its map is ready
+  // to be seen; the still is held over it meanwhile. See SETTLE_MAX_MS.
+  const [settling, setSettling] = useState(false)
+  // The present, for the Radar tab dock's relative caption (see fmtRelative).
+  // Ticked once a minute, and only in fill — nothing else reads it.
+  const [nowSec, setNowSec] = useState(() => Date.now() / 1000)
+  useEffect(() => {
+    if (!fill) return
+    const id = setInterval(() => setNowSec(Date.now() / 1000), 60000)
+    return () => clearInterval(id)
+  }, [fill])
 
   // Fetch the frame list once: RainViewer for observed (+ its nowcast when the
   // free API bothers to include one), then HRRR forecast steps continuing on
@@ -1145,7 +1186,8 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
     return () => { a.cancel(); b.cancel() }
   }, [phase])
 
-  // Closed: the card can rejoin the stack now the window is shut over it.
+  // Closed: the card can rejoin the stack now the window is shut over it. The
+  // still goes with it, laid over the card until the map is ready (settling).
   useEffect(() => {
     if (phase !== 'out') return
     const t = setTimeout(() => {
@@ -1153,10 +1195,47 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
       setPhase(null)
       setRevealStyle(null)
       setHold(null)
-      holdClone.current = null
+      setSettling(!!holdClone.current)
     }, IRIS_OUT_MS)
     return () => clearTimeout(t)
   }, [phase])
+
+  // Lift the still once the live map can be seen. Three frames first: the
+  // basemap plugin resizes its container in one, MapLibre clears and re-renders
+  // its canvas in the next, and the third is margin. Then wait out any tiles
+  // either layer is still fetching — the zoom snapping home is the usual cause.
+  useEffect(() => {
+    if (!settling) return
+    let done = false
+    const unhooks = []
+    const finish = () => {
+      if (done) return
+      done = true
+      setSettling(false)
+      holdClone.current = null
+    }
+    let raf = requestAnimationFrame(() => {
+      raf = requestAnimationFrame(() => {
+        raf = requestAnimationFrame(() => {
+          const pending = [baseTileRef.current, layerCache.current.get(activeKey.current)]
+            .filter(l => l?.isLoading?.())
+          if (pending.length === 0) { finish(); return }
+          let left = pending.length
+          for (const l of pending) {
+            const h = () => { if (--left === 0) finish() }
+            l.once('load', h)
+            unhooks.push(() => l.off('load', h))
+          }
+        })
+      })
+    })
+    const cap = setTimeout(finish, SETTLE_MAX_MS)
+    return () => {
+      cancelAnimationFrame(raf)
+      clearTimeout(cap)
+      unhooks.forEach(u => u())
+    }
+  }, [settling])
 
   // The card entering and leaving the flow is two chances for the browser to move
   // the scroll on us — clamping it if the document measures shorter, or
@@ -1270,6 +1349,9 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
     if (!map) return
     map.setView([location.latitude, location.longitude], 9, { animate: true })
   }, [location.latitude, location.longitude])
+
+  // The radar layer currently on screen, for RadarRain to read its tiles from.
+  const getActiveLayer = useCallback(() => layerCache.current.get(activeKey.current), [])
 
   const handleZoomIn  = useCallback(() => mapInst.current?.zoomIn(),  [])
   const handleZoomOut = useCallback(() => mapInst.current?.zoomOut(), [])
@@ -1493,21 +1575,47 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
     )}
     <div
       ref={cardRef}
-      className={`card radar-card${expanded ? ' radar-expanded' : ''}${fill ? ' radar-fill' : ''}`}
+      className={`card radar-card${expanded ? ' radar-expanded' : ''}${fill ? ' radar-fill' : ''}${settling ? ' radar-settling' : ''}`}
     >
+      {/* The still, held over the card just after it closes — see SETTLE_MAX_MS. */}
+      {settling && <div className="radar-settle" ref={attachSnapshot} aria-hidden="true" />}
       {!expanded && !fill && (
         <div className="radar-header">
           <span className="section-label" style={{ margin: 0 }}>RADAR</span>
         </div>
       )}
 
+      {/* The stage holds the map and, on the compact card, the glow that
+          spills its colours out onto the card around it (.radar-map-glow).
+          Expanded and fill modes lay the map out as before: there the stage
+          is display: contents, so it is not a box at all. */}
+      <div className="radar-map-stage">
       <div className="radar-map-wrap">
         <div ref={mapRef} className="radar-map" />
+        {/* Rain drawn only where the radar shows echoes — full-size only, where
+            the map is big enough for it to read as weather rather than noise. */}
+        {fullSize && rainFx && mapReady && (
+          <RadarRain map={mapInst.current} getLayer={getActiveLayer} snow={snow} />
+        )}
         {/* The full-screen overlay floats its zoom and collapse tools on the
             map, and is the only mode that offers a way out of itself. Its
             locate button lives with the controls instead — see below. Fill mode
-            puts every tool in the strip: there the map is the whole page, so
-            anything laid on it is covering the thing it controls. */}
+            floats its tools too, as one vertical pill on the right edge (see
+            .radar-map-tools in WebApp.css), out of the way of the dock below. */}
+        {fill && (
+          <div className="radar-map-tools" role="group" aria-label="Map">
+            <button className="radar-zoom-btn" onClick={handleZoomIn} aria-label="Zoom in" title="Zoom in">
+              <ZoomIn size={18} />
+            </button>
+            <button className="radar-zoom-btn" onClick={handleZoomOut} aria-label="Zoom out" title="Zoom out">
+              <ZoomOut size={18} />
+            </button>
+            <span className="radar-map-tools-sep" aria-hidden="true" />
+            <button className="radar-locate-btn" onClick={handleLocate} aria-label="Center on location" title="Center on location">
+              <Navigation size={17} />
+            </button>
+          </div>
+        )}
         {expanded && (
           <>
             <button className="radar-expand-btn radar-expand-btn--floating" onClick={collapse} aria-label="Collapse">
@@ -1535,6 +1643,8 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
           />
         )}
       </div>
+      {!expanded && !fill && <div className="radar-map-glow" aria-hidden="true" />}
+      </div>
 
       <div className="radar-controls">
         {/* Full-screen only, and a child of the pill rather than of the map:
@@ -1546,29 +1656,49 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
             <Navigation size={15} />
           </button>
         )}
-        <div className="radar-main-row">
-          <div className="radar-big-time">
-            {frames[idx] ? fmtTime(frames[idx].time, timezone) : ''}
-          </div>
-          <div className="radar-row-actions">
-            {fill && (
-              <div className="radar-map-tools">
-                <button className="radar-zoom-btn" onClick={handleZoomIn} aria-label="Zoom in">
-                  <ZoomIn size={16} />
-                </button>
-                <button className="radar-zoom-btn" onClick={handleZoomOut} aria-label="Zoom out">
-                  <ZoomOut size={16} />
-                </button>
-                <button className="radar-locate-btn" onClick={handleLocate} aria-label="Center on location">
-                  <Navigation size={15} />
-                </button>
-              </div>
-            )}
-            <button className="radar-play-circle" onClick={() => setPlaying(v => !v)} aria-label={playing ? 'Pause' : 'Play'}>
-              {playing ? <Pause size={22} /> : <Play size={22} />}
+        {/* Fill (the desktop Radar tab) lays the row out as a media dock: play
+            first, where a player puts it, then the time with how far it is from
+            now under it, then the legend — the strip's two caption rows folded
+            into this one, which is most of what lets the dock float over the map
+            instead of taking a band of the window. */}
+        {fill ? (
+          <div className="radar-main-row radar-main-row--dock">
+            <button className={`radar-play-circle${playing ? ' is-playing' : ''}`} onClick={() => setPlaying(v => !v)} aria-label={playing ? 'Pause' : 'Play'} title={playing ? 'Pause (Space)' : 'Play (Space)'}>
+              {playing ? <Pause size={20} /> : <Play size={20} />}
             </button>
+            <div className="radar-time-block">
+              <div className="radar-big-time">
+                {frames[idx] ? fmtTime(frames[idx].time, timezone) : ''}
+              </div>
+              <div className="radar-time-sub">
+                <span className={`radar-rel${idx >= pastCount ? ' radar-rel--future' : ''}`}>
+                  {frames[idx] ? fmtRelative(frames[idx].time, nowSec) : ''}
+                </span>
+                <span className="radar-time-src">{sourceLabel}</span>
+              </div>
+            </div>
+            <div className="radar-legend radar-legend--dock" aria-label="Precipitation intensity, light to heavy">
+              <span className="radar-legend-lbl">Light</span>
+              <div className="radar-legend-blocks">
+                {legendColors.map((color, i) => (
+                  <div key={i} className="radar-legend-block" style={{ background: color }} />
+                ))}
+              </div>
+              <span className="radar-legend-lbl">Heavy</span>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="radar-main-row">
+            <div className="radar-big-time">
+              {frames[idx] ? fmtTime(frames[idx].time, timezone) : ''}
+            </div>
+            <div className="radar-row-actions">
+              <button className={`radar-play-circle${playing ? ' is-playing' : ''}`} onClick={() => setPlaying(v => !v)} aria-label={playing ? 'Pause' : 'Play'}>
+                {playing ? <Pause size={22} /> : <Play size={22} />}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Split only, and then only where there is a second half to reach:
             outside the HRRR domain there are no forecast tiles, so rather than
@@ -1672,17 +1802,22 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
           </div>
         </div>
 
-        <div className="radar-legend">
-          <span className="radar-legend-lbl">Light</span>
-          <div className="radar-legend-blocks">
-            {legendColors.map((color, i) => (
-              <div key={i} className="radar-legend-block" style={{ background: color }} />
-            ))}
-          </div>
-          <span className="radar-legend-lbl">Heavy</span>
-        </div>
+        {/* Fill carries both of these in the dock's top row instead. */}
+        {!fill && (
+          <>
+            <div className="radar-legend">
+              <span className="radar-legend-lbl">Light</span>
+              <div className="radar-legend-blocks">
+                {legendColors.map((color, i) => (
+                  <div key={i} className="radar-legend-block" style={{ background: color }} />
+                ))}
+              </div>
+              <span className="radar-legend-lbl">Heavy</span>
+            </div>
 
-        <p className="radar-source">{sourceLabel}</p>
+            <p className="radar-source">{sourceLabel}</p>
+          </>
+        )}
       </div>
     </div>
     </IrisShell>

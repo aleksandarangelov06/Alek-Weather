@@ -94,7 +94,7 @@ const STARS = Array.from({ length: 40 }, () => ({
   dur:   `${(Math.random() * 3 + 2).toFixed(1)}s`,
   delay: `${-(Math.random() * 4).toFixed(1)}s`,
 }))
-import { Settings, Search, MapPin, MapPinOff, ArrowLeft, GripHorizontal, Building2, X, Navigation, House } from 'lucide-react'
+import { Search, MapPin, MapPinOff, ArrowLeft, GripHorizontal, Building2, X, Navigation, House, Settings as SettingsIcon } from 'lucide-react'
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -103,6 +103,8 @@ import { RADAR_ENHANCED_KEY } from './hooks/useRadarPrecip'
 import { useSavedCities } from './hooks/useSavedCities'
 import { useRecentSearches } from './hooks/useRecentSearches'
 import { SearchBar } from './components/SearchBar'
+import { SearchSheet } from './components/SearchSheet'
+import { StyleCoverArt } from './components/StyleCoverArt'
 import { SavedCities } from './components/SavedCities'
 import { SavedCitiesPage } from './components/SavedCitiesPage'
 import { CurrentWeather } from './components/CurrentWeather'
@@ -116,22 +118,25 @@ import { WeatherAlerts } from './components/WeatherAlerts'
 import { WeatherOverview } from './components/WeatherOverview'
 import { SettingsPage } from './components/SettingsPageLazy'
 import { preloadSettings } from './components/settingsChunk'
-import { MAX_CARD_TRANSPARENCY } from './utils/appearance'
+import { SlidersIcon } from './components/SlidersIcon'
+import { MAX_CARD_TRANSPARENCY, IOS_FULL_CLARITY_AT } from './utils/appearance'
 import { WebLayout } from './components/web/WebLayout'
 import { WebTabs } from './components/web/WebTabs'
 import { WebAlertPill } from './components/web/WebAlertPill'
 import { TABS as WEB_TABS, useWebTab } from './components/web/tabs'
 import { SplashHome } from './components/web/SplashHome'
+import { LocationsPage } from './components/web/LocationsPage'
 import { SplashCities } from './components/SplashCities'
 import { LoadingScreen } from './components/LoadingScreen'
 import { WebLoadingScreen } from './components/web/WebLoadingScreen'
 import { liveWeatherCode, getWeatherInfo } from './utils/weatherCodes'
+import { isSnowing } from './utils/conditions'
 import { WeatherIcon } from './components/WeatherIcon'
-import { useLocalConditions } from './hooks/useLocalConditions'
+import { useLocalConditions, locatedPlace, localConditionsFailed } from './hooks/useLocalConditions'
 import { loadUnits, saveUnit } from './utils/units'
 import { APP_VERSION, IS_ANDROID_APP } from './utils/version'
 import { UpdateToast } from './components/UpdateToast'
-import { IS_PHONE } from './utils/device'
+import { IS_PHONE, IS_DESKTOP, DEV_DEVICE } from './utils/device'
 import { applyMaterialTokens, DEFAULT_SEED, isValidSeed } from './utils/materialTheme'
 import { useNotifications } from './hooks/useNotifications'
 import { syncNotificationSettings } from './utils/notifications'
@@ -171,31 +176,76 @@ function nextIsDesktop(current) {
 // "Macintosh", so touch support is the tell that separates them from actual
 // Macs); then anything on a desktop-sized screen opens in the web app rather
 // than a phone design stretched across a monitor. Everything left is a
-// non-Apple phone, which gets Android. Only the default is derived this way —
-// the setting overrides it, and a real Mac can still choose the iOS look.
+// non-Apple phone, which gets Android. The setting can override the default,
+// within limits: phones can't pick Web, and desktops (IS_DESKTOP) are always
+// Web.
 function defaultPlatformTheme() {
   if (IS_ANDROID_APP) return 'android'
+  if (IS_DESKTOP) return 'web'
+  // Dev override (see device.js): a pretend phone takes its pretend OS's look.
+  if (DEV_DEVICE === 'iphone') return 'ios'
+  if (DEV_DEVICE === 'android') return 'android'
   const isApple = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
     (navigator.userAgent.includes('Macintosh') && navigator.maxTouchPoints > 1)
   if (isApple) return 'ios'
   return window.matchMedia(DESKTOP_MQ).matches ? 'web' : 'android'
 }
+// Where the phone shells' circle reveal grows from (and shrinks back into): the
+// centre of the button that opened the page, and how far to scale the 360px
+// .page-reveal-fill circle so it just reaches the farthest corner of the screen.
+// Written as custom properties on the root, which the pageFillIn/pageFillOut
+// keyframes in App.css read. With no element it grows from the middle of the
+// screen. Keep 360 in sync with .page-reveal-fill's size.
+const PAGE_FILL_BASE = 360
+function setRevealOrigin(el) {
+  const w = window.innerWidth
+  const h = window.innerHeight
+  let x = w / 2
+  let y = h / 2
+  if (el?.getBoundingClientRect) {
+    const r = el.getBoundingClientRect()
+    x = r.left + r.width / 2
+    y = r.top + r.height / 2
+  }
+  const radius = Math.ceil(Math.hypot(Math.max(x, w - x), Math.max(y, h - y)))
+  const root = document.documentElement.style
+  root.setProperty('--page-reveal-x', `${x}px`)
+  root.setProperty('--page-reveal-y', `${y}px`)
+  root.setProperty('--page-reveal-scale', String((2 * radius) / PAGE_FILL_BASE))
+}
+
+// How much of the Card Transparency setting reaches the Android card fill. The
+// slider runs 0–MAX_CARD_TRANSPARENCY (35); at this scale its far end thins the
+// fill to about 77%. iOS reads the setting separately (--ios-glass-clarity,
+// against IOS_FULL_CLARITY_AT) and is unaffected by this.
+const ANDROID_THIN_SCALE = 0.65
+
 const SETTINGS_CLOSE_MS = 260
-// How long the cog turns before the settings panel opens. The press is held for
-// exactly this long and App.css runs the rotation off the same figure via the
-// --cog-spin-ms custom property, so the panel can never arrive mid-turn.
-//
-// One number drives both on purpose, because the panel is fixed inset:0 and
-// covers the header on its way in — anything left of the turn once it lands is
-// spent behind it. Opening earlier than the cog finishes would not make the app
-// feel quicker, it would just hide the tail of the animation.
+// The cover that hides an app-style switch (see changePlatformTheme): fade in,
+// hold while the new style paints underneath, fade out. App.css times the two
+// fades off the same figures (.style-cover).
+const STYLE_COVER_IN_MS = 240
+// Long enough for the cover's art to play: the robot's wave, the apple's bite.
+const STYLE_COVER_HOLD_MS = 900
+const STYLE_COVER_OUT_MS = 380
+const STYLE_NAMES = { ios: 'iOS', android: 'Android', web: 'Web' }
+// How long the cog turns when settings opens. App.css runs the rotation off the
+// same figure via the --cog-spin-ms custom property. The page no longer waits
+// for it: it opens on the tap, and the turn plays alongside the reveal.
 const SETTINGS_OPEN_MS = 240
-// The glass sweeps for this long before the search overlay drops. Matches the
-// cog deliberately — they sit at either end of the same header and a press
-// should cost the same wherever it lands — but stays its own number, because the
-// two gestures are different shapes and may not want retuning together.
+// How long the glass sweeps when search opens (--glass-sweep-ms). Matches the
+// cog deliberately, but stays its own number, because the two gestures are
+// different shapes and may not want retuning together. Like the cog, it no
+// longer holds the page back.
 const SEARCH_OPEN_MS = 240
 const SEARCH_CLOSE_MS = 220
+// The round icon buttons on the phone shells (header search and settings, the
+// current card's home and save) all dip under a press. :active alone can come
+// and go on a quick tap before the dip has painted, so the press is also held as a
+// data-pressed attribute for at least this long (an attribute, because React
+// rewrites className when hold state changes and would wipe a class). See the effect in App.
+const PRESS_DIP_MIN_MS = 110
+const PRESS_DIP_SELECTOR = '.app-header .header-icon-btn, .app-header .settings-btn, .current-card .fav-btn, .current-card .save-btn'
 // Hold the header search button this long to skip the overlay and geolocate.
 // Passed to App.css as the --long-press-ms custom property so the fill animation
 // always matches this value.
@@ -280,7 +330,9 @@ function App() {
     // reach the choice can't be undone. So a phone never keeps 'web' — the
     // Web option is hidden there (see SettingsPage), and anything already
     // stored, from an older build or another device, falls back to the phone
-    // look on the next launch.
+    // look on the next launch. A desktop is the reverse: it is always Web, so
+    // a stored iOS or Android choice is ignored there.
+    if (IS_DESKTOP) return 'web'
     if (!saved || (saved === 'web' && IS_PHONE)) return defaultPlatformTheme()
     return saved
   })
@@ -334,13 +386,22 @@ function App() {
   const [settingsClosing, setSettingsClosing] = useState(false)
   // True only while the cog is turning, before the panel is mounted.
   const [settingsOpening, setSettingsOpening] = useState(false)
+  // The full-screen cover over an app-style switch: { to, leaving } or null.
+  const [styleCover, setStyleCover] = useState(null)
+  const styleCoverTimers = useRef([])
+  useEffect(() => () => styleCoverTimers.current.forEach(clearTimeout), [])
   const settingsOpenTimer = useRef(null)
   // The same, for the magnifier's sweep and the search overlay.
   const [searchSweeping, setSearchSweeping] = useState(false)
   const searchOpenTimer = useRef(null)
-  const [subView, setSubView] = useState(null) // null | 'colorcoding' | 'overview' | 'effects' | 'theme' | 'notifications'
+  const [subView, setSubView] = useState(null) // null | 'colorcoding' | 'overview' | 'radar' | 'effects' | 'theme' | 'notifications'
   const [isDesktop, setIsDesktop] = useState(() => window.matchMedia(DESKTOP_MQ).matches)
   const [webTab, setWebTab] = useWebTab()
+  // The web app's non-forecast pages — 'locations' | 'settings' | null. Kept
+  // apart from webTab: they need no forecast, so they can be opened from Home
+  // with nothing loaded, and leaving one returns to whichever forecast page you
+  // were on. Not persisted: a reload lands on the forecast, as it always has.
+  const [webPage, setWebPage] = useState(null)
 
   // The app style setting is honoured at every width: picking "Web" and then
   // narrowing the window keeps the web app, because a layout that swapped
@@ -350,6 +411,10 @@ function App() {
   // grids survive down there; isDesktop still gates the pieces that genuinely
   // need room, and the pointer-specific affordances below.
   const webLayout = platformTheme === 'web'
+  const navPageUp = webLayout && webPage != null
+  // Switching the app style away from Web on the Settings page leaves no tab bar
+  // to come back by, so the page is dropped with the layout.
+  if (!webLayout && webPage != null) setWebPage(null)
 
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchClosing, setSearchClosing] = useState(false)
@@ -543,16 +608,26 @@ function App() {
     const root = document.documentElement
     const thinned = cardTransparency > 0 && weatherAnimations
     if (thinned && platformTheme === 'android') {
-      root.style.setProperty('--md-card-alpha', `${100 - cardTransparency}%`)
+      // Scaled (ANDROID_THIN_SCALE) so the far end of the slider leaves the cards
+      // about three-quarters filled rather than half: at 50% the Android
+      // containers, dark ones especially, were barely there over the sky.
+      root.style.setProperty('--md-card-alpha', `${100 - cardTransparency * ANDROID_THIN_SCALE}%`)
       root.setAttribute('data-card-glass', 'on')
     } else {
       root.style.removeProperty('--md-card-alpha')
       root.removeAttribute('data-card-glass')
     }
     if (thinned && platformTheme === 'ios') {
-      root.style.setProperty('--ios-glass-clarity', String(cardTransparency / MAX_CARD_TRANSPARENCY))
+      root.style.setProperty('--ios-glass-clarity', String(cardTransparency / IOS_FULL_CLARITY_AT))
     } else {
       root.style.removeProperty('--ios-glass-clarity')
+    }
+    // The clear-glass cards over the sky (both phone styles; see "Cards as
+    // clear glass" in App.css) read the setting as 0–1 of the slider.
+    if (thinned && platformTheme !== 'web') {
+      root.style.setProperty('--card-glass-t', String(cardTransparency / MAX_CARD_TRANSPARENCY))
+    } else {
+      root.style.removeProperty('--card-glass-t')
     }
   }, [cardTransparency, platformTheme, weatherAnimations])
 
@@ -623,12 +698,39 @@ function App() {
     return () => document.removeEventListener('keydown', handler)
   }, [showSettings, webLayout]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Fly splash logo to header when weather arrives; dismiss immediately on error
+  // Fly splash logo to header when weather arrives; dismiss immediately on error.
+  //
+  // The first forecast of a session mounts every page (and pulls in their code
+  // and icons) in the same frame the exit animation would start, which made
+  // that first fly-out stutter. So the first time, the splash holds still for a
+  // beat with the forecast mounting behind it, and only then flies — by which
+  // point the heavy work is done and the animation has the main thread to
+  // itself. Later openings are already warm and go straight away.
+  const firstOpenRef = useRef(true)
+  const [splashHold, setSplashHold] = useState(false)
   useEffect(() => {
     if (splashPhase !== 'visible') return
-    if (weather) setSplashPhase('exit')
-    else if (error) setSplashPhase('done')
+    if (error && !weather) { setSplashHold(false); setSplashPhase('done'); return }
+    if (!weather) return
+    if (!firstOpenRef.current) { setSplashHold(false); setSplashPhase('exit'); return }
+    firstOpenRef.current = false
+    setSplashHold(true)
+    const t = setTimeout(() => { setSplashHold(false); setSplashPhase('exit') }, 450)
+    // A later source landing on the reading re-runs this effect; with the ref
+    // spent it then exits at once rather than leaving the splash stuck.
+    return () => clearTimeout(t)
   }, [weather, error]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The first place picked in a session opens on Today (the overview) rather
+  // than whichever page was last left open. Once any forecast has been shown —
+  // including one restored on launch — picks keep the current page.
+  const firstPickRef = useRef(true)
+  useEffect(() => { if (weather) firstPickRef.current = false }, [weather])
+  const landFirstPick = () => {
+    if (!firstPickRef.current || weather) return
+    firstPickRef.current = false
+    if (webTab !== 'today') setWebTab('today')
+  }
 
   // The exit's end is timed off the phase, not off the weather. It used to live
   // in the effect above, whose cleanup ran whenever `weather` changed — and the
@@ -646,7 +748,8 @@ function App() {
   // splash is the exception: it carries its own search field, and seeds that
   // instead of opening the overlay on top of it.
   useEffect(() => {
-    if (!isDesktop || weather || loading || searchOpen || webSplash) return
+    // Nor on the Locations or Settings page, where a key press is meant for the page.
+    if (!isDesktop || weather || loading || searchOpen || webSplash || navPageUp) return
     const handler = (e) => {
       if (e.key.length !== 1 || e.ctrlKey || e.metaKey || e.altKey) return
       setSearchInitialQuery(e.key)
@@ -655,15 +758,13 @@ function App() {
     }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
-  }, [isDesktop, weather, loading, searchOpen, webSplash])
+  }, [isDesktop, weather, loading, searchOpen, webSplash, navPageUp])
 
   // Hardware back button / Android back gesture
   useEffect(() => {
     const handler = () => {
-      // Back pressed while the cog is still turning cancels the open outright.
-      // Nothing has been pushed for it yet, so this popstate belongs to whatever
-      // was on screen before the tap; letting the timer run on would push an
-      // entry and mount the panel over a page the user has already left.
+      // Back pressed while the cog or the glass is still animating just stops
+      // the animation; the page itself is already open and closes below.
       if (settingsOpenTimer.current) {
         clearTimeout(settingsOpenTimer.current)
         settingsOpenTimer.current = null
@@ -779,8 +880,26 @@ function App() {
 
   const changePlatformTheme = (mode) => {
     if (mode === 'web' && IS_PHONE) return
-    setPlatformTheme(mode)
-    localStorage.setItem(PLATFORM_THEME_KEY, mode)
+    if (mode !== 'web' && IS_DESKTOP) return
+    if (mode === platformTheme) return
+    const apply = () => {
+      setPlatformTheme(mode)
+      localStorage.setItem(PLATFORM_THEME_KEY, mode)
+    }
+    // Reduced motion: no cover, just the switch.
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { apply(); return }
+
+    // Changing style re-skins every surface at once, and watching that happen
+    // reads as the app glitching. So a full-screen cover comes up first, the
+    // switch happens behind it, and it lifts to show the new style.
+    styleCoverTimers.current.forEach(clearTimeout)
+    setStyleCover({ to: mode, leaving: false })
+    styleCoverTimers.current = [
+      setTimeout(apply, STYLE_COVER_IN_MS),
+      // A beat after the switch, so the new style has painted before it shows.
+      setTimeout(() => setStyleCover(c => c && { ...c, leaving: true }), STYLE_COVER_IN_MS + STYLE_COVER_HOLD_MS),
+      setTimeout(() => setStyleCover(null), STYLE_COVER_IN_MS + STYLE_COVER_HOLD_MS + STYLE_COVER_OUT_MS),
+    ]
   }
 
   const changeMaterialColor = (hex) => {
@@ -796,32 +915,20 @@ function App() {
   }
 
   const openSettings = () => {
-    // Already winding up. Without this a second tap during the turn starts a
-    // second timer, and the panel opens twice over — pushing two history entries
-    // for one visible overlay, so the first Back press appears to do nothing.
-    if (settingsOpenTimer.current) return
-
-    // The history entry is pushed with the panel rather than with the tap: for
-    // the length of the turn there is nothing on screen for Back to close, and
-    // an entry sitting there early would swallow a Back press aimed at the page
-    // underneath.
-    const reveal = () => {
+    if (showSettings) return
+    // The page opens on the tap itself. It used to wait for the cog to finish
+    // turning first, and that wait read as lag. The cog still turns, alongside
+    // the page's circle reveal; the timer only ends that animation.
+    setSubView(null)
+    history.pushState({ overlay: 'settings' }, '')
+    setShowSettings(true)
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    clearTimeout(settingsOpenTimer.current)
+    setSettingsOpening(true)
+    settingsOpenTimer.current = setTimeout(() => {
       settingsOpenTimer.current = null
       setSettingsOpening(false)
-      setSubView(null)
-      history.pushState({ overlay: 'settings' }, '')
-      setShowSettings(true)
-    }
-
-    // The wait exists to let the cog finish its turn. Reduced motion means there
-    // is no turn to finish, and holding the panel back anyway would be lag with
-    // nothing on screen to account for it.
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      reveal()
-      return
-    }
-    setSettingsOpening(true)
-    settingsOpenTimer.current = setTimeout(reveal, SETTINGS_OPEN_MS)
+    }, SETTINGS_OPEN_MS)
   }
 
   const doCloseSettings = () => {
@@ -843,28 +950,29 @@ function App() {
 
   const closeSubView = () => history.back()
 
-  const openSearch = () => {
+  // Called straight from a click (the empty state, the location error's link),
+  // the page grows out of whatever was tapped. The magnifier sets its own origin
+  // and calls this with no event, after its sweep.
+  const openSearch = (e) => {
+    if (e?.currentTarget) setRevealOrigin(e.currentTarget)
     history.pushState({ overlay: 'search' }, '')
     setSearchOpen(true)
   }
 
   // Opening search *from the magnifier*, which is the only entry point with an
-  // icon to animate. The empty state, the splash overlay and the "search for a
-  // city instead" link all call openSearch directly and still open at once —
-  // holding those back would be a wait with nothing on screen to spend it on.
+  // icon to animate. Search opens on the tap itself, as settings does; it used to
+  // wait for the glass to finish sweeping, and that wait read as lag. The sweep
+  // still plays alongside the reveal, and the timer only ends it.
   const sweepThenOpenSearch = () => {
-    if (searchOpenTimer.current) return
-    const reveal = () => {
+    if (searchOpen) return
+    openSearch()
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    clearTimeout(searchOpenTimer.current)
+    setSearchSweeping(true)
+    searchOpenTimer.current = setTimeout(() => {
       searchOpenTimer.current = null
       setSearchSweeping(false)
-      openSearch()
-    }
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      reveal()
-      return
-    }
-    setSearchSweeping(true)
-    searchOpenTimer.current = setTimeout(reveal, SEARCH_OPEN_MS)
+    }, SEARCH_OPEN_MS)
   }
 
   const doCloseSearch = () => {
@@ -899,14 +1007,70 @@ function App() {
     setSearchHolding(false)
   }
 
-  const handleSearchButton = () => {
+  const handleSearchButton = (e) => {
     // Swallow the click that trails a completed hold so it doesn't also open search.
     if (searchLongPressed.current) { searchLongPressed.current = false; return }
-    if (splashPhase !== 'done') { openSaved(); return }
+    setRevealOrigin(e?.currentTarget)
+    if (splashPhase !== 'done') {
+      // On the web, the places you've been are a page of their own now.
+      if (webLayout) openNavPage('locations')
+      else openSaved()
+      return
+    }
     sweepThenOpenSearch()
   }
 
   useEffect(() => () => clearTimeout(searchHoldTimer.current), [])
+
+  // Settings opens on the tap now, with no cog turn to hide a download behind,
+  // so its chunk is warmed once the app has gone idle after first paint rather
+  // than only on pointerdown (which still runs, for a tap that beats this).
+  useEffect(() => {
+    const ric = window.requestIdleCallback
+    if (ric) {
+      const id = ric(() => preloadSettings(), { timeout: 3000 })
+      return () => window.cancelIdleCallback?.(id)
+    }
+    const t = setTimeout(preloadSettings, 1500)
+    return () => clearTimeout(t)
+  }, [])
+
+  // Tactile press for the round icon buttons (PRESS_DIP_SELECTOR): data-pressed
+  // goes on at the touch and comes off at release, but never sooner than
+  // PRESS_DIP_MIN_MS after it went on, so even the quickest tap shows the full
+  // dip and spring-back. Written straight onto the node, not held in state, so a
+  // press never re-renders anything. One listener on the document covers all
+  // four buttons, wherever they are rendered.
+  useEffect(() => {
+    let pressed = null
+    let downAt = 0
+    let releaseTimer = 0
+    const release = () => {
+      const el = pressed
+      if (!el) return
+      pressed = null
+      const wait = Math.max(0, PRESS_DIP_MIN_MS - (performance.now() - downAt))
+      releaseTimer = setTimeout(() => el.removeAttribute('data-pressed'), wait)
+    }
+    const onDown = (e) => {
+      const el = e.target.closest?.(PRESS_DIP_SELECTOR)
+      if (!el) return
+      clearTimeout(releaseTimer)
+      if (pressed && pressed !== el) pressed.removeAttribute('data-pressed')
+      pressed = el
+      downAt = performance.now()
+      el.setAttribute('data-pressed', '')
+    }
+    document.addEventListener('pointerdown', onDown, { passive: true })
+    document.addEventListener('pointerup', release, { passive: true })
+    document.addEventListener('pointercancel', release, { passive: true })
+    return () => {
+      document.removeEventListener('pointerdown', onDown)
+      document.removeEventListener('pointerup', release)
+      document.removeEventListener('pointercancel', release)
+      clearTimeout(releaseTimer)
+    }
+  }, [])
 
   const openSaved = () => {
     history.pushState({ overlay: 'saved' }, '')
@@ -947,6 +1111,7 @@ function App() {
   // the overlay, so nothing has been pushed onto the history stack and these
   // skip the closeSearch() the overlay handlers above end with.
   const handleSplashSearchSelect = (city) => {
+    landFirstPick()
     addRecent(city)
     selectCity(city)
   }
@@ -955,6 +1120,7 @@ function App() {
   // its reading is still in storage: show that at once and refresh it in place
   // if it is stale, the same as a launch, instead of the full fetch chain.
   const handleSplashCitySelect = (city) => {
+    landFirstPick()
     addRecent(city)
     const updated = restoreReading(city)
     if (updated == null) { fetchWeather(city); return }
@@ -964,10 +1130,53 @@ function App() {
       .finally(() => { refreshingRef.current = false })
   }
 
+  // The header's place line on the phone shells (see .app-place): the city
+  // and its region, and today's date in the forecast's own timezone.
+  const placeInHeader = !webLayout && splashPhase === 'done' && !!weather && !!location
+  const placeLine = location
+    ? [location.name, location.admin1 && location.admin1 !== location.name ? location.admin1 : null].filter(Boolean).join(', ')
+    : ''
+  const placeDate = weather
+    ? new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', ...(weather.timezone ? { timeZone: weather.timezone } : {}) })
+    : ''
+
   const handleLogoClick = () => {
     if (!weather || splashPhase !== 'done') return
     reset()
     setSplashPhase('visible')
+  }
+
+  // Opening Locations or Settings from the web tab bar. From Home this leaves
+  // the splash outright, with no exit animation — that fade is the forecast
+  // being revealed underneath, and there is no forecast behind this page.
+  const openNavPage = (id) => {
+    if (!webLayout) return
+    setSubView(null)
+    setWebPage(id)
+    if (splashPhase !== 'done') setSplashPhase('done')
+    window.scrollTo({ top: 0, behavior: 'auto' })
+  }
+
+  const closeNavPage = () => {
+    setWebPage(null)
+    setSubView(null)
+  }
+
+  // Home from the tab bar. From a forecast page it is the logo-tap; from
+  // Locations or Settings with nothing loaded there is no forecast to drop, so
+  // it just brings the splash back.
+  const handleNavHome = () => {
+    const wasOnPage = navPageUp
+    closeNavPage()
+    if (weather && splashPhase === 'done') handleLogoClick()
+    else if (wasOnPage && splashPhase === 'done') setSplashPhase('visible')
+  }
+
+  // Picking a place on the Locations page opens its forecast on the page you
+  // were last on, the same way the splash's cards do.
+  const handleLocationsSelect = (city) => {
+    closeNavPage()
+    handleSplashCitySelect(city)
   }
 
   const hasActiveAlert = alerts.some(a =>
@@ -1048,7 +1257,7 @@ function App() {
     hourly:  <HourlyForecast hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.hourly} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
     daily:   <DailyForecast daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} units={units} colorCoding={colorCoding.daily} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
     details: <WeatherDetails current={weather.current} daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} units={units} airQuality={airQuality} colorCoding={colorCoding.details} />,
-    radar:   <WeatherRadar location={location} timezone={weather.timezone} mode={radarMode} source={radarSource} sky={weatherAnimations ? skyC : ''} />,
+    radar:   <WeatherRadar location={location} timezone={weather.timezone} mode={radarMode} source={radarSource} sky={weatherAnimations ? skyC : ''} rainFx={weatherAnimations} snow={isSnowing(weather.current)} />,
     nowcast: <PrecipNowcast minutely={weather.minutely_15} currentTime={weather.current.time} mode={nowcastMode} current={weather.current} radarClear={radarClear} />,
   } : null
 
@@ -1063,7 +1272,10 @@ function App() {
   // skeleton under them follows whichever is selected, and switching pages
   // mid-fetch stays possible. First load is still covered: `weather` is null
   // until data arrives, so there is genuinely nothing to navigate yet.
-  const headerTabs = webLayout && !!weather && splashPhase === 'done'
+  //
+  // Locations and Settings need no forecast, so either of them keeps the bar up
+  // on its own — they can be opened from Home before anything has loaded.
+  const headerTabs = webLayout && splashPhase === 'done' && (!!weather || navPageUp)
 
   // The tab bar also stays up over the web splash, with Home selected, so going
   // between the splash and the forecast is the pill sliding along one bar
@@ -1071,25 +1283,55 @@ function App() {
   // the handoff (rendered in one place, under one condition), which is what
   // keeps it from remounting. See .app--web-splash for how it gets above the
   // splash layer.
+  //
+  // From the splash, a page tab opens the place you'd most likely mean: home,
+  // else the last one looked at, else the first saved, else where the device
+  // was found. The bar is up on the web splash even with none of those (a
+  // first visit, or after a reset) — it used to drop, and the splash fell back
+  // to the old corner-button header until a forecast arrived. With nowhere to
+  // go its forecast tabs are offered disabled (navTabs below); Locations and
+  // Settings still work.
+  const navCity = home ?? recents[0] ?? cities[0] ?? (localCond?.name ? locatedPlace() : null)
   const showNav = headerTabs || webSplash
 
   // The Radar tab's full-bleed layout. On from the moment the splash starts
   // fading as well as once it has gone: the forecast is revealed under the fade,
   // and gating this on headerTabs alone showed the radar as an ordinary card for
   // the length of the fade before it snapped out to fill the page.
-  const radarPageUp = webLayout && !!weather && webTab === 'radar' && (headerTabs || splashPhase === 'exit')
-  // From the splash, a page tab opens the place you'd most likely mean: home,
-  // else the last one looked at, else the first saved. With none of those
-  // there is no forecast to open, so the tabs are offered but disabled.
-  const navCity = home ?? recents[0] ?? cities[0] ?? null
-  const navTabs = webSplash && !navCity ? WEB_TABS.map(t => ({ ...t, disabled: true })) : WEB_TABS
+  const radarPageUp = webLayout && !!weather && !navPageUp && webTab === 'radar' && (headerTabs || splashPhase === 'exit')
+  // On Locations or Settings with nothing loaded and nowhere to load (a first
+  // visit that went straight to Settings), the forecast tabs have nothing to
+  // open, so they are offered but disabled.
+  const navTabs = !weather && !navCity ? WEB_TABS.map(t => ({ ...t, disabled: true })) : WEB_TABS
   // Home while the splash is idle. Once a place is picked the pill moves to the
   // page it will open on, while the forecast loads behind the splash.
-  const navActive = webSplash && splashPhase === 'visible' && !loading ? 'home' : webTab
+  const navActive = navPageUp ? webPage
+    : webSplash && splashPhase === 'visible' && !loading && !splashHold ? 'home' : webTab
   const handleNavTab = (id) => {
+    const fromPage = navPageUp
+    closeNavPage()
+    // Choosing a page is choosing where to land, so the first-pick default
+    // (Today) doesn't override it.
+    firstPickRef.current = false
     setWebTab(id)
-    if (webSplash && splashPhase === 'visible' && !loading && navCity) handleSplashCitySelect(navCity)
+    // Nothing loaded yet (from the splash, or from Locations/Settings opened
+    // off it): open the place you'd most likely mean on the chosen page.
+    if (!weather && !loading && navCity && ((webSplash && splashPhase === 'visible') || fromPage)) {
+      handleSplashCitySelect(navCity)
+    }
   }
+  // Locations leads the bar as a pin and Settings trails it as a gear, each
+  // behind a divider. The labels become their tooltips and accessible names.
+  const navLead = { id: 'locations', label: 'Locations', icon: <MapPin size={18} aria-hidden="true" />, onSelect: () => openNavPage('locations') }
+  const navPages = [
+    { id: 'settings', label: 'Settings', icon: <SettingsIcon size={18} aria-hidden="true" />, onSelect: () => openNavPage('settings') },
+  ]
+  // With the bar up, Locations and Settings are in it, so the header's corner
+  // buttons for them (the building on Home, the cog everywhere) go. Search
+  // stays: the magnifier on a forecast page has no tab of its own. When the bar
+  // is down (Home with no places yet) the corner buttons are the only way in,
+  // so they stay too.
+  const navOwnsCorners = webLayout && showNav
 
   // Half the page scrollbar's width, for centring the tab bar on the window
   // rather than on the page (see .web-tabs-row in WebApp.css). The forecast
@@ -1101,7 +1343,12 @@ function App() {
     if (!webLayout) return
     const root = document.documentElement
     const ro = new ResizeObserver(() => {
-      const gutter = window.innerWidth - root.clientWidth
+      // The lane the layout reserves, not the scrollbar on screen: on the splash
+      // (overflow: hidden) clientWidth reports the full window while
+      // scrollbar-gutter: stable still holds the lane, so this read 0 there and
+      // the bar stepped half a lane left going Home. <html>'s own box is what
+      // the page is laid out in.
+      const gutter = Math.max(0, Math.round(window.innerWidth - root.getBoundingClientRect().width))
       root.style.setProperty('--scrollbar-half', `${gutter / 2}px`)
       // The width of the lane itself, kept from the last time there was one: the
       // Radar tab gives the lane to the map, and the header pads itself by this
@@ -1144,7 +1391,55 @@ function App() {
     return () => ro.disconnect()
   }, [headerTabs])
 
-  const weatherPanel = weather && !loading && (webLayout ? (
+  // Everything the settings screen reads and writes. Shared by the phone
+  // shells' settings page and the web app's Settings tab.
+  const settingsProps = {
+    // The desktop layout doesn't render the overview tile (see TodayPage), so
+    // its settings come out with it rather than sitting there as controls for
+    // something that isn't on the page.
+    webShell: webLayout,
+    darkMode,
+    onDarkModeChange: changeDarkMode,
+    platformTheme,
+    onPlatformThemeChange: changePlatformTheme,
+    materialColor,
+    onMaterialColorChange: changeMaterialColor,
+    cardTransparency,
+    onCardTransparencyChange: changeCardTransparency,
+    unit,
+    onUnitChange: changeUnit,
+    units,
+    onUnitGroupChange: changeUnitGroup,
+    showOverview,
+    onShowOverviewChange: changeShowOverview,
+    nowcastMode,
+    onNowcastModeChange: changeNowcastMode,
+    colorCoding,
+    onColorCodingToggle: toggleColorCoding,
+    overviewParts,
+    onOverviewPartToggle: toggleOverviewPart,
+    weatherAnimations,
+    onWeatherAnimationsChange: changeWeatherAnimations,
+    iconMotion,
+    onIconMotionChange: changeIconMotion,
+    gyroscope,
+    onGyroscopeChange: changeGyroscope,
+    radarEnhanced,
+    onRadarEnhancedChange: changeRadarEnhanced,
+    radarMode,
+    onRadarModeChange: changeRadarMode,
+    radarSource,
+    onRadarSourceChange: changeRadarSource,
+    installPrompt,
+    onInstall: handleInstall,
+    notifyEnabled,
+    notifyTypes,
+    notifyPermission,
+    onNotifyEnabledChange: toggleNotifyEnabled,
+    onNotifyTypeToggle: toggleType,
+  }
+
+  const weatherPanel = weather && !loading && !navPageUp && (webLayout ? (
     <WebLayout
       tab={webTab}
       onNavigate={setWebTab}
@@ -1180,6 +1475,9 @@ function App() {
       <div className="weather-left">
         <WeatherAlerts alerts={alerts} location={location} />
         <CurrentWeather
+          // The phone shells show the city and date in the header, and keep
+          // home and save on the search page, so the card starts at the icon.
+          hideHeader
           current={weather.current}
           minutely={weather.minutely_15}
           radarClear={radarClear}
@@ -1234,16 +1532,16 @@ function App() {
             as .sky-bg, anchored to the viewport the same way (see .header-sky
             in WebApp.css), so it is opaque enough to hide the page scrolling
             beneath it while being invisible against the sky itself. */}
-        {headerTabs && weatherAnimations && (
+        {headerTabs && weather && weatherAnimations && (
           <div className={`header-sky ${skyC}`} aria-hidden="true" />
         )}
         {/* The weather effects, over that sky. WeatherCanvas copies the slice of
             itself the header covers into this each frame — see mirrorToHeader. */}
-        {headerTabs && weatherAnimations && (
+        {headerTabs && weather && weatherAnimations && (
           <canvas className="header-fx" aria-hidden="true" />
         )}
         <button
-          className={`header-icon-btn${searchHolding ? ' header-icon-btn--holding' : ''}${searchSweeping ? ' is-searching' : ''}`}
+          className={`header-icon-btn${searchHolding ? ' header-icon-btn--holding' : ''}${searchSweeping ? ' is-searching' : ''}${navOwnsCorners ? ' header-btn--gone' : ''}`}
           style={{ '--long-press-ms': `${LONG_PRESS_MS}ms`, '--glass-sweep-ms': `${SEARCH_OPEN_MS}ms` }}
           onClick={handleSearchButton}
           onPointerDown={startSearchHold}
@@ -1263,12 +1561,29 @@ function App() {
               the splash logo flies into, so it has to exist and finish landing
               before the tab bar cross-fades over it. */}
           <span
-            className={`app-title${splashPhase === 'visible' ? ' app-title--splash' : ''}${splashPhase === 'exit' ? ' app-title--splash-exit' : ''}${splashPhase === 'done' && weather ? ' app-title--home' : ''}${showNav ? ' app-title--handed-off' : ''}`}
+            className={`app-title${placeInHeader ? ' app-title--behind-place' : ''}${splashPhase === 'visible' ? ' app-title--splash' : ''}${splashPhase === 'exit' ? ' app-title--splash-exit' : ''}${splashPhase === 'done' && weather ? ' app-title--home' : ''}${showNav ? ' app-title--handed-off' : ''}`}
             onClick={handleLogoClick}
             role={splashPhase === 'done' && weather ? 'button' : undefined}
             aria-label={splashPhase === 'done' && weather ? 'Go to home' : undefined}
-            aria-hidden={showNav || undefined}
+            aria-hidden={showNav || placeInHeader || undefined}
           >Alek Weather</span>
+          {/* Phone shells: once a forecast is up, the place and date take the
+              wordmark's spot. The wordmark stays mounted underneath, invisible,
+              since it is what the splash logo flies into. Tapping the place
+              does what tapping the wordmark did: back to the home screen. */}
+          {placeInHeader && (
+            <span
+              className="app-place"
+              onClick={handleLogoClick}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleLogoClick() } }}
+              aria-label={`${placeLine}, ${placeDate}. Go to home`}
+            >
+              <span className="app-place-name">{placeLine}</span>
+              <span className="app-place-date">{placeDate}</span>
+            </span>
+          )}
           {showNav && (
             <div className="web-tabs-row">
               <WebTabs
@@ -1276,27 +1591,52 @@ function App() {
                 // Back to the splash — the logo-tap the phone shells use, which
                 // the web app can't offer because the tab bar has taken the
                 // logo's place. On the splash itself it is the selected page.
-                home={{ label: 'Home', icon: <House size={17} aria-hidden="true" />, onSelect: handleLogoClick }}
+                home={{ label: 'Home', icon: <House size={17} aria-hidden="true" />, onSelect: handleNavHome }}
+                pages={navPages}
+                lead={navLead}
               />
-              {headerTabs && <WebAlertPill alerts={alerts} tab={webTab} location={location} />}
+              {headerTabs && weather && <WebAlertPill alerts={alerts} tab={navPageUp ? webPage : webTab} location={location} />}
             </div>
           )}
         </div>
         <button
-          className={`settings-btn${settingsOpening ? ' is-opening' : ''}`}
+          className={`settings-btn${settingsOpening ? ' is-opening' : ''}${navOwnsCorners ? ' header-btn--gone' : ''}`}
           style={{ '--cog-spin-ms': `${SETTINGS_OPEN_MS}ms` }}
           onPointerDown={preloadSettings}
-          onClick={showSettings ? closeSettings : openSettings}
+          // On the web, Settings is a page in the tab bar; the cog opens it there.
+          onClick={webLayout ? () => openNavPage('settings') : showSettings ? closeSettings : (e) => { setRevealOrigin(e.currentTarget); openSettings() }}
           aria-label="Settings"
         >
-          <Settings size={22} />
+          {/* Gear on the phone styles; the web layout keeps the sliders. */}
+          {webLayout ? <SlidersIcon size={22} /> : <SettingsIcon size={22} className="settings-gear" />}
         </button>
       </header>
 
       <div className="app-grid">
         <main className="main-content">
-          {loading && (webLayout ? <WebLoadingScreen tab={webTab} /> : <LoadingScreen />)}
-          {error && !loading && (
+          {navPageUp && (
+            <div className="weather-content weather-content--web">
+              <div className="web-shell">
+                {webPage === 'settings' ? (
+                  <SettingsPage page {...settingsProps} />
+                ) : (
+                  <LocationsPage
+                    home={home}
+                    recents={recents}
+                    cities={cities}
+                    currentLocation={weather ? location : null}
+                    unit={unit}
+                    onSelect={handleLocationsSelect}
+                    onRemoveHome={() => setHome(null)}
+                    onRemoveRecent={removeRecent}
+                    onRemoveSaved={remove}
+                  />
+                )}
+              </div>
+            </div>
+          )}
+          {loading && !navPageUp && (webLayout ? <WebLoadingScreen tab={webTab} /> : <LoadingScreen />)}
+          {error && !loading && !navPageUp && (
             error.startsWith('geo:') ? (
               <div className="location-error-card">
                 <button className="location-error-close" onClick={clearError} aria-label="Dismiss">
@@ -1310,7 +1650,7 @@ function App() {
               <div className="status-message error">{error}</div>
             )
           )}
-          {!weather && !loading && !error && splashPhase === 'done' && (
+          {!weather && !loading && !error && !navPageUp && splashPhase === 'done' && (
             <div className="empty-state" onClick={openSearch} role="button" aria-label="Search for a location">
               <MapPin size={72} className="empty-pin-icon" />
               <p className="empty-text">{isDesktop ? 'Click anywhere or begin typing to search for a city' : 'Tap to find a location'}</p>
@@ -1325,8 +1665,10 @@ function App() {
             foot of the page. It keeps the header logo's job: click to drop the
             current city and go back to the start. The Radar tab is the one
             exception — the map is the whole page there, so there is no foot for
-            it to sit at. */}
-        {headerTabs && webTab !== 'radar' && (
+            it to sit at. Settings is the other: its About section already
+            carries the name and version, so a second copy under every
+            section was only clutter (and extra scroll). */}
+        {headerTabs && (navPageUp ? webPage !== 'settings' : webTab !== 'radar') && (
           <footer className="web-footer">
             <span
               className="web-footer-mark"
@@ -1390,14 +1732,19 @@ function App() {
                   header row on the phone). Before the weather is known it is
                   the wordmark that sits here. */}
               <span className="splash-logo-text">
-                {localCond?.headline ?? splashIcon?.label ?? 'Alek Weather'}
+                {localCond?.headline ?? splashIcon?.label ?? (
+                  // The web splash keeps its wordmark at the foot from the
+                  // first frame, so this line says what it's doing instead of
+                  // flashing the old big-wordmark layout while it loads.
+                  webSplash && !localConditionsFailed(recents[0] ?? null) ? 'Checking the weather…' : 'Alek Weather'
+                )}
               </span>
               {/* Names the place the sky and icon are showing. Out of flow (see
                   .splash-place) so it never moves the line the icon is anchored
                   to. When that place is a recent one its card carries the
                   location mark instead, so the pill is only there to name a
                   place found from the device. */}
-              {splashIcon && !recents.length && localCond.name && (
+              {!webSplash && splashIcon && !recents.length && localCond.name && (
                 <span className="splash-place">
                   <Navigation size={13} aria-hidden="true" />
                   {localCond.name}
@@ -1410,7 +1757,7 @@ function App() {
                 savedCities={cities}
                 unit={unit}
                 exiting={splashPhase === 'exit'}
-                busy={loading}
+                busy={loading || splashHold}
                 active={splashPhase === 'visible' && !showSettings && !savedOpen && !searchOpen}
                 onSelect={handleSplashCitySelect}
                 onRemoveRecent={removeRecent}
@@ -1418,10 +1765,13 @@ function App() {
                 onSearch={searchCity}
                 searchResults={searchResults}
                 onSelectResult={handleSplashSearchSelect}
-                onUseLocation={useMyLocation}
+                onUseLocation={() => { landFirstPick(); useMyLocation() }}
                 onClearSearch={() => setSearchResults([])}
                 isSaved={isSaved}
                 isHome={isHome}
+                // On the web the "where this weather is" pill sits under the
+                // search field and opens that place's forecast.
+                here={splashIcon && !recents.length && localCond?.name ? locatedPlace() : null}
               />
             )}
             <div className="splash-stars" aria-hidden="true">
@@ -1431,18 +1781,19 @@ function App() {
             </div>
             {/* Only once the weather has taken the line under the icon —
                 until then that line is the wordmark, and two would be one too many. */}
-            {splashIcon && (
+            {(splashIcon || (webSplash && !localConditionsFailed(recents[0] ?? null))) && (
               <span className={`splash-wordmark${splashPhase === 'exit' ? ' splash-wordmark--exit' : ''}`}>Alek Weather</span>
             )}
             <p className="splash-version">Version {APP_VERSION}</p>
           </div>
           {splashPhase === 'visible' && !webSplash && (
-            <div className="splash-overlay" onClick={openSearch} aria-label="Search for a city" role="button" />
+            // Inert: .splash-bg lets taps through, so this only keeps them from
+            // reaching the app hidden underneath. Tapping the poster does nothing.
+            <div className="splash-overlay" aria-hidden="true" />
           )}
           {/* Outside .splash-bg on purpose: that layer is inert and sits under
-              the tap-anywhere overlay, so cards drawn inside it could not be
-              tapped at all. A sibling after the overlay takes its own taps and
-              leaves the rest of the poster opening the search. */}
+              the overlay, so cards drawn inside it could not be tapped at all.
+              A sibling after the overlay takes its own taps. */}
           {!webSplash && (
             <SplashCities
               recents={recents}
@@ -1461,7 +1812,35 @@ function App() {
       {searchOpen && (
         <>
           <div className={`search-backdrop${searchClosing ? ' closing' : ''}`} onClick={closeSearch} />
-          <div className={`search-overlay${searchClosing ? ' closing' : ''}`}>
+          {/* Phone shells: the circle the page grows out of (see .page-reveal-fill). */}
+          {!webLayout && <div className={`page-reveal-fill page-reveal-fill--search${searchClosing ? ' closing' : ''}`} aria-hidden="true" />}
+          <div className={`search-overlay${searchClosing ? ' closing' : ''}${!webLayout ? ' search-overlay--sheet' : ''}`}>
+            {!webLayout ? (
+              <SearchSheet
+                barRef={searchAreaRef}
+                initialQuery={searchInitialQuery}
+                onBack={closeSearch}
+                onSearch={searchCity}
+                results={searchResults}
+                onClear={() => { setSearchResults([]); setSearchInitialQuery('') }}
+                onSelect={handleSelectCity}
+                onSelectPlace={handleSavedCitySelect}
+                onUseLocation={handleUseLocation}
+                recents={recents}
+                onRemoveRecent={removeRecent}
+                cities={cities}
+                onRemoveSaved={remove}
+                home={home}
+                onRemoveHome={() => setHome(null)}
+                isSaved={isSaved}
+                isHome={isHome}
+                currentLocation={weather ? location : null}
+                onSaveCurrent={() => save(location)}
+                onUnsaveCurrent={() => remove(location)}
+                onSetHomeCurrent={() => setHome(location)}
+                onUnsetHomeCurrent={unsetHome}
+              />
+            ) : (
             <div className="search-overlay-bar" ref={searchAreaRef}>
               <button className="header-icon-btn" onClick={closeSearch} aria-label="Cancel search">
                 <ArrowLeft size={20} />
@@ -1492,10 +1871,18 @@ function App() {
                 )}
               </SearchBar>
             </div>
+            )}
           </div>
         </>
       )}
 
+      {/* The saved locations page, opened from the home screen's corner button,
+          grows out of it the way settings does: it is a .settings-page, so it
+          already fades in over this circle (see .page-reveal-fill). Closes on
+          the same SETTINGS_CLOSE_MS timer, so it shares the settings fill. */}
+      {savedOpen && !webLayout && (
+        <div className={`page-reveal-fill page-reveal-fill--settings${savedClosing ? ' closing' : ''}`} aria-hidden="true" />
+      )}
       {savedOpen && (
         <SavedCitiesPage
           cities={cities}
@@ -1511,11 +1898,15 @@ function App() {
         />
       )}
 
-      {/* Opaque sky layer behind the translucent iOS glass settings, above the
-          app content — so the glass blurs only the sky, not the weather UI.
-          Reuses the same gradient class as the main sky background. */}
-      {showSettings && platformTheme === 'ios' && weather && weatherAnimations && (
-        <div className={`settings-sky ${skyC}`} aria-hidden="true" />
+      {/* Opaque sky layer behind the translucent settings page (iOS glass, or
+          Android's thinned Material surfaces), above the app content — so the
+          page shows only the sky, not the weather UI. Reuses the same gradient
+          class as the main sky background. */}
+      {showSettings && !webLayout && (
+        <div className={`page-reveal-fill page-reveal-fill--settings${settingsClosing ? ' closing' : ''}`} aria-hidden="true" />
+      )}
+      {showSettings && !webLayout && weather && weatherAnimations && (
+        <div className={`settings-sky ${skyC}${settingsClosing ? ' closing' : ''}`} aria-hidden="true" />
       )}
       {/* The web app opens settings as a dialog over the page rather than as a
           full-screen page, so it gets a backdrop: it dims what the modal is
@@ -1533,58 +1924,17 @@ function App() {
       {showSettings && (
         <SettingsPage
           modal={webLayout}
-          // The desktop layout doesn't render the overview tile (see TodayPage),
-          // so its settings come out with it rather than sitting there as
-          // controls for something that isn't on the page.
-          webShell={webLayout}
           onBack={closeSettings}
           onDismiss={dismissSettings}
           subView={subView}
           onColorCodingOpen={() => openSubView('colorcoding')}
           onOverviewOpen={() => openSubView('overview')}
+          onRadarOpen={() => openSubView('radar')}
           onWeatherEffectsOpen={() => openSubView('effects')}
           onThemeOpen={() => openSubView('theme')}
           onNotificationsOpen={() => openSubView('notifications')}
           onSubViewBack={closeSubView}
-          darkMode={darkMode}
-          onDarkModeChange={changeDarkMode}
-          platformTheme={platformTheme}
-          onPlatformThemeChange={changePlatformTheme}
-          materialColor={materialColor}
-          onMaterialColorChange={changeMaterialColor}
-          cardTransparency={cardTransparency}
-          onCardTransparencyChange={changeCardTransparency}
-          unit={unit}
-          onUnitChange={changeUnit}
-          units={units}
-          onUnitGroupChange={changeUnitGroup}
-          showOverview={showOverview}
-          onShowOverviewChange={changeShowOverview}
-          nowcastMode={nowcastMode}
-          onNowcastModeChange={changeNowcastMode}
-          colorCoding={colorCoding}
-          onColorCodingToggle={toggleColorCoding}
-          overviewParts={overviewParts}
-          onOverviewPartToggle={toggleOverviewPart}
-          weatherAnimations={weatherAnimations}
-          onWeatherAnimationsChange={changeWeatherAnimations}
-          iconMotion={iconMotion}
-          onIconMotionChange={changeIconMotion}
-          gyroscope={gyroscope}
-          onGyroscopeChange={changeGyroscope}
-          radarEnhanced={radarEnhanced}
-          onRadarEnhancedChange={changeRadarEnhanced}
-          radarMode={radarMode}
-          onRadarModeChange={changeRadarMode}
-          radarSource={radarSource}
-          onRadarSourceChange={changeRadarSource}
-          installPrompt={installPrompt}
-          onInstall={handleInstall}
-          notifyEnabled={notifyEnabled}
-          notifyTypes={notifyTypes}
-          notifyPermission={notifyPermission}
-          onNotifyEnabledChange={toggleNotifyEnabled}
-          onNotifyTypeToggle={toggleType}
+          {...settingsProps}
           closing={settingsClosing}
         />
       )}
@@ -1595,6 +1945,20 @@ function App() {
       {IS_ANDROID_APP && splashPhase === 'done' && <UpdateToast />}
       <div id="alert-portal-root" />
     </div>
+      {styleCover && (
+        <div
+          className={`style-cover style-cover--${styleCover.to}${styleCover.leaving ? ' leaving' : ''}`}
+          style={{ '--style-cover-in': `${STYLE_COVER_IN_MS}ms`, '--style-cover-out': `${STYLE_COVER_OUT_MS}ms` }}
+          role="status"
+          aria-label={`Switching to the ${STYLE_NAMES[styleCover.to]} style`}
+        >
+          <div className="style-cover-inner">
+            <StyleCoverArt to={styleCover.to} />
+            <span className="style-cover-mark">Theme switching to…</span>
+            <span className="style-cover-name">{STYLE_NAMES[styleCover.to]}</span>
+          </div>
+        </div>
+      )}
     </>
   )
 }

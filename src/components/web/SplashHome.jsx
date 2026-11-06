@@ -5,9 +5,9 @@ import { WeatherIcon } from '../WeatherIcon'
 import { useCityConditions, conditionKey } from '../../hooks/useCityConditions'
 import { getWeatherInfo, toTemp } from '../../utils/weatherCodes'
 
-// Two rows of three at the widest the grid gets, so the list never pushes the
-// wordmark off a laptop screen.
-const MAX_CARDS = 6
+// One row of three: enough to get back to the places you actually use, without
+// the splash turning into a list.
+const MAX_CARDS = 3
 
 // The desktop splash: a search field and the places you've already looked at,
 // so opening the app on a monitor lands on something usable instead of a
@@ -18,7 +18,7 @@ export function SplashHome({
   recents, savedCities, unit, exiting, busy, active,
   onSelect, onRemoveRecent, onRemoveSaved,
   onSearch, searchResults, onSelectResult, onUseLocation, onClearSearch,
-  isSaved, isHome,
+  isSaved, isHome, here,
 }) {
   // A printable keypress with nothing focused seeds the field and remounts it,
   // so typing on the splash starts a search the same way it does on the empty
@@ -76,6 +76,21 @@ export function SplashHome({
           isHome={isHome}
         />
       </div>
+
+      {/* The place the splash's sky is showing, found from the device. Opens
+          that forecast, the same way picking a recent card does. */}
+      {here && (
+        <button
+          className="splash-here"
+          onClick={() => openCity(here)}
+          aria-label={`Show weather for ${here.name}`}
+        >
+          {busy && pending === conditionKey(here)
+            ? <span className="spinner splash-here-spinner" role="status" aria-label="Loading" />
+            : <Navigation size={13} aria-hidden="true" />}
+          {here.name}
+        </button>
+      )}
 
       {cities.length > 0 ? (
         <div className="splash-recents">
@@ -136,9 +151,7 @@ export function SplashHome({
             })}
           </div>
         </div>
-      ) : (
-        <p className="splash-home-hint">Search for a city, or just start typing</p>
-      )}
+      ) : null}
     </div>
   )
 }

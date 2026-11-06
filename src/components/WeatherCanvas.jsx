@@ -7,8 +7,12 @@ function sceneFor(code) {
   if ((code >= 51 && code <= 63) || code === 80 || code === 81) return 'rain'
   if ((code >= 71 && code <= 77) || code === 85 || code === 86) return 'snow'
   if (code === 45 || code === 48) return 'fog'
+  if (code === 3) return 'overcast'
+  if (code === 2) return 'partly'
   return null
 }
+
+const isCloudScene = (scene) => scene === 'overcast' || scene === 'partly'
 
 const CFG = {
   // `angle` is the rest fall angle (deg from vertical). Rain falls straight down
@@ -21,6 +25,75 @@ const CFG = {
   storm:    { count: 325, color: [70, 110, 175],  alpha: 0.70, speed: [15, 24], angle: 12, len: [16, 32] },
   snow:  { count: 70,  color: [180, 210, 240], alpha: 0.75, speed: [0.5, 1.6] },
   fog:   { count: 16,  color: [140, 160, 180], alpha: 0.18, speed: 0.4, size: [70, 140] },
+  // Cloudy skies: a few soft white clouds drifting slowly across, kept faint so
+  // they read as depth in the sky rather than as objects on it. Overcast gets a
+  // few more and a touch more presence than partly cloudy.
+  overcast: { count: 7, alpha: [0.10, 0.20], speed: [0.12, 0.32], width: [320, 620] },
+  partly:   { count: 4, alpha: [0.10, 0.18], speed: [0.10, 0.26], width: [260, 480] },
+}
+
+// One cloud, drawn once into its own canvas and then just moved each frame:
+// a row of overlapping soft puffs (radial gradients that fade to nothing at the
+// edge), biggest in the middle, with a flatter base. No outlines, so overlapping
+// clouds blend rather than stack edges.
+function makeCloudSprite(width, rand, alpha) {
+  // Lay the puffs out first, then size the canvas to fit every one of them.
+  // A fixed-size canvas cut off any puff that reached past it, and a soft
+  // gradient sliced by the canvas edge is a hard straight line — the rough
+  // edges the clouds sometimes had.
+  const n = Math.round(rand(5, 8))
+  const puffs = []
+  for (let i = 0; i < n; i++) {
+    const t = n === 1 ? 0.5 : i / (n - 1)
+    // Taller in the middle, lower at the ends, with a little irregularity.
+    const hump = Math.sin(t * Math.PI)
+    puffs.push({
+      r: width * (0.13 + 0.12 * hump) * rand(0.85, 1.15),
+      x: width * (0.14 + 0.72 * t) + rand(-0.03, 0.03) * width,
+      y: -hump * width * 0.08 + rand(-0.02, 0.02) * width,
+    })
+  }
+  const pad = 2
+  const minX = Math.min(...puffs.map(p => p.x - p.r)) - pad
+  const maxX = Math.max(...puffs.map(p => p.x + p.r)) + pad
+  const minY = Math.min(...puffs.map(p => p.y - p.r)) - pad
+  const maxY = Math.max(...puffs.map(p => p.y + p.r)) + pad
+
+  const c = document.createElement('canvas')
+  c.width = Math.ceil(maxX - minX)
+  c.height = Math.ceil(maxY - minY)
+  const g = c.getContext('2d')
+  for (const { x, y, r } of puffs) {
+    const cx = x - minX, cy = y - minY
+    // Eased falloff: dense in the middle, then a long, gentle fade to nothing,
+    // so no ring shows where one stop hands over to the next.
+    const grad = g.createRadialGradient(cx, cy, 0, cx, cy, r)
+    grad.addColorStop(0, 'rgba(255,255,255,0.85)')
+    grad.addColorStop(0.35, 'rgba(255,255,255,0.65)')
+    grad.addColorStop(0.65, 'rgba(255,255,255,0.28)')
+    grad.addColorStop(0.85, 'rgba(255,255,255,0.08)')
+    grad.addColorStop(1, 'rgba(255,255,255,0)')
+    g.fillStyle = grad
+    g.fillRect(cx - r, cy - r, r * 2, r * 2)
+  }
+
+  // Bake the cloud's faintness in here, dithered, instead of applying it with
+  // globalAlpha on every frame. At 10–20% opacity a fade from white to nothing
+  // only has ~30 of the canvas's 256 alpha levels to cover a few hundred
+  // pixels, so it came out as visible stripes with hard edges between them —
+  // banding. Rounding each pixel up or down at random, weighted by how close it
+  // is to the next level, turns those steps into an even fine grain the eye
+  // averages back into a smooth fade.
+  const img = g.getImageData(0, 0, c.width, c.height)
+  const d = img.data
+  for (let i = 0; i < d.length; i += 4) {
+    const a = d[i + 3]
+    if (a === 0) continue
+    d[i] = d[i + 1] = d[i + 2] = 255
+    d[i + 3] = Math.floor(a * alpha + Math.random())
+  }
+  g.putImageData(img, 0, 0)
+  return c
 }
 
 // How far (deg) we let the gyroscope lean the weather, and how strongly. The
@@ -94,8 +167,30 @@ export function WeatherCanvas({ code, gyro = true }) {
 
     const angleRad = (cfg.angle ?? 0) * Math.PI / 180
 
+    // Reduced motion: the clouds are still drawn, they just hold still.
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
     let particles
-    if (scene === 'rain' || scene === 'downpour' || scene === 'storm') {
+    if (isCloudScene(scene)) {
+      // Spread across the width with a little jitter so they don't arrive in a
+      // clump, and kept to the upper two thirds of the screen, where a sky is.
+      particles = Array.from({ length: cfg.count }, (_, i) => {
+        const w = rand(cfg.width[0], cfg.width[1])
+        // Bigger clouds read as nearer: a little faster and a little brighter.
+        const near = (w - cfg.width[0]) / (cfg.width[1] - cfg.width[0])
+        const alpha = cfg.alpha[0] + (cfg.alpha[1] - cfg.alpha[0]) * (0.5 * Math.random() + 0.5 * near)
+        return {
+          // The opacity is baked into the sprite (dithered — see makeCloudSprite).
+          sprite: makeCloudSprite(Math.round(w), rand, alpha),
+          x: ((i + rand(0, 0.8)) / cfg.count) * (W() + w) - w,
+          y: rand(-0.12, 0.6) * H(),
+          spd: still ? 0 : cfg.speed[0] + (cfg.speed[1] - cfg.speed[0]) * (0.4 * Math.random() + 0.6 * near),
+          alpha,
+        }
+      })
+      // Far clouds first, so nearer ones pass over them.
+      particles.sort((a, b) => a.sprite.width - b.sprite.width)
+    } else if (scene === 'rain' || scene === 'downpour' || scene === 'storm') {
       // Direction (vx/vy) is derived per-frame from the base angle + live tilt,
       // so it isn't stored on the particle — only its speed and length are.
       // Seeded across the whole screen; the draw loop refills from the correct
@@ -122,7 +217,7 @@ export function WeatherCanvas({ code, gyro = true }) {
       }))
     }
 
-    const [r, g, b] = cfg.color
+    const [r, g, b] = cfg.color ?? [255, 255, 255]
 
     // Particles grouped by their quantised alpha, so a frame walks each bucket
     // once and issues a single draw for it. Built once — alpha never changes, and
@@ -156,7 +251,19 @@ export function WeatherCanvas({ code, gyro = true }) {
         }
       }
 
-      if (scene === 'rain' || scene === 'downpour' || scene === 'storm') {
+      if (isCloudScene(scene)) {
+        // Drift left to right; the tilt nudges them, gently. A cloud that has
+        // fully left the right edge comes back in from the left at a new height.
+        for (const p of particles) {
+          p.x += p.spd + (still ? 0 : windX * 0.4)
+          const w = p.sprite.width
+          if (p.x > W() + 20) { p.x = -w - rand(0, 120); p.y = rand(-0.12, 0.6) * H() }
+          else if (p.x < -w - 140) p.x = W()
+          // Whole pixels only: a fractional position resamples the sprite, which
+          // smears the dither grain back into the bands it is there to hide.
+          ctx.drawImage(p.sprite, Math.round(p.x), Math.round(p.y))
+        }
+      } else if (scene === 'rain' || scene === 'downpour' || scene === 'storm') {
         // Whole sheet leans with the phone: one shared direction from the base
         // fall angle plus the live tilt.
         const a = angleRad + t.cur

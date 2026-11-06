@@ -11,6 +11,9 @@ const LOCATE_URL = 'https://api-bdc.io/data/reverse-geocode-client?localityLangu
 // location cards, and expire there.
 let located = null
 
+// The place key whose last reading failed (see localConditionsFailed).
+let lastFailedKey = null
+
 // Which place the splash is on: the chosen one, or 'here' until the device has
 // been located.
 const placeKey = (p) => (p ? coordKey(p) : 'here')
@@ -38,8 +41,15 @@ async function locate() {
     latitude: +d.latitude.toFixed(2),
     longitude: +d.longitude.toFixed(2),
     name: d.city || d.locality || d.principalSubdivision || '',
+    admin1: d.principalSubdivision || '',
+    country: d.countryCode || '',
+    country_code: d.countryCode || '',
   }
 }
+
+// Where the device was found this page load (null until located), shaped like
+// a city so the splash's location pill can open it.
+export const locatedPlace = () => located
 
 // The chosen place, or where the device is, read through the same pipeline as
 // the forecast and the location cards (see placeConditions).
@@ -71,8 +81,16 @@ export function useLocalConditions(enabled, place = null) {
     if (fresh(chosen)) return
     let live = true
     readConditions(chosen)
-      .then(c => { if (c && live) setState({ key, cond: c }) })
-      .catch(() => { /* the default splash scenery stays */ })
+      .then(c => {
+        lastFailedKey = c ? null : key
+        if (live) setState({ key, cond: c })
+      })
+      .catch(() => {
+        // The default splash scenery stays; the state update re-renders the
+        // splash so it can read localConditionsFailed.
+        lastFailedKey = key
+        if (live) setState({ key, cond: null, failed: true })
+      })
     return () => { live = false }
   }, [enabled, key, latitude, longitude, name])
 
@@ -81,4 +99,12 @@ export function useLocalConditions(enabled, place = null) {
   // for a different place is never shown for this one.
   if (!enabled) return null
   return fresh(place) ?? (state.key === key ? state.cond : null)
+}
+
+// Whether the last reading for `place` (or for where the device is) came back
+// empty — located nowhere, or the forecast failed — so the splash can stop
+// saying it is checking. A plain read: the failure is a state update in
+// useLocalConditions, which is what re-renders the caller.
+export function localConditionsFailed(place = null) {
+  return lastFailedKey === placeKey(place)
 }

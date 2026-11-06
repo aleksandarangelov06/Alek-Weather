@@ -154,43 +154,6 @@ function DetailsSkeleton() {
   )
 }
 
-function AirSkeleton() {
-  return (
-    <>
-      <div className="web-page-head">
-        <div className="skeleton-line skeleton-web-title" />
-      </div>
-
-      <div className="card skeleton-card web-aqi-hero">
-        <div className="skeleton-tile skeleton-web-dial" />
-        <div className="skeleton-web-copy">
-          <div className="skeleton-line skeleton-web-hero" />
-          <div className="skeleton-line skeleton-web-para" />
-          <div className="skeleton-line skeleton-web-para skeleton-web-para--short" />
-        </div>
-      </div>
-
-      <div className="card skeleton-card">
-        <div className="skeleton-line skeleton-label" />
-        <div className="web-poll-grid">
-          {rep(6).map((i) => (
-            <div key={i} className="web-poll">
-              <div className="skeleton-line skeleton-web-sm" />
-              <div className="skeleton-line skeleton-web-track" />
-              <div className="skeleton-line skeleton-web-xs" />
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="card skeleton-card">
-        <div className="skeleton-line skeleton-label" />
-        <div className="skeleton-tile skeleton-web-chart" />
-      </div>
-    </>
-  )
-}
-
 // The map is the whole page here, so the placeholder is one full-bleed panel
 // rather than a stack of card outlines.
 function RadarSkeleton() {
@@ -201,7 +164,6 @@ const PAGES = {
   today: TodaySkeleton,
   daily: DailySkeleton,
   details: DetailsSkeleton,
-  air: AirSkeleton,
   radar: RadarSkeleton,
 }
 

@@ -235,6 +235,61 @@
 
 .web-tabs::-webkit-scrollbar { display: none; }
 
+/* The raised glass look the bar wears over the splash sky (see "Splash glass"),
+   kept on every page so it doesn't flatten back into a plain card when the
+   splash goes: a lit rim and top edge, a sheen over its own card colour, and
+   stacked drop shadows so it floats. The splash's glass rules are more specific
+   and still win while it is up. `.web-tabs.card` to outrank .card's shadow. */
+.web-tabs.card {
+  --tabs-rim: rgba(255, 255, 255, 0.7);
+  --tabs-sheen: rgba(255, 255, 255, 0.35);
+  --tabs-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.05),
+    0 1px 2px rgba(0, 0, 0, 0.08),
+    0 8px 20px rgba(0, 0, 0, 0.12),
+    0 22px 44px -18px rgba(0, 0, 0, 0.3);
+  background: linear-gradient(180deg, var(--tabs-sheen), transparent 70%), var(--card-bg);
+  border: 1px solid var(--tabs-rim);
+  box-shadow: var(--tabs-shadow);
+  -webkit-backdrop-filter: blur(20px) saturate(170%);
+  backdrop-filter: blur(20px) saturate(170%);
+}
+
+/* Over a tinted sky, and in dark theme: the clear / smoky glass rim. */
+.sky-active .web-tabs.card {
+  --tabs-rim: rgba(255, 255, 255, 0.3);
+  --tabs-sheen: rgba(255, 255, 255, 0.12);
+  --tabs-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.12),
+    0 1px 2px rgba(0, 0, 0, 0.18),
+    0 8px 20px rgba(0, 0, 0, 0.2),
+    0 22px 44px -18px rgba(0, 0, 0, 0.45);
+}
+[data-theme="dark"] .web-tabs.card {
+  --tabs-rim: rgba(255, 255, 255, 0.16);
+  --tabs-sheen: rgba(255, 255, 255, 0.06);
+  --tabs-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+    0 1px 2px rgba(0, 0, 0, 0.3),
+    0 8px 20px rgba(0, 0, 0, 0.3),
+    0 22px 44px -18px rgba(0, 0, 0, 0.6);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .web-tabs.card {
+    --tabs-rim: rgba(255, 255, 255, 0.16);
+    --tabs-sheen: rgba(255, 255, 255, 0.06);
+    --tabs-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.18),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+      0 1px 2px rgba(0, 0, 0, 0.3),
+      0 8px 20px rgba(0, 0, 0, 0.3),
+      0 22px 44px -18px rgba(0, 0, 0, 0.6);
+  }
+}
+
 /* ── Severe alert pill ───────────────────────────────────────────────────── */
 
 /* Holds the tab bar and the alert pill side by side in the header slot. The bar
@@ -257,7 +312,18 @@
 /* Coloured by the same rules as the banner it points at — --alert-color and
    --alert-bg are set inline from resolveStyle, so a warning is red here and red
    there without the two ever being written down twice. */
+/* Hung off the bar's right end, out of flow: in flow it widened the centred
+   row whenever it appeared (every tab but Today), and the bar slid half its
+   width left on each switch. */
+.web-tabs-row {
+  position: relative;
+}
+
 .web-alert-pill {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  margin-top: -19px;
   flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
@@ -359,7 +425,7 @@
   color: var(--accent);
 }
 
-/* Home sits in the bar but isn't a page, so it never takes the pill. */
+/* Home sits in the bar but isn't a page; it only takes the pill on the splash. */
 .web-tab--home {
   display: inline-flex;
   align-items: center;
@@ -373,43 +439,116 @@
 
 /* The moving highlight. One element rather than a background per button, so
    switching tabs slides instead of blinking. */
+/* Drawn as a raised key rather than a flat wash: a lit top edge, a shaded
+   bottom edge, a soft gradient between them and a drop shadow under it. The
+   tokens are per-theme (dark below) and per-sky (further down). */
+.web-tabs {
+  --pill-top: rgba(255, 255, 255, 0.85);
+  --pill-bottom: rgba(255, 255, 255, 0.15);
+  --pill-rim-hi: rgba(255, 255, 255, 0.95);
+  --pill-rim-lo: color-mix(in srgb, var(--accent) 22%, transparent);
+  --pill-ring: color-mix(in srgb, var(--accent) 16%, transparent);
+  --pill-drop: 0 1px 2px rgba(15, 30, 60, 0.14), 0 4px 10px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+[data-theme="dark"] .web-tabs {
+  --pill-top: rgba(255, 255, 255, 0.14);
+  --pill-bottom: rgba(255, 255, 255, 0.02);
+  --pill-rim-hi: rgba(255, 255, 255, 0.22);
+  --pill-rim-lo: rgba(0, 0, 0, 0.35);
+  --pill-ring: color-mix(in srgb, var(--accent) 28%, transparent);
+  --pill-drop: 0 1px 2px rgba(0, 0, 0, 0.45), 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .web-tabs {
+    --pill-top: rgba(255, 255, 255, 0.14);
+    --pill-bottom: rgba(255, 255, 255, 0.02);
+    --pill-rim-hi: rgba(255, 255, 255, 0.22);
+    --pill-rim-lo: rgba(0, 0, 0, 0.35);
+    --pill-ring: color-mix(in srgb, var(--accent) 28%, transparent);
+    --pill-drop: 0 1px 2px rgba(0, 0, 0, 0.45), 0 4px 12px rgba(0, 0, 0, 0.35);
+  }
+}
+
 .web-tab-pill {
   position: absolute;
   top: 6px;
   bottom: 6px;
   left: 0;
   border-radius: 999px;
-  background: var(--accent-light);
+  background:
+    linear-gradient(180deg, var(--pill-top), var(--pill-bottom)),
+    var(--accent-light);
+  box-shadow:
+    inset 0 1px 0 var(--pill-rim-hi),
+    inset 0 -1.5px 0 var(--pill-rim-lo),
+    0 0 0 1px var(--pill-ring),
+    var(--pill-drop);
   pointer-events: none;
+  transition: scale 0.12s ease, box-shadow 0.12s ease;
 }
 
 .web-tab-pill--ready {
-  transition: transform 0.32s cubic-bezier(0.32, 0.72, 0, 1), width 0.32s cubic-bezier(0.32, 0.72, 0, 1);
+  transition:
+    transform 0.32s cubic-bezier(0.32, 0.72, 0, 1),
+    width 0.32s cubic-bezier(0.32, 0.72, 0, 1),
+    scale 0.12s ease, box-shadow 0.12s ease;
+}
+
+/* Pressing the selected tab pushes the key in: it squashes slightly, the drop
+   shadow collapses and the top edge goes dark, like a button being held. */
+.web-tabs:has(.web-tab--active:active) .web-tab-pill {
+  scale: 0.97;
+  box-shadow:
+    inset 0 2px 4px var(--pill-rim-lo),
+    0 0 0 1px var(--pill-ring);
+}
+
+/* The label sits up on the key with it. */
+.web-tab--active {
+  text-shadow: 0 1px 0 var(--pill-rim-hi);
 }
 
 /* On a tinted sky the accent blue washes out against the blue card, so the
    active pill and its label go white-on-white-wash instead. */
-/* The splash's own sky (data-splash-sky) counts too: the bar stays up across
-   the handoff, and a pill that turned from blue to white as the forecast
-   arrived would undo the point of keeping it. */
+/* Not the splash's own sky (data-splash-sky): there the bar is still an
+   untinted card, so a white label on it is white-on-white and the selected
+   Home tab vanishes. The splash keeps the normal accent pill. */
 .sky-lvl-slight .web-tab--active,
 .sky-lvl-medium .web-tab--active,
 .sky-lvl-dark .web-tab--active,
-.sky-lvl-darkest .web-tab--active,
-:root[data-splash-sky] .app--web-splash .web-tab--active {
+.sky-lvl-darkest .web-tab--active {
   color: #fff;
 }
 
 .sky-lvl-slight .web-tab-pill,
 .sky-lvl-medium .web-tab-pill,
 .sky-lvl-dark .web-tab-pill,
-.sky-lvl-darkest .web-tab-pill,
-:root[data-splash-sky] .app--web-splash .web-tab-pill {
-  background: rgba(255, 255, 255, 0.2);
+.sky-lvl-darkest .web-tab-pill {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.14));
+}
+
+/* Over a sky the bar is tinted blue: a frosted-glass key, lit along the top. */
+.sky-lvl-slight .web-tabs,
+.sky-lvl-medium .web-tabs,
+.sky-lvl-dark .web-tabs,
+.sky-lvl-darkest .web-tabs {
+  --pill-rim-hi: rgba(255, 255, 255, 0.45);
+  --pill-rim-lo: rgba(0, 0, 0, 0.18);
+  --pill-ring: rgba(255, 255, 255, 0.12);
+  --pill-drop: 0 1px 2px rgba(0, 0, 0, 0.2), 0 4px 12px rgba(0, 0, 0, 0.18);
+}
+
+.sky-lvl-slight .web-tab--active,
+.sky-lvl-medium .web-tab--active,
+.sky-lvl-dark .web-tab--active,
+.sky-lvl-darkest .web-tab--active {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .web-tab-pill--ready { transition: none; }
+  .web-tab-pill, .web-tab-pill--ready { transition: none; }
+  .web-tabs:has(.web-tab--active:active) .web-tab-pill { scale: none; }
 }
 
 /* ── Footer wordmark ─────────────────────────────────────────────────────── */
@@ -684,25 +823,26 @@
 
 /* ── Today ───────────────────────────────────────────────────────────────── */
 
-/* Today is one grid of two tracks, not a hero band with rows under it: the four
-   widgets are draggable, so any of them can end up in either place. The current
-   card is a summary — one temperature and a condition, where the tiles beside it
-   hold eight readings — so it takes the narrow track, and whatever shares its
-   row takes the width it can actually use. Anything on a row of its own spans
-   both tracks (.web-widget--full), and the widgets size themselves off that
-   class further down. */
+/* Today is a 12-column grid laid out in rows of one or two cards (see
+   todayLayout.js). TodayPage gives each card its span inline: a card alone
+   spans all 12; the current card beside another takes 3 and its partner 9;
+   any other two split 6 and 6. Every row adds up to 12, so the rows line up
+   with no wrapper. The widgets size their contents off .web-widget--full and
+   the slot classes further down. */
 .web-today-grid {
   display: grid;
-  grid-template-columns: minmax(260px, 0.78fr) minmax(0, 2.2fr);
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: 16px;
   align-items: stretch;
 }
 
-/* The nowcast is not draggable and has no wrapper: it renders nothing when
-   there is no rain to plot, and an empty wrapper would still open a grid row. */
-.web-today-grid > .nowcast-card {
-  grid-column: 1 / -1;
+/* The precipitation chart while it has nothing to show: kept in the page so
+   it's noticed as soon as rain is on the way, but taking no space. */
+.web-widget--absent {
+  display: none;
 }
+
+
 
 .web-widget {
   position: relative;
@@ -720,9 +860,216 @@
   flex: 1;
 }
 
-.web-widget--dragging {
-  opacity: 0.45;
-  z-index: 5;
+/* ── Rearranging cards (SortableBoard.jsx) ──────────────────────────────────
+   The grip tab on a card's top edge is the only thing that picks a card up.
+   It sits in the grid gap, since these cards already use every corner. It
+   fades in while the card is hovered, so the page stays clean, and is always
+   shown with keyboard focus. The tab is big enough to hit comfortably and
+   turns accent-coloured under the pointer, so it's clear it's grabbable. */
+.web-widget-handle {
+  position: absolute;
+  top: -13px;
+  left: 50%;
+  translate: -50% 3px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card-bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), 0 3px 10px rgba(0, 0, 0, 0.14);
+  color: var(--text-tertiary);
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 0.18s ease, translate 0.18s ease, color 0.15s, background 0.15s, scale 0.15s;
+  touch-action: none;
+}
+
+.web-widget:hover .web-widget-handle,
+.web-widget-handle:focus-visible {
+  opacity: 1;
+  translate: -50% 0;
+}
+
+.web-widget-handle:hover,
+.web-widget-handle:focus-visible {
+  color: var(--accent);
+  scale: 1.08;
+}
+
+.web-widget-handle:active {
+  cursor: grabbing;
+}
+
+/* Touch screens have no hover, so the tab stays visible there. */
+@media (hover: none) {
+  .web-widget-handle { opacity: 0.8; translate: -50% 0; }
+}
+
+/* While a drag is on, the closed hand holds everywhere, nothing selects, and
+   the other cards' tabs stay out of the way. */
+body.web-dragging,
+body.web-dragging * {
+  cursor: grabbing !important;
+  user-select: none;
+  -webkit-user-select: none;
+}
+body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
+  opacity: 0;
+}
+
+/* The card being moved stays where it is, faded behind a dashed outline, so
+   you can see what you picked up and where it came from. */
+/* filter rather than opacity: the cards' entrance animation holds opacity at
+   its end value, which would override a plain opacity here. */
+.web-widget--lifted > .card {
+  filter: opacity(0.4) saturate(0.6);
+  transition: filter 0.15s;
+}
+.web-widget--lifted::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius, 20px);
+  outline: 2px dashed color-mix(in srgb, var(--accent) 60%, transparent);
+  outline-offset: -2px;
+  pointer-events: none;
+}
+.web-widget--lifted .web-widget-handle {
+  opacity: 1;
+  translate: -50% 0;
+  color: var(--accent);
+}
+
+
+/* The drop indicators (DragLayer.jsx). Fixed-position on top of the page, so
+   nothing in the grid moves while you aim. */
+.web-drag-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+/* "Own row here": a bar in the gap where the new row will open. */
+.web-drop-line {
+  position: fixed;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: web-drop-in 0.12s ease-out;
+}
+
+/* "Place beside" and "Swap": the area that will be taken, tinted and ringed. */
+.web-drop-zone {
+  position: fixed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius, 20px);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow: inset 0 0 0 2.5px var(--accent);
+  animation: web-drop-in 0.12s ease-out;
+  transition: left 0.12s ease, width 0.12s ease;
+}
+
+.web-drop-pill {
+  padding: 7px 15px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-family: var(--font);
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+@keyframes web-drop-in {
+  from { opacity: 0; }
+}
+
+/* Beside the pointer: a small chip naming the card being moved. */
+.web-drag-chip {
+  position: fixed;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.12), 0 10px 26px rgba(0, 0, 0, 0.28);
+  animation: web-chip-in 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.web-drag-chip svg {
+  color: var(--accent);
+}
+@keyframes web-chip-in {
+  from { opacity: 0; scale: 0.85; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .web-widget-handle,
+  .web-drop-line,
+  .web-drop-zone,
+  .web-drag-chip { transition: none; animation: none; }
+  .web-widget-handle:hover { scale: none; }
+}
+
+/* Under "Reset layout": a quiet link, shown only once the order has changed. */
+.web-layout-reset {
+  display: flex;
+  justify-content: center;
+}
+.web-layout-reset-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-tertiary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.web-layout-reset-btn:hover {
+  background: var(--hover-medium);
+  color: var(--text-primary);
+}
+.web-layout-reset-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.sky-lvl-slight .web-layout-reset-btn,
+.sky-lvl-medium .web-layout-reset-btn,
+.sky-lvl-dark .web-layout-reset-btn,
+.sky-lvl-darkest .web-layout-reset-btn {
+  color: rgba(255, 255, 255, 0.75);
+}
+.sky-lvl-slight .web-layout-reset-btn:hover,
+.sky-lvl-medium .web-layout-reset-btn:hover,
+.sky-lvl-dark .web-layout-reset-btn:hover,
+.sky-lvl-darkest .web-layout-reset-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
 }
 
 .web-widget > .current-card {
@@ -731,42 +1078,6 @@
   justify-content: center;
 }
 
-/* Above the card's top edge, in the grid gap: all four of these cards have
-   something in every corner already. Hidden until the widget is hovered, and
-   whenever it has keyboard focus — it is the only way to pick a card up. */
-.web-widget-handle {
-  position: absolute;
-  top: -11px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  padding: 3px 12px;
-  border: none;
-  border-radius: 999px;
-  background: var(--card-bg);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.16);
-  color: var(--text-tertiary);
-  cursor: grab;
-  opacity: 0;
-  transition: opacity 0.15s, color 0.15s;
-  touch-action: none;
-}
-
-.web-widget-handle:active {
-  cursor: grabbing;
-}
-
-.web-widget:hover .web-widget-handle,
-.web-widget-handle:focus-visible {
-  opacity: 1;
-}
-
-.web-widget:hover .web-widget-handle:hover,
-.web-widget-handle:focus-visible {
-  color: var(--accent);
-}
 
 /* Over a sky the handle sits on the sky itself for the current card, which is a
    transparent surface — the card fill it borrows above is the wrong tone there. */
@@ -798,10 +1109,15 @@
    column — a shorthand here would reset it and put a second number in play. */
 .web-today-grid .current-icon {
   margin-top: 6px;
+  /* The phone hero tightened its gap to sit the icon on the reading; this
+     column keeps the looser one it was laid out with. */
+  margin-bottom: 0.16em;
 }
 
 .web-today-grid .current-condition {
   margin-top: 6px;
+  font-size: 18px;
+  font-weight: 400;
 }
 
 .web-today-grid .current-feels {
@@ -1961,6 +2277,103 @@
   gap: 16px;
 }
 
+/* The page is a run of topic sections (DetailsPage SECTIONS), each a heading
+   over its own grid, with a jump bar on top. */
+.web-details {
+  gap: 28px;
+}
+
+/* Jump bar: one chip per section. Drawn as a card so it takes the same
+   surface (and sky tint) as everything else on the page; the chip for the
+   section in view is lit. Scrolls sideways rather than wrapping when narrow. */
+.web-details-nav.card,
+.web-details-nav {
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  margin: 0;
+  border-radius: 999px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  align-self: center;
+  max-width: 100%;
+}
+.web-details-nav::-webkit-scrollbar { display: none; }
+
+.web-details-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  padding: 9px 16px;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-family: var(--font-display), var(--font);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.web-details-chip:hover {
+  background: var(--hover-subtle);
+  color: var(--text-primary);
+}
+.web-details-chip--active {
+  background: var(--hover-medium);
+  color: var(--text-primary);
+}
+.web-details-chip--active svg {
+  color: var(--accent);
+}
+.web-details-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Lands below the floating header when jumped to, not underneath it. */
+.web-details-section {
+  scroll-margin-top: calc(var(--web-header-h, 92px) + 16px);
+}
+
+.web-details-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 12px 4px;
+  font-family: var(--font-display), var(--font);
+  font-size: clamp(17px, 1.9vw, 20px);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.web-details-heading svg {
+  color: var(--accent);
+}
+
+/* Over a weather sky the headings sit on the sky itself, not on a card, so
+   they go white with a soft lift, like the other text drawn on the sky. */
+.sky-active .web-details-heading {
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+.sky-active .web-details-heading svg {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* Each card fills its cell, so cards sharing a row are the same height. */
+.web-detail-slot {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.web-detail-slot > .card {
+  flex: 1;
+  margin-bottom: 0;
+}
+.web-detail-slot--full {
+  grid-column: 1 / -1;
+}
+
 .web-detail {
   display: flex;
   flex-direction: column;
@@ -2004,9 +2417,13 @@
   opacity: 0.75;
 }
 
+/* Cards that don't colour-code their status (Moon, Sun) fall back to the
+   secondary text colour, so it follows the theme and the sky tint instead of
+   the document's default black. */
 .web-detail-status {
   font-size: 14px;
   font-weight: 600;
+  color: var(--text-secondary);
 }
 
 .web-detail-note {
@@ -2078,14 +2495,119 @@
 }
 
 .web-moon-dark {
-  fill: var(--web-sunken);
+  fill: color-mix(in srgb, var(--text-primary) 9%, transparent);
   stroke: var(--text-tertiary);
-  stroke-opacity: 0.35;
+  stroke-opacity: 0.3;
   stroke-width: 1;
 }
 
 .web-moon-lit {
-  fill: #ece6d4;
+  fill: #f1ebd9;
+}
+
+/* Tonight's moon beside its name and brightness. The large disc gets a faint
+   glow, so it reads as a lit body rather than a flat icon. */
+.web-moon-main {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  margin: 4px 0 2px;
+}
+
+.web-moon-art {
+  flex: 0 0 auto;
+  display: flex;
+}
+
+.web-moon-art .web-moon-glyph {
+  filter: drop-shadow(0 0 16px rgba(241, 235, 217, 0.22));
+}
+
+.web-moon-copy {
+  min-width: 0;
+}
+
+.web-moon-name {
+  font-family: var(--font-display), var(--font);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.2;
+}
+
+.web-moon-pct {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.web-moon-pct-label {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* The cycle track: phase glyphs above, labels below, tonight as a marker. The
+   stops and labels sit on the same percentages as the track, inset by half a
+   glyph at each end so the first and last don't overhang the card. */
+.web-moon-cycle {
+  margin: 18px 9px 4px;
+}
+
+.web-moon-cycle-stops,
+.web-moon-cycle-labels {
+  position: relative;
+  height: 18px;
+}
+
+.web-moon-cycle-stop {
+  position: absolute;
+  top: 0;
+  translate: -50% 0;
+  display: flex;
+}
+
+.web-moon-cycle-track {
+  position: relative;
+  height: 4px;
+  margin: 8px 0;
+  border-radius: 999px;
+  background: var(--bar-track-bg, color-mix(in srgb, var(--text-primary) 14%, transparent));
+}
+
+.web-moon-cycle-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: color-mix(in srgb, #f1ebd9 55%, transparent);
+}
+
+.web-moon-cycle-marker {
+  position: absolute;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  translate: -50% -50%;
+  border-radius: 50%;
+  background: #f1ebd9;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #f1ebd9 30%, transparent), 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.web-moon-cycle-labels span {
+  position: absolute;
+  top: 0;
+  translate: -50% 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* The end labels hug the track's ends instead of centring past them. */
+.web-moon-cycle-labels span:first-child { translate: -9px 0; }
+.web-moon-cycle-labels span:last-child  { translate: calc(-100% + 9px) 0; }
+
+.web-moon-cycle + .web-detail-stats {
+  margin-top: 14px;
 }
 
 /* The dial's arc and horizon are drawn in currentColor; nothing between here
@@ -2176,8 +2698,15 @@
   transition: opacity 0.3s ease;
 }
 .app--web-radar .app-header--tabs::before,
-.app--web-radar .header-sky {
+.app--web-radar .header-sky,
+.app--web-radar .header-fx {
   opacity: 0;
+}
+/* .header-fx too: it mirrors the page's background rain, which on the map fell
+   out of the tab bar everywhere regardless of the radar. The map draws its own
+   now, only where there are echoes (see RadarRain). */
+.header-fx {
+  transition: opacity 0.3s ease;
 }
 
 /* The scrollbar's lane goes to the map. The page is exactly one screen here,
@@ -2198,7 +2727,11 @@
 :root[data-shell="desktop"] .app--web-radar .app-header {
   padding-inline-end: calc(max(clamp(14px, 3.4vw, 48px), var(--sa-right)) + var(--scrollbar-w, 0px));
 }
-:root[data-shell="desktop"] .app--web-radar .web-tabs-row {
+/* Every desktop page holds the lane one way or the other — the reserved gutter
+   everywhere, this padding on Radar — so the bar's offset is always the same
+   half lane. A constant, not --scrollbar-half: that one is measured after
+   layout, and leaving Radar drew one frame with the old value, a visible tick. */
+:root[data-shell="desktop"] .web-tabs-row {
   translate: calc(var(--scrollbar-w, 0px) / 2) 0;
 }
 
@@ -2219,48 +2752,204 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
 }
 
-/* Map tools in the strip rather than on the map. The two zoom steps and locate
-   are written as overlays for the full-screen mode — absolutely placed in the
-   corners of .radar-map-wrap — so here they are unpinned and laid out in a row
-   beside the play button. */
 .radar-row-actions {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.radar-map-tools {
+/* ── Radar tab: controls float over the map ──
+   The map is the whole window and everything you work it with floats on it, as
+   two glass panels: a dock along the bottom (play, time, legend, toggle,
+   timeline) and a slim tool pill on the right edge (zoom, locate). They used to
+   be one opaque strip under the map, a third of the window tall and edge to
+   edge, which cut the radar off in a hard line and left the map shorter than
+   the page it was meant to be.
+
+   One surface for both, and the same one the tab bar above wears
+   (--sky-card over the map, falling back to the card fill with effects off),
+   so the header, dock and pill read as one set of controls laid over the map.
+   Thinned and blurred, so the echoes under the panels stay visible as colour. */
+.radar-fill {
+  --radar-gutter: clamp(14px, 3.4vw, 48px);
+  --radar-glass: color-mix(in srgb, var(--sky-card, var(--card-bg)) 86%, transparent);
+  --radar-glass-rim: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  --radar-glass-lift: 0 12px 32px rgba(0, 0, 0, 0.26), 0 2px 6px rgba(0, 0, 0, 0.12);
+  position: relative;
+}
+
+.radar-fill :is(.radar-controls, .radar-map-tools) {
+  position: absolute;
+  z-index: 700;
+  background: var(--radar-glass);
+  border: 1px solid var(--radar-glass-rim);
+  box-shadow: var(--radar-glass-lift);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  backdrop-filter: blur(18px) saturate(1.4);
+}
+
+/* The tool pill: vertically centred on the right edge, clear of the tab bar
+   above and the dock below at any window height the page allows. */
+.radar-fill .radar-map-tools {
+  right: var(--radar-gutter);
+  top: 50%;
+  translate: 0 -50%;
   display: flex;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border-radius: 16px;
 }
 
-.radar-map-tools .radar-locate-btn {
+/* Bare glyphs on the pill rather than a button-shaped fill each: the pill is
+   the surface. :root is there for weight — the per-sky and dark-theme rules in
+   App.css paint these buttons' fill at up to three classes. */
+:root .radar-fill .radar-map-tools :is(.radar-zoom-btn, .radar-locate-btn) {
   position: static;
-}
-
-/* Floating on the map they take the card fill, which is what makes them read as
-   objects sitting above it. In the strip that fill is the surface they are
-   sitting on, so they would vanish into it — sunk into the card instead, the
-   same treatment every other nested control in the web app gets. Sized to a
-   square that reads as a set with the 48px play circle beside them. */
-.radar-map-tools .radar-zoom-btn,
-.radar-map-tools .radar-locate-btn {
   width: 40px;
   height: 40px;
   padding: 0;
   justify-content: center;
-  background: var(--web-sunken);
+  border-radius: 12px;
+  background: transparent;
   box-shadow: none;
+  color: var(--text-secondary);
+}
+
+:root .radar-fill .radar-map-tools :is(.radar-zoom-btn, .radar-locate-btn):hover {
+  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
+  color: var(--text-primary);
+}
+
+.radar-map-tools-sep {
+  height: 1px;
+  margin: 3px 8px;
+  background: color-mix(in srgb, var(--text-primary) 16%, transparent);
+}
+
+/* The dock. A grid so the Observed/Forecast toggle can sit at the end of the
+   top row although it comes after that row in the markup (it is shared with
+   the phone's full-screen radar, where it stacks): the row takes the first
+   column, the toggle the second, and the timeline runs under both. Outside the
+   US there is no toggle, and the empty column collapses to nothing. */
+.radar-fill .radar-controls {
+  left: 50%;
+  bottom: 20px;
+  translate: -50% 0;
+  width: min(1040px, calc(100% - 2 * var(--radar-gutter)));
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 20px;
+  padding: 14px 22px 4px;
+  border-radius: 24px;
+}
+
+.radar-main-row--dock {
+  grid-column: 1;
+  grid-row: 1;
+  justify-content: flex-start;
+  gap: 14px;
+  padding: 0;
+  min-width: 0;
+}
+
+.radar-fill .radar-play-circle {
+  width: 44px;
+  height: 44px;
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.radar-time-block {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.radar-fill .radar-big-time {
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.3px;
+}
+
+.radar-time-sub {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.2;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.radar-rel {
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.radar-rel--future {
+  color: var(--accent);
+}
+
+.radar-time-src {
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The legend, folded into the top row and pushed to its end. */
+.radar-legend--dock {
+  flex: 0 1 220px;
+  min-width: 140px;
+  margin: 0 0 0 auto;
+}
+
+.radar-legend--dock .radar-legend-block {
+  height: 6px;
+}
+
+.radar-legend--dock .radar-legend-lbl {
+  font-size: 11px;
+}
+
+.radar-fill .radar-view-toggle {
+  grid-column: 2;
+  grid-row: 1;
+  margin: 0;
   border-radius: 12px;
 }
 
-/* Restated because the rule above out-specifies the base :hover and would
-   otherwise leave these as the only buttons on the page with no hover at all. */
-.radar-map-tools .radar-zoom-btn:hover,
-.radar-map-tools .radar-locate-btn:hover {
-  background: var(--accent-light);
-  color: var(--accent);
+.radar-fill .radar-view-btn {
+  padding: 7px 18px;
+  font-size: 13px;
+  border-radius: 9px;
+}
+
+.radar-fill .radar-tick-track {
+  grid-column: 1 / -1;
+  margin-top: 8px;
+}
+
+/* A narrow window: the legend drops to its own line under the time rather
+   than squeezing the time's caption to an ellipsis. */
+@media (max-width: 760px) {
+  .radar-main-row--dock {
+    flex-wrap: wrap;
+    row-gap: 10px;
+  }
+  .radar-legend--dock {
+    flex: 1 0 100%;
+    order: 1;
+    margin: 0;
+  }
+  .radar-fill .radar-controls {
+    bottom: 14px;
+    padding: 12px 16px 4px;
+    border-radius: 20px;
+  }
 }
 
 .app--web-radar .main-content,
@@ -2312,9 +3001,9 @@
   min-height: 0;
 }
 
-/* The map takes the height the controls below it don't. A floor keeps it usable
-   if the window is short enough that the controls would otherwise crowd it out;
-   past that point the page starts scrolling rather than the map disappearing. */
+/* The map takes the whole card — the controls float over it rather than below
+   it. The floor keeps a very short window usable; past it the page scrolls
+   rather than the map disappearing. */
 .radar-fill .radar-map {
   flex: 1;
   height: auto;
@@ -2332,6 +3021,31 @@
 
 @media (max-width: 1199px) {
   .web-aqi-hero { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* On the Details page the hero, pollutants and outlook share one card, split
+   by hairlines instead of being three cards. The dial is capped so it doesn't
+   balloon once the hero stacks to a single column. */
+.web-aqi-card .web-aqi-hero {
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 32px;
+  padding: 4px 4px 0;
+}
+.web-aqi-card .web-aqi-dial {
+  max-width: 260px;
+  justify-self: center;
+}
+@media (max-width: 700px) {
+  .web-aqi-card .web-aqi-hero { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+}
+
+.web-aqi-section {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.web-aqi-section > .section-label {
+  margin-bottom: 12px;
 }
 
 .web-aqi-dial {
@@ -2681,6 +3395,10 @@
 .app--web-splash {
   z-index: 4;
   pointer-events: none;
+  /* As .app--web-tabs: .app's base overflow-x: hidden makes it a scroll box,
+     and while the splash fades into Radar it grew its own scrollbar and pulled
+     the header (and the tab bar) 15px narrower for the length of the fade. */
+  overflow-x: clip;
 }
 
 /* Not .splash-bg, which is a child of .app too: it is inert by design (its
@@ -2743,6 +3461,11 @@
   font-size: clamp(1.5rem, 2.6vw, 2.1rem);
   font-weight: 600;
   letter-spacing: -0.3px;
+  /* It names the place now, so a long one may need a second line. */
+  white-space: normal;
+  text-wrap: balance;
+  text-align: center;
+  max-width: 88vw;
 }
 
 .splash-wordmark {
@@ -2844,27 +3567,73 @@
   margin-bottom: 22px;
 }
 
+/* Same surface as the nav bar above it: a solid card with no sky behind the
+   splash, frosted glass over one (the --glass-* tokens, see "Splash glass"). */
 .splash-search .search-bar {
   height: 56px;
   padding: 0 22px;
-  border-color: transparent;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+  background: var(--glass-bg, var(--card-bg));
+  -webkit-backdrop-filter: var(--glass-blur, none);
+  backdrop-filter: var(--glass-blur, none);
+  border-color: var(--glass-rim, transparent);
+  box-shadow: var(--glass-shadow, var(--shadow));
 }
 
 .splash-search .search-bar input {
   font-size: 16px;
 }
 
+/* Tactile, like the tab bar's pill and the "here" pill: it lifts a touch under
+   the pointer, and a click pushes it in — a slight squash, the drop shadow
+   collapsing into a dark inner top edge — before it springs back. The bar is
+   far wider than those pills, so its squash is smaller (0.99, not 0.97) to
+   travel about the same few pixels at the ends.
+
+   Going down is near-instant and coming back overshoots a little, the same
+   asymmetric timing the phone's icon buttons use. :active reaches the bar
+   while the input inside it is the thing being pressed. `scale` rather than
+   transform, so nothing else that positions the bar is overridden. */
+.splash-search .search-bar {
+  transition:
+    scale 0.35s cubic-bezier(0.34, 1.5, 0.64, 1),
+    box-shadow 0.25s ease,
+    border-color 0.15s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .splash-search .search-bar:hover:not(:active) {
+    scale: 1.004;
+    background: var(--glass-bg-hover, var(--card-bg));
+    box-shadow: var(--glass-shadow-lift, var(--shadow), 0 6px 18px rgba(0, 0, 0, 0.12));
+  }
+}
+.splash-search .search-bar:active {
+  scale: 0.99;
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.18), 0 1px 2px rgba(0, 0, 0, 0.1);
+  transition:
+    scale 0.06s cubic-bezier(0.4, 0, 0.6, 1),
+    box-shadow 0.06s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .splash-search .search-bar,
+  .splash-search .search-bar:hover,
+  .splash-search .search-bar:active {
+    scale: none;
+  }
+}
+
 .splash-search .search-dropdown {
   border-radius: 20px;
 }
 
+/* The padding (cancelled by the negative margin) gives the cards' drop shadows
+   and hover lift room inside the scroll box, which would otherwise clip them
+   into a hard-edged band along its sides and bottom. */
+/* Never a scroll box: there are at most three cards (MAX_CARDS in SplashHome),
+   and they sit in one row, so there is nothing to scroll to. */
 .splash-recents {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
+  flex: 0 0 auto;
+  margin: -6px -28px 0;
+  padding: 6px 28px 36px;
 }
 
 .splash-recents .section-label {
@@ -2873,25 +3642,34 @@
 
 .splash-city-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   padding-bottom: 6px;
 }
 
+/* Same surface as the search bar and nav bar, so the splash's controls read
+   as one set. */
 .splash-city {
   position: relative;
-  border-radius: 16px;
-  background: var(--splash-surface);
-  border: 1px solid var(--splash-surface-border);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-  transition: background 0.15s, transform 0.15s, box-shadow 0.15s;
+  border-radius: 18px;
+  background: var(--glass-bg, var(--card-bg));
+  -webkit-backdrop-filter: var(--glass-blur, none);
+  backdrop-filter: var(--glass-blur, none);
+  border: 1px solid var(--glass-rim, transparent);
+  box-shadow: var(--glass-shadow, var(--shadow));
+  transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
 }
 
 .splash-city:hover {
-  background: var(--splash-surface-hover);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.14);
+  background: var(--glass-bg-hover, color-mix(in srgb, var(--card-bg) 94%, var(--text-primary)));
+  transform: translateY(-3px);
+  box-shadow: var(--glass-shadow-lift, var(--shadow), 0 8px 22px rgba(0, 0, 0, 0.14));
+}
+
+.splash-city:active {
+  transform: translateY(0) scale(0.985);
+  box-shadow: var(--glass-shadow, var(--shadow));
+  transition-duration: 0.06s;
 }
 
 .splash-city-btn {
@@ -2999,6 +3777,39 @@
   color: var(--text-primary);
 }
 
+/* The detected location, under the search field: a pill you can click to open
+   its forecast. */
+.splash-here {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: -6px 0 18px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--splash-surface-border);
+  background: var(--splash-surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.splash-here:hover { background: var(--splash-surface-hover); }
+.splash-here:active { transform: scale(0.97); }
+.splash-here:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.splash-bg--sky .splash-here {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.25);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+.splash-bg--sky .splash-here:hover { background: rgba(255, 255, 255, 0.26); }
+.splash-here-spinner { width: 13px; height: 13px; }
+
 .splash-home-hint {
   margin: 0;
   text-align: center;
@@ -3007,8 +3818,205 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .splash-city:hover {
+  .splash-city:hover,
+  .splash-city:active {
     transform: none;
+  }
+}
+
+/* ── Splash glass ────────────────────────────────────────────────────────────
+   With a weather sky behind the splash (data-splash-sky, set from App), the
+   nav bar, search bar and city cards turn to frosted glass: a see-through
+   fill over a blurred sky, a lit rim and top edge, and stacked drop shadows so
+   they float off it. Three looks, by what has to stay readable:
+     light theme, light sky → milky white glass, normal dark text
+     light theme, dark sky  → clear white-tinted glass, white text
+     dark theme, any sky    → smoky dark glass, white text
+   Each surface reads the tokens with a solid-card fallback, so without a sky
+   nothing changes. */
+:root[data-splash-sky] {
+  --glass-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.66), rgba(255, 255, 255, 0.48));
+  --glass-bg-hover: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.6));
+  --glass-blur: blur(20px) saturate(170%);
+  --glass-rim: rgba(255, 255, 255, 0.7);
+  --glass-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.05),
+    0 1px 2px rgba(0, 0, 0, 0.08),
+    0 8px 20px rgba(0, 0, 0, 0.12),
+    0 22px 44px -18px rgba(0, 0, 0, 0.3);
+  --glass-shadow-lift:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.05),
+    0 2px 4px rgba(0, 0, 0, 0.1),
+    0 14px 30px rgba(0, 0, 0, 0.16),
+    0 30px 60px -20px rgba(0, 0, 0, 0.38);
+}
+
+:root[data-splash-sky="dark"] {
+  --glass-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.22), rgba(255, 255, 255, 0.1));
+  --glass-bg-hover: linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.16));
+  --glass-rim: rgba(255, 255, 255, 0.3);
+  --glass-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.12),
+    0 1px 2px rgba(0, 0, 0, 0.18),
+    0 8px 20px rgba(0, 0, 0, 0.2),
+    0 22px 44px -18px rgba(0, 0, 0, 0.45);
+  --glass-shadow-lift:
+    inset 0 1px 0 rgba(255, 255, 255, 0.5),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.12),
+    0 2px 4px rgba(0, 0, 0, 0.2),
+    0 14px 30px rgba(0, 0, 0, 0.26),
+    0 30px 60px -20px rgba(0, 0, 0, 0.55);
+}
+
+:root[data-splash-sky][data-theme="dark"] {
+  --glass-bg: linear-gradient(180deg, rgba(28, 34, 46, 0.5), rgba(14, 18, 26, 0.4));
+  --glass-bg-hover: linear-gradient(180deg, rgba(40, 48, 62, 0.58), rgba(22, 28, 38, 0.48));
+  --glass-rim: rgba(255, 255, 255, 0.16);
+  --glass-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+    0 1px 2px rgba(0, 0, 0, 0.3),
+    0 8px 20px rgba(0, 0, 0, 0.3),
+    0 22px 44px -18px rgba(0, 0, 0, 0.6);
+  --glass-shadow-lift:
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+    0 2px 4px rgba(0, 0, 0, 0.32),
+    0 14px 30px rgba(0, 0, 0, 0.36),
+    0 30px 60px -20px rgba(0, 0, 0, 0.7);
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-splash-sky]:not([data-theme="light"]) {
+    --glass-bg: linear-gradient(180deg, rgba(28, 34, 46, 0.5), rgba(14, 18, 26, 0.4));
+    --glass-bg-hover: linear-gradient(180deg, rgba(40, 48, 62, 0.58), rgba(22, 28, 38, 0.48));
+    --glass-rim: rgba(255, 255, 255, 0.16);
+    --glass-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.18),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+      0 1px 2px rgba(0, 0, 0, 0.3),
+      0 8px 20px rgba(0, 0, 0, 0.3),
+      0 22px 44px -18px rgba(0, 0, 0, 0.6);
+    --glass-shadow-lift:
+      inset 0 1px 0 rgba(255, 255, 255, 0.24),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.3),
+      0 2px 4px rgba(0, 0, 0, 0.32),
+      0 14px 30px rgba(0, 0, 0, 0.36),
+      0 30px 60px -20px rgba(0, 0, 0, 0.7);
+  }
+}
+
+/* The nav bar, while it sits over the splash sky. */
+:root[data-splash-sky] .app--web-splash .web-tabs {
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-rim);
+  box-shadow: var(--glass-shadow);
+  transition: background 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* The search results dropdown, in the same glass family as the bar above it.
+   It hangs over the city cards rather than open sky, so its frost is denser —
+   a heavier blur and a more opaque tint — or the cards' text would show
+   through behind the results. One tint per look, like the other surfaces. */
+:root[data-splash-sky] {
+  --glass-pop: linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.76));
+}
+:root[data-splash-sky="dark"] {
+  --glass-pop: linear-gradient(180deg, rgba(74, 90, 108, 0.82), rgba(52, 66, 82, 0.82));
+}
+:root[data-splash-sky][data-theme="dark"] {
+  --glass-pop: linear-gradient(180deg, rgba(34, 40, 54, 0.86), rgba(20, 24, 34, 0.86));
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-splash-sky]:not([data-theme="light"]) {
+    --glass-pop: linear-gradient(180deg, rgba(34, 40, 54, 0.86), rgba(20, 24, 34, 0.86));
+  }
+}
+
+:root[data-splash-sky] .splash-search .search-dropdown {
+  background: var(--glass-pop);
+  -webkit-backdrop-filter: blur(28px) saturate(170%);
+  backdrop-filter: blur(28px) saturate(170%);
+  border: 1px solid var(--glass-rim);
+  box-shadow: var(--glass-shadow);
+  overflow: hidden;
+}
+
+/* Light text on the clear and smoky glass: the nav bar, the search field and
+   its results, and the city cards. Forcing white in dark theme is harmless:
+   its text is near-white already. */
+:root[data-splash-sky="dark"] :is(
+  .app--web-splash .web-tabs,
+  .splash-search .search-bar,
+  .splash-search .search-dropdown,
+  .splash-city
+),
+:root[data-splash-sky][data-theme="dark"] :is(
+  .app--web-splash .web-tabs,
+  .splash-search .search-bar,
+  .splash-search .search-dropdown,
+  .splash-city
+) {
+  --text-primary: #fff;
+  --text-secondary: rgba(255, 255, 255, 0.82);
+  --text-tertiary: rgba(255, 255, 255, 0.66);
+  --hover-medium: rgba(255, 255, 255, 0.16);
+  --hover-subtle: rgba(255, 255, 255, 0.1);
+  --border: rgba(255, 255, 255, 0.25);
+  --accent: #9cc4ff;
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-splash-sky]:not([data-theme="light"]) :is(
+    .app--web-splash .web-tabs,
+    .splash-search .search-bar,
+    .splash-search .search-dropdown,
+    .splash-city
+  ) {
+    --text-primary: #fff;
+    --text-secondary: rgba(255, 255, 255, 0.82);
+    --text-tertiary: rgba(255, 255, 255, 0.66);
+    --hover-medium: rgba(255, 255, 255, 0.16);
+    --hover-subtle: rgba(255, 255, 255, 0.1);
+    --border: rgba(255, 255, 255, 0.25);
+    --accent: #9cc4ff;
+  }
+}
+
+/* On the light-text glass the selected tab is a raised white-glass key with a
+   white label, the way the forecast's tinted bar draws it. */
+:root[data-splash-sky="dark"] .app--web-splash .web-tabs,
+:root[data-splash-sky][data-theme="dark"] .app--web-splash .web-tabs {
+  --pill-rim-hi: rgba(255, 255, 255, 0.5);
+  --pill-rim-lo: rgba(0, 0, 0, 0.2);
+  --pill-ring: rgba(255, 255, 255, 0.14);
+  --pill-drop: 0 1px 2px rgba(0, 0, 0, 0.22), 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+:root[data-splash-sky="dark"] .app--web-splash :is(.web-tab-pill),
+:root[data-splash-sky][data-theme="dark"] .app--web-splash :is(.web-tab-pill) {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.14));
+}
+:root[data-splash-sky="dark"] .app--web-splash .web-tab--active,
+:root[data-splash-sky][data-theme="dark"] .app--web-splash .web-tab--active {
+  color: #fff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-splash-sky]:not([data-theme="light"]) .app--web-splash .web-tabs {
+    --pill-rim-hi: rgba(255, 255, 255, 0.5);
+    --pill-rim-lo: rgba(0, 0, 0, 0.2);
+    --pill-ring: rgba(255, 255, 255, 0.14);
+    --pill-drop: 0 1px 2px rgba(0, 0, 0, 0.22), 0 4px 12px rgba(0, 0, 0, 0.2);
+  }
+  :root[data-splash-sky]:not([data-theme="light"]) .app--web-splash .web-tab-pill {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.14));
+  }
+  :root[data-splash-sky]:not([data-theme="light"]) .app--web-splash .web-tab--active {
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
   }
 }
 
@@ -3454,4 +4462,548 @@
   flex: 1;
   min-height: 320px;
   border-radius: 0;
+}
+
+/* ── Locations & Settings tabs ───────────────────────────────────────────── */
+
+/* Sets the two app pages apart from the forecast pages before them. */
+.web-tabs-divider {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 1px;
+  height: 22px;
+  margin: 0 6px;
+  background: var(--border);
+  position: relative;
+  z-index: 1;
+}
+
+.sky-lvl-slight .web-tabs-divider,
+.sky-lvl-medium .web-tabs-divider,
+.sky-lvl-dark .web-tabs-divider,
+.sky-lvl-darkest .web-tabs-divider {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Locations (pin) and Settings (gear): icon-only stops at either end. */
+.web-tab--icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: 13px;
+  padding-right: 13px;
+}
+
+
+/* A header corner button whose job the tab bar has taken over (see
+   navOwnsCorners in App.jsx). Hidden rather than removed: it keeps its space,
+   so the bar stays centred against the search button still on the other side.
+   visibility: hidden also takes it out of the tab order and the a11y tree. */
+.header-btn--gone {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ── Settings page ───────────────────────────────────────────────────────── */
+
+/* Section list on the left, the chosen section on the right. The cards are
+   .settings-card, which keeps them on the plain card surface over a sky (as the
+   old settings dialog was) — the segmented controls are drawn for that surface
+   and lose their selected state on a sky-tinted one. */
+.ws-layout {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 760px);
+  gap: 28px;
+  align-items: start;
+}
+
+.ws-nav {
+  position: sticky;
+  top: calc(var(--web-header-h, 92px) + 12px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px !important;
+  margin-bottom: 0;
+}
+
+.ws-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  font-family: var(--font);
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.ws-nav-item svg {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+  transition: color 0.15s;
+}
+
+.ws-nav-item:hover {
+  background: var(--hover-medium);
+  color: var(--text-primary);
+}
+
+.ws-nav-item--active,
+.ws-nav-item--active:hover {
+  background: var(--accent-light);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.ws-nav-item--active svg {
+  color: var(--accent);
+}
+
+.ws-nav-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.ws-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  animation: ws-content-in 0.3s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes ws-content-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+.ws-content-head {
+  padding: 2px 4px 0;
+}
+
+.ws-content-title {
+  margin: 0;
+  font-family: var(--font-display), var(--font);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ws-content-desc {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+/* The section heading sits on the page, so over a sky it reads against the sky
+   (the same treatment as .web-page-head). */
+.sky-lvl-slight .ws-content-head,
+.sky-lvl-medium .ws-content-head,
+.sky-lvl-dark .ws-content-head,
+.sky-lvl-darkest .ws-content-head {
+  --text-primary: #fff;
+  --text-secondary: rgba(255, 255, 255, 0.82);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.ws-group {
+  margin-bottom: 0;
+}
+
+/* No footer under Settings (see App.jsx), so the page's bottom padding — sized
+   to clear it — only bought a few px of pointless scroll. */
+:root[data-shell="desktop"] .app-grid:has(.web-settings-page) {
+  padding-bottom: calc(20px + var(--sa-bottom));
+}
+
+/* Over a sky, the settings cards take the same tinted surface as every other
+   card in the app (the .sky-lvl-* .card rules in App.css, which skip
+   .settings-card) instead of staying white. The controls are restated for that
+   surface: a sunken track that reads on slate, a translucent off-switch, and a
+   white-wash selection in the section list. Dark theme keeps --card-bg, as the
+   other cards do there. */
+:is(.sky-lvl-slight, .sky-lvl-medium, .sky-lvl-dark, .sky-lvl-darkest) .web-settings-page .settings-card {
+  background: var(--sky-card, #4d6078);
+  --text-primary: #fff;
+  --text-secondary: rgba(255, 255, 255, 0.8);
+  --text-tertiary: rgba(255, 255, 255, 0.58);
+  --border: rgba(255, 255, 255, 0.14);
+  --hover-medium: rgba(255, 255, 255, 0.12);
+}
+[data-theme="dark"] :is(.sky-lvl-slight, .sky-lvl-medium, .sky-lvl-dark, .sky-lvl-darkest) .web-settings-page .settings-card {
+  background: var(--card-bg);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) :is(.sky-lvl-slight, .sky-lvl-medium, .sky-lvl-dark, .sky-lvl-darkest) .web-settings-page .settings-card {
+    background: var(--card-bg);
+  }
+}
+
+:is(.sky-lvl-slight, .sky-lvl-medium, .sky-lvl-dark, .sky-lvl-darkest) .web-settings-page .settings-options {
+  background: rgba(0, 0, 0, 0.2);
+  border-color: transparent;
+}
+:is(.sky-lvl-slight, .sky-lvl-medium, .sky-lvl-dark, .sky-lvl-darkest) .web-settings-page .setting-opt:not(.active) {
+  color: rgba(255, 255, 255, 0.8);
+}
+:is(.sky-lvl-slight, .sky-lvl-medium, .sky-lvl-dark, .sky-lvl-darkest) .web-settings-page .toggle-switch input:not(:checked) + .toggle-track {
+  background: rgba(255, 255, 255, 0.25);
+}
+:is(.sky-lvl-slight, .sky-lvl-medium, .sky-lvl-dark, .sky-lvl-darkest) .web-settings-page :is(.ws-nav-item--active, .ws-nav-item--active:hover) {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+:is(.sky-lvl-slight, .sky-lvl-medium, .sky-lvl-dark, .sky-lvl-darkest) .web-settings-page .ws-nav-item--active svg {
+  color: #fff;
+}
+
+.ws-group-title {
+  margin: 0;
+  padding: 16px 22px 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.ws-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 32px;
+  padding: 16px 22px;
+}
+
+.ws-row + .ws-row {
+  border-top: 1px solid var(--border);
+}
+
+.ws-row-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.ws-row-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ws-row-desc {
+  margin-top: 3px;
+  max-width: 440px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.ws-row-control {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+/* Segmented controls a little roomier than the phone's, for a mouse. */
+.ws-row-control .setting-opt {
+  padding: 7px 14px;
+}
+
+.ws-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  font-family: var(--font);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.ws-btn:hover:not(:disabled) {
+  background: var(--hover-medium);
+}
+
+.ws-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.ws-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.ws-btn--danger {
+  color: var(--cond-red, #dc2626);
+  border-color: color-mix(in srgb, var(--cond-red, #dc2626) 35%, transparent);
+}
+
+.ws-btn--danger:hover:not(:disabled),
+.ws-btn--danger.confirming {
+  background: var(--cond-red, #dc2626);
+  border-color: var(--cond-red, #dc2626);
+  color: #fff;
+}
+
+.ws-about-desc {
+  margin: 0;
+  padding: 18px 22px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.ws-api-url {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.ws-footer {
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  padding: 6px 0 4px;
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+}
+
+.sky-lvl-slight .ws-footer,
+.sky-lvl-medium .ws-footer,
+.sky-lvl-dark .ws-footer,
+.sky-lvl-darkest .ws-footer {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+/* Notifications and app updates reuse the phone views, which bring their own
+   cards and captions; this just spaces them like the rest of the column. */
+.ws-legacy {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ws-legacy .card {
+  margin-bottom: 0;
+}
+
+/* Narrow windows: the section list becomes a scrolling row over the content,
+   and each row stacks its control under the explanation. */
+@media (max-width: 860px) {
+  .ws-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .ws-nav {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .ws-nav::-webkit-scrollbar { display: none; }
+
+  .ws-nav-item {
+    width: auto;
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 600px) {
+  .ws-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .ws-row-control {
+    justify-content: flex-start;
+    overflow-x: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-content { animation: none; }
+}
+
+/* ── Locations page ──────────────────────────────────────────────────────── */
+
+.web-loc-section {
+  margin-bottom: 0;
+}
+
+.web-loc-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.web-loc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.web-loc-item {
+  position: relative;
+  border-radius: 16px;
+  background: var(--web-sunken);
+  border: 1px solid transparent;
+  transition: background 0.15s, transform 0.15s, box-shadow 0.15s, border-color 0.15s;
+}
+
+.web-loc-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+}
+
+/* The place the forecast is showing right now. */
+.web-loc-item--active {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.web-loc-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 14px 16px 13px;
+  border: none;
+  border-radius: inherit;
+  background: none;
+  font-family: var(--font);
+  text-align: left;
+  cursor: pointer;
+}
+
+.web-loc-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.web-loc-name {
+  padding-right: 26px; /* clear of the remove button */
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.web-loc-sub {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.web-loc-now {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  margin-top: 8px;
+}
+
+.web-loc-icon {
+  display: flex;
+  font-size: 26px;
+  line-height: 1;
+}
+
+.web-loc-temp {
+  font-size: 28px;
+  font-weight: 300;
+  letter-spacing: -1px;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.web-loc-temp--unknown {
+  opacity: 0.4;
+}
+
+.web-loc-badge {
+  margin-left: auto;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  background: var(--accent-light);
+}
+
+/* Out of the way until the card is hovered or tabbed to, so a page of cards
+   doesn't read as a page of close buttons. */
+.web-loc-remove {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  display: flex;
+  padding: 5px;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+
+.web-loc-item:hover .web-loc-remove,
+.web-loc-remove:focus-visible {
+  opacity: 1;
+}
+
+.web-loc-remove:hover {
+  background: var(--hover-medium);
+  color: var(--text-primary);
+}
+
+/* Touch screens have no hover to reveal it. */
+@media (hover: none) {
+  .web-loc-remove { opacity: 0.7; }
+}
+
+.web-loc-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 40px 24px;
+  margin-bottom: 0;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.web-loc-empty p {
+  margin: 0;
+  max-width: 360px;
+}
+
+.web-loc-empty-icon {
+  color: var(--text-tertiary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .web-loc-item,
+  .web-loc-item:hover { transition: none; transform: none; }
 }

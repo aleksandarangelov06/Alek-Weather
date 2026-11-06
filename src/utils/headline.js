@@ -38,9 +38,15 @@ function nowSlot(minutely, now) {
   return times.findIndex(t => t >= now)
 }
 
-export function weatherHeadline(data, code) {
+// `place` is the place's name, so the line says where it is happening ("Light
+// rain falling in Bel Air"). Each phrase has a nameless form for a place found
+// from the device whose reverse geocode came back without one.
+export function weatherHeadline(data, code, place = '') {
   const cur = data?.current
   if (!cur || code == null) return null
+  const p = place?.trim()
+  // The phrase with the place in it, or the one that stands alone.
+  const at = (placed, plain) => (p ? placed : plain)
   const minutely = data.minutely_15
   const si = nowSlot(minutely, cur.time)
   const rate = si >= 0 ? (minutely.precipitation[si] ?? 0) : null
@@ -48,7 +54,9 @@ export function weatherHeadline(data, code) {
   // ── Something is falling ──────────────────────────────────────────────────
   // Said as happening, not as a category: "Raining now" rather than "Rain".
   if (THUNDER_CODES.has(code)) {
-    return code !== 95 || cur.severe_storm ? 'Severe storms right now' : 'Thunderstorms now'
+    return code !== 95 || cur.severe_storm
+      ? at(`Severe storms in ${p}`, 'Severe storms right now')
+      : at(`Thunderstorms in ${p}`, 'Thunderstorms now')
   }
   const tier = precipTier(code)
   if (tier > 0) {
@@ -59,14 +67,18 @@ export function weatherHeadline(data, code) {
     if (rate != null && rate >= LIGHT) {
       for (let i = 1; i <= NOWCAST_SLOTS && si + i < minutely.time.length; i++) {
         if ((minutely.precipitation[si + i] ?? 0) < TRACE) {
-          return `${snow ? 'Snow' : 'Rain'} stops in ${minutes(i * 15)}`
+          return `${snow ? 'Snow' : 'Rain'}${p ? ` in ${p}` : ''} stops in ${minutes(i * 15)}`
         }
       }
     }
-    if (snow) return tier >= 3 ? 'Heavy snow falling' : tier === 1 ? 'Flurries flying' : 'Snowing now'
-    if (DRIZZLE_CODES.has(code)) return 'Drizzling now'
-    if (tier >= 3) return 'Pouring right now'
-    return tier === 1 ? 'Light rain falling' : 'Raining now'
+    if (snow) {
+      return tier >= 3 ? at(`Heavy snow falling in ${p}`, 'Heavy snow falling')
+        : tier === 1 ? at(`Flurries flying in ${p}`, 'Flurries flying')
+        : at(`Snowing in ${p}`, 'Snowing now')
+    }
+    if (DRIZZLE_CODES.has(code)) return at(`Drizzling in ${p}`, 'Drizzling now')
+    if (tier >= 3) return at(`Pouring in ${p}`, 'Pouring right now')
+    return tier === 1 ? at(`Light rain falling in ${p}`, 'Light rain falling') : at(`Raining in ${p}`, 'Raining now')
   }
 
   // ── Coming soon ───────────────────────────────────────────────────────────
@@ -74,7 +86,7 @@ export function weatherHeadline(data, code) {
   if (si >= 0) {
     for (let i = 1; i <= NOWCAST_SLOTS && si + i < minutely.time.length; i++) {
       if ((minutely.precipitation[si + i] ?? 0) >= LIGHT) {
-        return `${cold ? 'Snow' : 'Rain'} in ${minutes(i * 15)}`
+        return at(`${cold ? 'Snow' : 'Rain'} reaches ${p} in ${minutes(i * 15)}`, `${cold ? 'Snow' : 'Rain'} in ${minutes(i * 15)}`)
       }
     }
   }
@@ -86,26 +98,26 @@ export function weatherHeadline(data, code) {
     for (let i = 1; i <= AHEAD_HOURS && hi + i < hourly.time.length; i++) {
       const c = hourly.weather_code?.[hi + i]
       if ((hourly.precipitation_probability?.[hi + i] ?? 0) < AHEAD_POP || precipTier(c) === 0) continue
-      if (THUNDER_CODES.has(c)) return 'Storms on the way'
-      return SNOW_CODES.has(c) ? 'Snow on the way' : 'Showers on the way'
+      const what = THUNDER_CODES.has(c) ? 'Storms' : SNOW_CODES.has(c) ? 'Snow' : 'Showers'
+      return at(`${what} heading for ${p}`, `${what} on the way`)
     }
   }
 
   // ── Dry ───────────────────────────────────────────────────────────────────
   const day = cur.is_day !== 0
-  if (code === 45 || code === 48) return 'Foggy out there'
+  if (code === 45 || code === 48) return at(`Foggy in ${p}`, 'Foggy out there')
   const feels = cur.apparent_temperature ?? cur.temperature_2m
   if (feels != null) {
-    if (feels >= 95) return 'Scorching out there'
-    if (feels >= 88) return day ? 'Hot one today' : 'Warm night out'
-    if (feels <= 20) return 'Bitter cold out there'
-    if (feels <= 35) return 'Bundle up, it’s cold'
+    if (feels >= 95) return at(`Scorching in ${p}`, 'Scorching out there')
+    if (feels >= 88) return day ? at(`Hot one today in ${p}`, 'Hot one today') : at(`Warm night in ${p}`, 'Warm night out')
+    if (feels <= 20) return at(`Bitter cold in ${p}`, 'Bitter cold out there')
+    if (feels <= 35) return at(`Bundle up, it’s cold in ${p}`, 'Bundle up, it’s cold')
   }
-  if ((cur.wind_gusts_10m ?? 0) >= 30) return 'Windy out there'
+  if ((cur.wind_gusts_10m ?? 0) >= 30) return at(`Windy in ${p}`, 'Windy out there')
   if (code <= 2 && feels != null && feels >= 60 && feels <= 82 && (cur.relative_humidity_2m ?? 0) < 80) {
-    return day ? 'Great weather out there' : 'Lovely night out'
+    return day ? at(`Great weather in ${p}`, 'Great weather out there') : at(`Lovely night in ${p}`, 'Lovely night out')
   }
-  if (code <= 1) return day ? 'Clear skies all around' : 'Clear night sky'
-  if (code === 2) return day ? 'Sun peeking through' : 'A few clouds tonight'
-  return 'Gray skies overhead'
+  if (code <= 1) return day ? at(`Clear skies over ${p}`, 'Clear skies all around') : at(`Clear night over ${p}`, 'Clear night sky')
+  if (code === 2) return day ? at(`Sun peeking through in ${p}`, 'Sun peeking through') : at(`A few clouds over ${p} tonight`, 'A few clouds tonight')
+  return at(`Gray skies over ${p}`, 'Gray skies overhead')
 }

@@ -6,6 +6,18 @@
 // lighter tones on dark and sky-tinted card surfaces so the readings stay
 // legible there (e.g. red on a slate-blue card).
 
+// Whether the radar's precipitation should be drawn as snow (see RadarRain).
+// The radar tiles can't tell rain from snow, so this goes off the location's
+// current conditions: at or below freezing (temperatures are °F throughout), or
+// the current weather code already saying snow. It is the location's reading
+// applied to the whole map — fine for the area around it, a guess further out.
+const SNOW_CODES = new Set([71, 73, 75, 77, 85, 86])
+export function isSnowing(current) {
+  if (!current) return false
+  if (SNOW_CODES.has(current.weather_code)) return true
+  return current.temperature_2m != null && current.temperature_2m <= 32
+}
+
 export function getAQIInfo(aqi) {
   if (aqi <= 50)  return { label: 'Good',                          color: 'var(--cond-green)' }
   if (aqi <= 100) return { label: 'Moderate',                      color: 'var(--cond-yellow)' }

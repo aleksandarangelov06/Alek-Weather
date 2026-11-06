@@ -1,44 +1,36 @@
-import { useState } from 'react'
-import { DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors } from '@dnd-kit/core'
-import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import {
-  ArrowRight, CloudLightning, CloudRain, Droplets, Eye, Flower2, Gauge, Leaf, Moon, Snowflake,
-  Sun, Sunrise, Sunset, TrendingDown, TrendingUp, Minus,
+  CloudLightning, CloudRain, Droplets, Eye, Flower2, Gauge, Leaf, Moon, Snowflake,
+  Sun, Sunrise, Sunset, TrendingDown, TrendingUp, Minus, Wind,
 } from 'lucide-react'
+import { AirQualityCard } from './AirQualityCard'
 import { SunDial } from '../WeatherDetails'
 import { WindTurbine } from '../WindTurbine'
-import { formatHour, formatTime, getUVLabel, getWindDirection, sunColor, toTemp, SUN_ORANGE } from '../../utils/weatherCodes'
+import { formatHour, getUVLabel, getWindDirection, sunColor, toTemp, SUN_ORANGE } from '../../utils/weatherCodes'
 import {
-  getAQIInfo, getAQINote, getHumidityInfo, getHumidityNote, getPollenInfo, getPrecipInfo,
+  getHumidityInfo, getHumidityNote, getPollenInfo, getPrecipInfo,
   getPressureInfo, getPressureTrend, getSnowInfo, getStormInfo, getStormNote,
   getUVNote, getVisibilityInfo, getVisibilityNote, getWindInfo, getWindNote,
 } from '../../utils/conditions'
 import { getMoonInfo } from '../../utils/moon'
+import { formatMinutes, formatSpan, isoMinutes, sunTimes } from '../../utils/sunTimes'
 import { useMeasure } from './chartUtils'
 import { Sparkline } from './Sparkline'
-import { currentHourIndex, daylightLength, METERS_PER_MILE, weekdayLabel } from './webData'
+import { currentHourIndex, METERS_PER_MILE, weekdayLabel } from './webData'
 import { formatPrecip, formatUnitDelta, unitSuffix, unitText } from '../../utils/units'
-import { SortableWidget } from './TodayPage'
+import { useEffect, useRef, useState } from 'react'
 
-const DETAILS_ORDER_KEY = 'alek-weather-details-order'
-const DEFAULT_ORDER = [
-  'precip', 'snow', 'humidity', 'wind', 'pressure', 'visibility',
-  'storm', 'uv', 'sun', 'moon', 'air', 'pollen',
+// The page is a fixed set of topics rather than a board of movable cards: each
+// reading lives in the same place every visit, next to the readings it goes
+// with, and the bar at the top jumps straight to a topic.
+const SECTIONS = [
+  { id: 'rain',       title: 'Rain & storms',     icon: CloudRain, cards: ['precip', 'snow', 'storm'] },
+  { id: 'atmosphere', title: 'Wind & atmosphere', icon: Wind,      cards: ['wind', 'humidity', 'pressure', 'visibility'] },
+  { id: 'sky',        title: 'Sun, UV & moon',    icon: Sun,       cards: ['sun', 'uv', 'moon'] },
+  { id: 'air',        title: 'Air quality',       icon: Leaf,      cards: ['air', 'pollen'] },
 ]
-const PANEL_NAMES = {
-  precip: 'Precipitation',
-  snow: 'Snow',
-  humidity: 'Humidity',
-  wind: 'Wind',
-  pressure: 'Pressure',
-  visibility: 'Visibility',
-  storm: 'Thunderstorm potential',
-  uv: 'UV index',
-  sun: 'Sun',
-  moon: 'Moon',
-  air: 'Air quality',
-  pollen: 'Pollen',
-}
+
+// Cards that take their section's whole width rather than one cell.
+const FULL = new Set(['air'])
 
 // The moon as it looks tonight: a dark disc with the lit part laid over it.
 // The lit part is a half disc on the sunward side closed by the terminator, an
@@ -68,16 +60,36 @@ function MoonGlyph({ phase, south, size = 84 }) {
   )
 }
 
-// Same guard as the Today page: unknown ids are dropped and missing ones are
-// appended, so a saved order survives the panel set changing.
-function loadOrder() {
-  let saved
-  try { saved = JSON.parse(localStorage.getItem(DETAILS_ORDER_KEY) ?? 'null') }
-  catch { /* corrupted storage falls through to the default */ }
-  if (!Array.isArray(saved)) return DEFAULT_ORDER
-  const kept = [...new Set(saved.filter(id => DEFAULT_ORDER.includes(id)))]
-  if (!kept.length) return DEFAULT_ORDER
-  return [...kept, ...DEFAULT_ORDER.filter(id => !kept.includes(id))]
+// The month's cycle as a track: the four principal phases drawn along it, and
+// a marker for tonight, so "waning crescent" reads as "nearly back to new".
+const CYCLE_STOPS = [
+  { at: 0, label: 'New' },
+  { at: 0.25, label: 'First qtr' },
+  { at: 0.5, label: 'Full' },
+  { at: 0.75, label: 'Last qtr' },
+  { at: 1, label: 'New' },
+]
+function MoonCycle({ phase, south }) {
+  return (
+    <div className="web-moon-cycle" role="img" aria-label={`${Math.round(phase * 100)}% of the way through the lunar cycle`}>
+      <div className="web-moon-cycle-stops">
+        {CYCLE_STOPS.map((s) => (
+          <span key={s.at} className="web-moon-cycle-stop" style={{ left: `${s.at * 100}%` }}>
+            <MoonGlyph phase={s.at % 1} south={south} size={18} />
+          </span>
+        ))}
+      </div>
+      <div className="web-moon-cycle-track">
+        <span className="web-moon-cycle-fill" style={{ width: `${phase * 100}%` }} />
+        <span className="web-moon-cycle-marker" style={{ left: `${phase * 100}%` }} />
+      </div>
+      <div className="web-moon-cycle-labels">
+        {CYCLE_STOPS.map((s) => (
+          <span key={s.at} style={{ left: `${s.at * 100}%` }}>{s.label}</span>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 // A panel's 24-hour history strip: the sparkline plus the two end labels, which
@@ -139,25 +151,27 @@ function StatRow({ items }) {
   )
 }
 
-export function DetailsPage({ weather, unit, units, airQuality, colorCoding, onNavigate }) {
+export function DetailsPage({ weather, unit, units, airQuality, colorCoding }) {
   const { current, daily, hourly, timezone } = weather
   const mono = !colorCoding.details
   const tint = (c) => (mono ? 'var(--text-primary)' : c)
-  const [order, setOrder] = useState(loadOrder)
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  )
-
-  const handleDragEnd = ({ active, over }) => {
-    if (!over || active.id === over.id) return
-    setOrder(prev => {
-      const next = arrayMove(prev, prev.indexOf(active.id), prev.indexOf(over.id))
-      localStorage.setItem(DETAILS_ORDER_KEY, JSON.stringify(next))
-      return next
-    })
-  }
+  // The section in view, lit up in the jump bar. The one whose top most
+  // recently crossed the upper part of the window wins, so it changes as you
+  // scroll into a section rather than when its last card leaves.
+  const sectionRefs = useRef({})
+  const [active, setActive] = useState(SECTIONS[0].id)
+  useEffect(() => {
+    const els = Object.values(sectionRefs.current).filter(Boolean)
+    if (!els.length || !('IntersectionObserver' in window)) return
+    const io = new IntersectionObserver((entries) => {
+      const visible = entries.filter(e => e.isIntersecting)
+      if (!visible.length) return
+      visible.sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
+      setActive(visible[0].target.id.replace('details-', ''))
+    }, { rootMargin: '-15% 0px -60% 0px' })
+    els.forEach(el => io.observe(el))
+    return () => io.disconnect()
+  }, [])
 
   const hStart = currentHourIndex(hourly, timezone)
   const nextDay = (arr) => (arr ?? []).slice(hStart, hStart + 24)
@@ -199,10 +213,43 @@ export function DetailsPage({ weather, unit, units, airQuality, colorCoding, onN
   })()
   const sunTint = mono ? 'var(--text-primary)' : sunColor(sunProgress)
 
+  // Everything the Sun card says beyond the arc: what's next and how long until
+  // it, twilight, solar noon, golden hour, and how the day is changing. All in
+  // minutes after the location's midnight, like the arc above.
+  const sun = sunTimes(daily.sunrise[0], daily.sunset[0], weather.latitude)
+  const nowMin = (() => {
+    const t = new Date().toLocaleString('sv', { timeZone: timezone })
+    return +t.slice(11, 13) * 60 + +t.slice(14, 16)
+  })()
+  const riseTomorrow = daily.sunrise[1] ? isoMinutes(daily.sunrise[1]) : sun.rise
+  const sunNext = nowMin < sun.rise ? { mins: sun.rise - nowMin, label: 'until sunrise' }
+    : nowMin < sun.set ? { mins: sun.set - nowMin, label: 'until sunset' }
+    : { mins: 1440 - nowMin + riseTomorrow, label: 'until sunrise' }
+  const dayLen = sun.set - sun.rise
+  const dayDelta = daily.sunrise[1] && daily.sunset[1]
+    ? (isoMinutes(daily.sunset[1]) - isoMinutes(daily.sunrise[1])) - dayLen
+    : null
+  const sunNote = sun.goldenEvening != null && nowMin >= sun.goldenEvening && nowMin < sun.set
+    ? 'Golden hour: the low, warm light lasts until sunset.'
+    : sun.goldenMorning != null && nowMin >= sun.rise && nowMin < sun.goldenMorning
+      ? `Morning golden hour, until ${formatMinutes(sun.goldenMorning)}.`
+      : sun.dawn != null && nowMin >= sun.dawn && nowMin < sun.rise
+        ? 'Dawn twilight: the sky is getting light.'
+        : sun.dusk != null && nowMin >= sun.set && nowMin < sun.dusk
+          ? `Dusk twilight; dark by ${formatMinutes(sun.dusk)}.`
+          : nowMin >= sun.rise && nowMin < sun.noon
+            ? `The sun is highest at ${formatMinutes(sun.noon)}.`
+            : nowMin >= sun.noon && nowMin < sun.set && sun.goldenEvening != null
+              ? `Golden hour starts at ${formatMinutes(sun.goldenEvening)}.`
+              : sun.dawn != null
+                ? `First light around ${formatMinutes(sun.dawn)}.`
+                : 'The sun is below the horizon.'
+  const dayTrend = dayDelta == null ? null
+    : dayDelta === 0 ? 'About the same'
+    : `${Math.abs(dayDelta)} min ${dayDelta < 0 ? 'shorter' : 'longer'}`
+
   const TrendIcon = presTrend?.label === 'Rising' ? TrendingUp
     : presTrend?.label === 'Falling' ? TrendingDown : Minus
-
-  const aqiInfo = airQuality ? getAQIInfo(airQuality.us_aqi) : null
 
   // First hour in the window where `test` holds, as an index into `times`.
   const firstHour = (series, test) => series.findIndex((v) => v != null && test(v))
@@ -245,6 +292,8 @@ export function DetailsPage({ weather, unit, units, airQuality, colorCoding, onN
 
   const moon = getMoonInfo()
   const moonDate = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: timezone })
+  const moonAge = Math.round(moon.phase * 29.53)
+  const daysText = (n) => (n === 0 ? 'today' : n === 1 ? 'tomorrow' : `in ${n} days`)
   const moonNote = moon.name === 'Full Moon' ? 'Full moon tonight.'
     : moon.name === 'New Moon' ? 'New moon; the darkest skies of the month.'
     : moon.waxing ? `Waxing; full moon in ${moon.daysToFull} days.`
@@ -341,25 +390,36 @@ export function DetailsPage({ weather, unit, units, airQuality, colorCoding, onN
       </Panel>
     ) : null,
 
+    // The moon as it looks tonight beside its phase and brightness, then where
+    // tonight sits in the month's cycle, then the dates that matter next.
     moon: (
-      <Panel
-        icon={<Moon size={18} />}
-        title="MOON"
-        value={Math.round(moon.illumination * 100)}
-        unit="% lit"
-        status={moon.name}
-        note={moonNote}
-      >
-        <div className="web-moon">
-          <MoonGlyph phase={moon.phase} south={weather.latitude < 0} />
+      <div className="card web-detail">
+        <div className="web-detail-head">
+          <span className="web-detail-head-icon"><Moon size={18} /></span>
+          <span className="section-label">MOON</span>
         </div>
+        <div className="web-moon-main">
+          <div className="web-moon-art">
+            <MoonGlyph phase={moon.phase} south={weather.latitude < 0} size={104} />
+          </div>
+          <div className="web-moon-copy">
+            <div className="web-moon-name">{moon.name}</div>
+            <div className="web-moon-pct">
+              <span className="web-detail-value">{Math.round(moon.illumination * 100)}<span className="web-detail-unit">%</span></span>
+              <span className="web-moon-pct-label">illuminated</span>
+            </div>
+            <p className="web-detail-note">{moonNote}</p>
+          </div>
+        </div>
+        <MoonCycle phase={moon.phase} south={weather.latitude < 0} />
         <StatRow
           items={[
-            { label: 'Next full moon', value: moonDate(moon.nextFull) },
-            { label: 'Next new moon', value: moonDate(moon.nextNew) },
+            { label: 'Next full moon', value: `${moonDate(moon.nextFull)} · ${daysText(moon.daysToFull)}` },
+            { label: 'Next new moon', value: `${moonDate(moon.nextNew)} · ${daysText(moon.daysToNew)}` },
+            { label: 'Moon age', value: `${moonAge} ${moonAge === 1 ? 'day' : 'days'}` },
           ]}
         />
-      </Panel>
+      </div>
     ),
 
     pollen: pollen ? (
@@ -508,20 +568,38 @@ export function DetailsPage({ weather, unit, units, airQuality, colorCoding, onN
           <span className="web-detail-head-icon" style={{ color: sunTint }}><Sun size={18} /></span>
           <span className="section-label">SUN</span>
         </div>
+        <div className="web-detail-hero">
+          <span className="web-detail-value">{formatSpan(sunNext.mins)}</span>
+          <span className="web-detail-status">{sunNext.label}</span>
+        </div>
+        <p className="web-detail-note">{sunNote}</p>
         <div className="web-sun-arc">
           <SunDial progress={sunProgress} sunFill={sunTint} wide />
           <div className="web-sun-times">
             <span className="web-sun-time">
               <Sunrise size={15} style={{ color: mono ? undefined : SUN_ORANGE }} aria-hidden="true" />
-              {formatTime(daily.sunrise[0], timezone)}
+              {formatMinutes(sun.rise)}
             </span>
-            <span className="web-sun-daylight">{daylightLength(daily.sunrise[0], daily.sunset[0]) ?? ''} of daylight</span>
+            <span className="web-sun-daylight">{formatSpan(dayLen)} of daylight</span>
             <span className="web-sun-time">
               <Sunset size={15} style={{ color: mono ? undefined : SUN_ORANGE }} aria-hidden="true" />
-              {formatTime(daily.sunset[0], timezone)}
+              {formatMinutes(sun.set)}
             </span>
           </div>
         </div>
+        <StatRow
+          items={[
+            { label: 'First light', value: sun.dawn != null ? formatMinutes(sun.dawn) : null },
+            { label: 'Solar noon', value: formatMinutes(sun.noon) },
+            { label: 'Last light', value: sun.dusk != null ? formatMinutes(sun.dusk) : null },
+            {
+              label: 'Golden hour',
+              value: sun.goldenEvening != null ? `${formatMinutes(sun.goldenEvening)}` : null,
+              color: mono ? undefined : SUN_ORANGE,
+            },
+            { label: 'Daylight tomorrow', value: dayTrend },
+          ]}
+        />
       </div>
     ),
 
@@ -555,59 +633,58 @@ export function DetailsPage({ weather, unit, units, airQuality, colorCoding, onN
       </Panel>
     ),
 
-    air: (
-      <div className="card web-detail">
-        <div className="web-detail-head">
-          <span className="web-detail-head-icon" style={aqiInfo ? { color: tint(aqiInfo.color) } : undefined}>
-            <Leaf size={18} />
-          </span>
-          <span className="section-label">AIR QUALITY</span>
-        </div>
-        {aqiInfo ? (
-          <>
-            <div className="web-detail-hero">
-              <span className="web-detail-value" style={{ color: tint(aqiInfo.color) }}>
-                {airQuality.us_aqi}
-                <span className="web-detail-unit"> AQI</span>
-              </span>
-              <span className="web-detail-status" style={{ color: tint(aqiInfo.color) }}>{aqiInfo.label}</span>
-            </div>
-            <p className="web-detail-note">{getAQINote(airQuality.us_aqi)}</p>
-            <div className="aqi-scale">
-              <div className="aqi-gradient-bar">
-                <div
-                  className="aqi-marker"
-                  style={{ left: `${Math.min((airQuality.us_aqi / 300) * 100, 100)}%`, background: tint(aqiInfo.color) }}
-                />
-              </div>
-            </div>
-            <button className="web-link-btn web-link-btn--block" onClick={() => onNavigate('air')}>
-              Pollutants and 5-day outlook
-              <ArrowRight size={14} />
-            </button>
-          </>
-        ) : (
-          <p className="web-detail-note">No air quality data for this location.</p>
-        )}
-      </div>
-    ),
+    // Everything the old Air Quality tab showed, as one full-width card.
+    air: <AirQualityCard airQuality={airQuality} timezone={timezone} tint={tint} />,
   }
 
-  const shown = order.filter(id => panels[id])
+  // Only the sections with something to show. A section drops a card that has
+  // nothing to say (no snow in the forecast), and a whole section goes if all
+  // of its cards do.
+  const sections = SECTIONS
+    .map(s => ({ ...s, ids: s.cards.filter(id => panels[id]) }))
+    .filter(s => s.ids.length)
 
   return (
-    <div className="web-page">
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-        <SortableContext items={shown} strategy={rectSortingStrategy}>
-          <div className="web-detail-grid">
-            {shown.map(id => (
-              <SortableWidget key={id} id={id} name={PANEL_NAMES[id]}>
+    <div className="web-page web-details">
+      <nav className="card web-details-nav" aria-label="Details sections">
+        {sections.map(s => (
+          <a
+            key={s.id}
+            href={`#details-${s.id}`}
+            className={`web-details-chip${active === s.id ? ' web-details-chip--active' : ''}`}
+            aria-current={active === s.id ? 'true' : undefined}
+            onClick={(e) => {
+              e.preventDefault()
+              document.getElementById(`details-${s.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            }}
+          >
+            <s.icon size={15} aria-hidden="true" />
+            {s.title}
+          </a>
+        ))}
+      </nav>
+
+      {sections.map(s => (
+        <section
+          key={s.id}
+          id={`details-${s.id}`}
+          className="web-details-section"
+          aria-labelledby={`details-${s.id}-title`}
+          ref={(el) => { sectionRefs.current[s.id] = el }}
+        >
+          <h2 className="web-details-heading" id={`details-${s.id}-title`}>
+            <s.icon size={18} aria-hidden="true" />
+            {s.title}
+          </h2>
+          <div className={`web-detail-grid web-detail-grid--${s.id}`}>
+            {s.ids.map(id => (
+              <div key={id} className={`web-detail-slot${FULL.has(id) ? ' web-detail-slot--full' : ''}`}>
                 {panels[id]}
-              </SortableWidget>
+              </div>
             ))}
           </div>
-        </SortableContext>
-      </DndContext>
+        </section>
+      ))}
     </div>
   )
 }
