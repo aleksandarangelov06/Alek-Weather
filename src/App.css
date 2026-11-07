@@ -1489,6 +1489,26 @@ body {
   margin-inline: auto;
 }
 
+/* Line icons in the hero. Lucide draws on a 24-unit grid with padding built in,
+   and most of the weather shapes are wider than tall (the cloud fills only rows
+   5-19), so at the full 1em the icon carried a band of empty box above and
+   below it, pushing the place name and the reading apart. Drawn a little
+   smaller, with the grid's own 2-unit margin pulled in top and bottom; the
+   overflow stays visible, so the sun's rays and falling rain are never cut. */
+.current-icon .weather-icon-line {
+  width: 0.78em;
+  height: 0.78em;
+  /* More pulled in above than below: the icon sits up toward the place name,
+     with room under it before the reading. */
+  margin-block: -0.13em 0.03em;
+}
+
+/* The hero's lines, given more air on the phone shells: the reading, its
+   condition, and the feels-like / updated pair below them. */
+:root[data-shell="mobile"] .current-card .current-condition { margin-top: 14px; }
+:root[data-shell="mobile"] .current-card .current-feels     { margin-top: 22px; }
+:root[data-shell="mobile"] .current-card .current-updated   { margin-top: 8px; }
+
 /* Inline fog icon (WeatherIcon) — currentColor is set to a mid-tone that keeps
    the mist legible against light, dark, and sky-tinted card backgrounds. */
 .weather-icon-fog { color: #5b6672; }
@@ -1508,6 +1528,241 @@ body {
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .app.sky-active .current-icon .weather-icon-fog { color: #b8c2cf; }
 }
+
+/* ── Line icon set ─────────────────────────────────────────────────────────
+   Settings → Appearance → Icons → Line swaps every WeatherIcon for the Lucide
+   icon Weather Insight uses for the same condition: single strokes in
+   currentColor, so the tint per condition is all the colour they carry.
+
+   Two palettes, because one tint can't read on both kinds of surface. They
+   used to: clouds, fog and the thermometer took the text colour around them,
+   which in the hero over a sky landed on a near-black cloud on a dark overcast
+   sky, and the fixed sun and rain tints were picked for a white card.
+
+     light  deeper tones, for light surfaces with dark text
+     dark   lighter tones, for dark mode and for every surface with white text
+            on it whatever the theme: the glass cards and the hero over the
+            sky (phone shells) and the glass splash location cards
+
+   The palette is a set of custom properties, so a surface switches all of
+   them at once by redefining them, and the icon rules below never change. */
+:root {
+  --li-sun: #e58a00;
+  --li-moon: #d9a514;
+  --li-cloud: #64748b;
+  --li-fog: #6b7785;
+  --li-rain: #2563eb;
+  --li-snow: #1f8fcf;
+  --li-storm: #6d4ae8;
+  --li-therm: #e0583a;
+}
+[data-theme="dark"],
+:root[data-shell="mobile"]:not([data-platform="android"]) .app.sky-active .card:not(.settings-card):not(.settings-inline):not(.settings-pill),
+:root[data-shell="mobile"] .app.sky-active .current-card,
+:root[data-splash-sky="dark"]:not([data-platform="android"]) .splash-mini-card {
+  --li-sun: #ffbd4a;
+  --li-moon: #ffd970;
+  --li-cloud: #d5dde8;
+  --li-fog: #b8c2cf;
+  --li-rain: #7cb7ff;
+  --li-snow: #a9defb;
+  --li-storm: #b7a4ff;
+  --li-therm: #ff8f70;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --li-sun: #ffbd4a;
+    --li-moon: #ffd970;
+    --li-cloud: #d5dde8;
+    --li-fog: #b8c2cf;
+    --li-rain: #7cb7ff;
+    --li-snow: #a9defb;
+    --li-storm: #b7a4ff;
+    --li-therm: #ff8f70;
+  }
+}
+
+.weather-icon-line { flex-shrink: 0; }
+.weather-icon-line--sun,
+.weather-icon-line--sunSmall,
+.weather-icon-line--sunCloud     { color: var(--li-sun); }
+.weather-icon-line--moon         { color: var(--li-moon); }
+.weather-icon-line--cloud        { color: var(--li-cloud); }
+.weather-icon-line--fog          { color: var(--li-fog); }
+.weather-icon-line--rain,
+.weather-icon-line--sunRain      { color: var(--li-rain); }
+.weather-icon-line--snow,
+.weather-icon-line--snowflake    { color: var(--li-snow); }
+.weather-icon-line--storm,
+.weather-icon-line--stormStrong  { color: var(--li-storm); }
+.weather-icon-line--therm        { color: var(--li-therm); }
+
+/* The two-part icons carry a second tint: the cloud in front of the sun keeps
+   the cloud colour, and so does the cloud the rain, snow and lightning fall
+   from, so the colour sits on what is falling. Lucide draws the cloud as one
+   path: the last path in the sun ones, the first in the others. */
+.weather-icon-line--sunCloud > path:nth-of-type(6),
+.weather-icon-line--sunRain > path:nth-of-type(6),
+:is(.weather-icon-line--rain, .weather-icon-line--snow, .weather-icon-line--storm, .weather-icon-line--stormStrong) > path:first-of-type {
+  color: var(--li-cloud);
+  stroke: currentColor;
+}
+.weather-icon-line--sunRain > path:nth-of-type(n+7) {
+  color: var(--li-rain);
+  stroke: currentColor;
+}
+.weather-icon-line--sunRain > path:nth-of-type(-n+5) {
+  color: var(--li-sun);
+  stroke: currentColor;
+}
+
+/* The hero is a single large icon; over a sky a soft shadow lifts it off a
+   sky of any brightness. Only there: on a plain light page the shadow just
+   reads as a smudge under the icon. One filter on one element, so it costs
+   nothing next to the strips. */
+.app.sky-active .current-icon .weather-icon-line {
+  filter: drop-shadow(0 2px 6px rgb(0 0 0 / 0.22));
+}
+
+/* The moon carries a soft wash of its own colour inside the outline, so the
+   crescent reads as a shape rather than a bent wire. */
+.weather-icon-line--moon > path {
+  fill: color-mix(in srgb, currentColor 18%, transparent);
+}
+
+/* ── Line icon motion ──
+   The same idea as the colour set's motion, in the same containers (the hero,
+   the daily rows, the live hourly slot and their web equivalents), so the
+   strips stay still while they scroll. Each condition moves the way its colour
+   counterpart does: the sun turns, rain and snow fall, lightning strikes, fog
+   slides. Clouds and the moon stay still. Lucide's parts are addressed by their
+   position in the icon (see the structure note above), and every transform is
+   in the 24-unit viewBox, so the motion scales with the icon.
+
+   transform-box: fill-box makes each part turn or move about its own centre
+   rather than the icon's corner. --wi-row-delay (set per row for the colour
+   set) puts each forecast row out of step with its neighbours. */
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon-line {
+  overflow: visible;
+}
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon-line > * {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* Sun and snowflake: a slow turn of the whole icon. Both are symmetric, so
+   only the rays' positions change, never the outline. */
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) :is(.weather-icon-line--sun, .weather-icon-line--sunSmall) {
+  animation: li-spin 24s linear infinite;
+  animation-delay: calc(0s - var(--wi-row-delay, 0s) * 4);
+}
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon-line--snowflake {
+  animation: li-spin 18s linear infinite;
+  animation-delay: calc(0s - var(--wi-row-delay, 0s) * 4);
+}
+
+/* Rays of the part-sun icons: a soft shimmer, staggered ray by ray. */
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) :is(.weather-icon-line--sunCloud, .weather-icon-line--sunRain) > path:nth-of-type(-n+4) {
+  animation: li-shimmer 3.2s ease-in-out infinite;
+  animation-delay: calc(0s - var(--wi-row-delay, 0s));
+}
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) :is(.weather-icon-line--sunCloud, .weather-icon-line--sunRain) > path:nth-of-type(2) { animation-delay: calc(-0.8s - var(--wi-row-delay, 0s)); }
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) :is(.weather-icon-line--sunCloud, .weather-icon-line--sunRain) > path:nth-of-type(3) { animation-delay: calc(-1.6s - var(--wi-row-delay, 0s)); }
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) :is(.weather-icon-line--sunCloud, .weather-icon-line--sunRain) > path:nth-of-type(4) { animation-delay: calc(-2.4s - var(--wi-row-delay, 0s)); }
+
+/* Fog: the two bands slide against each other. */
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon-line--fog > path:nth-of-type(2) {
+  animation: li-slide 4.5s ease-in-out infinite;
+  animation-delay: calc(0s - var(--wi-row-delay, 0s));
+}
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon-line--fog > path:nth-of-type(3) {
+  animation: li-slide 4.5s ease-in-out infinite reverse;
+  animation-delay: calc(-1.2s - var(--wi-row-delay, 0s));
+}
+
+/* Rain: each streak falls and fades, out of step with the others. */
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) :is(
+  .weather-icon-line--rain > path:nth-of-type(n+2),
+  .weather-icon-line--sunRain > path:nth-of-type(n+7)
+) {
+  animation: li-fall 1.3s linear infinite;
+  animation-delay: calc(0s - var(--wi-row-delay, 0s));
+}
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) :is(.weather-icon-line--rain > path:nth-of-type(3), .weather-icon-line--sunRain > path:nth-of-type(8)) {
+  animation-duration: 1.45s;
+  animation-delay: calc(-0.55s - var(--wi-row-delay, 0s));
+}
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon-line--rain > path:nth-of-type(4) {
+  animation-duration: 1.2s;
+  animation-delay: calc(-0.9s - var(--wi-row-delay, 0s));
+}
+
+/* Snow: the six dots drift down and sideways, each on its own timing. */
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon-line--snow > path:nth-of-type(n+2) {
+  animation: li-snow 2.6s linear infinite;
+  animation-delay: calc(0s - var(--wi-row-delay, 0s));
+}
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon-line--snow > path:nth-of-type(3) { animation-duration: 2.9s; animation-delay: calc(-1.1s - var(--wi-row-delay, 0s)); }
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon-line--snow > path:nth-of-type(4) { animation-duration: 2.4s; animation-delay: calc(-0.5s - var(--wi-row-delay, 0s)); }
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon-line--snow > path:nth-of-type(5) { animation-duration: 3.1s; animation-delay: calc(-1.9s - var(--wi-row-delay, 0s)); }
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon-line--snow > path:nth-of-type(6) { animation-duration: 2.7s; animation-delay: calc(-1.4s - var(--wi-row-delay, 0s)); }
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon-line--snow > path:nth-of-type(7) { animation-duration: 3s;   animation-delay: calc(-2.3s - var(--wi-row-delay, 0s)); }
+
+/* Lightning: two quick strikes then a long dark gap, as the colour set does.
+   A severe storm strikes faster. */
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) :is(.weather-icon-line--storm, .weather-icon-line--stormStrong) > path:nth-of-type(2) {
+  animation: li-flash 3.2s linear infinite;
+  animation-delay: calc(0s - var(--wi-row-delay, 0s));
+}
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon-line--stormStrong > path:nth-of-type(2) {
+  animation-duration: 1.9s;
+}
+
+@keyframes li-spin    { to { transform: rotate(360deg); } }
+@keyframes li-shimmer { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@keyframes li-slide   { 0%, 100% { transform: translateX(-1.2px); } 50% { transform: translateX(1.2px); } }
+@keyframes li-fall {
+  0%   { transform: translateY(-1.5px); opacity: 0; }
+  20%  { opacity: 1; }
+  60%  { opacity: 1; }
+  100% { transform: translateY(3px); opacity: 0; }
+}
+@keyframes li-snow {
+  0%   { transform: translate(0, -1.5px); opacity: 0; }
+  25%  { opacity: 1; }
+  70%  { opacity: 1; }
+  100% { transform: translate(-0.8px, 3px); opacity: 0; }
+}
+@keyframes li-flash {
+  0%, 46%, 54%, 60%, 100% { opacity: 1; }
+  50%, 57%                { opacity: 0.2; }
+}
+
+/* The same two off switches as the colour set: Settings → Animated Icons,
+   and reduced motion. Unscoped, so no container can escape them. */
+[data-icon-motion="off"] :is(.weather-icon-line, .weather-icon-line > *) {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(.weather-icon-line, .weather-icon-line > *) {
+    animation: none !important;
+  }
+}
+
+/* The live preview under the Icon Style picker (SettingsPage → IconSetPreview).
+   Its own row inside the card, divided like the rows around it. */
+.icon-set-preview {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 22px 14px;
+  font-size: 30px;
+  line-height: 1;
+  color: var(--text-primary);
+  border-top: 1px solid var(--border);
+}
+.settings-card .icon-set-preview + .ws-row { border-top: 1px solid var(--border); }
+.icon-set-preview-cell { display: flex; align-items: center; justify-content: center; }
 
 /* ── Weather icon palette ──────────────────────────────────────────────────
    The icons in weatherGlyphs.jsx are redrawn from Fluent, whose cloud and snow
@@ -2461,52 +2716,44 @@ body {
   .sun-main { align-items: center; }
 }
 
-/* ── Detail circular reveal ──
-   Tapping a detail tile or a daily row grows a cover over the whole card from
-   the tap point. Positioning context for .detail-cover's inset:0. */
+/* ── Detail cover ──
+   Tapping a detail tile or a daily row grows a cover over the whole card out
+   of the tile or row that was tapped. Positioning context for .detail-cover's inset:0. */
 .card--details,
 .card--daily {
   position: relative;
 }
 
-/* The two numbers that decide how the reveal feels, in one place because the
-   duration is shared with REVEAL_MS in DailyForecast and WeatherDetails and all
-   three have to agree.
+/* The cover's timing, in one place because COVER_IN_MS / COVER_OUT_MS in
+   DailyForecast and WeatherDetails have to agree with it. The same motion as
+   the full-screen radar's window (WINDOW_IN_MS in WeatherRadar): the tapped
+   tile or row grows as a rounded rectangle to fill the card, and only once it
+   is full does the content fade in. Closing is the reverse — content out
+   first, then the rectangle shrinks back into the tile it came from.
 
-   The curve is symmetric on purpose, and that is the whole trick. Half of this
-   animation happens where you can't see it: the circle's radius runs out to the
-   card's furthest corner, but it stops being inside the card at about half the
-   card's height, and past that overflow eats its edge. So large radii are motion
-   with nothing to show.
-
-   Fast-out-slow-in — the app's usual curve, and what this used to be — reaches
-   half progress at t≈0.23. The entire visible sweep was therefore over in the
-   first quarter of the duration: ~90ms of the 380ms, whatever the other 290ms were
-   nominally doing. That is why it read as too fast, and why simply making the
-   number bigger mostly buys a longer invisible tail.
-
-   A symmetric curve hits half progress at half the time, so the visible sweep gets
-   half the duration instead of a quarter — and, being its own mirror, it makes the
-   close match the open for free rather than needing a hand-reversed twin.
-
-   260ms of visible movement, then, out of 520ms. To make it slower still, raise
-   --reveal-dur and REVEAL_MS together. To change how much of it you actually see,
-   move the curve's middle two numbers toward 0.5. */
+   --reveal-dur is kept as the overall open length for the rules that time
+   other things against the cover (the card's rows fading out under it). */
 :root {
-  --reveal-dur: 0.52s;
-  --reveal-ease: cubic-bezier(0.4, 0, 0.6, 1);
+  --cover-in: 0.38s;
+  --cover-out: 0.3s;
+  --cover-content-in: 0.22s;
+  --cover-content-out: 0.1s;
+  /* M3 emphasized decelerate in, standard emphasized out. */
+  --cover-in-ease: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --cover-out-ease: cubic-bezier(0.2, 0, 0, 1);
+  --reveal-dur: var(--cover-in);
 }
 
 /* The cover is a transparent, card-shaped clip window (overflow + border-radius)
    that holds the content. The visible surface is painted by .detail-cover-fill,
-   a circle that scales up from the tap point. The reveal origin and radius come
-   from JS as --reveal-x/y/r (px, relative to the card).
+   a plain fill that starts clipped to the tapped tile's box and opens out to
+   the card. The tile's box comes from JS as --from-inset (an inset() list,
+   relative to the card) and --from-radius (the tile's own corner radius).
 
-   Why not animate clip-path: circle() on the whole cover (the previous approach)?
-   That is not composited on mobile — iOS Safari especially repaints the entire
-   cover (SVG icons, the scrollable body) on the main thread every frame, which is
-   the source of the jank. transform: scale() on a plain fill and an opacity fade
-   of the content both run on the compositor, so the reveal stays at 60fps. */
+   The clip is on the fill alone, never on the cover: the fill is a flat colour
+   with nothing in it, so re-clipping it each frame is close to free, where
+   clipping the cover itself would repaint every icon and row inside it (the
+   reason an earlier clip-path circle on the whole cover was janky on iOS). */
 .detail-cover {
   position: absolute;
   inset: 0;
@@ -2519,65 +2766,44 @@ body {
   gap: 14px;
 }
 
-/* The growing circle. Sized to a 2r box centred on the tap point (the negative
-   margins pull it back so its centre sits at the origin), then scaled 0 → 1.
-   Clipped to the card by the cover's overflow:hidden. Its background mirrors the
-   card surface — including the per-sky --sky-card tints — see the rules below. */
+/* The growing rectangle. Its background mirrors the card surface — including
+   the per-sky --sky-card tints — see the rules below. */
 .detail-cover-fill {
   position: absolute;
-  top: var(--reveal-y);
-  left: var(--reveal-x);
-  /* Fixed 360px backing, scaled up to cover, rather than an element sized to the
-     whole card. A card-sized fill becomes a large GPU texture — a tall 7-day
-     card makes a ~1200px circle (~5MB) — and together with the card's other
-     composited layers (the inner hourly strip, the radar map) that overruns
-     Android WebView's tighter GPU-memory budget. The WebView then drops the
-     layer and re-rasterises on the main thread every frame, so the reveal skips
-     its early frames and looks sped up (desktop Chrome has the headroom to stay
-     smooth, which is why it only shows in the app). A small fixed texture scaled
-     by transform stays cheap at any card size. --fill-scale = (2·reveal-r)/360,
-     set in JS; keep the 360 here in sync with FILL_BASE in the components. */
-  width: 360px;
-  height: 360px;
-  margin: -180px 0 0 -180px;
+  inset: 0;
   z-index: 0;
-  border-radius: 50%;
-  /* Resting state is fully open; the animation only plays on enter/exit. */
-  transform: scale(var(--fill-scale, 1));
-  transform-origin: center;
-  will-change: transform;
-  animation: detailFillIn var(--reveal-dur) var(--reveal-ease) forwards;
+  animation: detailFillIn var(--cover-in) var(--cover-in-ease) forwards;
 }
 
-/* Content rides above the fill and fades in as the circle nears full coverage,
-   so it never lingers over the still-uncovered tiles behind. */
+/* Content rides above the fill and comes in once the rectangle is full, so it
+   never sits over the half-covered tiles behind. */
 .detail-cover-head,
 .detail-cover-body {
   position: relative;
   z-index: 1;
-  animation: detailContentIn var(--reveal-dur) ease forwards;
+  animation: detailContentIn var(--cover-content-in) cubic-bezier(0.2, 0, 0, 1) var(--cover-in) backwards;
 }
 
 .detail-cover--closing .detail-cover-fill {
-  animation: detailFillOut var(--reveal-dur) var(--reveal-ease) forwards;
+  animation: detailFillOut var(--cover-out) var(--cover-out-ease) var(--cover-content-out) forwards;
 }
 
 .detail-cover--closing .detail-cover-head,
 .detail-cover--closing .detail-cover-body {
-  animation: detailContentOut 0.24s ease forwards;
+  animation: detailContentOut var(--cover-content-out) cubic-bezier(0.3, 0, 1, 1) forwards;
 }
 
-/* Holds a just-mounted cover at the start of its reveal for one frame, so the
+/* Holds a just-mounted cover at the start of its opening for one frame, so the
    layout, paint and layer promotion of the whole thing land on a frame where
    nothing is animating. Added by DailyForecast during the commit and dropped two
    frames later; the comment on armCover there is why the phone styles need it.
 
    Both animations are pinned by hand rather than switched off, because
-   `animation: none` alone would drop the fill back to its resting transform —
-   which is fully open — and flash the cover on for that frame. */
+   `animation: none` alone would drop the fill back to its resting state —
+   fully open — and flash the cover on for that frame. */
 .detail-cover--arming .detail-cover-fill {
   animation: none;
-  transform: scale(0);
+  clip-path: inset(var(--from-inset, 50%) round var(--from-radius, 12px));
 }
 
 /* will-change is the load-bearing part, not an optimisation hint: a plain
@@ -2585,8 +2811,7 @@ body {
    would leave the paint to land on the frame the fade begins — the stutter,
    moved rather than removed. Asking for the composited layer up front means the
    texture has to exist during the armed frame, and the animation that follows
-   only changes its alpha. It doesn't need restating on the animation itself;
-   an animated opacity composites on its own. */
+   only changes its alpha. */
 .detail-cover--arming .detail-cover-head,
 .detail-cover--arming .detail-cover-body {
   animation: none;
@@ -2594,9 +2819,17 @@ body {
   will-change: opacity;
 }
 
-@keyframes detailFillIn  { from { transform: scale(0); } to { transform: scale(var(--fill-scale, 1)); } }
-@keyframes detailFillOut { from { transform: scale(var(--fill-scale, 1)); } to { transform: scale(0); } }
-@keyframes detailContentIn  { 0%, 30% { opacity: 0; } 100% { opacity: 1; } }
+/* The radius holds at the tile's own the whole way: the cover's rounded clip
+   takes over at the card's corners as the rectangle reaches them. */
+@keyframes detailFillIn {
+  from { clip-path: inset(var(--from-inset, 50%) round var(--from-radius, 12px)); }
+  to   { clip-path: inset(0px round var(--from-radius, 12px)); }
+}
+@keyframes detailFillOut {
+  from { clip-path: inset(0px round var(--from-radius, 12px)); }
+  to   { clip-path: inset(var(--from-inset, 50%) round var(--from-radius, 12px)); }
+}
+@keyframes detailContentIn  { from { opacity: 0; translate: 0 6px; } to { opacity: 1; translate: none; } }
 @keyframes detailContentOut { to { opacity: 0; } }
 
 /* The day cover's hourly strip is mounted after the reveal finishes (see
@@ -2622,11 +2855,50 @@ body {
   :root:not([data-theme="light"]) .sky-lvl-darkest .detail-cover-fill { background: var(--card-bg); }
 }
 
+/* The header row is the close control (no separate X): tap the title to fold
+   the cover back, the way the tile or day row was tapped open. It bleeds into
+   the cover's padding so the target is the whole top strip, with a press wash
+   over that strip; the chevron on the right is the hint that it folds. The
+   34px floor keeps the row the height the old close button gave it. */
 .detail-cover-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  width: calc(100% + 20px);
+  /* border-box: 34px of row plus the 8px bleed above and below. */
+  min-height: 50px;
+  margin: -8px -10px;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 14px;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s;
+}
+
+.detail-cover-head:active {
+  background: var(--hover-subtle);
+}
+
+@media (hover: hover) {
+  .detail-cover-head:hover {
+    background: var(--hover-subtle);
+  }
+}
+
+.detail-cover-head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.detail-cover-chevron {
+  flex-shrink: 0;
+  color: var(--text-secondary);
 }
 
 .detail-cover-title {
@@ -2643,24 +2915,7 @@ body {
   display: inline-flex;
 }
 
-.detail-cover-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 34px;
-  height: 34px;
-  border: none;
-  border-radius: 50%;
-  background: var(--hover-medium);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: background 0.15s;
-}
 
-.detail-cover-close:hover {
-  background: var(--hover-clear);
-}
 
 /* Stacks the summary hero, stat row, timeline, and description as one group at
    the top of the card. flex-start also means a tall body — the AQI one — scrolls
@@ -2778,12 +3033,12 @@ body {
     animation: none;
   }
   /* No grow/shrink — the fill just sits fully open behind the content. */
-  .detail-cover--closing .detail-cover-fill { transform: scale(0); }
+  .detail-cover--closing .detail-cover-fill { clip-path: inset(50%); }
   /* Nothing animates here, so there is no opening frame to protect, and an armed
      cover would only blink empty for one frame before landing where it already
      was. Spelled out because arming carries the higher specificity of the two
      and would otherwise win regardless of which rule comes later. */
-  .detail-cover--arming .detail-cover-fill { transform: scale(var(--fill-scale, 1)); }
+  .detail-cover--arming .detail-cover-fill { clip-path: none; }
   .detail-cover--arming .detail-cover-head,
   .detail-cover--arming .detail-cover-body { opacity: 1; }
 }
@@ -2869,6 +3124,34 @@ body {
   .detail-cover-body .uv-tl-val { font-size: 25px; }
   .detail-cover-body .uv-tl-val.uv-tl-val--sm { font-size: 16px; }
   .detail-cover-body .uv-tl-lbl { font-size: 11.5px; }
+}
+
+/* The day cover on the phone shells. It is clipped to the 7-day card, so the
+   seven day rows are all the height it gets, and at the default spacing its
+   content (title, summary, two stat rows, the hour strip with its rain line)
+   ran ~50px past that on iOS, where the cover scrolled to show it. Tightened
+   until it fits whole: smaller gaps between the groups, slimmer stat tiles and
+   hour columns, and a slightly smaller hero temperature. Nothing is dropped. */
+:root[data-shell="mobile"] .card--daily .detail-cover {
+  padding: 16px 18px;
+  gap: 10px;
+}
+:root[data-shell="mobile"] .card--daily .detail-cover-body {
+  gap: 10px;
+}
+:root[data-shell="mobile"] .card--daily .detail-summary-val {
+  font-size: clamp(36px, 11vw, 46px);
+}
+:root[data-shell="mobile"] .card--daily .detail-stat {
+  gap: 2px;
+  padding: 8px 12px;
+}
+:root[data-shell="mobile"] .card--daily .detail-cover .hourly-item {
+  gap: 4px;
+  padding-block: 6px;
+}
+:root[data-shell="mobile"] .card--daily .detail-cover .hourly-scroll {
+  padding-bottom: 0;
 }
 
 .uv-no-exposure {
@@ -3272,6 +3555,31 @@ body {
   line-height: 0;
 }
 
+/* Line icons on the splash get what the forecast hero's get: drawn a little
+   smaller inside the slot (Lucide's grid carries padding the colour art
+   doesn't), the white-text palette over a dark sky (the splash sits outside
+   .app, so the hero's rule can't reach it, and a night sky in light mode
+   was getting the deep light-page tints), and the hero's lift over any sky. */
+.splash-logo-icon .weather-icon-line {
+  display: block;
+  width: 0.78em;
+  height: 0.78em;
+  margin-inline: auto;
+}
+:root[data-splash-sky="dark"] .splash-logo-icon {
+  --li-sun: #ffbd4a;
+  --li-moon: #ffd970;
+  --li-cloud: #d5dde8;
+  --li-fog: #b8c2cf;
+  --li-rain: #7cb7ff;
+  --li-snow: #a9defb;
+  --li-storm: #b7a4ff;
+  --li-therm: #ff8f70;
+}
+:root[data-splash-sky] .splash-logo-icon .weather-icon-line {
+  filter: drop-shadow(0 2px 6px rgb(0 0 0 / 0.22));
+}
+
 @keyframes starTwinkle {
   0%, 100% { opacity: 0.15; transform: scale(1); }
   50%       { opacity: 1;    transform: scale(1.6); }
@@ -3411,13 +3719,13 @@ body {
 }
 
 [data-theme="dark"] .splash-mini {
-  --splash-mini-surface: rgba(255, 255, 255, 0.08);
+  --splash-mini-surface: linear-gradient(var(--ios-frost-sheen, transparent), var(--ios-frost-sheen, transparent)), var(--ios-frost, rgba(255, 255, 255, 0.08));
   --splash-mini-border: rgba(255, 255, 255, 0.12);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .splash-mini {
-    --splash-mini-surface: rgba(255, 255, 255, 0.08);
+    --splash-mini-surface: linear-gradient(var(--ios-frost-sheen, transparent), var(--ios-frost-sheen, transparent)), var(--ios-frost, rgba(255, 255, 255, 0.08));
     --splash-mini-border: rgba(255, 255, 255, 0.12);
   }
 }
@@ -3684,33 +3992,51 @@ body {
 }
 
 /* ── Predictive back (Android app; see utils/predictiveBack.js) ──
-   pb-active: the finger is driving the transform, so nothing may smooth it —
+   The state lives in a data-pb attribute, not a class: the overlays' className
+   is owned by React, and the re-render that adds .closing on commit would wipe
+   a class — letting the close keyframes snap the page back to full size.
+
+   active: the finger is driving the transform, so nothing may smooth it —
    the gesture is already smooth, and a transition would make it lag behind.
    The surface is clipped to its rounding corners and lifted with a shadow so
    it reads as a sheet over the page that is showing around it.
-   pb-settle: cancelled (or a sub-page pop) — spring back to full size.
-   pb-exit: committed — the overlay's own .closing keyframes start from full
-   size and would snap the gesture away, so they are suppressed here and the
-   surface fades out from where the finger left it. !important because the
-   keyframes are set by more specific per-overlay rules. */
-.pb-active,
-.pb-settle,
-.pb-exit {
-  transform-origin: 50% 50%;
+   settle: cancelled (or a sub-page pop) — spring back to full size.
+   exit: committed — the overlay's own .closing keyframes start from full size
+   and would snap the gesture away, so they are suppressed here and the surface
+   carries on shrinking and fades out from where the finger left it.
+
+   !important because the page transitions are set by more specific rules. The
+   origin and shadow are !important too: the phone pages zoom from their button
+   (pageGrowIn) and drop their shadow, but the gesture always shrinks toward the
+   centre and wants the lift. The settings sky layer is driven alongside the
+   page (see TARGETS in predictiveBack.js) so the two stay one surface; it sits
+   under the page, so it skips the shadow. */
+[data-pb] {
+  transform-origin: 50% 50% !important;
   overflow: hidden;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.28) !important;
+  /* transform only: will-change: opacity would cut the page's glass off from
+     what is behind it for the whole gesture (see the page transition block). */
   will-change: transform;
 }
-.pb-active {
+.settings-sky[data-pb] { box-shadow: none !important; }
+[data-pb="active"] {
   transition: none !important;
   animation: none !important;
 }
-.pb-settle {
-  transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), border-radius 0.2s cubic-bezier(0.2, 0, 0, 1) !important;
+[data-pb="settle"] {
+  transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1), border-radius 0.25s cubic-bezier(0.2, 0, 0, 1) !important;
 }
-.pb-exit {
+/* Once a gesture has touched a page its opening animation is spent: lifting
+   `animation: none` would otherwise restart it, and a cancelled swipe would
+   replay the zoom-in. Its close still runs (a different animation). */
+[data-pb="settle"],
+[data-pb-done]:not(.closing) {
   animation: none !important;
-  transition: opacity 0.18s cubic-bezier(0.3, 0, 1, 1), transform 0.18s cubic-bezier(0.3, 0, 1, 1) !important;
+}
+[data-pb="exit"] {
+  animation: none !important;
+  transition: opacity 0.2s cubic-bezier(0.3, 0, 0.8, 0.15), transform 0.2s cubic-bezier(0.3, 0, 0.8, 0.15) !important;
   pointer-events: none;
 }
 
@@ -4476,6 +4802,16 @@ body {
   }
 }
 
+/* An expanded card (a day or detail cover open) is not something to pick up,
+   and the grip sits on the wrapper above the card, so it would otherwise draw
+   through the translucent cover and over its header, which is now the close
+   control, where a tap could start a drag. Four class-level parts so it
+   outranks the hover rules above in every state. */
+.sortable-block:has(.card .detail-cover) .drag-handle {
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* ── Radar ── */
 .radar-card {
   padding: 0;
@@ -4489,19 +4825,66 @@ body {
    WeatherRadar). visibility rather than opacity, so the card's own surface,
    glass and glow are all hidden in one go while still laying out — Leaflet and
    MapLibre keep measuring and drawing underneath — and the still alone opts
-   back in. Showing both would stack two translucent cards. */
+   back in. Showing both would stack two translucent cards.
+
+   The card's backdrop-filter goes too, and that is what stops the flash on
+   closing. Hidden or not, an element with a backdrop filter is the backdrop
+   root for everything inside it — so the still's own glass, sitting inside the
+   card, blurred nothing (the hidden card is empty) and the whole card turned
+   flat and tinted for the length of the settle, then snapped back to frosted
+   when the live card returned. Without it, the still's glass blurs the page
+   behind exactly as the card does. !important because the glass rules carry
+   platform prefixes and far more specificity than this. */
+/* overflow: visible because the still is pushed out over the card's border (see
+   .radar-settle) and .radar-card clips to inside its border — which cut the
+   still's rim and shadow off, so the card's edges vanished and came back as
+   the live card took over. Nothing of the card's own shows while it settles,
+   so there is nothing of it to leak. */
 .radar-settling {
   position: relative;
   visibility: hidden;
+  overflow: visible !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
 }
+/* The still sits exactly on the card's border box — WeatherRadar sets a
+   negative inset of the card's own border widths, because inset: 0 is the
+   padding box and left the still a pixel smaller all round, so the card
+   visibly grew the moment the live one took over. Not clipped: the still is a
+   card of exactly this shape, and clipping cut its shadow off, which then
+   popped back in with the live card. Stacked just above the hidden card's
+   content rather than at the top of everything: with the card's backdrop
+   filter off (below) it no longer contains its children's z-index, and 2000
+   put the still over the block's drag handle, which blinked out. */
 .radar-settle {
   position: absolute;
   inset: 0;
-  z-index: 2000;
+  z-index: 1;
   visibility: visible;
-  overflow: hidden;
   border-radius: inherit;
   pointer-events: none;
+}
+.radar-settle > .card {
+  height: 100%;
+}
+
+/* No transitions on the card while it changes mode. .card fades its background
+   over 0.8s (and Android's glass cards their background and shadow), so the
+   switch out of full-screen started a fade from the expanded look to the
+   card's — still running when the live card came back, which read as the
+   card flashing. With transitions off on both ends of the switch, the change
+   lands at once, under the still, where it can't be seen. !important because
+   the Android rule carries the platform prefixes. */
+.radar-expanded,
+.radar-settling {
+  transition: none !important;
+}
+/* Likewise the scrubber. The controls hold their frame while the radar closes
+   (outFrozen in WeatherRadar) and take the real one as the card comes back,
+   under the still — the knob jumps there rather than sliding, so it is already
+   in place when the live card shows. */
+.radar-settling :is(.radar-scrub-fill, .radar-scrub-thumb) {
+  transition: none !important;
 }
 
 .radar-expanded {
@@ -4541,42 +4924,41 @@ body {
   overflow: hidden;
 }
 
-/* ── Full-screen radar: the iris ──
+/* ── Full-screen radar: the window ──
    Going full-screen is otherwise a hard cut: the card is simply position:fixed
-   inset:0 from one frame to the next. This opens it out of the point that was
-   tapped instead — a circular window onto the real full-screen radar, growing
-   until it is clear of the furthest corner.
+   inset:0 from one frame to the next. Instead the card's own map window grows
+   to fill the screen. The live radar is laid out full-screen (on the armed
+   frame, before anything moves) and clipped to the compact card's map box,
+   and the clip opens out to the screen while the map inside shifts so its
+   middle stays under the window's. Once it is full the controls fade in. On
+   the way out the controls go first, then the window shrinks back into the
+   card. The why, and the iris this replaced, are in the note beside
+   WINDOW_IN_MS in WeatherRadar.jsx; the class names are left over from the iris.
 
-   This is the app's one animated clip-path, and the file argues against those
-   twice (see .detail-cover, where clip-path was measured as the covers' jank). It
-   is here because it is the only thing that does this job. A growing fill can
-   only ever be a colour: the covers get away with that because their content
-   fades in over it, and across a whole screen of map that fade reads as a
-   coloured disc the radar turns up inside afterwards — which is exactly what it
-   looked like. Clipping puts the destination inside the circle from the first
-   frame. What makes it affordable here and not there: the clipped subtree is one
-   composited tile map, not a page of SVG and text, and the expensive frame — the
-   switch to full-screen, Leaflet's resize with it — is spent on the armed frame
-   before the circle moves at all.
+   The still of the compact card stays in its slot underneath the whole time,
+   so the card's header and timeline are there around the window as it opens
+   and the window lands back on them as it closes.
 
-   Both layers take the same clip: the card, and the sky behind it. The sky is not
-   decoration here, it is what the card is translucent onto, and unclipped it
-   would black the weather stack out on frame one — the circle would then be
-   opening onto a screen that had already gone.
+   The sky behind the card moves with it, inside the window: it is what the card
+   is translucent onto, and outside it would black the weather stack out on
+   frame one.
 
    Gated on the mobile shell, which is exactly the two phone styles — the desktop
    app publishes data-shell="desktop" whatever platform it borrows (see the
    attribute note in App.jsx) and keeps the cut. WeatherRadar sets the geometry
    only on the path that animates, so the two can't disagree about which is which. */
 
-/* At rest the three wrappers are not boxes at all, so the card lays out in the
-   stack exactly as it would without them. They exist permanently only because
+/* At rest the wrappers are not boxes at all, so the card lays out in the stack
+   exactly as it would without them. They exist permanently only because
    putting them up at open time would re-parent the card, remount its subtree and
    take Leaflet's map instance with it. */
 .radar-iris,
 .radar-iris-circle,
 .radar-iris-inner {
   display: contents;
+}
+.radar-iris-scrim {
+  display: none;
 }
 
 /* Framed. The frame takes the same `inset: 0` the card takes when expanded, so
@@ -4585,20 +4967,18 @@ body {
    here (see irisGeometry). Everything below is offset inside this box.
 
    It stays a box for as long as the card is away being full-screen, not only
-   while the circle is moving, and that is the difference between the two classes:
-   --framed is the box, --on is the box with a circle in it. Collapsing the frame
-   the moment the reveal finished used to hand .radar-sky and the card back to
-   `position: fixed`, and Chromium composites a fixed element that overlaps
-   composited content — so a screen-sized layer was *created* on precisely the
-   frame that three others (this frame, the 1180px circle and its counter-scale)
-   were destroyed. One commit's worth of compositor restructure under a
-   full-screen map is what read as the flash once the radar finished opening.
-   Holding the frame leaves every layer below it on the footing it already had.
+   while the window is moving, and that is the difference between the two
+   classes: --framed is the box, --on is the box with the window in it.
+   Collapsing the frame the moment the opening finished used to hand .radar-sky
+   and the card back to `position: fixed`, and Chromium composites a fixed
+   element that overlaps composited content — so a screen-sized layer was
+   *created* on precisely the frame others were destroyed, which read as a
+   flash once the radar finished opening. Holding the frame leaves every layer
+   below it on the footing it already had.
 
-   z-index is the card's own 400 rather than the 399 this sat at, because the
-   group now outlives the animation and has to land where the settled card used
-   to. The sky inside keeps 399, which is what orders those two against each
-   other; nothing else in the file uses either number. */
+   z-index is the card's own 400, because the group outlives the animation and
+   has to land where the settled card used to. The sky inside keeps 399, which
+   is what orders those two against each other. */
 :root[data-shell="mobile"] .radar-iris--framed {
   display: block;
   position: fixed;
@@ -4606,24 +4986,30 @@ body {
   z-index: 400;
 }
 
-/* The window: round, clipping, and the only thing that scales. Its box comes
-   from JS as lengths, so the circle is the same circle whatever the frame
-   measured. */
+/* Dims the forecast behind the window as it opens, so the radar reads as
+   coming forward rather than being pasted over the page. */
+:root[data-shell="mobile"] .radar-iris--on .radar-iris-scrim {
+  display: block;
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  pointer-events: none;
+  will-change: opacity;
+}
+
+/* The window: the frame-sized box the radar sits in, clipped by the animation
+   (a rounded inset — kept as a clip on the layer, no mask). */
 :root[data-shell="mobile"] .radar-iris--on .radar-iris-circle {
   display: block;
   position: absolute;
-  border-radius: 50%;
-  overflow: hidden;
-  transform-origin: 50% 50%;
-  will-change: transform, opacity;
+  will-change: opacity;
 }
 
 /* Armed: laid out, resized, waiting for its tiles, and showing none of it. The
-   circle has no transform of its own — the animation's first keyframe is what
-   makes it small — so without this the armed frames paint the finished
-   full-screen radar and the iris then snaps back to a dot to grow out of. The
-   opening fades in from nothing over its first eighth anyway (IRIS_FADE), so
-   this is the value it starts from rather than a state of its own.
+   window has no clip of its own — the animation's first keyframe is what shuts
+   it — so without this the armed frames would paint the finished full-screen
+   radar and then snap back to the card.
 
    will-change: opacity above is load-bearing here: Blink skips painting a fully
    transparent subtree, and skipping it would move the raster of a screen of map
@@ -4632,20 +5018,35 @@ body {
   opacity: 0;
 }
 
-/* The counter-scale, sized to the frame and offset back onto it, so that the two
-   transforms cancel and the map holds still at its true size while the circle
-   grows around it. */
+/* The radar inside the window, shifted (translate only) so the map's middle
+   stays under the window's. Promoted up front so the armed frames raster it. */
 :root[data-shell="mobile"] .radar-iris--on .radar-iris-inner {
   display: block;
   position: absolute;
   will-change: transform;
 }
 
+/* The controls stay out of the window while it grows, fade in once it is full
+   (--chrome), and leave first on the way out. The individual translate
+   property rather than transform, so it composes with whatever positioning
+   transforms these carry. */
+:root[data-shell="mobile"] .radar-iris--in .radar-expanded :is(.radar-controls, .radar-expand-btn--floating, .radar-zoom-btns) {
+  opacity: 0;
+}
+:root[data-shell="mobile"] .radar-iris--chrome .radar-expanded :is(.radar-controls, .radar-expand-btn--floating, .radar-zoom-btns) {
+  animation: radarChromeIn 0.26s cubic-bezier(0.2, 0, 0, 1) backwards;
+}
+:root[data-shell="mobile"] .radar-iris--out .radar-expanded :is(.radar-controls, .radar-expand-btn--floating, .radar-zoom-btns) {
+  animation: radarChromeOut 0.1s cubic-bezier(0.3, 0, 1, 1) forwards;
+}
+@keyframes radarChromeIn  { from { opacity: 0; translate: 0 8px; } to { opacity: 1; translate: none; } }
+@keyframes radarChromeOut { from { opacity: 1; } to { opacity: 0; } }
+
 /* Inside a transformed ancestor `fixed` resolves against that ancestor, which
-   would size both layers to the circle. They fill the counter-scaled layer
-   instead — the same rect, reached a different way. Keyed on --framed rather than
-   --on, so it holds for as long as the card is full-screen: the containing block
-   is then the same box before and after the reveal settles, and neither element
+   would size both layers to the window's box. They fill the inner box instead —
+   the same rect, reached a different way. Keyed on --framed rather than --on,
+   so it holds for as long as the card is full-screen: the containing block is
+   then the same box before and after the opening settles, and neither element
    changes position mode on that frame. */
 :root[data-shell="mobile"] .radar-iris--framed .radar-expanded,
 :root[data-shell="mobile"] .radar-iris--framed .radar-sky {
@@ -4661,15 +5062,18 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* WeatherRadar skips the reveal outright under this — expand goes straight to
-     full-screen — so this should never get the chance to run; it covers the
+  /* WeatherRadar skips the opening outright under this — expand goes straight
+     to full-screen — so this should never get the chance to run; it covers the
      setting being turned on midway. Collapsing the wrappers back to display:
-     contents drops the circle and leaves the card full-screen, which is the
-     settled state of a reveal that is not going to animate. */
+     contents drops the window and leaves the card full-screen, which is the
+     settled state of an opening that is not going to animate. */
   :root[data-shell="mobile"] :is(.radar-iris--framed, .radar-iris--on),
   :root[data-shell="mobile"] .radar-iris--on .radar-iris-circle,
   :root[data-shell="mobile"] .radar-iris--on .radar-iris-inner {
     display: contents;
+  }
+  :root[data-shell="mobile"] .radar-iris--on .radar-iris-scrim {
+    display: none;
   }
 }
 
@@ -5345,6 +5749,13 @@ body {
   background: var(--swatch);
 }
 
+/* The wallpaper colour (Material You): split diagonally into the colour and a
+   lighter tone of it, so it reads as "the system's colour" rather than as one
+   more preset that happens to match. */
+.md-swatch--system {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--swatch) 50%, #fff) 0 50%, var(--swatch) 50% 100%);
+}
+
 /* The input fills the swatch so the click target is the circle itself; its own
    chrome is hidden behind that. */
 .md-swatch--custom input[type="color"] {
@@ -5712,22 +6123,15 @@ body {
   transition: background 0.18s ease, box-shadow 0.18s ease;
 }
 
-/* The reveal fill takes that same fill undiluted, and this is the one surface in
-   the stack where that isn't an inconsistency. The slider thins cards so the sky
-   and the weather canvas show through from *behind* the stack. The cover has no
-   such backdrop: what sits behind it is the card's own content — the 7-day list,
-   the details grid — a few pixels below, inside the same box. At any alpha under
-   solid those rows read straight through the numbers on top of them, and no blur
-   helps, because backdrop-filter on the card filters the page behind the card,
-   not siblings within it.
-
-   So the card keeps the slider's alpha and the lid over it goes solid. Nothing
-   is given up: once the circle is full it covers the card edge to edge, so all
-   the transparency could ever have revealed there is the card's own rows. The
-   nested tiles inside stay on --hover-subtle, a translucent overlay, which now
-   composites against this fill and keeps the tonal step it was drawn for. */
+/* The reveal fill is the card's own glass, not a lid over it, as on iOS. It used
+   to take the card fill undiluted, so an opened tile went solid whatever Card
+   Transparency said. The reason it was solid — the card's own rows (the 7-day
+   list, the details grid) reading through the cover — is handled instead by
+   fading those rows out while the cover is open (see the iOS cover rules), so
+   the circle only needs to be a faint on-surface wash, enough to see it sweep,
+   over the card's thinned fill. */
 :root[data-shell="mobile"][data-platform="android"] .app .detail-cover-fill {
-  background: var(--md-card-fill);
+  background: color-mix(in srgb, var(--md-on-surface) 5%, transparent);
 }
 
 /* Blur what shows through, so a thinned card reads as frosted glass rather
@@ -5736,9 +6140,7 @@ body {
    attribute (set only while the slider is off zero) because backdrop-filter
    costs the same whether or not the fill above it is actually see-through.
    Only the outer cards take it: the nested tiles inherit a blurred backdrop
-   from the card they sit in, and .detail-cover-fill animates a transform,
-   which is exactly the case the reveal was rewritten to keep off the main
-   thread. */
+   from the card they sit in, and .detail-cover-fill animates over them. */
 :root[data-card-glass="on"][data-shell="mobile"][data-platform="android"] .app .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill) {
   backdrop-filter: blur(18px) saturate(1.35);
   -webkit-backdrop-filter: blur(18px) saturate(1.35);
@@ -5876,7 +6278,7 @@ body {
 /* With the page up, the forecast stack is hidden behind the opaque sky layer,
    so its own card blur is pure cost; it comes back for peek, which clears the
    page and sky so those cards can be judged. Mirrors the iOS rules. */
-:root[data-card-glass="on"][data-shell="mobile"][data-platform="android"] .app:has(.settings-sky):not(:has(.settings-page.peeking)) .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill) {
+:root[data-card-glass="on"][data-shell="mobile"][data-platform="android"] .app:has(.settings-sky):has(.settings-page.settled):not(:has(.settings-page.peeking)) .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill) {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
@@ -5934,150 +6336,207 @@ body {
   border-radius: 999px;
 }
 
-/* ── Android: full-screen radar ──
-   The one screen in the phone app where the backdrop is a map rather than the
-   sky, and it was styled as though it were the sky: the controls pill took the
-   per-sky tint (.sky-lvl-* .radar-expanded .radar-controls, further down this
-   file) and everything inside it was drawn in white at 30-65% alpha. Over a
-   pale map that combination is a slate panel with ticks and labels that all but
-   disappear, which is the legibility complaint.
+/* ── Full-screen radar (phone shells) ──
+   One design for both phone styles. Android used to give this screen its own
+   Material sheet; it now shares the iOS-derived look, redesigned: every
+   control on the map is the same dark frosted glass (the bottom sheet, the
+   zoom capsule, the collapse and locate buttons), so the set reads as one layer
+   of tools laid over the map rather than chips of different materials.
 
-   So over the map the pill stops following the weather and becomes a proper
-   Material surface: an opaque container with on-surface text, which is both
-   readable and what an Android app would actually do with a bottom sheet of
-   controls. The map tools become circular icon buttons on the same container
-   colour, and the play button becomes an FAB. Nothing here touches the compact
-   radar card in the stack, which is still a card among cards over the sky. */
-:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-controls {
-  /* Container-high rather than the plain container: this is the top layer of
-     the screen, and it has to separate from a map of any brightness. */
-  background: var(--md-surface-container-high);
-  color: var(--md-on-surface);
-  /* Over a sky, .card sets these three to white for the tinted fill it expects
-     (see the .sky-lvl-* block near the top of this file), and they inherit down
-     into the pill. On a light Material container that is white text on
-     near-white. Re-pointing them here fixes the whole subtree at once, so
-     anything added to the pill later is right without a rule of its own. */
-  --text-primary: var(--md-on-surface);
-  --text-secondary: var(--md-on-surface-variant);
-  --text-tertiary: color-mix(in srgb, var(--md-on-surface-variant) 70%, transparent);
-  border-radius: 28px;
-  padding: 14px 20px 16px;
-  /* M3 elevation 3. Tone carries elevation everywhere else in this style, but
-     over an arbitrary map there is no tonal relationship to lean on. */
-  box-shadow: 0 4px 8px 3px rgba(0, 0, 0, 0.15), 0 1px 3px rgba(0, 0, 0, 0.3);
+   The glass is dark in both themes. The map under it can be light or dark, and
+   a dark frost with white text holds its contrast over either, the way map
+   overlays on both OSes do over imagery.
+
+   Card Transparency drives how see-through it is, like the cards: the fill
+   goes from 78% with the slider all the way left down to 45% at the far end,
+   via --card-glass-t (0-1, set by App.jsx on both phone styles; absent, it is
+   0). The blur stays, so the map behind always reads as frosted, never sharp
+   under the text. */
+:root[data-shell="mobile"][data-platform] .app .radar-expanded {
+  --rx-alpha: calc(0.78 - 0.33 * var(--card-glass-t, 0));
+  --rx-fill: rgb(22 24 31 / var(--rx-alpha));
+  --rx-press: rgb(255 255 255 / 0.12);
+  --rx-rim: rgb(255 255 255 / 0.12);
+  --rx-gloss: rgb(255 255 255 / 0.10);
+  --rx-shadow: 0 8px 28px rgb(0 0 0 / 0.28), 0 1px 3px rgb(0 0 0 / 0.2);
+  --text-primary: #fff;
+  --text-secondary: rgb(255 255 255 / 0.72);
+  --text-tertiary: rgb(255 255 255 / 0.5);
+  --accent: #8fc1ff;
+  --accent-light: rgb(143 193 255 / 0.18);
 }
 
-/* Headline for the frame time. Google Sans at 400 is the Material weight for
-   display text; the tighter tracking the base rule uses is an iOS idiom. */
-:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-big-time {
-  font-size: 32px;
-  font-weight: 400;
-  letter-spacing: 0;
-  color: var(--md-on-surface);
+/* The bottom sheet. */
+:root[data-shell="mobile"][data-platform] .app .radar-expanded .radar-controls {
+  padding: 16px 18px 12px;
+  border-radius: 30px;
+  background: var(--rx-fill);
+  color: var(--text-primary);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  backdrop-filter: blur(24px) saturate(1.6);
+  border: 0.5px solid var(--rx-rim);
+  box-shadow: inset 0 1px 0 var(--rx-gloss), var(--rx-shadow);
 }
 
-/* The play control: styled once, for the card and the full-screen radar alike,
-   in the Android play-button block further down. */
-
-/* Map tools: circular icon buttons on the same container colour as the pill, so
-   the whole set reads as one surface treatment rather than as three different
-   floating chips. 44px is the M3 touch target for a standard icon button. */
-:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded :is(.radar-zoom-btn, .radar-locate-btn, .radar-expand-btn--floating) {
+/* Map tools: 44px glass circles; zoom in and out joined into one capsule with
+   a hairline between, the way map apps group a pair that belongs together. */
+:root[data-shell="mobile"][data-platform] .app .radar-expanded :is(.radar-locate-btn, .radar-expand-btn--floating),
+:root[data-shell="mobile"][data-platform] .app .radar-expanded .radar-zoom-btns {
+  background: var(--rx-fill);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  backdrop-filter: blur(24px) saturate(1.6);
+  border: 0.5px solid var(--rx-rim);
+  box-shadow: inset 0 1px 0 var(--rx-gloss), var(--rx-shadow);
+}
+:root[data-shell="mobile"][data-platform] .app .radar-expanded :is(.radar-zoom-btn, .radar-locate-btn, .radar-expand-btn--floating) {
   width: 44px;
   height: 44px;
   padding: 0;
+  display: flex;
+  align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: var(--md-surface-container-high);
-  color: var(--md-on-surface-variant);
-  box-shadow: 0 1px 3px 1px rgba(0, 0, 0, 0.15), 0 1px 2px rgba(0, 0, 0, 0.3);
+  color: rgb(255 255 255 / 0.92);
+  transition: background-color 0.15s, transform 0.2s cubic-bezier(0.3, 1.4, 0.5, 1);
+  -webkit-tap-highlight-color: transparent;
+}
+:root[data-shell="mobile"][data-platform] .app .radar-expanded .radar-zoom-btns {
+  gap: 0;
+  border-radius: 22px;
+  overflow: hidden;
+}
+:root[data-shell="mobile"][data-platform] .app .radar-expanded .radar-zoom-btn {
+  background: transparent;
+  border-radius: 0;
+  box-shadow: none;
+}
+:root[data-shell="mobile"][data-platform] .app .radar-expanded .radar-zoom-btn + .radar-zoom-btn {
+  border-top: 0.5px solid var(--rx-rim);
+}
+:root[data-shell="mobile"][data-platform] .app .radar-expanded :is(.radar-zoom-btn, .radar-locate-btn, .radar-expand-btn--floating):active {
+  background-image: linear-gradient(var(--rx-press), var(--rx-press));
+}
+:root[data-shell="mobile"][data-platform] .app .radar-expanded :is(.radar-locate-btn, .radar-expand-btn--floating):active {
+  transform: scale(0.92);
+}
+@media (hover: hover) {
+  :root[data-shell="mobile"][data-platform] .app .radar-expanded :is(.radar-zoom-btn, .radar-locate-btn, .radar-expand-btn--floating):hover {
+    color: #fff;
+    background-image: linear-gradient(rgb(255 255 255 / 0.08), rgb(255 255 255 / 0.08));
+  }
+}
+/* The glyphs are sized in JS for the old small chips (15-20px); one size here,
+   centred in the 44px circles. */
+:root[data-shell="mobile"][data-platform] .app .radar-expanded :is(.radar-zoom-btn, .radar-locate-btn, .radar-expand-btn--floating) > svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 1.9;
 }
 
-:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded :is(.radar-zoom-btn, .radar-locate-btn, .radar-expand-btn--floating):active {
-  background: color-mix(in srgb, var(--md-on-surface) 12%, var(--md-surface-container-high));
+/* Time and play. The time is the headline, in tabular figures so it doesn't
+   jitter as the frames tick past. Play is a solid white disc with a dark glyph:
+   the one bright thing on the sheet, since it is the one thing you press. */
+:root[data-shell="mobile"][data-platform] .app .radar-expanded .radar-main-row {
+  padding: 0 0 12px;
+}
+:root[data-shell="mobile"][data-platform] .app .radar-expanded .radar-big-time {
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: -0.6px;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+:root[data-shell="mobile"][data-platform] .app .radar-expanded .radar-play-circle {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  background: #fff;
+  background-image: none;
+  color: #15171d;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.25);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  transition: transform 0.2s cubic-bezier(0.3, 1.4, 0.5, 1), opacity 0.15s;
+}
+:root[data-shell="mobile"][data-platform] .app .radar-expanded .radar-play-circle:active {
+  transform: scale(0.9);
 }
 
-/* The glyphs are sized in JS (lucide's `size` prop) at 15-20px, tuned for the
-   small square chips these used to be. In a 44px circular button they float;
-   Material draws icon buttons with a 24px icon. Set here rather than in the
-   component because it is a per-style decision, and an inline width/height on
-   the <svg> is beaten by any class rule. */
-:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded :is(.radar-zoom-btn, .radar-locate-btn, .radar-expand-btn--floating) > svg {
-  width: 22px;
-  height: 22px;
+/* Observed / Forecast: a glass track with a lighter glass thumb and white
+   labels, in place of the solid blue segment. */
+:root[data-shell="mobile"][data-platform] .app .radar-expanded .radar-view-toggle {
+  margin: 0 0 8px;
+  padding: 3px;
+  border-radius: 12px;
+  background: rgb(255 255 255 / 0.08);
+}
+:root[data-shell="mobile"][data-platform] .app .radar-expanded .radar-view-btn {
+  padding: 7px 10px;
+  border-radius: 9px;
+  font-size: 13px;
+  color: rgb(255 255 255 / 0.62);
+}
+:root[data-shell="mobile"][data-platform] .app .radar-expanded .radar-view-btn--active {
+  background: rgb(255 255 255 / 0.2);
+  color: #fff;
+  box-shadow: inset 0 0.5px 0 rgb(255 255 255 / 0.25), 0 1px 4px rgb(0 0 0 / 0.2);
 }
 
-:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-zoom-btns {
-  gap: 8px;
+/* Scrubber: white ticks at two strengths, forecast frames in the light accent,
+   the current frame a light-accent capsule. */
+:root[data-shell="mobile"][data-platform] .app .radar-expanded .radar-tick {
+  background: rgb(255 255 255 / 0.26);
 }
-
-/* Scrubber, on an opaque surface at last. The ticks are the on-surface-variant
-   colour at strengths that hold up in both schemes, rather than white at an
-   alpha picked for a dark sky: 38% is the M3 disabled/inactive strength, and
-   the hour marks step up to full. */
-:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-tick {
-  background: color-mix(in srgb, var(--md-on-surface-variant) 38%, transparent);
+:root[data-shell="mobile"][data-platform] .app .radar-expanded .radar-tick--hour {
+  background: rgb(255 255 255 / 0.7);
 }
-
-:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-tick--hour {
-  background: var(--md-on-surface-variant);
+:root[data-shell="mobile"][data-platform] .app .radar-expanded .radar-tick--forecast {
+  background: rgb(143 193 255 / 0.45);
 }
-
-/* Forecast frames stay distinguishable from observed ones without going pale
-   enough to vanish: the primary colour, held back to half. */
-:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-tick--forecast {
-  background: color-mix(in srgb, var(--md-primary) 50%, transparent);
-}
-
-/* The active frame is the M3 slider handle: a full-height capsule in the primary
-   colour, fully rounded, no glow. Follows the width of the capsule it overrides
-   rather than the 4px of a Material track, so the handle reads as round on this
-   shell too. */
-:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-tick--active {
+:root[data-shell="mobile"][data-platform] .app .radar-expanded .radar-tick--active {
   width: 5px;
   height: 28px;
   border-radius: 999px;
-  background: var(--md-primary);
-  box-shadow: none;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px rgb(143 193 255 / 0.18);
 }
-
-:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-tick-label {
+:root[data-shell="mobile"][data-platform] .app .radar-expanded .radar-tick-label {
   font-size: 11px;
   font-weight: 500;
-  letter-spacing: 0.4px;
-  color: var(--md-on-surface-variant);
+  letter-spacing: 0.2px;
+  color: rgb(255 255 255 / 0.7);
 }
-
-:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-now-divider {
-  border-left-color: var(--md-outline);
+:root[data-shell="mobile"][data-platform] .app .radar-expanded .radar-now-divider {
+  border-left-color: rgb(255 255 255 / 0.45);
   opacity: 1;
 }
 
-/* Legend: the intensity ramp is the point of it, so the blocks get the height
-   of a Material track and the labels get label-medium rather than the 10px
-   tertiary whisper they had. */
-:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-legend {
+/* Legend: the five steps joined into one continuous bar, rounded only at its
+   ends, so it reads as a scale rather than five separate chips. */
+:root[data-shell="mobile"][data-platform] .app .radar-expanded .radar-legend {
   gap: 10px;
-  margin-top: 12px;
+  margin-top: 4px;
 }
-
-:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-legend-block {
-  height: 12px;
+:root[data-shell="mobile"][data-platform] .app .radar-expanded .radar-legend-blocks {
+  gap: 2px;
   border-radius: 999px;
+  overflow: hidden;
 }
-
-:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-legend-lbl {
+:root[data-shell="mobile"][data-platform] .app .radar-expanded .radar-legend-block {
+  height: 6px;
+  border-radius: 0;
+}
+:root[data-shell="mobile"][data-platform] .app .radar-expanded .radar-legend-lbl {
   font-size: 11px;
   font-weight: 500;
-  letter-spacing: 0.4px;
-  color: var(--md-on-surface-variant);
+  color: rgb(255 255 255 / 0.62);
 }
-
-:root[data-shell="mobile"][data-platform="android"] .app .radar-expanded .radar-source {
-  font-size: 11px;
-  letter-spacing: 0.4px;
-  color: color-mix(in srgb, var(--md-on-surface-variant) 80%, transparent);
+:root[data-shell="mobile"][data-platform] .app .radar-expanded .radar-source {
+  margin-top: 8px;
+  font-size: 10.5px;
+  letter-spacing: 0.2px;
+  color: rgb(255 255 255 / 0.45);
 }
 
 /* ── Splash location cards ──
@@ -6176,6 +6635,16 @@ body {
   --ios-glass-rim: rgba(255, 255, 255, 0.55);
   --ios-glass-highlight: rgba(255, 255, 255, 0.75);
   --ios-glass-shadow: rgba(0, 0, 0, 0.12);
+  /* ── Frost over the sky ──
+     The one surface the forecast cards, the splash location cards and the
+     header buttons share wherever they sit on a sky with white text: a dark
+     neutral body under a faint white sheen. A step toward the Android style's
+     solid containers, so the text has something to sit on, while still
+     reading as glass. The body thins with Card Transparency (--card-glass-t,
+     0–1): 50% → 30%, pressed 64% → 44%. */
+  --ios-frost: rgb(26 28 36 / calc(0.5 - 0.2 * var(--card-glass-t, 0)));
+  --ios-frost-press: rgb(26 28 36 / calc(0.64 - 0.2 * var(--card-glass-t, 0)));
+  --ios-frost-sheen: rgb(255 255 255 / 0.06);
 }
 
 [data-theme="dark"][data-platform="ios"] {
@@ -6418,11 +6887,18 @@ body {
    the weather stack drop its own blurs while settings is up, further down.
 
    Left un-suspended: .settings-inline and .settings-pill, which don't slide. */
-:root[data-platform="ios"] .settings-page:not(.settled) .settings-card,
-:root[data-platform="ios"] .settings-page:not(.settled) .setting-opt.active,
-:root[data-platform="ios"] .settings-page:not(.settled) .md-slider-wrap::before {
+:root[data-platform="ios"] .settings-page:not(.settled) .setting-opt.active {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+}
+/* Only the blur, as for .scrolling above: the saturate stays on through the
+   slide. Dropping it too is what made the page change brightness as it opened:
+   every card came in cool and then warmed with a pop the moment .settled
+   landed, exactly the pop the scrolling rule was written to avoid. */
+:root[data-platform="ios"] .settings-page:not(.settled) .settings-card,
+:root[data-platform="ios"] .settings-page:not(.settled) .md-slider-wrap::before {
+  -webkit-backdrop-filter: saturate(180%);
+  backdrop-filter: saturate(180%);
 }
 
 /* ── iOS mode: main weather cards as liquid glass ──
@@ -6478,12 +6954,13 @@ body {
 
 /* While the settings page is up, the main stack is fully covered: by the
    opaque page itself, or by the opaque .settings-sky layer behind the
-   translucent iOS page. Its backdrop blurs are then pure compositor cost
-   fighting the open/close slide, so drop them for the duration. In the one
-   configuration where the stack peeks out mid-slide (opaque page, no sky
-   layer) the backdrop behind cards is a flat color, which blurs to itself,
-   so the suspension is invisible. */
-:root[data-platform="ios"] .app:has(.settings-page) .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline) {
+   translucent iOS page. Its backdrop blurs are then pure compositor cost, so
+   drop them — but only once the page has .settled. The open fades the page in
+   over the stack, so for its first few frames the stack is still in view, and
+   dropping the blur on mount made the cards go sharp all at once. .settled
+   also comes off the moment the close starts, so the blur is back before the
+   stack shows again. */
+:root[data-platform="ios"] .app:has(.settings-page.settled) .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline) {
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
@@ -6532,15 +7009,19 @@ body {
 :root[data-platform="ios"] .app .detail-cover-fill {
   background: color-mix(in srgb, var(--ios-tile-tint) var(--ios-tile-alpha), transparent);
 }
-:root[data-platform="ios"] .app :is(.card--details, .card--daily) > :not(.detail-cover) {
+/* Android's cover works the same way (its fill is set with the other Android
+   rules), so the rows-fade applies to both phone styles. */
+:root:is([data-platform="ios"], [data-shell="mobile"][data-platform="android"]) .app :is(.card--details, .card--daily) > :not(.detail-cover) {
   transition: opacity calc(var(--reveal-dur) * 0.6) ease;
 }
-:root[data-platform="ios"] .app :is(.card--details, .card--daily):has(> .detail-cover:not(.detail-cover--closing)) > :not(.detail-cover) {
+:root:is([data-platform="ios"], [data-shell="mobile"][data-platform="android"]) .app :is(.card--details, .card--daily):has(> .detail-cover:not(.detail-cover--closing)) > :not(.detail-cover) {
   opacity: 0;
   pointer-events: none;
 }
 
-:root[data-card-glass="on"][data-shell="mobile"][data-platform="android"] .app .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):has(.detail-cover) {
+/* Blur suspended only while the circle moves, as on iOS: a settled cover on an
+   unblurred card reads as the card going solid. */
+:root[data-card-glass="on"][data-shell="mobile"][data-platform="android"] .app .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):has(> .detail-cover:not(.detail-cover--settled)) {
   backdrop-filter: saturate(1.35);
   -webkit-backdrop-filter: saturate(1.35);
 }
@@ -7181,6 +7662,176 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .radar-tick-track--wide .radar-tick { transition: none; }
+}
+
+/* ── The rail scrubber (card, phone full-screen, wide screens) ──
+   A media-player timeline rather than a row of ticks: a rounded rail, filled in
+   the accent up to the frame on screen, striped over the forecast frames, with a
+   round knob on the current frame. Hour marks are small dots on the rail, their
+   labels below.
+
+   The track has a fixed height and nothing inside it takes part in layout:
+   the rail, fill, knob and marks are all absolutely placed. The old ticks sized
+   their row to the tallest of them, and the active tick was the tallest and
+   animated its height, so every frame change briefly resized the row — and the
+   card around it, which is what moved the whole card up and down while
+   scrubbing. Now nothing that changes per frame can reach the card's height.
+
+   --scrub-pos (the knob, the middle of the current frame's share of the width)
+   and --scrub-fc (where the forecast frames start) come from WeatherRadar. */
+.radar-tick-track--rail {
+  --scrub-rail-y: 12px;   /* the rail's centre line */
+  --scrub-rail-h: 6px;
+  --scrub-knob: 18px;
+  display: block;
+  height: 42px;
+  min-height: 0;
+  padding: 0;
+}
+.radar-tick-track--wide.radar-tick-track--rail {
+  --scrub-rail-y: 14px;
+  --scrub-rail-h: 8px;
+  --scrub-knob: 22px;
+  height: 48px;
+}
+
+.radar-scrub {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.radar-scrub-rail,
+.radar-scrub-forecast,
+.radar-scrub-fill {
+  position: absolute;
+  top: calc(var(--scrub-rail-y) - var(--scrub-rail-h) / 2);
+  height: var(--scrub-rail-h);
+  border-radius: 999px;
+}
+.radar-scrub-rail {
+  left: 0;
+  right: 0;
+  background: color-mix(in srgb, var(--text-primary) 14%, transparent);
+}
+/* Forecast frames: the same rail, hatched, so "what's expected" reads as a
+   different kind of thing from "what happened" without a divider line. */
+.radar-scrub-forecast {
+  left: var(--scrub-fc);
+  right: 0;
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--accent) 40%, transparent) 0 3px,
+    transparent 3px 6px
+  );
+}
+.radar-scrub-fill {
+  left: 0;
+  width: var(--scrub-pos);
+  background: var(--accent);
+  transition: width 0.18s cubic-bezier(0.2, 0, 0, 1);
+}
+.radar-scrub-thumb {
+  position: absolute;
+  top: var(--scrub-rail-y);
+  left: var(--scrub-pos);
+  width: var(--scrub-knob);
+  height: var(--scrub-knob);
+  margin: calc(var(--scrub-knob) / -2) 0 0 calc(var(--scrub-knob) / -2);
+  border-radius: 50%;
+  background: #fff;
+  box-shadow:
+    0 0 0 0.5px rgb(0 0 0 / 0.08),
+    0 2px 6px rgb(0 0 0 / 0.28);
+  transition:
+    left 0.18s cubic-bezier(0.2, 0, 0, 1),
+    transform 0.2s cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+/* Held: the knob grows under the finger and tracks it 1:1 — any easing on the
+   position while dragging reads as lag. */
+.radar-tick-track--scrubbing .radar-scrub-fill,
+.radar-tick-track--scrubbing .radar-scrub-thumb {
+  transition: transform 0.2s cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+.radar-tick-track--scrubbing .radar-scrub-thumb {
+  transform: scale(1.3);
+}
+
+/* The columns stay only to place the hour marks and labels: full height,
+   out of the flow, and every frame tick except the hours hidden. */
+.radar-tick-track--rail .radar-tick-strip {
+  position: absolute;
+  inset: 0;
+  height: auto;
+  align-items: stretch;
+}
+.radar-tick-track--rail .radar-tick:not(.radar-tick--hour),
+.radar-tick-track--rail .radar-now-divider {
+  display: none;
+}
+.radar-tick-track--rail .radar-tick--hour {
+  position: absolute;
+  top: calc(var(--scrub-rail-y) - 1.5px);
+  left: 50%;
+  width: 3px !important;
+  height: 3px !important;
+  margin-left: -1.5px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text-primary) 55%, transparent) !important;
+  box-shadow: none !important;
+  transition: none;
+}
+.radar-tick-track--rail .radar-tick-label {
+  top: auto;
+  bottom: 0;
+  line-height: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .radar-scrub-fill,
+  .radar-scrub-thumb { transition: none; }
+}
+
+/* ── Play button, iOS ──
+   The shape of the transport controls in Control Centre: a frosted glass disc
+   carrying a white glyph, lit by a hairline rim and a soft top highlight,
+   that springs down under the finger. On the plain (no sky) card, where white
+   on white would vanish, the disc is the accent instead. */
+:root[data-platform="ios"] .app .radar-play-circle,
+:root[data-shell="mobile"][data-platform="ios"] .app .radar-expanded .radar-play-circle {
+  width: 46px;
+  height: 46px;
+  border: none;
+  color: #fff;
+  background: var(--accent);
+  background-image: linear-gradient(180deg, rgb(255 255 255 / 0.22), rgb(255 255 255 / 0) 60%);
+  box-shadow:
+    inset 0 0.5px 0 rgb(255 255 255 / 0.45),
+    0 4px 12px color-mix(in srgb, var(--accent) 35%, transparent);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  transition: transform 0.25s cubic-bezier(0.3, 1.4, 0.5, 1), background-color 0.15s;
+}
+:root[data-platform="ios"] .app.sky-active .radar-play-circle,
+:root[data-shell="mobile"][data-platform="ios"] .app .radar-expanded .radar-play-circle {
+  background-color: rgb(255 255 255 / 0.2);
+  background-image: linear-gradient(180deg, rgb(255 255 255 / 0.18), rgb(255 255 255 / 0) 70%);
+  box-shadow:
+    inset 0 0 0 0.5px rgb(255 255 255 / 0.35),
+    inset 0 1px 0 rgb(255 255 255 / 0.3),
+    0 4px 14px rgb(0 0 0 / 0.18);
+  -webkit-backdrop-filter: blur(16px) saturate(1.8);
+  backdrop-filter: blur(16px) saturate(1.8);
+}
+:root[data-platform="ios"] .app .radar-play-circle:hover {
+  opacity: 1;
+}
+:root[data-platform="ios"] .app .radar-play-circle:active,
+:root[data-shell="mobile"][data-platform="ios"] .app .radar-expanded .radar-play-circle:active {
+  transform: scale(0.88);
+}
+:root[data-platform="ios"] .app .radar-play-circle svg {
+  width: 20px;
+  height: 20px;
 }
 
 /* ── Locate button (floating on map, expanded mode only) ── */
@@ -8093,14 +8744,14 @@ body {
   --icon-circle-ring: rgba(255, 255, 255, 0.6);
 }
 :root[data-theme="dark"][data-splash-sky][data-shell="mobile"]:not([data-platform="android"]) .app {
-  --icon-circle-bg: rgba(255, 255, 255, 0.08);
-  --icon-circle-press: rgba(255, 255, 255, 0.16);
+  --icon-circle-bg: var(--ios-frost, rgba(255, 255, 255, 0.08));
+  --icon-circle-press: var(--ios-frost-press, rgba(255, 255, 255, 0.16));
   --icon-circle-ring: rgba(255, 255, 255, 0.12);
 }
 @media (prefers-color-scheme: dark) {
   :root[data-splash-sky][data-shell="mobile"]:not([data-theme="light"]):not([data-platform="android"]) .app {
-    --icon-circle-bg: rgba(255, 255, 255, 0.08);
-    --icon-circle-press: rgba(255, 255, 255, 0.16);
+    --icon-circle-bg: var(--ios-frost, rgba(255, 255, 255, 0.08));
+    --icon-circle-press: var(--ios-frost-press, rgba(255, 255, 255, 0.16));
     --icon-circle-ring: rgba(255, 255, 255, 0.12);
   }
 }
@@ -8158,13 +8809,32 @@ body {
   --splash-surface: rgba(255, 255, 255, 0.1);
   --splash-surface-hover: rgba(255, 255, 255, 0.17);
   --splash-surface-border: rgba(255, 255, 255, 0.16);
-  --splash-mini-surface: rgba(255, 255, 255, 0.1);
+  --splash-mini-surface: linear-gradient(var(--ios-frost-sheen, transparent), var(--ios-frost-sheen, transparent)), var(--ios-frost, rgba(255, 255, 255, 0.08));
   --splash-mini-border: rgba(255, 255, 255, 0.16);
   --text-primary: #fff;
   --text-secondary: rgba(255, 255, 255, 0.78);
   --text-tertiary: rgba(255, 255, 255, 0.6);
   --accent: #8fbbff;
   --hover-medium: rgba(255, 255, 255, 0.14);
+}
+
+/* ...and the header circles go with them. Left on the light-mode splash values
+   above (pale glass, dimmed, grey icons) they sat as dull grey discs over the
+   dark-glass cards at the bottom of the same screen. Same fill and ring as the
+   card, white icons, and no dimmer, since there is no glare left to tame.
+   Specific enough to beat the splash-sky circle rules above (0,6,0 against
+   their 0,5,0 / 0,6,0, and later). */
+:root[data-splash-sky="dark"]:not([data-theme="dark"])[data-shell="mobile"]:not([data-platform="android"]) .app {
+  --icon-circle-bg: var(--ios-frost, rgba(255, 255, 255, 0.1));
+  --icon-circle-press: var(--ios-frost-press, rgba(255, 255, 255, 0.17));
+  --icon-circle-ring: rgba(255, 255, 255, 0.16);
+}
+:root[data-splash-sky="dark"]:not([data-theme="dark"])[data-shell="mobile"]:not([data-platform="android"]) :is(
+  .app .app-header .header-icon-btn,
+  .app .app-header .settings-btn
+) {
+  color: rgba(255, 255, 255, 0.94);
+  filter: none;
 }
 
 /* At desktop widths the mobile shell's current card becomes an opaque card
@@ -8345,73 +9015,94 @@ body {
   border: 0.5px solid color-mix(in srgb, var(--ios-glass-rim) var(--ios-glass-edge), transparent);
 }
 
-/* ── Circle reveal: search and settings on the phone shells ──
-   Both pages grow out of the button that opened them as an expanding circle,
-   and shrink back into it on the way out.
+/* ── Page transition: search, settings and saved places on the phone shells ──
+   One simple motion for all three, in two layers:
 
-   Built the way the detail tiles' reveal is (.detail-cover-fill), and for the
-   same reason. A clip-path: circle() on the page itself, which this started as,
-   isn't composited: the phone repainted the whole page — every card, icon and
-   glass blur — on the main thread every frame, and stuttered. Instead:
+     backdrop  the page's own background (and the iOS search glass, and the
+               settings sky layer) fades in quickly over the weather, so the
+               screen dissolves into the page colour rather than two busy
+               layouts crossfading through each other;
+     content   the page grows a little out of the button that opened it while
+               its contents fade in just behind the backdrop.
 
-     .page-reveal-fill  a plain circle in the page's colour, a fixed 360px
-                        texture scaled up from the button by transform alone
-     the page           fades in over it as the circle nears full size
+   Deliberately no opacity on the page element itself. In Chromium an ancestor
+   at opacity < 1 becomes the backdrop root for everything inside it, so the iOS
+   search glass (a backdrop-filter on ::before) blurred nothing for the length
+   of the fade — the forecast showed through sharp, then the frost snapped on at
+   the end. So the background fades as a colour, the glass fades by its own
+   opacity (which doesn't cut it off from what is behind), and the opacity fade
+   is on the children. The page only scales, which doesn't affect the backdrop.
 
-   Transform and opacity both run on the compositor. App.jsx (setRevealOrigin)
-   writes the button's centre as --page-reveal-x/y and the scale that makes the
-   circle reach the farthest corner as --page-reveal-scale; the fallbacks grow
-   it from the middle of the screen.
+   App.jsx (setRevealOrigin) writes the button's centre as --page-reveal-x/y,
+   which becomes the transform-origin; the fallbacks grow from mid-screen.
 
-   Once the page is in, the circle fades away under it, so the translucent iOS
-   pages still show the sky and the app through them rather than a solid fill.
+   It also meets predictive back (utils/predictiveBack.js) halfway: the gesture
+   shrinks the page toward 90%, and the close here goes the same way (content
+   fades, page eases smaller, backdrop dissolves), so a committed swipe carries
+   on rather than snapping back to full size first.
 
-   The closing durations match SEARCH_CLOSE_MS (220) and SETTINGS_CLOSE_MS (260),
-   which unmount each page when their timers run out. */
-.page-reveal-fill {
-  position: fixed;
-  top: var(--page-reveal-y, 50%);
-  left: var(--page-reveal-x, 50%);
-  width: 360px;
-  height: 360px;
-  margin: -180px 0 0 -180px;
-  border-radius: 50%;
-  pointer-events: none;
-  will-change: transform, opacity;
-  animation: pageFillIn 0.42s cubic-bezier(0.4, 0, 0.2, 1) both;
+   The grow (340ms, the last to finish) is what ends SettingsPage's .settled
+   wait, and .settled is when the page's glass comes on and the weather stack
+   behind drops its blur — by then the sky layer is long opaque and the
+   content fully in, so neither change can be seen. Closes finish by 200ms, under SEARCH_CLOSE_MS (220) and
+   SETTINGS_CLOSE_MS (260), which unmount the pages.
+
+   Openings fill backwards only, never forwards: a finished animation that holds
+   its last frame outranks every ordinary rule on the element, and that held the
+   settings sky layer at full opacity, so the Card Transparency peek (which fades
+   the sky out to show the weather page) did nothing. */
+@keyframes pageGrowIn   { from { transform: scale(0.92); } to { transform: none; } }
+@keyframes pageShrinkOut { from { transform: none; } to { transform: scale(0.94); } }
+/* `to`/`from` left out on purpose: they resolve to whatever background the
+   page's own rules give it, across every theme and sky. */
+@keyframes pageBgIn  { from { background-color: transparent; } }
+@keyframes pageBgOut { to   { background-color: transparent; } }
+@keyframes pageFadeIn  { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pageFadeOut { from { opacity: 1; } to { opacity: 0; } }
+
+:root[data-shell="mobile"][data-platform] :is(.app .search-overlay, .settings-page:not(.settings-page--modal)) {
+  transform-origin: var(--page-reveal-x, 50%) var(--page-reveal-y, 50%);
+  animation:
+    pageGrowIn 0.34s cubic-bezier(0.2, 0, 0, 1) backwards,
+    pageBgIn 0.18s cubic-bezier(0, 0, 0.2, 1) backwards;
+  box-shadow: none;
 }
-/* Same z-index as the layer it sits under's backdrop, but later in the DOM. */
-.page-reveal-fill--search   { z-index: 299; background: var(--card-bg); }
-.sky-active .page-reveal-fill--search { background: var(--sky-card-deep, #2d3f55); }
-.page-reveal-fill--settings { z-index: 498; background: var(--bg); }
-
-.page-reveal-fill--search.closing   { animation: pageFillOut 0.22s cubic-bezier(0.4, 0, 1, 1) forwards; }
-.page-reveal-fill--settings.closing { animation: pageFillOut 0.26s cubic-bezier(0.4, 0, 1, 1) forwards; }
-
-@keyframes pageFillIn {
-  0%   { transform: scale(0); opacity: 1; }
-  70%  { transform: scale(var(--page-reveal-scale, 8)); opacity: 1; }
-  100% { transform: scale(var(--page-reveal-scale, 8)); opacity: 0; }
+:root[data-shell="mobile"][data-platform] :is(.app .search-overlay, .settings-page:not(.settings-page--modal)).closing {
+  animation:
+    pageShrinkOut 0.2s cubic-bezier(0.3, 0, 0.8, 0.15) forwards,
+    pageBgOut 0.16s cubic-bezier(0.4, 0, 1, 1) 0.04s forwards;
 }
-@keyframes pageFillOut {
-  from { transform: scale(var(--page-reveal-scale, 8)); opacity: 1; }
-  to   { transform: scale(0); opacity: 1; }
+:root[data-shell="mobile"][data-platform] :is(.app .search-overlay, .settings-page:not(.settings-page--modal)) > * {
+  animation: pageFadeIn 0.22s cubic-bezier(0, 0, 0.2, 1) 0.08s backwards;
 }
-
-/* The page waits for the circle to cover most of the screen, then fades in. On
-   the way out it goes first, quickly, and the circle shrinks away behind it.
-
-   The fade in is filled backwards only, never forwards: a finished animation
-   that holds its last frame outranks every ordinary rule on the element, and
-   that held the settings sky layer at full opacity, so the Card Transparency
-   peek (which fades the sky out to show the weather page) did nothing. */
-@keyframes pageContentIn {
-  0%, 45% { opacity: 0; }
-  100%    { opacity: 1; }
+:root[data-shell="mobile"][data-platform] :is(.app .search-overlay, .settings-page:not(.settings-page--modal)).closing > * {
+  animation: pageFadeOut 0.12s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
-@keyframes pageContentOut {
-  from { opacity: 1; }
-  to   { opacity: 0; }
+/* The settings list fades in one level down: the group labels and cards fade by
+   their own opacity, not through .settings-body's. The same backdrop-root rule
+   as above applies one level in: while .settings-body sat below opacity 1, every
+   glass card inside it lost its backdrop-filter (the saturate that colours it,
+   on both phone styles), so the cards came in dull and snapped brighter when the
+   fade ended. A card's own opacity doesn't cut its glass off, so it fades with
+   its colour already right. The main list's labels and cards are the body's
+   direct children. Only until .settled: after that the body's children are
+   swapped by sub-page navigation, which has never faded and shouldn't start. */
+:root[data-shell="mobile"][data-platform] .settings-page:not(.settings-page--modal) > .settings-body {
+  animation: none;
+}
+:root[data-shell="mobile"][data-platform] .settings-page:not(.settings-page--modal):not(.settled) > .settings-body > * {
+  animation: pageFadeIn 0.22s cubic-bezier(0, 0, 0.2, 1) 0.08s backwards;
+}
+:root[data-shell="mobile"][data-platform] .settings-page:not(.settings-page--modal).closing > .settings-body > * {
+  animation: pageFadeOut 0.12s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+:root[data-shell="mobile"][data-platform] .settings-sky,
+:root[data-shell="mobile"][data-platform] .app .search-overlay::before {
+  animation: pageFadeIn 0.18s cubic-bezier(0, 0, 0.2, 1) backwards;
+}
+:root[data-shell="mobile"][data-platform] .settings-sky.closing,
+:root[data-shell="mobile"][data-platform] .app .search-overlay.closing::before {
+  animation: pageFadeOut 0.16s cubic-bezier(0.4, 0, 1, 1) 0.04s forwards;
 }
 
 /* Search fills the screen here rather than dropping a sheet from the top; its
@@ -8419,30 +9110,19 @@ body {
 :root[data-shell="mobile"][data-platform] .app .search-overlay {
   bottom: 0;
   border-radius: 0;
-  box-shadow: none;
   overflow-y: auto;
   overscroll-behavior: contain;
-  animation: pageContentIn 0.42s ease backwards;
-}
-:root[data-shell="mobile"][data-platform] .app .search-overlay.closing {
-  animation: pageContentOut 0.12s ease forwards;
-}
-
-/* On iOS the sky layer behind the settings page fades in with it. */
-:root[data-shell="mobile"][data-platform] .settings-page:not(.settings-page--modal),
-:root[data-shell="mobile"][data-platform] .settings-sky {
-  animation: pageContentIn 0.42s ease backwards;
-  box-shadow: none;
-}
-:root[data-shell="mobile"][data-platform] .settings-page:not(.settings-page--modal).closing,
-:root[data-shell="mobile"][data-platform] .settings-sky.closing {
-  animation: pageContentOut 0.12s ease forwards;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .page-reveal-fill { display: none; }
-  :root[data-shell="mobile"][data-platform] :is(.app .search-overlay, .settings-page:not(.settings-page--modal), .settings-sky) {
+  :root[data-shell="mobile"][data-platform] :is(.app .search-overlay, .settings-page:not(.settings-page--modal), .settings-sky),
+  :root[data-shell="mobile"][data-platform] .app .search-overlay::before,
+  :root[data-shell="mobile"][data-platform] :is(.app .search-overlay, .settings-page:not(.settings-page--modal)) > * {
     animation: none;
+  }
+  /* The list's own fade (above) is more specific than this block's rules. */
+  :root[data-shell="mobile"][data-platform] .settings-page:not(.settings-page--modal) > .settings-body > * {
+    animation: none !important;
   }
 }
 
@@ -8998,6 +9678,21 @@ body {
   animation: styleCoverInnerOut var(--style-cover-out, 380ms) cubic-bezier(0.4, 0, 1, 1) both;
 }
 
+/* The window's scrollbar lane sits outside anything position: fixed, so the
+   cover can't reach it, and the web shell always reserves one
+   (scrollbar-gutter: stable). Painting the lane to match left a seam: the
+   cover's angled gradient is sized to the window minus the lane, so no
+   background drawn in the lane lines up with it. Instead, while the cover is
+   opaque (data-style-cover, set by changePlatformTheme), the root drops its
+   scrollbar and the lane altogether, and the cover spans the whole window.
+   The page reflows by a lane's width under it, unseen. !important because the
+   shell and Radar rules that set the gutter vary in specificity, and this
+   has to beat all of them for the second it's on. */
+:root[data-style-cover] {
+  overflow: hidden !important;
+  scrollbar-gutter: auto !important;
+}
+
 .style-cover-mark {
   font-family: var(--font-display), var(--font);
   font-size: 15px;
@@ -9220,6 +9915,14 @@ body {
   }
 }
 
+/* iOS: the buttons over the sky take the same frost as the cards below them
+   and the splash location cards (--ios-frost), so the three read as one
+   material. Later than the theme variants above, at equal specificity. */
+:root[data-shell="mobile"][data-platform="ios"] .app.sky-active {
+  --icon-circle-bg: var(--ios-frost);
+  --icon-circle-press: var(--ios-frost-press);
+}
+
 :root[data-shell="mobile"][data-platform] .app.sky-active :is(
   .app-header .header-icon-btn, .app-header .settings-btn,
   .current-card .fav-btn, .current-card .save-btn
@@ -9237,12 +9940,16 @@ body {
 ) svg {
   stroke-width: 1.75;
 }
-:root[data-shell="mobile"][data-platform] .app.sky-active .app-header :is(.header-icon-btn, .settings-btn) {
-  width: 42px;
-  height: 42px;
+/* The header pair keeps one size from the splash to the forecast: the 44px
+   circles (see "One size per pair") with 20px glyphs at the finer stroke. This
+   used to shrink them to 42px only once the sky was up, so the buttons jumped
+   size as the splash handed over to the weather. Not scoped to .sky-active for
+   that reason. */
+:root[data-shell="mobile"][data-platform] .app .app-header :is(.header-icon-btn, .settings-btn) svg {
+  stroke-width: 1.75;
 }
-:root[data-shell="mobile"][data-platform] .app.sky-active .app-header .header-search-icons,
-:root[data-shell="mobile"][data-platform] .app.sky-active .app-header :is(.header-search-icons > svg, .settings-btn > svg) {
+:root[data-shell="mobile"][data-platform] .app .app-header .header-search-icons,
+:root[data-shell="mobile"][data-platform] .app .app-header :is(.header-search-icons > svg, .settings-btn > svg) {
   width: 20px;
   height: 20px;
 }
@@ -9371,17 +10078,18 @@ body {
 }
 
 /* ── Cards as clear glass over the sky (phone shells) ──
-   The forecast cards in the same material as the header buttons: a light
-   white tint rather than a white or near-black surface, a blur of the sky
-   behind, a hairline rim, a specular line along the top edge and a soft
-   shadow, with white text. Both phone styles, whenever the sky is behind
-   the stack (.sky-active); with weather effects off the per-style surfaces
-   stand.
+   Whenever the sky is behind the stack (.sky-active), the forecast cards are
+   glass with white text on both phone styles; with weather effects off the
+   per-style surfaces stand.
 
-   Card Transparency sets how see-through they are: a backing of the sky's deep
-   tint from 78% (slider left) down to 30% (right), under a white sheen from 7%
-   down to 4%, both driven by --card-glass-t (0–1, from App.jsx); the sheen is
-   8% to 5% in dark mode.
+   iOS: the frost the splash location cards and header buttons share
+   (--ios-frost, a dark neutral body under a faint white sheen, a white
+   hairline, a light blur). Card Transparency thins its body, driven by
+   --card-glass-t (0–1, from App.jsx): 50% → 30%.
+
+   Android keeps its Material containers over the sky (the cards, the header
+   buttons and the splash location cards alike): the scheme's container tone,
+   thinned by Card Transparency through --md-card-alpha.
 
    Rather than restyle every tile, row and control inside a card, the tokens
    they are built from are re-pointed on the card, and everything inside
@@ -9390,30 +10098,22 @@ body {
 
    Left out: the hero (.current-card), the settings surfaces, and the
    full-screen radar, which is a page of map rather than a card on the sky. */
-:root[data-shell="mobile"][data-platform] .app.sky-active .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) {
-  --glass-tint: calc(0.07 - 0.03 * var(--card-glass-t, 0));
-  --glass-rim: rgba(255, 255, 255, 0.2);
-  --glass-gloss: rgba(255, 255, 255, 0.26);
-  --glass-lift: rgba(0, 0, 0, 0.12);
-
-  /* Two layers. Underneath, the sky's own deep tint as a backing, which is what
-     makes white text easy to read: 78% with the slider all the way left,
-     thinning to 30% at the right. Over it, a faint white sheen that makes it
-     glass. Thickening the white instead would have lowered the contrast with
-     the white text, not raised it; at 50% backing and a 14% sheen, a pale sky
-     still showed through as mid-grey. The blur also dims what it lets through
-     (brightness 0.8), so a bright sky behind a card is taken down before it
-     reaches the text. */
-  --glass-body: calc(78% - 48% * var(--card-glass-t, 0));
-  background-color: color-mix(in srgb, var(--sky-card-deep, #2d3f55) var(--glass-body), transparent);
+:root[data-shell="mobile"][data-platform]:not([data-platform="android"]) .app.sky-active .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) {
+  /* The splash location cards' material (.splash-mini-card over a dark sky):
+     the --ios-frost body under a 6% white sheen (5% in dark mode), a white
+     hairline and a light blur, no shadow, so the forecast stack, the splash
+     and the header buttons read as one family. */
+  --glass-tint: 0.06;
+  --glass-rim: rgba(255, 255, 255, 0.16);
+  --card-glass-fill: var(--ios-frost);
+  --card-glass-shadow: none;
+  --card-glass-blur: blur(8px);
+  background-color: var(--card-glass-fill);
   background-image: linear-gradient(rgb(255 255 255 / var(--glass-tint)), rgb(255 255 255 / var(--glass-tint)));
   border: 1px solid var(--glass-rim);
-  box-shadow:
-    inset 0 1px 0 var(--glass-gloss),
-    0 1px 2px rgba(0, 0, 0, 0.06),
-    0 10px 30px var(--glass-lift);
-  -webkit-backdrop-filter: blur(24px) saturate(1.4) brightness(0.8);
-  backdrop-filter: blur(24px) saturate(1.4) brightness(0.8);
+  box-shadow: var(--card-glass-shadow);
+  -webkit-backdrop-filter: var(--card-glass-blur);
+  backdrop-filter: var(--card-glass-blur);
 
   /* Text, for both styles' rules. */
   --text-primary: #fff;
@@ -9441,30 +10141,53 @@ body {
   --ios-tile-tint: #fff;
   --ios-tile-alpha: 9%;
 }
-[data-theme="dark"]:root[data-shell="mobile"][data-platform] .app.sky-active .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) {
-  --glass-tint: calc(0.08 - 0.03 * var(--card-glass-t, 0));
-  --glass-rim: rgba(255, 255, 255, 0.11);
-  --glass-gloss: rgba(255, 255, 255, 0.12);
-  --glass-lift: rgba(0, 0, 0, 0.24);
+[data-theme="dark"]:root[data-shell="mobile"][data-platform]:not([data-platform="android"]) .app.sky-active .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) {
+  --glass-tint: 0.05;
+  --glass-rim: rgba(255, 255, 255, 0.12);
 }
 @media (prefers-color-scheme: dark) {
-  :root[data-shell="mobile"][data-platform]:not([data-theme="light"]) .app.sky-active .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) {
-    --glass-tint: calc(0.08 - 0.03 * var(--card-glass-t, 0));
-    --glass-rim: rgba(255, 255, 255, 0.11);
-    --glass-gloss: rgba(255, 255, 255, 0.12);
-    --glass-lift: rgba(0, 0, 0, 0.24);
+  :root[data-shell="mobile"][data-platform]:not([data-platform="android"]):not([data-theme="light"]) .app.sky-active .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) {
+    --glass-tint: 0.05;
+    --glass-rim: rgba(255, 255, 255, 0.12);
   }
 }
 
 /* Section labels: Android draws them in the primary colour, which sinks into
    a sky; on the glass they are a quiet white like the rest. */
-:root[data-shell="mobile"][data-platform] .app.sky-active .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) .section-label {
+:root[data-shell="mobile"][data-platform]:not([data-platform="android"]) .app.sky-active .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) .section-label {
   color: rgba(255, 255, 255, 0.7);
 }
 
-/* A tapped tile opens a cover over its card that has to stay opaque, or the
-   rows underneath read through it. Over the glass it takes the sky's own deep
-   tint, so it still belongs to the sky rather than flashing a white sheet. */
-:root[data-shell="mobile"][data-platform] .app.sky-active .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) .detail-cover-fill {
-  background: var(--sky-card-deep, #2d3f55);
+/* No opaque cover fill over the glass. A tapped tile's cover keeps the card's
+   own transparency: the circle is the faint --ios-tile-tint wash from the iOS
+   cover rule, and the rows it would have had to hide fade out under it (see
+   "The cover is the card's own glass"). An opaque sky-deep fill here used to
+   outrank that and turn every opened card solid whatever Card Transparency
+   said. */
+
+/* ── Android: Material circles over the sky too ──
+   The .app.sky-active circle tokens above (white glass) are for iOS. Android
+   keeps the same container circles it draws everywhere else, so the header
+   buttons match the cards and the splash location cards: the container tone
+   at --md-card-alpha, Material icon colours, and with Card Transparency on,
+   the cards' glass edge and veil. The :is() lifts these to the specificity of
+   the dark-theme sky variants, and they come after them. */
+:root[data-shell="mobile"][data-platform="android"]:is([data-theme], :not([data-theme])) .app.sky-active {
+  --icon-circle-bg: color-mix(in srgb, var(--md-surface-container) var(--md-card-alpha), transparent);
+  --icon-circle-press: var(--md-surface-container-high);
+  --icon-circle-ring: transparent;
+  --icon-circle-shadow: 0 1px 2px rgba(0, 0, 0, 0.10), 0 2px 6px rgba(0, 0, 0, 0.05);
+  --icon-circle-shadow-press: inset 0 2px 4px rgba(0, 0, 0, 0.16);
+}
+:root[data-card-glass="on"][data-shell="mobile"][data-platform="android"]:is([data-theme], :not([data-theme])) .app.sky-active {
+  --icon-circle-shadow:
+    inset 0 1px 0 var(--md-glass-gloss),
+    inset 0 0 0 1px var(--md-glass-rim),
+    0 2px 10px var(--md-glass-lift);
+}
+:root[data-shell="mobile"][data-platform="android"] .app.sky-active :is(.app-header .header-icon-btn, .app-header .settings-btn) {
+  color: var(--md-on-surface-variant);
+}
+:root[data-card-glass="on"][data-shell="mobile"][data-platform="android"] .app.sky-active .app-header :is(.header-icon-btn, .settings-btn) {
+  background-image: linear-gradient(var(--md-glass-veil), var(--md-glass-veil));
 }

@@ -165,3 +165,30 @@ export function applyMaterialTokens(el, seed, scheme) {
     else el.style.removeProperty(prop)
   }
 }
+
+// ── Material You (wallpaper colour) ──
+// The Android app's native shell exposes the system's dynamic seed — the
+// colour Android 12+ derives from the wallpaper — as window.AndroidTheme
+// (MainActivity.ThemeBridge). The stored theme colour can be the word
+// 'system' instead of a hex, meaning "follow the wallpaper"; it is resolved to
+// a hex here every time the palette is painted, so a wallpaper change shows up
+// the next time the app is brought back.
+export const SYSTEM_SEED = 'system'
+
+/** The wallpaper seed as '#rrggbb', or null where there is none (web, iOS,
+ *  Android before 12). */
+export function systemSeed() {
+  try {
+    const v = window.AndroidTheme?.systemSeed?.()
+    if (!isValidSeed(v)) return null
+    const hex = v.trim().toLowerCase()
+    return hex.startsWith('#') ? hex : `#${hex}`
+  } catch {
+    return null
+  }
+}
+
+/** A stored theme colour → the hex to build from. */
+export function resolveSeed(value) {
+  return value === SYSTEM_SEED ? (systemSeed() ?? DEFAULT_SEED) : value
+}

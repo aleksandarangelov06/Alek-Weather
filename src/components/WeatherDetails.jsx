@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { Droplets, Eye, Gauge, Sun, Sunrise, Sunset, Leaf, AlertTriangle, ShieldAlert, ChevronDown, ChevronUp, Navigation2, X } from 'lucide-react'
+import { Droplets, Eye, Gauge, Sun, Sunrise, Sunset, Leaf, AlertTriangle, ShieldAlert, ChevronDown, ChevronUp, Navigation2 } from 'lucide-react'
 import { WindTurbine } from './WindTurbine'
 import { getWindDirection, getUVLabel, formatTime, formatHour, toTemp, sunColor, SUN_ORANGE } from '../utils/weatherCodes'
 import {
@@ -7,7 +7,7 @@ import {
   getUVNote, getVisibilityInfo, getVisibilityNote, getWindInfo, getWindNote,
 } from '../utils/conditions'
 import { formatUnitDelta, unitSuffix, unitText, unitValue } from '../utils/units'
-import { markCoverSettled } from '../utils/detailCover'
+import { coverFrom, markCoverSettled, useCoverHistory } from '../utils/detailCover'
 
 // Metres per mile, for the miles the visibility thresholds in
 // utils/conditions.js are written in. That is deliberately separate from the
@@ -120,42 +120,33 @@ function DetailCard({ icon, label, value, sub, color, onClick, isExpanded, conte
   )
 }
 
-// Keep in step with --reveal-dur in App.css, which is where the reasoning for the
-// number lives — the cover stays mounted this long while the circle shrinks back
-// into the tapped tile.
-const REVEAL_MS = 520
-
-// Fixed backing size of the reveal circle, scaled up to cover; keeps the GPU
-// texture small regardless of card size. Must match the 360px .detail-cover-fill
-// width/height in App.css.
-const FILL_BASE = 360
+// How long the cover stays mounted on the way out: the content fading, then the
+// rectangle shrinking back into the tile. Keep in step with --cover-content-out
+// + --cover-out in App.css.
+const COVER_OUT_MS = 400
 
 export function WeatherDetails({ current, daily, hourly, timezone, unit, units, airQuality, colorCoding = true }) {
   const [expanded, setExpanded] = useState(null)
   const [closing, setClosing] = useState(false)
-  // Origin + radius of the circular reveal, in px relative to the details card.
-  const [reveal, setReveal] = useState({ x: 0, y: 0, r: 0 })
+  // The tapped tile's box, which the cover grows out of (see coverFrom).
+  const [from, setFrom] = useState(() => coverFrom(null))
   const cardRef = useRef(null)
   const closeTimer = useRef(null)
 
   const closeDetail = () => {
     setClosing(true)
     clearTimeout(closeTimer.current)
-    closeTimer.current = setTimeout(() => { setExpanded(null); setClosing(false) }, REVEAL_MS)
+    closeTimer.current = setTimeout(() => { setExpanded(null); setClosing(false) }, COVER_OUT_MS)
   }
 
-  // Grow the cover from wherever the tile was tapped. The radius is the distance
-  // to the card's farthest corner, so the circle always finishes fully covering.
+  // The cover grows out of the tile that was tapped, as a rectangle, to fill
+  // the card. Every way out (the header, Esc, a second tap on the open tile,
+  // the back gesture) goes through history; see useCoverHistory.
+  const dismissDetail = useCoverHistory(expanded !== null && !closing, closeDetail)
+
   const openDetail = (key, e) => {
-    if (expanded === key) { closeDetail(); return }
-    const rect = cardRef.current?.getBoundingClientRect()
-    if (rect) {
-      // Keyboard activation reports 0,0 — fall back to the card's center.
-      const fromPointer = e && (e.clientX || e.clientY)
-      const x = fromPointer ? e.clientX - rect.left : rect.width / 2
-      const y = fromPointer ? e.clientY - rect.top  : rect.height / 2
-      setReveal({ x, y, r: Math.hypot(Math.max(x, rect.width - x), Math.max(y, rect.height - y)) })
-    }
+    if (expanded === key) { dismissDetail(); return }
+    setFrom(coverFrom(e?.currentTarget, '.card--details'))
     clearTimeout(closeTimer.current)
     setClosing(false)
     setExpanded(key)
@@ -165,7 +156,7 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, units, 
 
   useEffect(() => {
     if (!expanded) return
-    const onKey = (e) => { if (e.key === 'Escape') closeDetail() }
+    const onKey = (e) => { if (e.key === 'Escape') dismissDetail() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [expanded]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -586,27 +577,23 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, units, 
       {expanded && (
         <div
           className={`detail-cover${closing ? ' detail-cover--closing' : ''}`}
-          style={{
-            '--reveal-x': `${reveal.x}px`,
-            '--reveal-y': `${reveal.y}px`,
-            '--fill-scale': (reveal.r * 2) / FILL_BASE,
-          }}
+          style={from}
           role="dialog"
           aria-label={openDef?.label}
           onAnimationEnd={markCoverSettled}
         >
           <div className="detail-cover-fill" />
-          <div className="detail-cover-head">
+          {/* The header is the close control: tap the title to fold the tile
+              back, the way it was tapped open. */}
+          <button className="detail-cover-head" onClick={dismissDetail} aria-label={`Close ${openDef?.label ?? 'details'}`}>
             <span className="detail-cover-title">
               <span className="detail-cover-icon" style={openDef?.color ? { color: openDef.color } : undefined}>
                 {openDef?.icon}
               </span>
               {openDef?.label}
             </span>
-            <button className="detail-cover-close" onClick={closeDetail} aria-label="Close details">
-              <X size={20} />
-            </button>
-          </div>
+            <ChevronUp size={20} className="detail-cover-chevron" aria-hidden="true" />
+          </button>
           <div className="detail-cover-body">
             {detailBody(expanded)}
           </div>

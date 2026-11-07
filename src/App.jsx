@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 
 function skyClass(code, isDay) {
   if (code == null) return ''
@@ -118,6 +118,7 @@ import { WeatherAlerts } from './components/WeatherAlerts'
 import { WeatherOverview } from './components/WeatherOverview'
 import { SettingsPage } from './components/SettingsPageLazy'
 import { preloadSettings } from './components/settingsChunk'
+import { BuildingsIcon, GearIcon, SearchIcon } from './components/headerGlyphs'
 import { SlidersIcon } from './components/SlidersIcon'
 import { MAX_CARD_TRANSPARENCY, IOS_FULL_CLARITY_AT } from './utils/appearance'
 import { WebLayout } from './components/web/WebLayout'
@@ -131,12 +132,13 @@ import { WebLoadingScreen } from './components/web/WebLoadingScreen'
 import { liveWeatherCode, getWeatherInfo } from './utils/weatherCodes'
 import { isSnowing } from './utils/conditions'
 import { WeatherIcon } from './components/WeatherIcon'
+import { useIconSet, setIconSet } from './utils/iconSet'
 import { useLocalConditions, locatedPlace, localConditionsFailed } from './hooks/useLocalConditions'
 import { loadUnits, saveUnit } from './utils/units'
 import { APP_VERSION, IS_ANDROID_APP } from './utils/version'
 import { UpdateToast } from './components/UpdateToast'
 import { IS_PHONE, IS_DESKTOP, DEV_DEVICE } from './utils/device'
-import { applyMaterialTokens, DEFAULT_SEED, isValidSeed } from './utils/materialTheme'
+import { applyMaterialTokens, DEFAULT_SEED, isValidSeed, resolveSeed, systemSeed, SYSTEM_SEED } from './utils/materialTheme'
 import { useNotifications } from './hooks/useNotifications'
 import { syncNotificationSettings } from './utils/notifications'
 import './App.css'
@@ -189,28 +191,21 @@ function defaultPlatformTheme() {
   if (isApple) return 'ios'
   return window.matchMedia(DESKTOP_MQ).matches ? 'web' : 'android'
 }
-// Where the phone shells' circle reveal grows from (and shrinks back into): the
-// centre of the button that opened the page, and how far to scale the 360px
-// .page-reveal-fill circle so it just reaches the farthest corner of the screen.
-// Written as custom properties on the root, which the pageFillIn/pageFillOut
-// keyframes in App.css read. With no element it grows from the middle of the
-// screen. Keep 360 in sync with .page-reveal-fill's size.
-const PAGE_FILL_BASE = 360
+// Where the phone shells' pages zoom out of (and settle back toward): the centre
+// of the button that opened them, written to the root as --page-reveal-x/y and
+// used as the page's transform-origin by the pageGrowIn/pageShrinkOut keyframes in
+// App.css. With no element the page zooms from the middle of the screen.
 function setRevealOrigin(el) {
-  const w = window.innerWidth
-  const h = window.innerHeight
-  let x = w / 2
-  let y = h / 2
+  let x = window.innerWidth / 2
+  let y = window.innerHeight / 2
   if (el?.getBoundingClientRect) {
     const r = el.getBoundingClientRect()
     x = r.left + r.width / 2
     y = r.top + r.height / 2
   }
-  const radius = Math.ceil(Math.hypot(Math.max(x, w - x), Math.max(y, h - y)))
   const root = document.documentElement.style
   root.setProperty('--page-reveal-x', `${x}px`)
   root.setProperty('--page-reveal-y', `${y}px`)
-  root.setProperty('--page-reveal-scale', String((2 * radius) / PAGE_FILL_BASE))
 }
 
 // How much of the Card Transparency setting reaches the Android card fill. The
@@ -335,9 +330,14 @@ function App() {
     if (!saved || (saved === 'web' && IS_PHONE)) return defaultPlatformTheme()
     return saved
   })
+  // A hex, or SYSTEM_SEED to follow the wallpaper (Material You, Android 12+
+  // app only). Someone who has never picked a colour gets the wallpaper's
+  // wherever there is one, the way Android's own apps do.
   const [materialColor, setMaterialColor] = useState(() => {
     const saved = localStorage.getItem(MATERIAL_COLOR_KEY)
-    return isValidSeed(saved) ? saved.toLowerCase() : DEFAULT_SEED
+    if (saved === SYSTEM_SEED) return SYSTEM_SEED
+    if (isValidSeed(saved)) return saved.toLowerCase()
+    return systemSeed() ? SYSTEM_SEED : DEFAULT_SEED
   })
   const [cardTransparency, setCardTransparency] = useState(() => {
     const saved = Number(localStorage.getItem(CARD_TRANSPARENCY_KEY))
@@ -352,6 +352,9 @@ function App() {
   // falling rain, drifting cloud, the lightning flash — so it can be turned off
   // by someone who still wants the sky, and vice versa.
   const [iconMotion, setIconMotion] = useState(() => localStorage.getItem(ICON_MOTION_KEY) !== 'false')
+  // Color (the Fluent glyphs) or Line (Lucide). Stored and broadcast by
+  // iconSet.js, which WeatherIcon reads directly — see the note there.
+  const iconSet = useIconSet()
   // Defaults on: radar is the only source that observes precipitation over the
   // location itself, and it has caught storms every model and nearby station
   // missed. `!== 'false'` so anyone who explicitly turned it off stays off.
@@ -393,7 +396,7 @@ function App() {
   // The same, for the magnifier's sweep and the search overlay.
   const [searchSweeping, setSearchSweeping] = useState(false)
   const searchOpenTimer = useRef(null)
-  const [subView, setSubView] = useState(null) // null | 'colorcoding' | 'overview' | 'radar' | 'effects' | 'theme' | 'notifications'
+  const [subView, setSubView] = useState(null) // null | 'colorcoding' | 'overview' | 'radar' | 'effects' | 'icons' | 'theme' | 'notifications'
   const [isDesktop, setIsDesktop] = useState(() => window.matchMedia(DESKTOP_MQ).matches)
   const [webTab, setWebTab] = useWebTab()
   // The web app's non-forecast page — 'settings' | null. Kept
@@ -554,7 +557,12 @@ function App() {
   //
   // Splitting them this way is what lets Web borrow most of Android without the
   // parts that are specifically the phone app.
-  useEffect(() => {
+  //
+  // A layout effect, so the attributes change in the same frame as the markup
+  // that depends on them. As a plain effect they landed a paint late, and in
+  // that frame anything styled per shell fell back to its base rules (the
+  // phone settings page, for one, played its full-screen slide from the right).
+  useLayoutEffect(() => {
     const root = document.documentElement
     root.setAttribute('data-shell', webLayout ? 'desktop' : 'mobile')
     root.setAttribute('data-platform', platformTheme === 'ios' ? 'ios' : 'android')
@@ -572,12 +580,19 @@ function App() {
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
     const paint = () => {
       const dark = darkMode === 'on' || (darkMode === 'system' && mq.matches)
-      const seed = platformTheme === 'android' ? materialColor : null
+      const seed = platformTheme === 'android' ? resolveSeed(materialColor) : null
       applyMaterialTokens(root, seed, dark ? 'dark' : 'light')
     }
     paint()
     mq.addEventListener('change', paint)
-    return () => mq.removeEventListener('change', paint)
+    // Following the wallpaper: the system colour can change while the app is in
+    // the background, so it is read again whenever the app comes back.
+    const onVisible = () => { if (materialColor === SYSTEM_SEED && !document.hidden) paint() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      mq.removeEventListener('change', paint)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [materialColor, platformTheme, darkMode])
 
   // Card transparency, the other half of that picker — one stored value, but
@@ -884,6 +899,27 @@ function App() {
     const apply = () => {
       setPlatformTheme(mode)
       localStorage.setItem(PLATFORM_THEME_KEY, mode)
+      // Switching to Web from the phone Settings page: Web keeps settings on
+      // its own page (section list down the left), so land there in the same
+      // commit. Left open, the phone page was re-skinned into a dialog
+      // mid-switch and replayed its entrance animations.
+      if (mode === 'web' && showSettings) {
+        clearTimeout(settingsOpenTimer.current)
+        settingsOpenTimer.current = null
+        setSettingsOpening(false)
+        setSettingsClosing(false)
+        setShowSettings(false)
+        setSubView(null)
+        // The style picker lives under Appearance.
+        try { localStorage.setItem('alek-weather-web-settings-section', 'appearance') } catch { /* storage unavailable */ }
+        setWebPage('settings')
+        if (splashPhase !== 'done') setSplashPhase('done')
+        window.scrollTo({ top: 0, behavior: 'auto' })
+        // Drop the history entries the phone page pushed (the page, plus the
+        // Theme sub-page) so Back doesn't spend presses on a page that's gone.
+        // Nothing is open by the time that popstate lands, so it closes nothing.
+        history.go(subView ? -2 : -1)
+      }
     }
     // Reduced motion: no cover, just the switch.
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { apply(); return }
@@ -893,15 +929,31 @@ function App() {
     // switch happens behind it, and it lifts to show the new style.
     styleCoverTimers.current.forEach(clearTimeout)
     setStyleCover({ to: mode, leaving: false })
+    // The cover is position: fixed, which can't paint over the window's own
+    // scrollbar lane (the web shell reserves one with scrollbar-gutter), so a
+    // strip of page and scrollbar showed down its right edge. For as long as
+    // the cover is fully opaque, data-style-cover takes the root's scrollbar
+    // and lane away (see App.css), so the cover fills the window. It comes off
+    // as the cover starts to lift, so the lane returns with the page it
+    // belongs to.
+    const root = document.documentElement
     styleCoverTimers.current = [
-      setTimeout(apply, STYLE_COVER_IN_MS),
+      setTimeout(() => { root.dataset.styleCover = mode; apply() }, STYLE_COVER_IN_MS),
       // A beat after the switch, so the new style has painted before it shows.
-      setTimeout(() => setStyleCover(c => c && { ...c, leaving: true }), STYLE_COVER_IN_MS + STYLE_COVER_HOLD_MS),
+      setTimeout(() => {
+        delete root.dataset.styleCover
+        setStyleCover(c => c && { ...c, leaving: true })
+      }, STYLE_COVER_IN_MS + STYLE_COVER_HOLD_MS),
       setTimeout(() => setStyleCover(null), STYLE_COVER_IN_MS + STYLE_COVER_HOLD_MS + STYLE_COVER_OUT_MS),
     ]
   }
 
   const changeMaterialColor = (hex) => {
+    if (hex === SYSTEM_SEED) {
+      setMaterialColor(SYSTEM_SEED)
+      localStorage.setItem(MATERIAL_COLOR_KEY, SYSTEM_SEED)
+      return
+    }
     if (!isValidSeed(hex)) return
     const seed = hex.toLowerCase()
     setMaterialColor(seed)
@@ -1412,6 +1464,8 @@ function App() {
     onWeatherAnimationsChange: changeWeatherAnimations,
     iconMotion,
     onIconMotionChange: changeIconMotion,
+    iconSet,
+    onIconSetChange: setIconSet,
     gyroscope,
     onGyroscopeChange: changeGyroscope,
     radarEnhanced,
@@ -1542,8 +1596,18 @@ function App() {
           aria-label="Search — hold to use my location"
         >
           <span className="header-search-icons">
-            <Building2 size={24} style={{ opacity: splashPhase !== 'done' ? 1 : 0, pointerEvents: splashPhase !== 'done' ? undefined : 'none' }} />
-            <Search  size={24} style={{ opacity: splashPhase === 'done' ? 1 : 0, pointerEvents: splashPhase === 'done' ? undefined : 'none' }} />
+            {/* The phone shells draw these from Phosphor
+                (see headerGlyphs.jsx); the web layout keeps its line icons. */}
+            {(() => {
+              const LocIcon = webLayout ? Building2 : BuildingsIcon
+              const FindIcon = webLayout ? Search : SearchIcon
+              return (
+                <>
+                  <LocIcon size={24} style={{ opacity: splashPhase !== 'done' ? 1 : 0, pointerEvents: splashPhase !== 'done' ? undefined : 'none' }} />
+                  <FindIcon size={24} style={{ opacity: splashPhase === 'done' ? 1 : 0, pointerEvents: splashPhase === 'done' ? undefined : 'none' }} />
+                </>
+              )
+            })()}
           </span>
         </button>
         <div className="app-title-wrapper">
@@ -1597,7 +1661,7 @@ function App() {
           aria-label="Settings"
         >
           {/* Gear on the phone styles; the web layout keeps the sliders. */}
-          {webLayout ? <SlidersIcon size={22} /> : <SettingsIcon size={22} className="settings-gear" />}
+          {webLayout ? <SlidersIcon size={22} /> : <GearIcon size={22} className="settings-gear" />}
         </button>
       </header>
 
@@ -1789,8 +1853,6 @@ function App() {
       {searchOpen && (
         <>
           <div className={`search-backdrop${searchClosing ? ' closing' : ''}`} onClick={closeSearch} />
-          {/* Phone shells: the circle the page grows out of (see .page-reveal-fill). */}
-          {!webLayout && <div className={`page-reveal-fill page-reveal-fill--search${searchClosing ? ' closing' : ''}`} aria-hidden="true" />}
           <div className={`search-overlay${searchClosing ? ' closing' : ''}${!webLayout ? ' search-overlay--sheet' : ''}`}>
             {!webLayout ? (
               <SearchSheet
@@ -1854,12 +1916,8 @@ function App() {
       )}
 
       {/* The saved locations page, opened from the home screen's corner button,
-          grows out of it the way settings does: it is a .settings-page, so it
-          already fades in over this circle (see .page-reveal-fill). Closes on
-          the same SETTINGS_CLOSE_MS timer, so it shares the settings fill. */}
-      {savedOpen && !webLayout && (
-        <div className={`page-reveal-fill page-reveal-fill--settings${savedClosing ? ' closing' : ''}`} aria-hidden="true" />
-      )}
+          zooms out of it the way settings does: it is a .settings-page, so it
+          shares the phone page transition (pageGrowIn in App.css). */}
       {savedOpen && (
         <SavedCitiesPage
           cities={cities}
@@ -1879,9 +1937,6 @@ function App() {
           Android's thinned Material surfaces), above the app content — so the
           page shows only the sky, not the weather UI. Reuses the same gradient
           class as the main sky background. */}
-      {showSettings && !webLayout && (
-        <div className={`page-reveal-fill page-reveal-fill--settings${settingsClosing ? ' closing' : ''}`} aria-hidden="true" />
-      )}
       {showSettings && !webLayout && weather && weatherAnimations && (
         <div className={`settings-sky ${skyC}${settingsClosing ? ' closing' : ''}`} aria-hidden="true" />
       )}
@@ -1908,6 +1963,7 @@ function App() {
           onOverviewOpen={() => openSubView('overview')}
           onRadarOpen={() => openSubView('radar')}
           onWeatherEffectsOpen={() => openSubView('effects')}
+          onIconsOpen={() => openSubView('icons')}
           onThemeOpen={() => openSubView('theme')}
           onNotificationsOpen={() => openSubView('notifications')}
           onSubViewBack={closeSubView}

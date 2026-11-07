@@ -1,19 +1,16 @@
-import { Sun, Moon, Cloud, CloudSun, CloudFog, CloudRain, CloudSnow, CloudLightning, CloudSunRain, Thermometer, Shirt, Wind, Snowflake } from 'lucide-react'
+import { Sun, Moon, Cloud, CloudSun, CloudFog, CloudRain, CloudSnow, CloudLightning, Thermometer, Shirt, Wind, Snowflake } from 'lucide-react'
 import { TankTop, Shorts, LongSleeve, Hoodie, Jacket, Coat, Parka, Beanie, Mitten, Boot, RainUmbrella } from './clothingGlyphs'
 import { WindTurbine } from './WindTurbine'
 import { getWeatherInfo, liveWeatherCode, nowcastHourlyCode, precipTier, tempColor } from '../utils/weatherCodes'
 import { formatWind, unitSuffix, unitValue } from '../utils/units'
+import { LINE_ICON_FOR_ID } from '../utils/iconSet'
 
-// Maps the emoji icon key from getWeatherInfo() to a tintable lucide line icon,
-// so the current-conditions line can share the clothing line's look and take a
-// temperature color when color coding is on.
-const LUCIDE_FOR_ICON = {
-  sun: Sun, moon: Moon, sunSmall: Sun, sunCloud: CloudSun, cloud: Cloud,
-  fog: CloudFog, sunRain: CloudSunRain, rain: CloudRain, snow: CloudSnow,
-  snowflake: Snowflake, storm: CloudLightning, stormStrong: CloudLightning, therm: Thermometer,
-}
+// Maps the icon key from getWeatherInfo() to a tintable lucide line icon, so
+// the current-conditions line can share the clothing line's look and take a
+// temperature color when color coding is on. The map is the Line icon set's
+// (see iconSet.js), so this line and the forecast icons always agree.
 const lucideForCode = (code, isNight) =>
-  LUCIDE_FOR_ICON[getWeatherInfo(code, isNight).icon] ?? Thermometer
+  LINE_ICON_FOR_ID[getWeatherInfo(code, isNight).icon] ?? Thermometer
 
 // Picks a tintable line icon for an insight from its wording, so each insight
 // line reads at a glance the way the current-conditions and clothing lines do.
