@@ -183,6 +183,7 @@ class MainActivity : AppCompatActivity() {
         web.addJavascriptInterface(BarsBridge(), "AndroidBars")
         web.addJavascriptInterface(Updater(), "AndroidUpdate")
         web.addJavascriptInterface(NotifyBridge(), "AndroidNotify")
+        web.addJavascriptInterface(ThemeBridge(), "AndroidTheme")
 
         // The page paints under the bars, so it needs to know how much of the
         // top and bottom is covered. Insets can arrive before or after the page
@@ -347,6 +348,28 @@ class MainActivity : AppCompatActivity() {
             })();
         """.trimIndent()
         web.evaluateJavascript(js, null)
+    }
+
+    /**
+     * Material You: the colour the system derived from the wallpaper, for the
+     * page to build its --md-* palette from (see materialTheme.js). Android 12+
+     * publishes the dynamic palette as system colour resources; accent1 at tone
+     * 500 is its primary seed. Read on every call rather than cached, so a
+     * wallpaper change is picked up the next time the page asks (it re-asks when
+     * it comes back to the foreground). Empty string where there is no dynamic
+     * colour, which the page reads as "not available".
+     */
+    inner class ThemeBridge {
+        @JavascriptInterface
+        fun systemSeed(): String {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return ""
+            return try {
+                val c = ContextCompat.getColor(this@MainActivity, android.R.color.system_accent1_500)
+                String.format("#%06x", c and 0xFFFFFF)
+            } catch (e: Exception) {
+                ""
+            }
+        }
     }
 
     inner class BarsBridge {

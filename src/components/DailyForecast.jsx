@@ -1,19 +1,16 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Droplet, X } from 'lucide-react'
+import { Droplet, ChevronUp } from 'lucide-react'
 import { getWeatherInfo, formatDay, formatHour, formatTime, getUVLabel, liveWeatherCode, nowcastHourlyCode, toTemp, tempColor, tempStyle, SUN_ORANGE } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
 import { formatPrecip, formatWind } from '../utils/units'
-import { markCoverSettled } from '../utils/detailCover'
+import { coverFrom, markCoverSettled, useCoverHistory } from '../utils/detailCover'
 
-// Keep in step with --reveal-dur in App.css, which is where the reasoning for the
-// number lives — the cover stays mounted this long while the circle shrinks back
-// into the tapped row.
-const REVEAL_MS = 520
-
-// Fixed backing size of the reveal circle; it is scaled up to cover instead of
-// being sized to the card, so the GPU texture stays small on a tall card (see
-// .detail-cover-fill in App.css). Must match the 360px width/height there.
-const FILL_BASE = 360
+// The cover's two lengths. Keep in step with App.css: COVER_IN_MS is
+// --cover-in (the rectangle growing out of the row — the strip waits for it),
+// COVER_OUT_MS is --cover-content-out + --cover-out (content fading, then the
+// rectangle shrinking back; the cover stays mounted for all of it).
+const COVER_IN_MS = 380
+const COVER_OUT_MS = 400
 
 // Severity colours for the day cover's stats, mirroring the app-wide --cond-*
 // scale (UV, air quality) so they track the theme in light and dark. Returned as
@@ -54,8 +51,8 @@ function coverTitle(date) {
 export function DailyForecast({ daily, hourly, timezone, unit, units, colorCoding = true, glow = true, frost = true, current, minutely, radarClear = null }) {
   const [expanded, setExpanded] = useState(null)
   const [closing, setClosing] = useState(false)
-  // Origin + radius of the circular reveal, in px relative to the daily card.
-  const [reveal, setReveal] = useState({ x: 0, y: 0, r: 0 })
+  // The tapped row's box, which the cover grows out of (see coverFrom).
+  const [from, setFrom] = useState(() => coverFrom(null))
   // The day cover's hourly strip is ~24 icon items; building it synchronously on
   // tap blocks the reveal's first frames and makes the open stutter. Hold it back
   // until the reveal has finished, then fade it in — nothing competes with the
@@ -66,14 +63,14 @@ export function DailyForecast({ daily, hourly, timezone, unit, units, colorCodin
   const closeTimer = useRef(null)
   const hoursTimer = useRef(null)
 
-  // Hold the hourly strip back one reveal's worth, counted from the moment the
-  // reveal actually starts. That is not the tap: armCover below gives the mount a
+  // Hold the hourly strip back until the rectangle has filled the card, counted
+  // from the moment it actually starts growing. That is not the tap: armCover below gives the mount a
   // couple of frames first, and a delay counted from the tap therefore expires
   // *inside* the animation's last frames — where mounting ~24 icon items takes
   // them, and a reveal missing its last frames is one that looks cut short.
   const scheduleHours = () => {
     clearTimeout(hoursTimer.current)
-    hoursTimer.current = setTimeout(() => setHoursReady(true), REVEAL_MS)
+    hoursTimer.current = setTimeout(() => setHoursReady(true), COVER_IN_MS)
   }
 
   const closeDay = () => {
@@ -81,22 +78,19 @@ export function DailyForecast({ daily, hourly, timezone, unit, units, colorCodin
     clearTimeout(hoursTimer.current)
     setHoursReady(false)
     clearTimeout(closeTimer.current)
-    closeTimer.current = setTimeout(() => { setExpanded(null); setClosing(false) }, REVEAL_MS)
+    closeTimer.current = setTimeout(() => { setExpanded(null); setClosing(false) }, COVER_OUT_MS)
   }
 
-  // Grow the cover from wherever the row was tapped — the same circular reveal
-  // as the detail tiles. The radius is the distance to the card's farthest
-  // corner, so the circle always finishes fully covering.
+  // The cover grows out of the row that was tapped, as a rectangle, to fill
+  // the card — the same opening as the detail tiles. Every way out (the header, Esc, a second tap on the open row, the back
+  // gesture) goes through history; see useCoverHistory.
+  const dismissDay = useCoverHistory(expanded !== null && !closing, closeDay)
+
   const openDay = (date, e) => {
-    if (expanded === date) { closeDay(); return }
-    const rect = cardRef.current?.getBoundingClientRect()
-    if (rect) {
-      // Keyboard activation reports 0,0 — fall back to the card's center.
-      const fromPointer = e && (e.clientX || e.clientY)
-      const x = fromPointer ? e.clientX - rect.left : rect.width / 2
-      const y = fromPointer ? e.clientY - rect.top  : rect.height / 2
-      setReveal({ x, y, r: Math.hypot(Math.max(x, rect.width - x), Math.max(y, rect.height - y)) })
-    }
+    if (expanded === date) { dismissDay(); return }
+    // Switching days keeps the open cover, which is already full; only a fresh
+    // open reads this.
+    if (expanded === null) setFrom(coverFrom(e?.currentTarget, '.card--daily'))
     clearTimeout(closeTimer.current)
     setClosing(false)
     const wasOpen = expanded !== null
@@ -140,7 +134,7 @@ export function DailyForecast({ daily, hourly, timezone, unit, units, colorCodin
 
   useEffect(() => {
     if (!expanded) return
-    const onKey = (e) => { if (e.key === 'Escape') closeDay() }
+    const onKey = (e) => { if (e.key === 'Escape') dismissDay() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [expanded]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -310,27 +304,23 @@ export function DailyForecast({ daily, hourly, timezone, unit, units, colorCodin
         <div
           ref={armCover}
           className={`detail-cover${closing ? ' detail-cover--closing' : ''}`}
-          style={{
-            '--reveal-x': `${reveal.x}px`,
-            '--reveal-y': `${reveal.y}px`,
-            '--fill-scale': (reveal.r * 2) / FILL_BASE,
-          }}
+          style={from}
           role="dialog"
           aria-label={coverTitle(expanded)}
           onAnimationEnd={markCoverSettled}
         >
           <div className="detail-cover-fill" />
-          <div className="detail-cover-head">
+          {/* The header is the close control: tap the day's title to fold it
+              back, the way its row was tapped open. */}
+          <button className="detail-cover-head" onClick={dismissDay} aria-label={`Close ${coverTitle(expanded)}`}>
             <span className="detail-cover-title">
               <span className="detail-cover-icon" style={{ fontSize: 22 }}>
                 <WeatherIcon id={openInfo.icon} alt="" />
               </span>
               {coverTitle(expanded)}
             </span>
-            <button className="detail-cover-close" onClick={closeDay} aria-label="Close day details">
-              <X size={20} />
-            </button>
-          </div>
+            <ChevronUp size={20} className="detail-cover-chevron" aria-hidden="true" />
+          </button>
           <div className="detail-cover-body">
             <div className="detail-summary">
               <div className="detail-summary-val">

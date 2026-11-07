@@ -3,6 +3,7 @@ import {
   SunGlyph, MoonGlyph, SunSmallGlyph, SunCloudGlyph, CloudGlyph,
   SunRainGlyph, RainGlyph, SnowGlyph, SnowflakeGlyph, StormGlyph, ThermGlyph,
 } from './weatherGlyphs'
+import { LINE_ICON_FOR_ID, useIconSet } from '../utils/iconSet'
 
 // Keyed by the icon ids in weatherCodes.js. The map lives here rather than in
 // weatherGlyphs so that file exports components and nothing else, which is what
@@ -87,6 +88,25 @@ export function WeatherIcon({ id, alt = '' }) {
   // define the same id, and every instance would resolve to whichever mounted
   // first — fine until that one unmounts and the rest lose their fills.
   const u = useId().replace(/:/g, '')
+  const iconSet = useIconSet()
+
+  // The Line set (Settings → Appearance → Icons): the Lucide icons Weather
+  // Insight and the detail cards draw, tinted per condition in App.css
+  // (.weather-icon-line--*). They have no .wi-part layers, so the motion rules
+  // pass straight over them — which is why the Animated Icons switch greys out
+  // while this set is chosen.
+  if (iconSet === 'line') {
+    const Line = LINE_ICON_FOR_ID[id]
+    if (!Line) return null
+    return (
+      <Line
+        className={`weather-icon weather-icon-line weather-icon-line--${id}`}
+        size="1em" strokeWidth={1.75}
+        role="img" aria-label={alt || undefined} aria-hidden={alt ? undefined : true}
+        style={{ verticalAlign: 'middle' }}
+      />
+    )
+  }
 
   if (id === 'fog') return <FogIcon alt={alt} />
 

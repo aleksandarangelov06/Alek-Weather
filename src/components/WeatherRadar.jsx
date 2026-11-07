@@ -339,75 +339,33 @@ function fmtRelative(unixSec, nowSec) {
   return mins < 0 ? `${span} ago` : `in ${span}`
 }
 
-// The full-screen radar irises open out of the point that was tapped: a circle
-// that is a window onto the real thing, not a disc laid over it.
+// The full-screen radar opens as the card's own map window growing to fill the
+// screen. There is one map: the live one, already laid out full-screen on the
+// armed frame, and the animation is a window onto it — clipped to the compact
+// card's map box at the start, the whole screen at the end. Inside the window
+// the map shifts so the spot that was in the middle of the card's map stays in
+// the middle of the window the whole way, which is what makes it read as the
+// same map getting bigger rather than a new one appearing. The controls are kept
+// out of it and fade in once the window is full; on the way out they go first,
+// then the window shrinks back into the card.
 //
-// This is the one place in the app that animates clip-path, and the file argues
-// against it twice — see .detail-cover, where it was measured as the source of
-// the covers' jank. It is here because it is the only way to get what it gets. A
-// growing fill can only ever be a colour: the covers get away with that because
-// their content fades in on top, and over a whole screen of map that fade reads
-// as a coloured circle the radar turns up inside afterwards. Clipping is what
-// puts the destination *inside* the circle from the first frame.
-//
-// What makes it affordable here and not there: the clipped subtree is one
-// composited tile map rather than a page of SVG icons and text, and the frame
-// that costs the most — the switch to full-screen, and Leaflet's resize with it —
-// is paid on the armed frame before the animation starts. If it does stutter on a
-// slower device, the honest fallback is the disc: grow an opaque circle and fade
-// the radar in on it, which is what the covers do.
-//
-// Both directions run for --reveal-dur, the covers' own duration — see the note
-// beside it in App.css for why it is the number it is, and why the curve is
-// symmetric. Keep these two in step with it.
-const IRIS_IN_MS  = 520
-const IRIS_OUT_MS = 520
-
-// ── The reveal, as two composited transforms ────────────────────────────────
-//
-// It animated clip-path directly for a while, and that was the lag: clip-path is
-// not a compositor property in Chromium, so every frame of the circle was a
-// main-thread repaint of two full-screen layers, one of them a live tile map. It
-// cost the same on every open, which is what told us it was this and not the
-// one-off mount cost the day cover pays (see armCover in DailyForecast).
-//
-// So the circle is a real element now: a round box with overflow:hidden, scaled
-// up from the tap. Scaling it would scale the map with it, so the layer directly
-// inside runs the exact inverse scale about the same point — the pair cancels,
-// the map sits still at its true size, and both animations are pure transforms
-// the compositor runs off the main thread.
-//
-// The inverse has to be sampled rather than declared: CSS interpolates
-// scale(a)->scale(b) but not 1/s(t). Both sides are emitted as the same grid of
-// keyframes off the same eased clock, so they are exact inverses at every sample
-// and linear between them, where the residue is far under a pixel.
-// Density matters more than it looks. The two sides are exact inverses *at* every
-// sample, but the browser fills the gaps linearly, and a straight line through
-// 1/s is not the reciprocal of a straight line through s — so the pair stops
-// cancelling between samples and the map breathes. Measured at 24 steps: 1.6%
-// oversize at the small end, which is where 1/s moves fastest. The error falls
-// off with the square of the interval, so this is cheap to fix by sampling
-// harder; 96 pairs is still a trivial amount of keyframe data.
-const IRIS_STEPS = 96
-// How far the inner layer is ever asked to scale up. The exact inverse of a
-// circle starting at zero is infinite, so the circle starts at 1/this instead —
-// a hundred-odd px across on a phone — and fades in rather than growing from a
-// mathematical point. Chromium rasterises a will-change layer once and scales
-// that bitmap, so the earliest frames are soft; at that size there is nothing to
-// read into it, and it is sharp long before the circle is big enough to notice.
-//
-// It is also the peak scale of a screen-sized layer, which is the reason it kept
-// coming down. Chromium sizes the raster for a transform animation off the
-// largest scale the animation reaches, so this number is squared in pixels
-// before it is anything else: at 12 the inner layer asks to be rasterised at 144
-// times the area of the screen, which is the kind of number that gets clamped,
-// re-rastered mid-flight, or paid for in memory bandwidth on a phone. Six asks
-// for a quarter of that. What it costs is a circle that starts twice as wide,
-// which the fade over the first eighth of the run covers either way — and a
-// smaller dynamic range for the interpolation above to cover, so the residue
-// between samples falls too.
-const IRIS_MAX_INNER = 6
-const IRIS_FADE = 0.12 // fraction of the run spent fading the circle in
+// The clip is a rounded inset — a plain rounded rectangle, which Chromium keeps
+// as a clip on the layer rather than painting a mask — and the shift is a
+// translate, so nothing is ever scaled and the map is never re-rasterised. (It
+// was once an iris: a round window scaled up from the tap with the map counter-
+// scaled inside it, which asked a phone to raster a screen of live map at ~36x
+// its area behind a mask, and lagged.)
+const WINDOW_IN_MS  = 420
+const WINDOW_OUT_MS = 320
+// The controls: fade in after the window lands, out before it starts to shrink.
+const CHROME_IN_MS  = 260
+const CHROME_OUT_MS = 100
+// Teardown waits for both halves of the close.
+const IRIS_OUT_MS = CHROME_OUT_MS + WINDOW_OUT_MS
+// M3 emphasized decelerate for the open, standard emphasized for the close, so
+// it settles into the card rather than being thrown at it.
+const WINDOW_IN_EASE  = 'cubic-bezier(0.05, 0.7, 0.1, 1)'
+const WINDOW_OUT_EASE = 'cubic-bezier(0.2, 0, 0, 1)'
 
 // How long the armed frame will wait for the base map to finish filling itself
 // in before it gives up and opens anyway.
@@ -444,71 +402,58 @@ const ARM_TILE_WAIT_MS = 180
 // slow network from leaving it there indefinitely.
 const SETTLE_MAX_MS = 700
 
-// cubic-bezier(x1,y1,x2,y2) at t: Newton on x, then evaluate y. Six passes lands
-// well inside a pixel at these sizes.
-function bezier(x1, y1, x2, y2, t) {
-  const cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx
-  const cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by
-  const fx = (u) => ((ax * u + bx) * u + cx) * u
-  const dfx = (u) => (3 * ax * u + 2 * bx) * u + cx
-  let u = t
-  for (let i = 0; i < 6; i++) {
-    const d = dfx(u)
-    if (Math.abs(d) < 1e-6) break
-    u -= (fx(u) - t) / d
-  }
-  u = Math.max(0, Math.min(1, u))
-  return ((ay * u + by) * u + cy) * u
-}
-
-// Mirrors --reveal-ease in App.css. Keep the two in step.
-const irisEase = (t) => bezier(0.4, 0, 0.6, 1, t)
-
-// Paired keyframes for the circle and the layer inside it. The curve is its own
-// mirror, so closing is the opening read backwards rather than a written twin.
-function irisKeyframes(opening) {
-  const lo = 1 / IRIS_MAX_INNER
-  const outer = [], inner = []
-  for (let i = 0; i <= IRIS_STEPS; i++) {
-    const t = i / IRIS_STEPS
-    const p = opening ? t : 1 - t
-    const s = lo + (1 - lo) * irisEase(p)
-    outer.push({
-      offset: t,
-      transform: `scale(${s})`,
-      opacity: String(Math.min(1, p / IRIS_FADE)),
-    })
-    inner.push({ offset: t, transform: `scale(${1 / s})` })
-  }
-  return { outer, inner }
-}
-
-// Everything the two layers need, in the coordinate space of `box` — the card's
-// own full-screen box rather than the viewport. That is the part that makes this
-// geometry-independent: `position: fixed; inset: 0` is the viewport only while no
-// ancestor has established a containing block for it, and one transform, filter
-// or backdrop-filter anywhere above the card is enough to make it something
-// else. The frame element takes the same `inset: 0` the card used to, so whatever
-// that resolves against, every offset below is measured inside it and the circle
-// cannot arrive from off-screen.
-function irisGeometry(x, y, box) {
-  const ox = x - box.left
-  const oy = y - box.top
-  const r = Math.hypot(
-    Math.max(ox, box.width - ox),
-    Math.max(oy, box.height - oy),
-  )
+// The window's two ends. `win` is the compact card's map box (read off the
+// still in the slot, so it is where the card is *now*), `box` the frame's. Both
+// are measured rather than assumed: `position: fixed; inset: 0` is the viewport
+// only while no ancestor has established a containing block for it, and one
+// transform, filter or backdrop-filter above the card is enough to make it
+// something else.
+//
+// The shift keeps the full-screen map's centre (where Leaflet keeps the
+// location, see invalidateSize) under the window's centre. It never uncovers
+// the map's edge: at every point of the run the window's edges are inside the
+// shifted map's, because both move in straight lines on the same eased clock
+// and both ends satisfy it.
+function windowFrames(win, box, radius) {
+  const l = win.left - box.left
+  const t = win.top - box.top
+  const r = box.width - l - win.width
+  const b = box.height - t - win.height
+  const dx = l + win.width / 2 - box.width / 2
+  const dy = t + win.height / 2 - box.height / 2
   return {
-    circle: {
-      left: `${ox - r}px`, top: `${oy - r}px`,
-      width: `${2 * r}px`, height: `${2 * r}px`,
-    },
-    inner: {
-      left: `${r - ox}px`, top: `${r - oy}px`,
-      width: `${box.width}px`, height: `${box.height}px`,
-      transformOrigin: `${ox}px ${oy}px`,
-    },
+    clip: [
+      { clipPath: `inset(${t}px ${r}px ${b}px ${l}px round ${radius}px)` },
+      { clipPath: 'inset(0px 0px 0px 0px round 0px)' },
+    ],
+    shift: [
+      { transform: `translate(${dx}px, ${dy}px)` },
+      { transform: 'translate(0px, 0px)' },
+    ],
   }
+}
+
+// An element's box as it lays out, with its own transform taken back out —
+// getBoundingClientRect includes it, and so does any transition in flight on it.
+// Assumes translate and scale only (all predictive back ever applies).
+function untransformedBox(el) {
+  const r = el.getBoundingClientRect()
+  const cs = getComputedStyle(el)
+  if (!cs.transform || cs.transform === 'none') return r
+  const m = new DOMMatrix(cs.transform)
+  const [ox, oy] = cs.transformOrigin.split(' ').map(parseFloat)
+  return {
+    left: r.left - ox + m.a * ox - m.e,
+    top: r.top - oy + m.d * oy - m.f,
+    width: el.offsetWidth,
+    height: el.offsetHeight,
+  }
+}
+
+// Sizes for the radar's layer and the box inside it, against the frame's box.
+function irisGeometry(box) {
+  const size = { left: '0px', top: '0px', width: `${box.width}px`, height: `${box.height}px` }
+  return { circle: size, inner: size }
 }
 
 // A still of the compact card, for the slot it leaves behind when it goes
@@ -546,7 +491,7 @@ function snapshot(el) {
   return clone
 }
 
-// The three layers the reveal drives, or nothing at all in `fill`.
+// The layers the morph drives, or nothing at all in `fill`.
 //
 // `fill` is the web app's Radar tab, where the card is already the whole page and
 // never expands, so there is no reveal to build for it — and the wrappers are not
@@ -554,10 +499,11 @@ function snapshot(el) {
 // divs in between would quietly stop that matching and hand the card back its
 // 12px margin. `fill` is fixed for the life of an instance (the two call sites
 // are different mounts), so branching on it here costs no remount.
-function IrisShell({ fill, className, frameRef, circleRef, innerRef, circleStyle, innerStyle, children }) {
+function IrisShell({ fill, className, frameRef, scrimRef, circleRef, innerRef, circleStyle, innerStyle, children }) {
   if (fill) return children
   return (
     <div ref={frameRef} className={className}>
+      <div ref={scrimRef} className="radar-iris-scrim" aria-hidden="true" />
       <div ref={circleRef} className="radar-iris-circle" style={circleStyle}>
         <div ref={innerRef} className="radar-iris-inner" style={innerStyle}>
           {children}
@@ -637,6 +583,16 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
   // Fractional frame position while a scrubber drag is in flight, null at rest.
   // See handlePointerDown.
   const [drag, setDrag]           = useState(null)
+  // A finger (or mouse) is on the rail scrubber — see .radar-scrub. The knob
+  // follows it 1:1 and grows while it is held.
+  const [scrubbing, setScrubbing] = useState(false)
+  // What the controls were showing when the radar started closing — the frame
+  // and the play state. The close stops playback and returns to the frame the
+  // still shows (see the back handler), and both would otherwise land in the
+  // controls during their fade-out: the time jumping, the knob sliding across
+  // the rail, play flipping from pause. Shown frozen until the controls are gone.
+  const [outFrozen, setOutFrozen] = useState(null)
+  const liveCtl = useRef({ idx: 0, playing: false })
   const [playing, setPlaying]     = useState(false)
   const [expanded, setExpanded]   = useState(false)
   const [mapReady, setMapReady]   = useState(false)
@@ -660,9 +616,13 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
   const irisFrameRef  = useRef(null)
   const irisCircleRef = useRef(null)
   const irisInnerRef  = useRef(null)
-  // The tap, in viewport coordinates, held so the armed frame can convert it
-  // against the card's measured box rather than an assumed one — see irisGeometry.
-  const tapPoint = useRef(null)
+  const irisScrimRef  = useRef(null)
+  // The card's slot in the stack while it is away (see .radar-placeholder). The
+  // still in it is where the window opens from and closes back into.
+  const placeholderRef = useRef(null)
+  // When the radar opened: the time of the frame the still shows (see the back
+  // handler). framesRef, beside the frame list below, is where it is looked up.
+  const snapFrameTime = useRef(null)
   // The compact card's box, measured on the way out of the stack. Going
   // full-screen means going position:fixed, which takes the card out of the flow
   // and lets the block around it collapse onto the drag handle — the page then
@@ -831,6 +791,11 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
     }
     return { frames: past, pastCount: past.length }
   }, [feed, view, combined])
+  // The frame list as of the last render, for the radar's back handler.
+  const framesRef = useRef(frames)
+  useEffect(() => { framesRef.current = frames })
+  // The controls' live frame and play state, for the back handler to freeze.
+  useEffect(() => { liveCtl.current = { idx, playing } })
 
   const hasFrames = frames.length > 0
 
@@ -1029,7 +994,7 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
     return () => clearInterval(id)
   }, [playing, frames, idx, hd])
 
-  const expand = (e) => {
+  const expand = () => {
     pageScroll.current = window.scrollY
     scrollPinned.current = true
     // Measured before the switch, while the card is still the compact one in the
@@ -1058,23 +1023,18 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
     // reads it (see snapshot).
     baseTileRef.current?.getMaplibreMap()?.redraw()
     holdClone.current = el ? snapshot(el) : null
+    // The frame the still shows, so the close can land on it (see the back
+    // handler below).
+    snapFrameTime.current = frames[idx]?.time ?? null
     history.pushState({ overlay: 'radar' }, '')
     if (!revealAnimates()) { setExpanded(true); return }
-    // Keyboard activation reports 0,0 — grow from the middle of the screen then.
-    const fromPointer = e && (e.clientX || e.clientY)
-    tapPoint.current = {
-      x: fromPointer ? e.clientX : window.innerWidth / 2,
-      y: fromPointer ? e.clientY : window.innerHeight / 2,
-    }
     // Provisional geometry, against the viewport, so the armed frame has
-    // something laid out to render. It is remeasured against the card's real box
-    // on that frame (see the arm effect) before anything moves.
-    setRevealStyle(irisGeometry(tapPoint.current.x, tapPoint.current.y, {
-      left: 0, top: 0, width: window.innerWidth, height: window.innerHeight,
-    }))
-    // The card goes full-screen straight away now, because it is the thing being
-    // revealed — the iris is a window onto it, not a lid over it. 'arm' holds the
-    // window shut for a frame so the switch isn't paid for out of the animation.
+    // something laid out to render. It is remeasured against the frame's real
+    // box on that frame (see the arm effect) before anything moves.
+    setRevealStyle(irisGeometry({ width: window.innerWidth, height: window.innerHeight }))
+    // The card goes full-screen straight away, hidden: it is the thing the morph
+    // grows out of the card's slot. 'arm' holds it hidden for a few frames so
+    // the switch isn't paid for out of the animation.
     setExpanded(true)
     setPhase('arm')
   }
@@ -1091,6 +1051,17 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
     if (phase === 'out') return
     const handler = () => {
       setPlaying(false)
+      // Go back to the radar frame the card was showing when it opened. The
+      // still in the slot is a picture of the card at that moment, and the
+      // window closes onto it — so a map left on another frame (scrubbed, or
+      // played on) would hand over to a still of a different time, and the
+      // card would visibly jump twice: into the old frame, then back once the
+      // live card returned. Switched now, while the controls fade, it is the
+      // same frame on both sides of every handover.
+      setOutFrozen(liveCtl.current)
+      const t = snapFrameTime.current
+      const back = t == null ? -1 : framesRef.current.findIndex(f => f.time === t)
+      if (back !== -1) setIdx(back)
       if (!revealStyle) {
         setExpanded(false); setPhase(null); setHold(null); holdClone.current = null
         return
@@ -1121,9 +1092,7 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
       // here on (see irisGeometry). The extra render is spent on the armed frame,
       // behind a circle that has not started growing.
       const box = cardRef.current?.getBoundingClientRect()
-      if (box && tapPoint.current) {
-        setRevealStyle(irisGeometry(tapPoint.current.x, tapPoint.current.y, box))
-      }
+      if (box) setRevealStyle(irisGeometry(box))
       // Then let the tiles the resize just asked for land before the circle
       // moves — see ARM_TILE_WAIT_MS. isLoading() is true from the moment
       // invalidateSize adds a tile above, and the load event is Leaflet saying
@@ -1144,46 +1113,85 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
     }
   }, [phase])
 
-  // Runs the circle and its inverse as one pair of compositor animations.
-  //
-  // WAAPI rather than CSS classes because the inverse has to be computed: the
-  // keyframes are generated (see irisKeyframes) and the easing is already baked
-  // into their offsets, so both sides play linear and stay exact inverses. Both
-  // are started in the same tick off the same generated grid, which is what keeps
-  // them locked together — a CSS animation pair could drift by a frame at start.
+  // Runs the window (see the note beside WINDOW_IN_MS).
   //
   // A layout effect, because a plain one runs after the paint it was scheduled by
-  // and the animation's first keyframe is the only thing holding the circle shut.
-  // The render that sets 'in' would otherwise paint once with the circle at its
-  // natural size — the finished full-screen radar — and the iris would then snap
-  // back to a dot and grow out of it. The same frame in reverse on the way out.
+  // and the animation's first keyframe is the only thing holding the window
+  // shut. The render that sets 'in' would otherwise paint once with the radar
+  // fully open and then snap back to the card. The same frame in reverse on the
+  // way out.
   //
-  // The settled state is the circle gone entirely: at rest the card is plain
-  // position:fixed again, rather than a screen-sized round box with two
-  // will-change layers pinned under it for as long as the radar is up.
+  // Measured here, not stored: on the way out the page may have been rotated or
+  // the slot moved since the open, and the window has to land where it is now.
+  //
+  // The settled state is the layers gone entirely: at rest the card is plain
+  // position:fixed again, rather than a clipped screen-sized layer pinned under
+  // it for as long as the radar is up.
   useLayoutEffect(() => {
     if (phase !== 'in' && phase !== 'out') return
+    const frame  = irisFrameRef.current
     const circle = irisCircleRef.current
     const inner  = irisInnerRef.current
+    const scrim  = irisScrimRef.current
+    const win    = placeholderRef.current?.querySelector('.radar-map-wrap')
     const opening = phase === 'in'
-    const duration = opening ? IRIS_IN_MS : IRIS_OUT_MS
     // Closing is torn down by the effect below, on its own clock — it has to
     // outlive the animation to unmount the card, so only the opening settles
     // itself here. Missing layers (reduced motion switched on mid-flight) fall
     // through to the same clock.
-    if (!circle || !inner) {
+    if (!frame || !circle || !inner || !win) {
       if (!opening) return
-      const t = setTimeout(() => setPhase(null), duration)
+      const t = setTimeout(() => setPhase('chrome'), WINDOW_IN_MS)
       return () => clearTimeout(t)
     }
-    const { outer: outerFrames, inner: innerFrames } = irisKeyframes(opening)
-    const opts = { duration, easing: 'linear', fill: 'both' }
-    const a = circle.animate(outerFrames, opts)
-    const b = inner.animate(innerFrames, opts)
-    if (opening) a.onfinish = () => setPhase(null)
+    // The frame's own box, untransformed. After a predictive back swipe it is
+    // still easing back to full size from where the finger left it
+    // (utils/predictiveBack.js), so the window is measured against where the
+    // frame is going, not where it is mid-ease.
+    const box = untransformedBox(frame)
+    const radius = parseFloat(getComputedStyle(win).borderTopLeftRadius) || 0
+    const f = windowFrames(win.getBoundingClientRect(), box, radius)
+    const order = (frames) => (opening ? frames : [...frames].reverse())
+    const timing = opening
+      ? { duration: WINDOW_IN_MS, easing: WINDOW_IN_EASE, fill: 'both' }
+      : { duration: WINDOW_OUT_MS, delay: CHROME_OUT_MS, easing: WINDOW_OUT_EASE, fill: 'both' }
+    const anims = [
+      circle.animate(order(f.clip), timing),
+      inner.animate(order(f.shift), timing),
+    ]
+    if (scrim) {
+      anims.push(scrim.animate(order([{ opacity: 0 }, { opacity: 1 }]), { ...timing, easing: 'linear' }))
+    }
+    if (opening) anims[0].onfinish = () => setPhase('chrome')
     // Cancel rather than leave them filling: settled-open is the plain card, and
-    // a forwards-filling scale(1) would keep both layers composited for nothing.
-    return () => { a.cancel(); b.cancel() }
+    // a forwards-filling clip would keep the layer composited for nothing.
+    return () => anims.forEach(a => a.cancel())
+  }, [phase])
+
+  // On the way out, glide the map back to the card's view — the location, at the
+  // compact zoom — while the window shrinks. The compact card always shows that
+  // view, and re-centres on it the moment it is back (see the layout effect
+  // that calls setView on collapse), so a map left panned or zoomed full-screen
+  // used to close onto that view and then snap. Starting together, the window
+  // shrinks onto a map that is already on its way home, and arrives with it.
+  // Skipped when the view hasn't moved, so a plain open-and-close doesn't stir.
+  useEffect(() => {
+    if (phase !== 'out') return
+    const map = mapInst.current
+    if (!map) return
+    const home = [location.latitude, location.longitude]
+    const off = map.latLngToContainerPoint(home).distanceTo(map.getSize().divideBy(2))
+    if (map.getZoom() === 10 && off < 2) return
+    map.flyTo(home, 10, { duration: IRIS_OUT_MS / 1000, easeLinearity: 0.5 })
+    return () => map.stop()
+  }, [phase, location.latitude, location.longitude])
+
+  // The window is full: the controls fade in (radarChromeIn, keyed on the
+  // --chrome class), then the frame settles to rest.
+  useEffect(() => {
+    if (phase !== 'chrome') return
+    const t = setTimeout(() => setPhase(null), CHROME_IN_MS)
+    return () => clearTimeout(t)
   }, [phase])
 
   // Closed: the card can rejoin the stack now the window is shut over it. The
@@ -1408,6 +1416,7 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
     e.currentTarget.setPointerCapture(e.pointerId)
     if (!stripScrubber) {
       dragRef.current = { whole: true }
+      setScrubbing(true)
       setIdx(idxAcrossTrack(e.clientX, e.currentTarget, frames.length))
       return
     }
@@ -1444,6 +1453,7 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
       setIdx(Math.round(clampIdx(d.from + off, frames.length)))
     }
     setDrag(null)
+    setScrubbing(false)
   }, [frames.length])
 
   // Hangs the still inside the placeholder as it mounts. Only ever appends: the
@@ -1453,6 +1463,25 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
   const attachSnapshot = useCallback((node) => {
     if (node && holdClone.current) node.appendChild(holdClone.current)
   }, [])
+  // The still laid over the card just after it closes (see .radar-settle). It
+  // has to cover the card's border box exactly, and absolute positioning is
+  // measured from inside the border, so it is pushed out by the card's own
+  // border widths — read here because they differ by theme (a hairline on the
+  // glass styles, none on others).
+  const attachSettle = useCallback((node) => {
+    if (!node) return
+    const card = node.parentElement
+    if (card) {
+      const cs = getComputedStyle(card)
+      node.style.inset = [cs.borderTopWidth, cs.borderRightWidth, cs.borderBottomWidth, cs.borderLeftWidth]
+        .map(w => `-${parseFloat(w) || 0}px`).join(' ')
+    }
+    attachSnapshot(node)
+  }, [attachSnapshot])
+  const attachPlaceholder = useCallback((node) => {
+    placeholderRef.current = node
+    attachSnapshot(node)
+  }, [attachSnapshot])
 
   // Nothing to draw yet. In the stack the card stays out until it has frames;
   // as the web Radar page it *is* the page, and returning nothing left the tab
@@ -1478,7 +1507,12 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
   // so a feed can't change its key format and silently take the legend with it.
   // drawnSrc, not the frame's own src: an Auto frame is MRMS or NEXRAD depending
   // on the zoom, and the caption has to name the one actually on screen.
-  const frameSrc     = frames[idx] && drawnSrc(frames[idx], hd)
+  // The frame and play state the controls show: the live ones, except while
+  // closing, when they hold what they had (see outFrozen).
+  const frozenCtl    = phase === 'out' ? outFrozen : null
+  const shownIdx     = frozenCtl ? frozenCtl.idx : idx
+  const shownPlaying = frozenCtl ? frozenCtl.playing : playing
+  const frameSrc     = frames[shownIdx] && drawnSrc(frames[shownIdx], hd)
   const legendColors = frameSrc === 'rv' ? LEGEND_RAINVIEWER : LEGEND_NWS
 
   // Observed → forecast boundary, marked on the scrubber so the palette change
@@ -1498,11 +1532,11 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
   const SOURCE_NAMES = {
     mrms: 'NOAA MRMS radar',
     // Names the site, since which radar it is decides where the coverage ends.
-    nexrad: `NOAA NEXRAD ${frames[idx]?.site ?? ''}`.trim(),
+    nexrad: `NOAA NEXRAD ${frames[shownIdx]?.site ?? ''}`.trim(),
     rv:   'RainViewer radar',
     hrrr: 'NOAA HRRR model',
   }
-  const sourceLabel = idx >= pastCount
+  const sourceLabel = shownIdx >= pastCount
     ? `Forecast · ${frameSrc === 'hrrr' ? SOURCE_NAMES.hrrr : 'RainViewer nowcast'}`
     : `Observed · ${SOURCE_NAMES[frameSrc] ?? SOURCE_NAMES.rv}`
 
@@ -1529,7 +1563,8 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
   // on, and the iris still opens out of a shut window.
   const irisC =
     (irisFramed ? ' radar-iris--framed' : '') +
-    (irisOn ? ` radar-iris--on${phase === 'arm' ? ' radar-iris--arm' : ''}` : '')
+    (irisOn ? ` radar-iris--on radar-iris--${phase}` : '') +
+    (phase === 'chrome' ? ' radar-iris--chrome' : '')
 
   return (
     <>
@@ -1537,23 +1572,28 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
         the page doesn't shorten under it. Outside the iris on purpose: the iris
         leaves the flow when it opens, and this is what stays behind in it. */}
     {expanded && hold && (
-      <div className="radar-placeholder" style={hold} ref={attachSnapshot} aria-hidden="true" />
+      <div className="radar-placeholder" style={hold} ref={attachPlaceholder} aria-hidden="true" />
     )}
-    {/* The reveal, in three parts (see irisGeometry and irisKeyframes):
+    {/* The window, in parts (see the note beside WINDOW_IN_MS, and windowFrames):
           .radar-iris        the frame. Takes the same `inset: 0` the card used to,
                              so it lands on exactly the box the card will fill and
                              every offset inside is measured against that rather
                              than against an assumed viewport.
-          .radar-iris-circle the window. Round, clipping, and the thing that scales.
-          .radar-iris-inner  the counter-scale, so the map inside holds still.
+          .radar-iris-scrim  dims the forecast behind.
+          .radar-iris-circle the window: the full-screen radar, clipped from the
+                             card's map box out to the screen (named for when
+                             it was a round one).
+          .radar-iris-inner  the radar inside it, shifted so the map's centre
+                             stays under the window's.
 
-        All three wrap the card permanently and are display:contents until the
-        circle moves — putting them up only while animating would re-parent the
+        The wrappers stay around the card permanently and are display:contents until
+        the morph runs — putting them up only while animating would re-parent the
         card, remount its subtree and destroy the Leaflet instance inside it. */}
     <IrisShell
       fill={fill}
       className={`radar-iris${irisC}`}
       frameRef={irisFrameRef}
+      scrimRef={irisScrimRef}
       circleRef={irisCircleRef}
       innerRef={irisInnerRef}
       circleStyle={irisOn ? revealStyle.circle : undefined}
@@ -1578,7 +1618,7 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
       className={`card radar-card${expanded ? ' radar-expanded' : ''}${fill ? ' radar-fill' : ''}${settling ? ' radar-settling' : ''}`}
     >
       {/* The still, held over the card just after it closes — see SETTLE_MAX_MS. */}
-      {settling && <div className="radar-settle" ref={attachSnapshot} aria-hidden="true" />}
+      {settling && <div className="radar-settle" ref={attachSettle} aria-hidden="true" />}
       {!expanded && !fill && (
         <div className="radar-header">
           <span className="section-label" style={{ margin: 0 }}>RADAR</span>
@@ -1592,10 +1632,11 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
       <div className="radar-map-stage">
       <div className="radar-map-wrap">
         <div ref={mapRef} className="radar-map" />
-        {/* Rain drawn only where the radar shows echoes — full-size only, where
-            the map is big enough for it to read as weather rather than noise. */}
-        {fullSize && rainFx && mapReady && (
-          <RadarRain map={mapInst.current} getLayer={getActiveLayer} snow={snow} />
+        {/* Rain drawn only where the radar shows echoes — on the compact card
+            too, so the map that grows into the full-screen view is already the
+            one with weather falling on it. */}
+        {rainFx && mapReady && (
+          <RadarRain map={mapInst.current} getLayer={getActiveLayer} snow={snow} palette={legendColors} />
         )}
         {/* The full-screen overlay floats its zoom and collapse tools on the
             map, and is the only mode that offers a way out of itself. Its
@@ -1690,11 +1731,11 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
         ) : (
           <div className="radar-main-row">
             <div className="radar-big-time">
-              {frames[idx] ? fmtTime(frames[idx].time, timezone) : ''}
+              {frames[shownIdx] ? fmtTime(frames[shownIdx].time, timezone) : ''}
             </div>
             <div className="radar-row-actions">
-              <button className={`radar-play-circle${playing ? ' is-playing' : ''}`} onClick={() => setPlaying(v => !v)} aria-label={playing ? 'Pause' : 'Play'}>
-                {playing ? <Pause size={22} /> : <Play size={22} />}
+              <button className={`radar-play-circle${shownPlaying ? ' is-playing' : ''}`} onClick={() => setPlaying(v => !v)} aria-label={shownPlaying ? 'Pause' : 'Play'}>
+                {shownPlaying ? <Pause size={22} /> : <Play size={22} />}
               </button>
             </div>
           </div>
@@ -1764,6 +1805,8 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
             stripScrubber && 'radar-tick-track--strip',
             stripScrubber && drag !== null && 'radar-tick-track--dragging',
             fullSize && wideTrack && 'radar-tick-track--wide',
+            !stripScrubber && 'radar-tick-track--rail',
+            !stripScrubber && scrubbing && 'radar-tick-track--scrubbing',
           ].filter(Boolean).join(' ')}
           ref={trackRef}
           style={stripScrubber ? { '--radar-tick-w': `${TICK_W}px` } : undefined}
@@ -1772,6 +1815,27 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
           onPointerUp={handlePointerUp}
           onPointerCancel={handlePointerUp}
         >
+          {/* The rail (everywhere but the filmstrip): a rounded track, filled in
+              the accent up to the frame on screen, striped where the frames are
+              forecast, with a round knob on the current frame. Every frame owns an
+              equal share of the width and the knob sits in the middle of its
+              share — the same arithmetic idxAcrossTrack reads a tap with. The
+              columns below still lay out the hour marks and their labels. */}
+          {!stripScrubber && frames.length > 0 && (
+            <div
+              className="radar-scrub"
+              aria-hidden="true"
+              style={{
+                '--scrub-pos': `${((shownIdx + 0.5) / frames.length) * 100}%`,
+                '--scrub-fc': `${(pastCount / frames.length) * 100}%`,
+              }}
+            >
+              <div className="radar-scrub-rail" />
+              {pastCount < frames.length && <div className="radar-scrub-forecast" />}
+              <div className="radar-scrub-fill" />
+              <div className="radar-scrub-thumb" />
+            </div>
+          )}
           <div
             className="radar-tick-strip"
             style={stripScrubber

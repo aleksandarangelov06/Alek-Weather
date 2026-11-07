@@ -30,8 +30,8 @@ const MASK_PX = 6
 // changes and tiles arriving.
 const MASK_MS = 180
 // One drop per this many square CSS pixels of map, capped for big monitors.
-const AREA_PER_DROP = 1400
-const MAX_DROPS = 1400
+const AREA_PER_DROP = 650
+const MAX_DROPS = 2600
 const LEVELS = 5 // alpha steps, so a frame is a handful of stroke() calls
 
 // RGBA → 0..1 precipitation intensity, read off the colour ramp rather than
@@ -63,6 +63,53 @@ function intensity(r, g, b, a) {
   else level = 0.28 + (1 - v) * 0.45                     // cyan→navy, darker is heavier
   return level * Math.min(1, a / 200)
 }
+
+// ── Strength off the legend ─────────────────────────────────────────────────
+//
+// The legend under the scrubber is the scale the user reads the radar by, Light
+// to Heavy, so that is the scale the effect follows: each pixel is placed on the
+// legend's ramp (projected onto the nearest segment between two of its stops),
+// and how far along it sits is how hard it is raining there. Colours the legend
+// doesn't name — the NWS ramp's pale greens below its first stop, its magentas
+// past its last — are far from every segment, and fall back to the hue reading
+// above, which already sorts those two ends correctly.
+const PALETTE_MAX_DIST = 110 // RGB distance past which a pixel isn't "on" the legend
+const hexRgb = (h) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16))
+
+function legendRamp(palette) {
+  if (!palette || palette.length < 2) return null
+  const stops = palette.map(hexRgb)
+  const cache = new Map()
+  return (r, g, b, a) => {
+    if (a < 24) return 0
+    // Quantised cache: tiles are a handful of flat colours plus their blends,
+    // so this turns ~10k projections per mask into a few dozen.
+    const key = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3)
+    let level = cache.get(key)
+    if (level === undefined) {
+      let best = Infinity, pos = 0
+      for (let k = 0; k < stops.length - 1; k++) {
+        const [r0, g0, b0] = stops[k], [r1, g1, b1] = stops[k + 1]
+        const dr = r1 - r0, dg = g1 - g0, db = b1 - b0
+        const len2 = dr * dr + dg * dg + db * db || 1
+        const t = Math.max(0, Math.min(1, ((r - r0) * dr + (g - g0) * dg + (b - b0) * db) / len2))
+        const er = r - (r0 + dr * t), eg = g - (g0 + dg * t), eb = b - (b0 + db * t)
+        const d = er * er + eg * eg + eb * eb
+        if (d < best) { best = d; pos = (k + t) / (stops.length - 1) }
+      }
+      // Light still reads as something falling; heavy reaches the top.
+      level = Math.sqrt(best) > PALETTE_MAX_DIST
+        ? intensity(r, g, b, 255)
+        : 0.1 + 0.9 * pos
+      cache.set(key, level)
+    }
+    return level * Math.min(1, a / 200)
+  }
+}
+
+// How much of the field is falling at a given strength: a drizzle is a sparse
+// scatter, a downpour every drop there is. Curved so the light end stays light.
+const density = (I) => 0.06 + 0.94 * Math.pow(I, 1.6)
 
 // ── Rain or snow, per place ─────────────────────────────────────────────────
 //
@@ -149,15 +196,20 @@ function scoreAt(field, lat, lng) {
 
 // Snow: slower, drifting, and drawn as flakes. Fall speed is in px per frame;
 // flakes sway sideways on a slow sine of their own.
-const SNOW_SPEED = [0.8, 2.2]
+const SNOW_SPEED = [1.2, 3.0]
 const SNOW_RADIUS = [1.1, 2.4]
 
 // `snow` is the fallback: the user's own location's verdict, used across the
 // whole map until the grid arrives, and wherever it can't be fetched at all.
-export function RadarRain({ map, getLayer, snow = false }) {
+// `palette` is the legend's colours, light to heavy, for the tiles on screen.
+export function RadarRain({ map, getLayer, snow = false, palette = null }) {
   const ref = useRef(null)
   const fallback = useRef(snow)
-  fallback.current = snow
+  const paletteRef = useRef(palette)
+  useEffect(() => {
+    fallback.current = snow
+    paletteRef.current = palette
+  })
 
   useEffect(() => {
     const canvas = ref.current
@@ -179,6 +231,7 @@ export function RadarRain({ map, getLayer, snow = false }) {
     let drops = []
     let raf, timer, fieldTimer, refreshTimer
     let field = null, fetching = false, alive = true
+    let ramp = null, rampFor = null
 
     const rand = (a, b) => a + Math.random() * (b - a)
     const seed = (d, anywhere) => {
@@ -186,14 +239,14 @@ export function RadarRain({ map, getLayer, snow = false }) {
       d.y = anywhere ? rand(0, H) : rand(-40, -10)
       // Every drop carries both looks; which one it wears is decided per frame
       // by where it is, so one crossing the rain/snow line changes as it goes.
-      d.rspd = rand(7, 13)
+      d.rspd = rand(15, 21)
       d.sspd = rand(SNOW_SPEED[0], SNOW_SPEED[1])
-      d.len = rand(10, 20)
+      d.len = rand(12, 22)
       d.r = rand(SNOW_RADIUS[0], SNOW_RADIUS[1])
       d.phase = rand(0, Math.PI * 2)
       d.sway = rand(0.01, 0.03)
-      // The drop's place in line: a cell at intensity I shows the drops whose
-      // gate is under sqrt(I), so heavier rain is denser rain.
+      // The drop's place in line: a cell at strength I shows the drops whose
+      // gate is under density(I), so heavier rain is denser rain.
       d.gate = Math.random()
     }
 
@@ -266,9 +319,15 @@ export function RadarRain({ map, getLayer, snow = false }) {
         mask = null
         return
       }
+      // Rebuilt only when the legend changes (the feed switching ramps).
+      if (paletteRef.current !== rampFor) {
+        rampFor = paletteRef.current
+        ramp = legendRamp(rampFor)
+      }
+      const read = ramp ?? intensity
       const next = new Float32Array(mw * mh)
       for (let i = 0, j = 0; i < next.length; i++, j += 4) {
-        next[i] = intensity(px[j], px[j + 1], px[j + 2], px[j + 3])
+        next[i] = read(px[j], px[j + 1], px[j + 2], px[j + 3])
       }
 
       // Rain or snow for each cell, on the same grid. The map is unrotated Web
@@ -299,10 +358,12 @@ export function RadarRain({ map, getLayer, snow = false }) {
 
     const rainBuckets = Array.from({ length: LEVELS }, () => [])
     const snowBuckets = Array.from({ length: LEVELS }, () => [])
+    // Per strength step: light is faint and fine, heavy bright and thick.
     const rainStyles = rainBuckets.map((_, i) =>
-      `rgba(205, 225, 255, ${(0.22 + (0.6 * (i + 1)) / LEVELS).toFixed(3)})`)
+      `rgba(205, 225, 255, ${(0.16 + (0.7 * (i + 1)) / LEVELS).toFixed(3)})`)
+    const rainWidths = rainBuckets.map((_, i) => 0.8 + (1.0 * i) / (LEVELS - 1))
     const snowStyles = snowBuckets.map((_, i) =>
-      `rgba(255, 255, 255, ${(0.45 + (0.5 * (i + 1)) / LEVELS).toFixed(3)})`)
+      `rgba(255, 255, 255, ${(0.35 + (0.6 * (i + 1)) / LEVELS).toFixed(3)})`)
 
     const draw = () => {
       raf = requestAnimationFrame(draw)
@@ -333,32 +394,34 @@ export function RadarRain({ map, getLayer, snow = false }) {
         const inside = cx >= 0 && cy >= 0 && cx < mw && cy < mh
         const i = inside ? cy * mw + cx : -1
         const isSnow = inside ? phase[i] === 1 : fb
+        // Strength where the drop is, which sets how fast it falls as well as
+        // how it looks: drizzle drifts down, a downpour comes down hard.
+        const I = inside ? mask[i] : 0
         if (isSnow) {
-          d.y += d.sspd
+          d.y += d.sspd * (0.6 + 1.0 * I)
           d.phase += d.sway
-          d.x += Math.sin(d.phase) * 0.5
+          d.x += Math.sin(d.phase) * (0.6 - 0.3 * I) // heavy snow sways less
         } else {
-          d.y += d.rspd
+          d.y += d.rspd * (0.5 + 1.0 * I) // ~9 px/frame in drizzle, ~27 in a downpour
         }
         if (d.y - d.len > H || d.x < -40 || d.x > W + 40 || d.y < -60) { seed(d, false); continue }
         if (!inside) continue
-        const I = mask[i]
-        if (I <= 0 || d.gate > Math.sqrt(I)) continue
+        if (I <= 0 || d.gate > density(I)) continue
         const lvl = Math.min(LEVELS - 1, (I * LEVELS) | 0)
         if (isSnow) {
-          d.drawR = d.r * (0.7 + 0.6 * I) // heavier snow, bigger flakes
+          d.drawR = d.r * (0.55 + 0.9 * I) // light snow fine, heavy snow big flakes
           snowBuckets[lvl].push(d)
         } else {
-          d.drawLen = d.len * (0.6 + 0.8 * I)
+          d.drawLen = d.len * (0.45 + 1.6 * I) // streak length tracks the speed: short ticks in drizzle, long streaks in a downpour
           rainBuckets[lvl].push(d)
         }
       }
 
-      ctx.lineWidth = 1.2
       ctx.lineCap = 'round'
       for (let i = 0; i < LEVELS; i++) {
         const b = rainBuckets[i]
         if (!b.length) continue
+        ctx.lineWidth = rainWidths[i]
         ctx.beginPath()
         for (const d of b) {
           ctx.moveTo(d.x, d.y)
