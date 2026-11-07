@@ -15,7 +15,32 @@ import { weatherHeadline } from '../utils/headline'
 // to the splash within it reuses the readings instead of refetching.
 const TTL = 10 * 60 * 1000
 
-const cache = new Map()    // key → { at, cond }
+// Readings older than TTL but younger than this are still shown when a fetch
+// fails — a card with last hour's temperature beats a blank one while Open-Meteo
+// is refusing requests. Kept in storage so they survive a reload.
+const KEEP_MS = 6 * 60 * 60 * 1000
+const STORE_KEY = 'alek-weather-place-conditions'
+
+const cache = new Map(loadStored())    // key → { at, cond }
+
+function loadStored() {
+  try {
+    const now = Date.now()
+    return Object.entries(JSON.parse(localStorage.getItem(STORE_KEY) ?? '{}'))
+      .filter(([, v]) => v?.cond && now - v.at < KEEP_MS)
+  } catch { return [] }
+}
+
+function store(key, cond, at = Date.now()) {
+  const prev = cache.get(key)
+  if (prev && prev.at > at) return // never replace a newer reading with an older one
+  cache.set(key, { at, cond })
+  try {
+    const now = Date.now()
+    const kept = Object.fromEntries([...cache].filter(([, v]) => now - v.at < KEEP_MS))
+    localStorage.setItem(STORE_KEY, JSON.stringify(kept))
+  } catch { /* quota or storage off */ }
+}
 const inflight = new Map() // key → Promise, so the splash and a card asking for
                            // the same place at once share one fetch
 
@@ -36,6 +61,30 @@ export function freshConditions(place) {
   return hit && Date.now() - hit.at < TTL ? hit.cond : null
 }
 
+// The card's reading off a loaded forecast — full or lite, the current fields
+// are the same.
+function conditionsOf(place, data) {
+  const cur = data.current
+  const code = liveWeatherCode(cur, data.minutely_15, radarEnhancedOn() ? data.radarClear : null)
+  return {
+    name: place.name,
+    temp: cur.temperature_2m,
+    feels: cur.apparent_temperature ?? cur.temperature_2m,
+    code,
+    isDay: cur.is_day !== 0,
+    severe: !!cur.severe_storm,
+    headline: weatherHeadline(data, code, place.name),
+  }
+}
+
+// Files the forecast screen's own reading for its place, so going back to the
+// splash shows that card at once instead of asking Open-Meteo again. `at` is
+// when the reading was taken, so a restored old one isn't filed as fresh.
+export function rememberConditions(place, data, at) {
+  if (!place || !data?.current) return
+  store(cacheKey(place), conditionsOf(place, data), at)
+}
+
 // { name, temp, feels, code, isDay, severe, headline } for `place`.
 export function loadConditions(place) {
   const key = cacheKey(place)
@@ -48,21 +97,18 @@ export function loadConditions(place) {
   // Without the same check here the splash and the cards kept that thunderstorm
   // while the forecast said partly cloudy. The verdict arrives with the reading
   // (data.radarClear, see loadForecast); the setting decides if it applies.
-  const p = loadForecast(place)
+  // Lite: a card needs the current condition, not the week (see LITE_PARAMS).
+  const p = loadForecast(place, { lite: true })
     .then(({ data }) => {
-      const cur = data.current
-      const code = liveWeatherCode(cur, data.minutely_15, radarEnhancedOn() ? data.radarClear : null)
-      const cond = {
-        name: place.name,
-        temp: cur.temperature_2m,
-        feels: cur.apparent_temperature ?? cur.temperature_2m,
-        code,
-        isDay: cur.is_day !== 0,
-        severe: !!cur.severe_storm,
-        headline: weatherHeadline(data, code, place.name),
-      }
-      cache.set(key, { at: Date.now(), cond })
+      const cond = conditionsOf(place, data)
+      store(key, cond)
       return cond
+    })
+    .catch((e) => {
+      // Fall back to the last reading we had, if it isn't too old.
+      const hit = cache.get(key)
+      if (hit && Date.now() - hit.at < KEEP_MS) return hit.cond
+      throw e
     })
     .finally(() => inflight.delete(key))
   inflight.set(key, p)

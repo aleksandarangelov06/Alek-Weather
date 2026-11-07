@@ -1,21 +1,20 @@
-import { ArrowLeft, Bookmark, Clock, MapPin, House, X } from 'lucide-react'
-import { sameCity } from '../utils/location'
+import { ArrowLeft, Bookmark, Clock, House } from 'lucide-react'
+import { sameCity, placeRegion } from '../utils/location'
+import { PlaceRow, PlaceSection } from './PlaceRows'
 
-function cityLabel(city) {
-  return `${city.name}${city.admin1 && city.admin1 !== city.name ? `, ${city.admin1}` : ''}`
-}
-
-export function SavedCitiesPage({ cities, onSelect, onRemove, onBack, currentLocation, closing, recents, onRemoveRecent, home, onRemoveHome }) {
-  const hasRecents = recents?.length > 0
-  const hasPlaces = !!home
-  // Home lives in its own slot and is shown under "Places". If that same city
-  // is also in the saved list, drop it here so it isn't listed twice.
-  const savedCities = home ? cities.filter(c => !sameCity(c, home)) : cities
-  const hasCities = savedCities.length > 0
-
-  const places = [
-    home && { key: 'home', label: 'Home', Icon: House, city: home, onRemove: onRemoveHome },
-  ].filter(Boolean)
+// The phone shells' saved locations page, opened from the splash's corner
+// button. It keeps the page chrome (header, transition) of .settings-page, and
+// its lists are the search sheet's: the same grouped panels, tiles and rows,
+// in the same order — Home and saved as "Your places", then recents — so the
+// two pages that list your places look like one.
+export function SavedCitiesPage({ cities, onSelect, onRemove, onBack, currentLocation, closing, recents = [], onRemoveRecent, home, onRemoveHome }) {
+  // Home first, then saved without it, and recents without anything already
+  // listed above them, so no city shows up twice on the page.
+  const saved = home ? cities.filter(c => !sameCity(c, home)) : cities
+  const places = [home, ...saved].filter(Boolean)
+  const recentList = recents.filter(r => !places.some(p => sameCity(p, r)))
+  const isCurrent = (c) => !!currentLocation && sameCity(currentLocation, c)
+  const currentBadge = <span className="ss-badge">Current</span>
 
   return (
     <div className={`settings-page saved-cities-page${closing ? ' closing' : ''}`}>
@@ -27,75 +26,52 @@ export function SavedCitiesPage({ cities, onSelect, onRemove, onBack, currentLoc
         <span className="settings-page-title">Saved Cities</span>
       </header>
       <div className="settings-body">
-        {hasPlaces && (
-          <div className="saved-section">
-            <div className="recent-header" style={{ borderTop: 'none' }}>Places</div>
-            <div className="saved-list">
-              {places.map(({ key, label, Icon, city, onRemove: removePlace }) => (
-                <div key={key} className={`saved-row ${sameCity(currentLocation, city) ? 'active' : ''}`}>
-                  <button className="saved-city-btn" onClick={() => onSelect(city)}>
-                    <Icon size={13} />
-                    <span className="place-tag">{label}</span>
-                    <span className="saved-name">{cityLabel(city)}</span>
-                  </button>
-                  <button className="saved-remove" onClick={removePlace} aria-label={`Remove ${label.toLowerCase()}`}>
-                    <X size={13} />
-                  </button>
-                </div>
+        <div className="ss saved-ss">
+          {places.length > 0 && (
+            <PlaceSection title="Your places">
+              {places.map((city) => {
+                const isHomeRow = home && sameCity(city, home)
+                return (
+                  <PlaceRow
+                    key={`${city.latitude},${city.longitude}`}
+                    icon={isHomeRow ? House : Bookmark}
+                    tone="place"
+                    name={city.name}
+                    sub={isHomeRow ? `Home · ${placeRegion(city)}` : placeRegion(city)}
+                    badge={isCurrent(city) && currentBadge}
+                    onSelect={() => onSelect(city)}
+                    onRemove={isHomeRow ? () => onRemoveHome() : () => onRemove(city)}
+                    removeLabel={isHomeRow ? `Remove ${city.name} as home` : `Remove ${city.name} from saved`}
+                  />
+                )
+              })}
+            </PlaceSection>
+          )}
+
+          {recentList.length > 0 && (
+            <PlaceSection title="Recent">
+              {recentList.map((city) => (
+                <PlaceRow
+                  key={`${city.latitude},${city.longitude}`}
+                  icon={Clock}
+                  name={city.name}
+                  sub={placeRegion(city)}
+                  badge={isCurrent(city) && currentBadge}
+                  onSelect={() => onSelect(city)}
+                  onRemove={() => onRemoveRecent(city)}
+                  removeLabel={`Remove ${city.name} from recents`}
+                />
               ))}
+            </PlaceSection>
+          )}
+
+          {places.length === 0 && recentList.length === 0 && (
+            <div className="ss-empty">
+              <Bookmark size={32} aria-hidden="true" />
+              <p>No cities saved yet. Open a city, then tap Save in search to keep it here.</p>
             </div>
-          </div>
-        )}
-
-        {hasRecents && (
-          <div className="saved-section">
-            <div className="recent-header" style={hasPlaces ? undefined : { borderTop: 'none' }}>Recent</div>
-            {recents.map((city, i) => (
-              <div key={i} className="recent-item">
-                <button className="recent-item-btn" onClick={() => onSelect(city)}>
-                  <Clock size={13} className="recent-icon" />
-                  <span className="city-name">{city.name}</span>
-                  <span className="city-sub">{[city.admin1, city.country_code].filter(Boolean).join(', ')}</span>
-                </button>
-                <button
-                  className="recent-remove-btn"
-                  onClick={(e) => { e.stopPropagation(); onRemoveRecent(city) }}
-                  aria-label="Remove"
-                >
-                  <X size={13} />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {hasCities && (
-          <div className="saved-section">
-            {(hasRecents || hasPlaces) && <div className="recent-header">Saved</div>}
-            <div className="saved-list">
-              {savedCities.map((city, i) => (
-                <div key={i} className={`saved-row ${sameCity(currentLocation, city) ? 'active' : ''}`}>
-                  <button className="saved-city-btn" onClick={() => onSelect(city)}>
-                    <MapPin size={13} />
-                    <span className="saved-name">{cityLabel(city)}</span>
-                  </button>
-                  <button className="saved-remove" onClick={() => onRemove(city)} aria-label="Remove">
-                    <X size={13} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {!hasCities && !hasRecents && !hasPlaces && (
-          <div className="saved-empty">
-            <Bookmark size={56} className="saved-empty-icon" />
-            <p className="saved-empty-text">
-              No cities saved. Use the bookmark icon on a city to save it.
-            </p>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   )

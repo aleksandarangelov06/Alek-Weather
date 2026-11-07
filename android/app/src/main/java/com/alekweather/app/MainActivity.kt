@@ -63,11 +63,15 @@ class MainActivity : AppCompatActivity() {
     private var pendingGeoOrigin: String? = null
     private var pendingGeoCallback: GeolocationPermissions.Callback? = null
 
-    /** Latest system bar insets, in CSS pixels. Applied once the page is ready. */
-    private var insetTopCss = 0f
-    private var insetRightCss = 0f
-    private var insetBottomCss = 0f
-    private var insetLeftCss = 0f
+    /**
+     * Latest system bar insets, in CSS pixels. Read by the page itself at
+     * startup through [BarsBridge.insets] (a JS thread, hence volatile), and
+     * pushed by [pushInsets] when they change after that.
+     */
+    @Volatile private var insetTopCss = 0f
+    @Volatile private var insetRightCss = 0f
+    @Volatile private var insetBottomCss = 0f
+    @Volatile private var insetLeftCss = 0f
     private var pageReady = false
 
     /**
@@ -140,7 +144,18 @@ class MainActivity : AppCompatActivity() {
         /** GitHub Releases API for the sideload self-update (see [Updater]). */
         const val LATEST_RELEASE_URL =
             "https://api.github.com/repos/aleksandarangelov06/Alek-Weather/releases/latest"
+
+        /** Every release APK is served from under here; nothing else is installed. */
+        const val RELEASE_DOWNLOAD_PREFIX =
+            "https://github.com/aleksandarangelov06/Alek-Weather/releases/download/"
     }
+
+    /**
+     * The APK URL the last [Updater.check] found. [Updater.install] only accepts
+     * this URL, so the page can't hand the installer anything that check didn't
+     * get from the GitHub API itself. Written on [updateIo], read there too.
+     */
+    @Volatile private var offeredApkUrl: String? = null
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -220,10 +235,19 @@ class MainActivity : AppCompatActivity() {
                 return true
             }
 
+            // The new page's first paint. Everything the page needs from here
+            // is wired up at this point rather than in onPageFinished, which
+            // waits for every subresource -- the Google Fonts stylesheet
+            // included, a network round trip that on a cold radio held the
+            // insets and bar icons back for seconds after the app was on screen.
+            override fun onPageCommitVisible(view: WebView, url: String) {
+                onPageUp()
+            }
+
+            // Still here for a WebView that skips commit-visible (a restored
+            // state, say); both calls are idempotent.
             override fun onPageFinished(view: WebView, url: String) {
-                pageReady = true
-                pushInsets()
-                watchBarColors()
+                onPageUp()
             }
 
             // Fires for the page's history.pushState / back as well as real
@@ -264,6 +288,12 @@ class MainActivity : AppCompatActivity() {
         if (savedInstanceState != null) web.restoreState(savedInstanceState)
         else web.loadUrl(START_URL)
         backCallback.isEnabled = web.canGoBack()
+    }
+
+    private fun onPageUp() {
+        pageReady = true
+        pushInsets()
+        watchBarColors()
     }
 
     /**
@@ -322,6 +352,9 @@ class MainActivity : AppCompatActivity() {
         val js = """
             (function () {
               if (window.__alekBarsWatch) { window.__alekBarsWatch(); return; }
+              // Too early (first paint can land before <body> is parsed): leave
+              // the install to the next call, from onPageFinished.
+              if (!document.body) return;
               function report() {
                 var metas = document.querySelectorAll('meta[name="theme-color"]');
                 var meta = null;
@@ -373,6 +406,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     inner class BarsBridge {
+        /**
+         * The current system bar insets as `{top,right,bottom,left}` in CSS
+         * pixels, for main.jsx to apply before the first render. Before this,
+         * the page drew its first frames with no insets and jumped once
+         * [pushInsets] reached it.
+         */
+        @JavascriptInterface
+        fun insets(): String =
+            """{"top":$insetTopCss,"right":$insetRightCss,"bottom":$insetBottomCss,"left":$insetLeftCss}"""
+
         /**
          * @param statusColor colour behind the status bar, as the page sees it
          * @param navColor colour behind the navigation bar
@@ -673,6 +716,8 @@ class MainActivity : AppCompatActivity() {
                     val latest = release.optString("tag_name").removePrefix("v").trim()
                     val current = installedVersion()
                     val apkUrl = apkAssetUrl(release)
+                        ?.takeIf { it.startsWith(RELEASE_DOWNLOAD_PREFIX) }
+                    offeredApkUrl = apkUrl
                     val out = JSONObject()
                         .put("current", current)
                         .put("latest", latest)
@@ -693,6 +738,12 @@ class MainActivity : AppCompatActivity() {
         fun install(url: String) {
             updateIo.execute {
                 try {
+                    // Only the release check() found, never an arbitrary URL from
+                    // the page. Android would still refuse an APK with another
+                    // signature, but there is no reason to download one at all.
+                    if (url != offeredApkUrl || !url.startsWith(RELEASE_DOWNLOAD_PREFIX)) {
+                        throw java.io.IOException("Update URL not recognised; check for updates again")
+                    }
                     // Android O+ gates sideloaded installs behind a per-app toggle;
                     // send the user to grant it rather than failing silently.
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&

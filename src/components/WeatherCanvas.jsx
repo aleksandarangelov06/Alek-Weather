@@ -130,7 +130,10 @@ export function WeatherCanvas({ code, gyro = true }) {
   // sensor — doesn't tear down and re-seed the animation. When off, target
   // returns to 0 and the draw loop eases the weather back to its rest angle.
   useEffect(() => {
-    tilt.current.target = 0
+    // The tilt object itself never changes (only its fields do), so one read is
+    // the same object the cleanup below has to reset.
+    const t = tilt.current
+    t.target = 0
     if (!scene || !gyro || typeof window.DeviceOrientationEvent === 'undefined') return
 
     const onOrient = (e) => {
@@ -141,12 +144,12 @@ export function WeatherCanvas({ code, gyro = true }) {
       if (landscape && window.orientation === -90) deg = -deg
       if (deg == null || Number.isNaN(deg)) return
       const clamped = Math.max(-TILT_CLAMP, Math.min(TILT_CLAMP, deg))
-      tilt.current.target = clamped * Math.PI / 180 * TILT_GAIN
+      t.target = clamped * Math.PI / 180 * TILT_GAIN
     }
     window.addEventListener('deviceorientation', onOrient)
     return () => {
       window.removeEventListener('deviceorientation', onOrient)
-      tilt.current.target = 0
+      t.target = 0
     }
   }, [scene, gyro])
 

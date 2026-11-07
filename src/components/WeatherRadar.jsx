@@ -2,9 +2,14 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } fr
 import { Minimize2, Play, Pause, Navigation, ZoomIn, ZoomOut } from 'lucide-react'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
-import { MRMS_BASE, inMrmsDomain } from '../utils/mrms'
+import { MRMS_BASE, inMrmsDomain, usViewBounds } from '../utils/mrms'
 import { addBasemap } from '../utils/basemap'
 import { RadarRain } from './RadarRain'
+import { fetchWithin } from '../utils/fetchTimeout'
+
+// The frame lists the card waits on. Past this a source counts as down and the
+// timeline falls back to the next one, as it already does on an error.
+const RADAR_LIST_TIMEOUT_MS = 8000
 
 const FRAMES_URL = 'https://api.rainviewer.com/public/weather-maps.json'
 
@@ -81,7 +86,7 @@ const MrmsLayer = L.TileLayer.extend({
 // Returns oldest-first to match the direction the timeline runs, or [] on any
 // failure — every caller treats that as "fall back to RainViewer".
 async function fetchMrmsFrames() {
-  const data = await fetch(MRMS_QUERY).then(r => r.json())
+  const data = await fetchWithin(MRMS_QUERY, RADAR_LIST_TIMEOUT_MS).then(r => r.json())
   // Deliberately not deduplicated: `n` below has to count rasters, and two regions
   // of one sweep can share a timestamp exactly. Collapsing those would undercount
   // the sweep and get it thrown out as incomplete. Clustering absorbs duplicates
@@ -165,15 +170,16 @@ function approxKm(lat1, lon1, lat2, lon2) {
 // only the WSR-88Ds carry N0B, so it is filtered to those and ranked by distance.
 async function fetchNexradFrames(lat, lon) {
   const now = Date.now()
-  const avail = await fetch(`${IEM_RADAR_API}?operation=available&lat=${lat}&lon=${lon}&start=${iemTime(now)}`)
+  const avail = await fetchWithin(`${IEM_RADAR_API}?operation=available&lat=${lat}&lon=${lon}&start=${iemTime(now)}`, RADAR_LIST_TIMEOUT_MS)
     .then(r => r.json())
   const site = (avail.radars ?? [])
     .filter(r => r.type === 'NEXRAD' && Number.isFinite(r.lat) && Number.isFinite(r.lon))
     .sort((a, b) => approxKm(lat, lon, a.lat, a.lon) - approxKm(lat, lon, b.lat, b.lon))[0]
   if (!site) return []
 
-  const list = await fetch(
+  const list = await fetchWithin(
     `${IEM_RADAR_API}?operation=list&radar=${site.id}&product=N0B&start=${iemTime(now - NEXRAD_WINDOW_MS)}&end=${iemTime(now)}`,
+    RADAR_LIST_TIMEOUT_MS,
   ).then(r => r.json())
   return (list.scans ?? [])
     .map(s => s.ts)
@@ -596,6 +602,9 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
   const [playing, setPlaying]     = useState(false)
   const [expanded, setExpanded]   = useState(false)
   const [mapReady, setMapReady]   = useState(false)
+  // The Leaflet map once it exists, as state, for children that need it during
+  // render (RadarRain); mapInst is the same object for effects and handlers.
+  const [rainMap, setRainMap]     = useState(null)
   // Whether the map is zoomed in far enough for Auto to draw the single site.
   // Tracked as a boolean rather than the zoom itself so the layer effect only
   // re-runs when the threshold is actually crossed, not on every wheel tick.
@@ -667,10 +676,10 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
   // and in split the toggle can ask for the other one at any point. Paying for
   // HRRR's one metadata request up front is what makes that switch instant
   // rather than a spinner.
+  const { latitude: lat, longitude: lon } = location
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const { latitude: lat, longitude: lon } = location
       const wantMrms = inMrmsDomain(lat, lon)
       const wantHrrr = inHrrrDomain(lat, lon)
       // NEXRAD is US-only like MRMS. MRMS is still fetched alongside it on the
@@ -681,9 +690,9 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
       // trimming below does — and the slowest of them is what the card waits on, so
       // running them in sequence would have made that the sum instead of the max.
       const [rvRes, mrmsRes, hrrrRes, nexradRes] = await Promise.allSettled([
-        fetch(FRAMES_URL).then(r => r.json()),
+        fetchWithin(FRAMES_URL, RADAR_LIST_TIMEOUT_MS).then(r => r.json()),
         wantMrms ? fetchMrmsFrames() : Promise.resolve([]),
-        wantHrrr ? fetch(HRRR_META_URL).then(r => r.json()) : Promise.resolve(null),
+        wantHrrr ? fetchWithin(HRRR_META_URL, RADAR_LIST_TIMEOUT_MS).then(r => r.json()) : Promise.resolve(null),
         wantNexrad ? fetchNexradFrames(lat, lon) : Promise.resolve([]),
       ])
 
@@ -702,7 +711,7 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
         try {
           rvPast = (data.radar.past ?? []).map(mk)
           rvCast = (data.radar.nowcast ?? []).map(mk)
-        } catch {}
+        } catch { /* malformed frame list: no RainViewer frames */ }
       }
 
       // Observed: MRMS when it answered, RainViewer when it didn't. The fallback is
@@ -749,12 +758,17 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
       setFeed(next)
     })()
     return () => { cancelled = true }
-  }, [location.latitude, location.longitude, source])
+  }, [lat, lon, source])
 
   // Coming back to split from combined, start on observed rather than resuming
   // whichever side was last looked at — the timeline in between showed both, so
   // there is no side to resume.
-  useEffect(() => { setView('observed') }, [mode])
+  // Reset while rendering, React's pattern for state that follows a prop.
+  const [prevMode, setPrevMode] = useState(mode)
+  if (mode !== prevMode) {
+    setPrevMode(mode)
+    setView('observed')
+  }
 
   // Only US locations get a forecast half, so only they get the toggle.
   const canForecast = feed.fut.length > 0
@@ -804,9 +818,16 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
   // radar is for, and in combined it sits mid-track with the forecast already
   // laid out to its right. On the forecast side there are no observed frames, so
   // pastCount is 0 and this lands on frame 0 — the earliest forecast step.
-  useEffect(() => {
-    setIdx(Math.min(Math.max(0, pastCount - 1), Math.max(0, frames.length - 1)))
-  }, [frames, pastCount])
+  // Set while rendering rather than in an effect, so a rebuilt timeline never
+  // paints a frame with the old index.
+  const startIdx = Math.min(Math.max(0, pastCount - 1), Math.max(0, frames.length - 1))
+  // Starts on no frames so the first render lands too: a cached feed means the
+  // card can mount with a full timeline already.
+  const [idxFor, setIdxFor] = useState({ frames: null, pastCount })
+  if (idxFor.frames !== frames || idxFor.pastCount !== pastCount) {
+    setIdxFor({ frames, pastCount })
+    setIdx(startIdx)
+  }
 
   // Init Leaflet map (without base tile — handled separately so it can swap on theme change)
   useEffect(() => {
@@ -868,6 +889,7 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
     }).addTo(map)
     mapInst.current = map
     setMapReady(true)
+    setRainMap(map)
     return () => {
       wheelEl.removeEventListener('wheel', onWheel, { capture: true })
       map.remove()
@@ -876,6 +898,7 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
       cache.clear()
       activeKey.current = null
       setMapReady(false)
+      setRainMap(null)
     }
   }, [hasFrames, location.latitude, location.longitude])
 
@@ -1352,6 +1375,39 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
     map.setView([location.latitude, location.longitude], 10, { animate: false })
   }, [expanded, fill, mapReady, location.latitude, location.longitude])
 
+  // US feeds (MRMS, NEXRAD, the HRRR forecast) only cover the US, so while every
+  // frame on the timeline is one of them the map is held to the US region the
+  // location is in: panning stops at its edges, and zooming out stops at the
+  // widest view that still fits inside it. RainViewer is worldwide, so a
+  // timeline with any of its frames is left free.
+  const usOnly = frames.length > 0 && frames.every((f) => f.src !== 'rv')
+  const usBounds = useMemo(
+    () => (usOnly ? usViewBounds(location.latitude, location.longitude) : null),
+    [usOnly, location.latitude, location.longitude],
+  )
+  useEffect(() => {
+    const map = mapInst.current
+    if (!map || !usBounds) return
+    const bounds = L.latLngBounds(usBounds)
+    // Recomputed whenever the map changes size (card, full screen, fill): a
+    // wider box needs a closer zoom to stay inside the region. Capped so a small
+    // region (Puerto Rico, Guam) still leaves room to zoom.
+    const fitMinZoom = () => {
+      map.setMinZoom(Math.min(MAP_MAX_ZOOM - 3, Math.max(MAP_MIN_ZOOM, map.getBoundsZoom(bounds, true))))
+    }
+    map.options.maxBoundsViscosity = 1 // a hard edge, not a rubber band
+    map.setMaxBounds(bounds)
+    fitMinZoom()
+    map.on('resize', fitMinZoom)
+    return () => {
+      map.off('resize', fitMinZoom)
+      // The map may already be gone (unmount removes it first).
+      if (mapInst.current !== map) return
+      map.setMaxBounds(null)
+      map.setMinZoom(MAP_MIN_ZOOM)
+    }
+  }, [mapReady, usBounds])
+
   const handleLocate = useCallback(() => {
     const map = mapInst.current
     if (!map) return
@@ -1635,8 +1691,8 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
         {/* Rain drawn only where the radar shows echoes — on the compact card
             too, so the map that grows into the full-screen view is already the
             one with weather falling on it. */}
-        {rainFx && mapReady && (
-          <RadarRain map={mapInst.current} getLayer={getActiveLayer} snow={snow} palette={legendColors} />
+        {rainFx && rainMap && (
+          <RadarRain map={rainMap} getLayer={getActiveLayer} snow={snow} />
         )}
         {/* The full-screen overlay floats its zoom and collapse tools on the
             map, and is the only mode that offers a way out of itself. Its

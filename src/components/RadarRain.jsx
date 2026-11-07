@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { assertOpenMeteoQuota, noteOpenMeteo429 } from '../utils/openMeteoQuota'
 
 // Rain and snow falling on the radar map — only where the radar has echoes, and
 // as whichever one is actually falling there.
@@ -10,7 +11,7 @@ import { useEffect, useRef } from 'react'
 //
 // Where: a few times a second the tiles of the radar frame on screen are drawn
 // into a small offscreen canvas lined up with the map, and read back as a grid
-// of precipitation intensity. The tiles are fetched with crossOrigin (every feed
+// of where precipitation is. The tiles are fetched with crossOrigin (every feed
 // here is CORS-open), which is what lets them be read back; if a browser taints
 // the canvas anyway, the read throws and the overlay simply stays empty.
 //
@@ -30,86 +31,38 @@ const MASK_PX = 6
 // changes and tiles arriving.
 const MASK_MS = 180
 // One drop per this many square CSS pixels of map, capped for big monitors.
-const AREA_PER_DROP = 650
-const MAX_DROPS = 2600
-const LEVELS = 5 // alpha steps, so a frame is a handful of stroke() calls
+// Denser than the visible field needs: light echoes show only a share of the
+// drops (see density), so heavy cells have the spare drops to fill in.
+const AREA_PER_DROP = 420
+const MAX_DROPS = 4200
+// Alpha steps, so a frame is a handful of stroke() calls. Fine enough that a
+// drop fading in or out (see FADE_IN) steps through them without visible jumps.
+const LEVELS = 10
 
-// RGBA → 0..1 precipitation intensity, read off the colour ramp rather than
-// matched to one palette: both ramps in use (RainViewer's and the NWS one) run
-// pale/neutral → blue/green → yellow → orange/red → magenta as the echo gets
-// stronger, so hue and saturation sort them well enough for drawing rain.
-function intensity(r, g, b, a) {
-  if (a < 24) return 0
-  const max = Math.max(r, g, b), min = Math.min(r, g, b)
-  const v = max / 255
-  const s = max === 0 ? 0 : (max - min) / max
-  let h = 0
-  if (max !== min) {
-    const d = max - min
-    if (max === r) h = ((g - b) / d) % 6
-    else if (max === g) h = (b - r) / d + 2
-    else h = (r - g) / d + 4
-    h *= 60
-    if (h < 0) h += 360
-  }
-  let level
-  if (s < 0.5 && h > 15 && h < 75) level = 0.14          // tan/beige: drizzle, virga
-  else if (s < 0.2) level = 0.14                         // grey/white: very light
-  else if (h >= 270 && h < 345) level = 1                // magenta/pink: extreme
-  else if (h >= 345 || h < 22) level = 0.92              // red
-  else if (h < 45) level = 0.85                          // orange
-  else if (h < 75) level = 0.72                          // yellow
-  else if (h < 165) level = 0.32                         // green (NWS light–moderate)
-  else level = 0.28 + (1 - v) * 0.45                     // cyan→navy, darker is heavier
-  return level * Math.min(1, a / 200)
-}
+// Rain falls at a slight slant, as if under a light breeze, rather than in
+// ruler-straight verticals: dx per px of fall, shared by every drop so the
+// field reads as one sheet of rain.
+const RAIN_SLANT = 0
+// A streak is drawn as head-to-tail segments at falling brightness, so it
+// tapers to nothing instead of ending in a hard edge. Fractions of its length
+// and the share of the head's alpha each one gets.
+const STREAK_SEGMENTS = [[0, 0.3, 1], [0.3, 0.62, 0.5], [0.62, 1, 0.18]]
+// How quickly a drop fades in as it enters an echo and out as it leaves one,
+// per 74 Hz frame — a short ease instead of popping on and off at the radar's
+// blocky edges and on every mask rebuild.
+const FADE_IN = 0.14
+const FADE_OUT = 0.2
 
-// ── Strength off the legend ─────────────────────────────────────────────────
-//
-// The legend under the scrubber is the scale the user reads the radar by, Light
-// to Heavy, so that is the scale the effect follows: each pixel is placed on the
-// legend's ramp (projected onto the nearest segment between two of its stops),
-// and how far along it sits is how hard it is raining there. Colours the legend
-// doesn't name — the NWS ramp's pale greens below its first stop, its magentas
-// past its last — are far from every segment, and fall back to the hue reading
-// above, which already sorts those two ends correctly.
-const PALETTE_MAX_DIST = 110 // RGB distance past which a pixel isn't "on" the legend
-const hexRgb = (h) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16))
+// Every echo is drawn at this one strength, whatever colour the radar paints
+// it: the effect only marks where something is falling, not how hard. 0 to 1,
+// on the scale density() and the draw loop below read.
+const RAIN_STRENGTH = 0.5
+const ECHO_MIN_ALPHA = 24 // tile pixels fainter than this are blank map
 
-function legendRamp(palette) {
-  if (!palette || palette.length < 2) return null
-  const stops = palette.map(hexRgb)
-  const cache = new Map()
-  return (r, g, b, a) => {
-    if (a < 24) return 0
-    // Quantised cache: tiles are a handful of flat colours plus their blends,
-    // so this turns ~10k projections per mask into a few dozen.
-    const key = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3)
-    let level = cache.get(key)
-    if (level === undefined) {
-      let best = Infinity, pos = 0
-      for (let k = 0; k < stops.length - 1; k++) {
-        const [r0, g0, b0] = stops[k], [r1, g1, b1] = stops[k + 1]
-        const dr = r1 - r0, dg = g1 - g0, db = b1 - b0
-        const len2 = dr * dr + dg * dg + db * db || 1
-        const t = Math.max(0, Math.min(1, ((r - r0) * dr + (g - g0) * dg + (b - b0) * db) / len2))
-        const er = r - (r0 + dr * t), eg = g - (g0 + dg * t), eb = b - (b0 + db * t)
-        const d = er * er + eg * eg + eb * eb
-        if (d < best) { best = d; pos = (k + t) / (stops.length - 1) }
-      }
-      // Light still reads as something falling; heavy reaches the top.
-      level = Math.sqrt(best) > PALETTE_MAX_DIST
-        ? intensity(r, g, b, 255)
-        : 0.1 + 0.9 * pos
-      cache.set(key, level)
-    }
-    return level * Math.min(1, a / 200)
-  }
-}
-
-// How much of the field is falling at a given strength: a drizzle is a sparse
-// scatter, a downpour every drop there is. Curved so the light end stays light.
-const density = (I) => 0.06 + 0.94 * Math.pow(I, 1.6)
+// How much of the field shows at a strength: a drizzle is a scatter, a
+// downpour every drop there is. With twice the old drop count, light rain lands
+// about where it always did and heavy rain fills in around it.
+const density = (I) => 0.12 + 0.88 * Math.pow(I, 1.2)
 
 // ── Rain or snow, per place ─────────────────────────────────────────────────
 //
@@ -123,10 +76,17 @@ const density = (I) => 0.06 + 0.94 * Math.pow(I, 1.6)
 //                                                but what is falling is liquid
 //   otherwise                                  → the temperature against 32°F
 const PHASE_URL = 'https://api.open-meteo.com/v1/forecast'
-const PHASE_COLS = 8
-const PHASE_ROWS = 6
-const PHASE_PAD = 0.3              // fetch this much beyond each edge of the view
-const PHASE_MAX_AGE = 10 * 60 * 1000
+// Open-Meteo bills a multi-location request one call per point, so the grid is
+// kept small: 12 points, refreshed every half hour, and asked for only while
+// the radar actually shows something falling (see ensureField). It used to be
+// 48 points every five minutes, which on its own could use up the free tier's
+// daily allowance. A rain/snow line moves slowly, and the blend between points
+// still places it smoothly.
+const PHASE_COLS = 4
+const PHASE_ROWS = 3
+const PHASE_PAD = 0.5              // fetch this much beyond each edge of the view, so a pan rarely leaves it
+const PHASE_MAX_AGE = 30 * 60 * 1000
+const PHASE_RETRY_MS = 2 * 60 * 1000 // after a failed fetch, wait this long before the next
 const SNOW_CODES = new Set([71, 73, 75, 77, 85, 86])
 const FREEZING_RAIN_CODES = new Set([56, 57, 66, 67])
 
@@ -167,48 +127,72 @@ async function fetchPhaseField(b) {
   }
   const q = `latitude=${lats.join(',')}&longitude=${lngs.join(',')}` +
     '&current=temperature_2m,weather_code&temperature_unit=fahrenheit'
-  const data = await fetch(`${PHASE_URL}?${q}`).then(r => r.ok ? r.json() : Promise.reject(r.status))
+  assertOpenMeteoQuota()
+  const res = await fetch(`${PHASE_URL}?${q}`)
+  if (res.status === 429) await noteOpenMeteo429(res)
+  if (!res.ok) throw new Error(`phase grid: ${res.status}`)
+  const data = await res.json()
   const list = Array.isArray(data) ? data : [data]
   if (list.length !== lats.length) throw new Error('phase grid: short response')
   const val = new Float32Array(list.length)
+  const temp = new Float32Array(list.length)
   for (let i = 0; i < list.length; i++) {
     const cur = list[i]?.current
     val[i] = snowScore(cur?.temperature_2m, cur?.weather_code) ?? NaN
+    temp[i] = Number.isFinite(cur?.temperature_2m) ? cur.temperature_2m : NaN
   }
-  return { s, n, w, e, val, at: Date.now() }
+  return { s, n, w, e, val, temp, at: Date.now() }
 }
 
 // Bilinear blend of the field at a point. A missing point (the API had nothing
 // there) is skipped and the rest re-weighted; all four missing gives NaN.
-function scoreAt(field, lat, lng) {
+function blendAt(field, grid, lat, lng) {
   const fx = Math.max(0, Math.min(PHASE_COLS - 1, ((lng - field.w) / (field.e - field.w)) * (PHASE_COLS - 1)))
   const fy = Math.max(0, Math.min(PHASE_ROWS - 1, ((lat - field.s) / (field.n - field.s)) * (PHASE_ROWS - 1)))
   const x0 = Math.min(PHASE_COLS - 2, fx | 0), y0 = Math.min(PHASE_ROWS - 2, fy | 0)
   const tx = fx - x0, ty = fy - y0
   let sum = 0, wsum = 0
   for (const [dx, dy, wgt] of [[0, 0, (1 - tx) * (1 - ty)], [1, 0, tx * (1 - ty)], [0, 1, (1 - tx) * ty], [1, 1, tx * ty]]) {
-    const v = field.val[(y0 + dy) * PHASE_COLS + x0 + dx]
+    const v = grid[(y0 + dy) * PHASE_COLS + x0 + dx]
     if (Number.isNaN(v)) continue
     sum += v * wgt; wsum += wgt
   }
   return wsum > 0 ? sum / wsum : NaN
 }
+const scoreAt = (field, lat, lng) => blendAt(field, field.val, lat, lng)
+const tempAt = (field, lat, lng) => (field.temp ? blendAt(field, field.temp, lat, lng) : NaN)
+
+// How wet the snow is, 0 to 1, from the surface temperature. Near freezing it
+// falls as big, wet clumps that come down fairly quickly; well below it, as
+// fine dry powder that drifts. Unknown temperature reads as ordinary snow.
+const POWDER_F = 15
+const WET_F = 32
+function snowWetness(tempF) {
+  if (!Number.isFinite(tempF)) return 0.5
+  return Math.max(0, Math.min(1, (tempF - POWDER_F) / (WET_F - POWDER_F)))
+}
+
+// Speeds below are px per frame on the 74 Hz screen they were tuned on. Each
+// frame moves by the time it actually took, so a 60, 120 or 144 Hz screen shows
+// the same fall speed instead of one scaled by its refresh rate. Capped so the
+// first frame after the tab was hidden doesn't teleport every drop.
+const FRAME_MS = 1000 / 74
+const MAX_STEP = 3
 
 // Snow: slower, drifting, and drawn as flakes. Fall speed is in px per frame;
 // flakes sway sideways on a slow sine of their own.
-const SNOW_SPEED = [1.2, 3.0]
+const SNOW_SPEED = [0.8, 2.2]
 const SNOW_RADIUS = [1.1, 2.4]
 
 // `snow` is the fallback: the user's own location's verdict, used across the
 // whole map until the grid arrives, and wherever it can't be fetched at all.
-// `palette` is the legend's colours, light to heavy, for the tiles on screen.
-export function RadarRain({ map, getLayer, snow = false, palette = null }) {
+export function RadarRain({ map, getLayer, snow = false }) {
   const ref = useRef(null)
   const fallback = useRef(snow)
-  const paletteRef = useRef(palette)
+  // Synced after render: writing a ref during render is unsafe under React's
+  // concurrent rendering.
   useEffect(() => {
     fallback.current = snow
-    paletteRef.current = palette
   })
 
   useEffect(() => {
@@ -220,7 +204,7 @@ export function RadarRain({ map, getLayer, snow = false, palette = null }) {
     const mctx = maskCanvas.getContext('2d', { willReadFrequently: true })
 
     let W = 0, H = 0, dpr = 1
-    let mask = null, phase = null, mw = 0, mh = 0
+    let mask = null, phase = null, wet = null, mw = 0, mh = 0
     // The map's pan offset when the mask was built, and right now. Their
     // difference is how far the map has slid since, so drops and mask lookups
     // follow a drag instead of lagging it by up to MASK_MS.
@@ -231,22 +215,29 @@ export function RadarRain({ map, getLayer, snow = false, palette = null }) {
     let drops = []
     let raf, timer, fieldTimer, refreshTimer
     let field = null, fetching = false, alive = true
-    let ramp = null, rampFor = null
+    let hasEcho = false, failedAt = 0
 
     const rand = (a, b) => a + Math.random() * (b - a)
     const seed = (d, anywhere) => {
-      d.x = rand(-20, W + 20)
+      // Starting further left by the slant's drift over the screen's height,
+      // so the left edge isn't left thin as the rain slides right.
+      d.x = rand(-20 - H * RAIN_SLANT, W + 20)
       d.y = anywhere ? rand(0, H) : rand(-40, -10)
       // Every drop carries both looks; which one it wears is decided per frame
       // by where it is, so one crossing the rain/snow line changes as it goes.
-      d.rspd = rand(15, 21)
-      d.sspd = rand(SNOW_SPEED[0], SNOW_SPEED[1])
-      d.len = rand(12, 22)
-      d.r = rand(SNOW_RADIUS[0], SNOW_RADIUS[1])
+      // Depth, 0 far to 1 near: nearer drops fall faster, streak longer and
+      // show brighter and thicker, so the field has parallax instead of every
+      // streak being the same line.
+      d.z = Math.pow(Math.random(), 1.4) // most drops sit back, a few up close
+      d.rspd = 6.5 + 7 * d.z + rand(-0.6, 0.6)
+      d.sspd = rand(SNOW_SPEED[0], SNOW_SPEED[1]) * (0.7 + 0.6 * d.z)
+      d.len = 8 + 16 * d.z + rand(-1.5, 1.5)
+      d.r = rand(SNOW_RADIUS[0], SNOW_RADIUS[1]) * (0.75 + 0.5 * d.z)
+      d.vis = 0 // current fade, eased toward 1 inside an echo and 0 outside
       d.phase = rand(0, Math.PI * 2)
       d.sway = rand(0.01, 0.03)
-      // The drop's place in line: a cell at strength I shows the drops whose
-      // gate is under density(I), so heavier rain is denser rain.
+      // The drop's place in line: a cell at intensity I shows the drops whose
+      // gate is under sqrt(I), so heavier rain is denser rain.
       d.gate = Math.random()
     }
 
@@ -270,11 +261,14 @@ export function RadarRain({ map, getLayer, snow = false, palette = null }) {
     const panOrigin = () => map.containerPointToLayerPoint([0, 0])
 
     // Fetch a new conditions grid if the current one no longer fits the view.
+    // Only while something is falling on screen: with no echo there is nothing
+    // to call rain or snow, and the request would be spent for nothing.
     const ensureField = async () => {
+      if (!hasEcho) return
       const b = map.getBounds()
       if (fieldFits(field, b)) return
       if (fieldFits(lastField, b)) { field = lastField; return }
-      if (fetching) return
+      if (fetching || Date.now() - failedAt < PHASE_RETRY_MS) return
       fetching = true
       try {
         const next = await fetchPhaseField(b)
@@ -282,7 +276,8 @@ export function RadarRain({ map, getLayer, snow = false, palette = null }) {
         field = lastField = next
       } catch {
         // Keep whatever we had; the fallback covers the gap. Retried on the
-        // next move or refresh.
+        // next move or refresh, once PHASE_RETRY_MS has passed.
+        failedAt = Date.now()
       } finally {
         fetching = false
       }
@@ -319,21 +314,21 @@ export function RadarRain({ map, getLayer, snow = false, palette = null }) {
         mask = null
         return
       }
-      // Rebuilt only when the legend changes (the feed switching ramps).
-      if (paletteRef.current !== rampFor) {
-        rampFor = paletteRef.current
-        ramp = legendRamp(rampFor)
-      }
-      const read = ramp ?? intensity
       const next = new Float32Array(mw * mh)
-      for (let i = 0, j = 0; i < next.length; i++, j += 4) {
-        next[i] = read(px[j], px[j + 1], px[j + 2], px[j + 3])
+      let echo = false
+      for (let i = 0, j = 3; i < next.length; i++, j += 4) {
+        if (px[j] >= ECHO_MIN_ALPHA) { next[i] = RAIN_STRENGTH; echo = true }
       }
+      hasEcho = echo
+      // Precipitation has just come on screen with no grid to place it by:
+      // fetch one now rather than waiting for the next move or refresh.
+      if (echo && !field) ensureField()
 
       // Rain or snow for each cell, on the same grid. The map is unrotated Web
       // Mercator, so a column shares one longitude and a row one latitude: that
       // is mw + mh projections rather than one per cell.
       const kind = new Uint8Array(mw * mh) // 1 = snow
+      const wetness = new Float32Array(mw * mh).fill(0.5) // snow only: see snowWetness
       const fb = fallback.current ? 1 : 0
       if (field) {
         const lngs = new Float64Array(mw), lats = new Float64Array(mh)
@@ -345,6 +340,7 @@ export function RadarRain({ map, getLayer, snow = false, palette = null }) {
             if (next[i] <= 0) continue // no echo, nothing to decide
             const sc = scoreAt(field, lats[y], lngs[x])
             kind[i] = Number.isNaN(sc) ? fb : sc <= 0 ? 1 : 0
+            if (kind[i]) wetness[i] = snowWetness(tempAt(field, lats[y], lngs[x]))
           }
         }
       } else if (fb) {
@@ -353,20 +349,34 @@ export function RadarRain({ map, getLayer, snow = false, palette = null }) {
 
       mask = next
       phase = kind
+      wet = wetness
       maskOrigin = panOrigin()
     }
 
+    // Buckets by drawn alpha. Rain buckets hold flat segment coordinates
+    // (x1, y1, x2, y2, ...), since one streak spans several of them.
     const rainBuckets = Array.from({ length: LEVELS }, () => [])
     const snowBuckets = Array.from({ length: LEVELS }, () => [])
-    // Per strength step: light is faint and fine, heavy bright and thick.
+    const MAX_RAIN_ALPHA = 0.72
+    const MAX_SNOW_ALPHA = 0.9
     const rainStyles = rainBuckets.map((_, i) =>
-      `rgba(205, 225, 255, ${(0.16 + (0.7 * (i + 1)) / LEVELS).toFixed(3)})`)
-    const rainWidths = rainBuckets.map((_, i) => 0.8 + (1.0 * i) / (LEVELS - 1))
+      `rgba(214, 230, 255, ${((MAX_RAIN_ALPHA * (i + 1)) / LEVELS).toFixed(3)})`)
+    // Fainter segments are thinner too: the far drops and the tails of the
+    // near ones, which is what gives a streak its taper.
+    const rainWidths = rainBuckets.map((_, i) => 0.6 + (1.0 * i) / (LEVELS - 1))
     const snowStyles = snowBuckets.map((_, i) =>
-      `rgba(255, 255, 255, ${(0.35 + (0.6 * (i + 1)) / LEVELS).toFixed(3)})`)
+      `rgba(255, 255, 255, ${((MAX_SNOW_ALPHA * (i + 1)) / LEVELS).toFixed(3)})`)
+    const snowGlows = snowBuckets.map((_, i) =>
+      `rgba(255, 255, 255, ${((0.16 * (i + 1)) / LEVELS).toFixed(3)})`)
+    const bucketOf = (a) => Math.min(LEVELS - 1, Math.round(a * LEVELS) - 1)
+    const slantLen = Math.hypot(1, RAIN_SLANT)
+    const ux = RAIN_SLANT / slantLen, uy = 1 / slantLen // fall direction
 
-    const draw = () => {
+    let lastFrame = 0
+    const draw = (now) => {
       raf = requestAnimationFrame(draw)
+      const step = lastFrame ? Math.min(MAX_STEP, (now - lastFrame) / FRAME_MS) : 1
+      lastFrame = now
       ctx.clearRect(0, 0, W, H)
 
       // Follow the map while it is dragged. A zoom resets Leaflet's layer
@@ -394,48 +404,81 @@ export function RadarRain({ map, getLayer, snow = false, palette = null }) {
         const inside = cx >= 0 && cy >= 0 && cx < mw && cy < mh
         const i = inside ? cy * mw + cx : -1
         const isSnow = inside ? phase[i] === 1 : fb
-        // Strength where the drop is, which sets how fast it falls as well as
-        // how it looks: drizzle drifts down, a downpour comes down hard.
+        // Strength where the drop is. It sets density, size and brightness in
+        // full, but speed only gently: about 0.9x the old speed in drizzle and
+        // 1.25x in a downpour, so heavy rain reads as harder without racing.
         const I = inside ? mask[i] : 0
+        // Snow wetness where it is (0 powder, 1 wet near freezing).
+        const w = inside ? wet[i] : 0.5
         if (isSnow) {
-          d.y += d.sspd * (0.6 + 1.0 * I)
-          d.phase += d.sway
-          d.x += Math.sin(d.phase) * (0.6 - 0.3 * I) // heavy snow sways less
+          d.y += d.sspd * (0.75 + 0.3 * I) * (0.8 + 0.5 * w) * step  // wet clumps fall faster
+          d.phase += d.sway * step
+          d.x += Math.sin(d.phase) * (0.75 - 0.4 * w) * (1 - 0.3 * I) * step // powder drifts most
         } else {
-          d.y += d.rspd * (0.5 + 1.0 * I) // ~9 px/frame in drizzle, ~27 in a downpour
+          const dy = d.rspd * (0.85 + 0.4 * I) * step
+          d.y += dy
+          d.x += dy * RAIN_SLANT
         }
-        if (d.y - d.len > H || d.x < -40 || d.x > W + 40 || d.y < -60) { seed(d, false); continue }
-        if (!inside) continue
-        if (I <= 0 || d.gate > density(I)) continue
-        const lvl = Math.min(LEVELS - 1, (I * LEVELS) | 0)
+        if (d.y - d.len > H || d.x < -40 - H * RAIN_SLANT || d.x > W + 40 || d.y < -60) { seed(d, false); continue }
+
+        // Ease toward shown or hidden rather than switching, so drops fade in
+        // and out at the edge of an echo instead of popping.
+        const show = inside && I > 0 && d.gate <= density(I)
+        d.vis += ((show ? 1 : 0) - d.vis) * (1 - Math.pow(1 - (show ? FADE_IN : FADE_OUT), step))
+        if (d.vis < 0.02) continue
+
+        // Near drops bright, far ones faint; heavier echoes a little brighter.
+        const a = d.vis * (0.28 + 0.72 * d.z) * (0.75 + 0.5 * I)
         if (isSnow) {
-          d.drawR = d.r * (0.55 + 0.9 * I) // light snow fine, heavy snow big flakes
+          const lvl = bucketOf(a)
+          if (lvl < 0) continue
+          // Heavier snow, bigger flakes; wet snow clumps, powder is fine.
+          d.drawR = d.r * (0.6 + 0.7 * I) * (0.7 + 0.6 * w)
           snowBuckets[lvl].push(d)
         } else {
-          d.drawLen = d.len * (0.45 + 1.6 * I) // streak length tracks the speed: short ticks in drizzle, long streaks in a downpour
-          rainBuckets[lvl].push(d)
+          const len = d.len * (0.5 + 1.0 * I) // short ticks in drizzle, long streaks in a downpour
+          for (const [from, to, share] of STREAK_SEGMENTS) {
+            const lvl = bucketOf(a * share)
+            if (lvl < 0) continue
+            rainBuckets[lvl].push(
+              d.x - ux * len * from, d.y - uy * len * from,
+              d.x - ux * len * to, d.y - uy * len * to,
+            )
+          }
         }
       }
 
-      ctx.lineCap = 'round'
+      // Butt caps: round ones overlap where a streak's segments meet and
+      // leave brighter beads along it.
+      ctx.lineCap = 'butt'
       for (let i = 0; i < LEVELS; i++) {
         const b = rainBuckets[i]
         if (!b.length) continue
         ctx.lineWidth = rainWidths[i]
         ctx.beginPath()
-        for (const d of b) {
-          ctx.moveTo(d.x, d.y)
-          ctx.lineTo(d.x, d.y - d.drawLen)
+        for (let k = 0; k < b.length; k += 4) {
+          ctx.moveTo(b[k], b[k + 1])
+          ctx.lineTo(b[k + 2], b[k + 3])
         }
         ctx.strokeStyle = rainStyles[i]
         ctx.stroke()
       }
+      // Flakes get a faint halo under a solid core, so they read as soft
+      // snow rather than hard dots.
       for (let i = 0; i < LEVELS; i++) {
         const b = snowBuckets[i]
         if (!b.length) continue
         ctx.beginPath()
         for (const d of b) {
+          const g = d.drawR * 2.2
           // moveTo first, or the path joins each flake to the previous one.
+          ctx.moveTo(d.x + g, d.y)
+          ctx.arc(d.x, d.y, g, 0, Math.PI * 2)
+        }
+        ctx.fillStyle = snowGlows[i]
+        ctx.fill()
+        ctx.beginPath()
+        for (const d of b) {
           ctx.moveTo(d.x + d.drawR, d.y)
           ctx.arc(d.x, d.y, d.drawR, 0, Math.PI * 2)
         }
@@ -449,7 +492,7 @@ export function RadarRain({ map, getLayer, snow = false, palette = null }) {
     ro.observe(canvas)
     map.on('moveend', onMoveEnd)
     ensureField()
-    refreshTimer = setInterval(ensureField, PHASE_MAX_AGE / 2)
+    refreshTimer = setInterval(ensureField, PHASE_MAX_AGE)
     buildMask()
     timer = setInterval(buildMask, MASK_MS)
     raf = requestAnimationFrame(draw)

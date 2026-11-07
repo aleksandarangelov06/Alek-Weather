@@ -2,7 +2,9 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ArrowRight, CloudRain, Droplets, Eye, Sun, Sunrise, Sunset, Thermometer, Wind } from 'lucide-react'
 import { DragHandle, DragLayer, ResetLayout } from './DragLayer'
 import { useCardDrag } from './cardDrag'
-import { applyDrop, keyMove, resolveToday, spans, useTodayLayout } from './todayLayout'
+import {
+  applyDrop, HOURS_BY_SLOT, keyMove, PAIR_MQ, resolveToday, spans, useMediaQuery, useTodayLayout,
+} from './todayLayout'
 import { CurrentWeather } from '../CurrentWeather'
 import { PrecipNowcast } from '../PrecipNowcast'
 import { WeatherAlerts } from '../WeatherAlerts'
@@ -22,29 +24,6 @@ const WIDGET_NAMES = {
   nowcast: 'Precipitation',
   hourly: 'Next hours',
   week: 'Week ahead',
-}
-
-// The width where .web-today-grid still has its 12 columns — WebApp.css folds it
-// to one column at 1279px. Below that nothing sits beside anything and every
-// card renders at full size.
-const PAIR_MQ = '(min-width: 1280px)'
-
-// Hours in the strip, by how much of the row the card has. Thirteen tiles fill
-// a full row; beside the current card there's about three quarters of it, and
-// half a row fits seven at the same tile size. The heading counts from
-// whichever is in play, so it never promises hours that aren't drawn.
-const HOURS_BY_SLOT = { full: 13, wide: 9, half: 7, narrow: 5 }
-
-function useMediaQuery(query) {
-  const [matches, setMatches] = useState(() => window.matchMedia(query).matches)
-  useEffect(() => {
-    const mq = window.matchMedia(query)
-    const onChange = () => setMatches(mq.matches)
-    onChange() // the width may have changed between the first render and this effect
-    mq.addEventListener('change', onChange)
-    return () => mq.removeEventListener('change', onChange)
-  }, [query])
-  return matches
 }
 
 function GlanceTile({ icon: Icon, label, value, sub, color }) {

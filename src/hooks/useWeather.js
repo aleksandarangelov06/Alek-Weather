@@ -4,6 +4,7 @@ import { gridHourly, gridHourlyAccum, gridHourlySpans } from '../utils/nwsGrid'
 import { sampleRadar } from './useRadarPrecip'
 import { IS_ANDROID_APP } from '../utils/version'
 import { deadline, fetchWithin } from '../utils/fetchTimeout'
+import { assertOpenMeteoQuota, noteOpenMeteo429, clearOpenMeteoBlock } from '../utils/openMeteoQuota'
 
 // Where to turn location back on depends on what the app is running in, and
 // "this site in your browser settings" only means anything on a desktop. The
@@ -106,7 +107,7 @@ const NWS_ICON_PRIORITY = [
   'few', 'wind_few', 'skc', 'wind_skc', 'hot', 'cold',
 ]
 
-function parseNWSIcon(iconUrl) {
+export function parseNWSIcon(iconUrl) {
   if (!iconUrl) return null
   try {
     // e.g. "/icons/land/day/tsra,80" or "/icons/land/day/ovc/tsra,60"
@@ -122,7 +123,7 @@ function parseNWSIcon(iconUrl) {
 }
 
 // Returns the icon code that ranks higher (more severe) in NWS_ICON_PRIORITY.
-function pickMoreSevere(a, b) {
+export function pickMoreSevere(a, b) {
   if (!b) return a
   const ia = NWS_ICON_PRIORITY.indexOf(a), ib = NWS_ICON_PRIORITY.indexOf(b)
   if (ia === -1) return b
@@ -139,14 +140,14 @@ const CARDINAL_TO_DEG = {
 }
 
 // "10 to 15 mph" → 15  (take the higher bound)
-function parseWindMph(str) {
+export function parseWindMph(str) {
   if (!str) return null
   const nums = str.match(/\d+/g)
   return nums ? Math.max(...nums.map(Number)) : null
 }
 
 // Convert a NWS startTime ISO string to a local "YYYY-MM-DDTHH:00" key.
-function nwsLocalKey(isoString, timezone) {
+export function nwsLocalKey(isoString, timezone) {
   return new Date(isoString)
     .toLocaleString('sv', { timeZone: timezone })
     .replace(' ', 'T')
@@ -506,7 +507,7 @@ function deriveDailyFromNWS(daily, hourly, maps) {
 // still technically active — the UI would show the same event twice. Drop
 // anything referenced by a newer alert, then collapse remaining duplicates of
 // the same event + area down to the most recently sent one.
-function dedupeAlerts(features) {
+export function dedupeAlerts(features) {
   const superseded = new Set()
   for (const f of features) {
     for (const ref of f.properties?.references ?? []) {
@@ -551,7 +552,7 @@ function alertUrgency(p = {}) {
   ]
 }
 
-function collapseAlerts(features) {
+export function collapseAlerts(features) {
   const byHazard = new Map()
   for (const f of features) {
     const key = hazardFamily(f.properties?.event)
@@ -578,7 +579,7 @@ const MAX_STATION_KM = 16
 
 // Equirectangular approximation. At these distances the error against haversine
 // is centimetres, and it costs a fraction as much.
-function distanceKm(lat1, lon1, lat2, lon2) {
+export function distanceKm(lat1, lon1, lat2, lon2) {
   const x = (lon2 - lon1) * Math.cos(((lat1 + lat2) / 2) * Math.PI / 180)
   const y = lat2 - lat1
   return Math.sqrt(x * x + y * y) * 111.32
@@ -634,7 +635,7 @@ function classifyObs(obs, allowThunder) {
 // Sky-cover-only observations return null so the model pipeline keeps handling
 // clear/cloudy — the station can be far enough away that its cloud deck differs
 // from the user's.
-function obsToWmoCode(obs) {
+export function obsToWmoCode(obs) {
   if (!obs?.timestamp) return null
   const ageMin = (Date.now() - new Date(obs.timestamp).getTime()) / 60000
   if (!(ageMin >= 0)) return null
@@ -650,7 +651,7 @@ function obsToWmoCode(obs) {
 // on promoting a forecast to the current condition, so it gets the longest
 // window: hourly AWOS fields report once an hour, and an hour-old "Partly
 // Cloudy" is still far better evidence about this hour than a 65% chance.
-function obsIsDry(obs) {
+export function obsIsDry(obs) {
   if (!obs?.timestamp) return false
   const ageMin = (Date.now() - new Date(obs.timestamp).getTime()) / 60000
   if (!(ageMin >= 0) || ageMin > MAX_OBS_AGE_MIN.fog) return false
@@ -718,7 +719,7 @@ function stampCurrentFromNWS(data, maps) {
 // — still outranks it in liveWeatherCode.
 const FORECAST_POP_FLOOR = 60
 
-function preferForecastHour(data) {
+export function preferForecastHour(data) {
   const c = data.current
   if (!c || !c.nws_hourly) return             // non-US: no authoritative overlay
   if (c.weather_code_confirmed) return        // a station already measured this
@@ -738,7 +739,7 @@ function preferForecastHour(data) {
 // the most severe of the model's current code and the (NWS-merged) forecast
 // code for this hour, and flag it so liveWeatherCode doesn't "correct" it
 // back to a sky condition using the equally storm-blind minutely nowcast.
-function confirmCurrentCode(data, alerts) {
+export function confirmCurrentCode(data, alerts) {
   const now = new Date()
   const warning = alerts.find(a => {
     const p = a.properties ?? {}
@@ -792,6 +793,24 @@ const PARAMS = [
   'past_days=1',
 ].join('&')
 
+// The cut-down request behind the splash and the location cards, which show
+// only the current condition. Open-Meteo bills a request by its variable count
+// (one call per ten), so the full PARAMS above cost about four calls where this
+// costs about one. It keeps every field the current-condition pipeline reads —
+// the NWS hourly merge and current-hour stamp, the nowcast, liveWeatherCode and
+// the headline's look ahead — and so reaches the same condition the forecast
+// screen does. No daily section: nothing on a card reads it.
+const LITE_PARAMS = [
+  'current=temperature_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover',
+  'hourly=temperature_2m,precipitation_probability,weather_code,is_day',
+  'minutely_15=precipitation',
+  'temperature_unit=fahrenheit',
+  'wind_speed_unit=mph',
+  'precipitation_unit=inch',
+  'timezone=auto',
+  'forecast_days=2',
+].join('&')
+
 // Hourly us_aqi + pm2_5 forecast backs the multi-day air-quality insights
 // (e.g. persistent wildfire smoke "through the week"); pm10, carbon_monoxide,
 // nitrogen_dioxide, and aerosol_optical_depth ride along so the overview can
@@ -822,20 +841,31 @@ const AQI_PARAMS = [
 // whether it is applied is the Radar enhanced accuracy setting's call, made by
 // whoever reads the code (App, placeConditions), so the toggle takes effect
 // without a refetch. sampleRadar never rejects.
-export async function loadForecast(loc) {
+//
+// `lite` loads only what a current condition needs (see LITE_PARAMS) and skips
+// air quality; aqiResult then comes back rejected.
+export async function loadForecast(loc, { lite = false } = {}) {
+  assertOpenMeteoQuota()
   const radarPromise = sampleRadar(loc.latitude, loc.longitude)
   // One budget for every NWS request in this load; each also has its own limit.
   const nwsBudget = AbortSignal.timeout(NWS_BUDGET_MS)
   const nwsFetch = (url) => fetchWithin(url, NWS_REQUEST_TIMEOUT_MS, { headers: NWS_HEADERS, signal: nwsBudget })
   const [weatherResult, aqiResult, alertsResult, nwsPointsResult] = await Promise.allSettled([
-    fetchWithin(`${WEATHER_URL}?latitude=${loc.latitude}&longitude=${loc.longitude}&${PARAMS}`, OPEN_METEO_TIMEOUT_MS),
-    fetchWithin(`${AQI_URL}?latitude=${loc.latitude}&longitude=${loc.longitude}&${AQI_PARAMS}`, AQI_TIMEOUT_MS),
+    fetchWithin(`${WEATHER_URL}?latitude=${loc.latitude}&longitude=${loc.longitude}&${lite ? LITE_PARAMS : PARAMS}`, OPEN_METEO_TIMEOUT_MS),
+    lite
+      ? Promise.reject(new Error('air quality not requested'))
+      : fetchWithin(`${AQI_URL}?latitude=${loc.latitude}&longitude=${loc.longitude}&${AQI_PARAMS}`, AQI_TIMEOUT_MS),
     nwsFetch(`${NOAA_ALERTS_URL}?point=${loc.latitude.toFixed(4)},${loc.longitude.toFixed(4)}`),
     nwsFetch(`${NWS_POINTS_URL}/${loc.latitude.toFixed(4)},${loc.longitude.toFixed(4)}`),
   ])
 
   if (weatherResult.status === 'rejected') throw weatherResult.reason
-  if (!weatherResult.value.ok) throw new Error(`Open-Meteo forecast returned ${weatherResult.value.status}`)
+  if (weatherResult.value.status === 429) await noteOpenMeteo429(weatherResult.value)
+  if (!weatherResult.value.ok) {
+    const err = new Error(`Open-Meteo forecast returned ${weatherResult.value.status}`)
+    err.status = weatherResult.value.status
+    throw err
+  }
   const data = await weatherResult.value.json()
 
   // Parse alerts up front: an active warning corroborates the
@@ -850,7 +880,7 @@ export async function loadForecast(loc) {
 
   // Slice daily from today so existing components are unaffected.
   const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: data.timezone })
-  const todayIdx = data.daily.time.indexOf(todayStr)
+  const todayIdx = data.daily?.time.indexOf(todayStr) ?? -1
   const start = todayIdx > 0 ? todayIdx : 0
   if (start > 0) {
     data.daily = Object.fromEntries(
@@ -928,7 +958,7 @@ export async function loadForecast(loc) {
 
       const [nwsHourlyRes, nwsForecastRes, nwsGridRes] = await Promise.allSettled([
         hourlyUrl   ? nwsFetch(hourlyUrl)   : Promise.reject(),
-        forecastUrl ? nwsFetch(forecastUrl) : Promise.reject(),
+        forecastUrl && !lite ? nwsFetch(forecastUrl) : Promise.reject(), // daily only
         gridUrl     ? nwsFetch(gridUrl)     : Promise.reject(),
       ])
       // The gridpoint carries the fields the two text products don't, and
@@ -966,7 +996,7 @@ export async function loadForecast(loc) {
       // actually publishes for a day, and the one weather.gov shows. Days
       // NWS doesn't reach keep Open-Meteo's.
       let nwsDailyMerged = false
-      if (nwsForecastRes.status === 'fulfilled' && nwsForecastRes.value.ok) {
+      if (data.daily && nwsForecastRes.status === 'fulfilled' && nwsForecastRes.value.ok) {
         const d = await nwsForecastRes.value.json()
         mergeNWSDaily(data.daily, d.properties?.periods ?? [], data.timezone)
         nwsDailyMerged = true
@@ -977,13 +1007,13 @@ export async function loadForecast(loc) {
       // alignDailyWithHourly takes that from NWS's own published day — and
       // so are the days whose hourly codes have passed to Open-Meteo, which
       // would otherwise overwrite NWS's published day with a re-derivation.
-      if (nwsHourlyMerged) {
+      if (data.daily && nwsHourlyMerged) {
         alignDailyWithHourly(data.daily, data.hourly, data.minutely_15, data.current,
                              data.timezone, nwsDailyMerged, horizons?.weather_code)
       }
       // Precip total and peak wind read the merged hourly array, so this
       // runs after every hourly merge above.
-      if (gridMaps) deriveDailyFromNWS(data.daily, data.hourly, gridMaps)
+      if (data.daily && gridMaps) deriveDailyFromNWS(data.daily, data.hourly, gridMaps)
 
       // A station actually observing precipitation overrides the model's
       // current condition outright — measured beats predicted.
@@ -1022,24 +1052,69 @@ export async function loadForecast(loc) {
   return { data, alertFeatures, aqiResult }
 }
 
-// The last reading shown, kept so a launch can paint it immediately instead of
-// sitting on the loading skeleton through the whole Open-Meteo + NWS chain —
-// several seconds on a phone's cold radio. App then refreshes it silently.
-const LAST_READING_KEY = 'alek-weather-last-reading'
-// Past this a reading is more misleading than useful: the "current" hour and
-// the start of the hourly strip have moved on too far, so a launch falls back
-// to the loading skeleton and a fresh fetch.
-const LAST_READING_MAX_AGE_MS = 6 * 60 * 60 * 1000
+// The latest reading of each recently opened place, kept so a launch (or a
+// return from the splash) paints it immediately instead of sitting on the
+// loading skeleton through the whole Open-Meteo + NWS chain -- several seconds
+// on a phone's cold radio. App then refreshes it silently.
+//
+// One per place rather than only the last one shown: the launch opens on Home
+// (or the first saved city), and a single slot was usually holding whichever
+// place was looked at last, so the launch missed it and fetched from scratch.
+const READINGS_KEY = 'alek-weather-readings'
+// The single-slot store this replaced; still read so the first launch after an
+// update is instant too, and removed on the first write.
+const LEGACY_READING_KEY = 'alek-weather-last-reading'
+// A reading is ~100 KB of JSON; a handful covers Home, the saved places in
+// regular use and the last search without crowding localStorage's ~5 MB.
+const MAX_READINGS = 5
+// Past this a reading is more misleading than useful, so a launch falls back to
+// the loading skeleton and a fresh fetch. Within it, the hourly strip, overview
+// and days all index from the current time (the request carries a day either
+// side), the card says how old the reading is, and the stale refresh replaces
+// it as soon as the network answers -- so opening the app in the morning shows
+// last evening's reading for a moment rather than a skeleton for seconds.
+const LAST_READING_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
-// The cached reading for `loc`, or null if there is none, it is for another
-// place, or it is too old. Corrupt storage reads as null rather than throwing
-// during the first render.
+// Coordinates to ~1 km, as placeKey in placeConditions.js (not imported: that
+// module imports this one) and sameCity's tolerance: a GPS fix and the
+// geocoded city share a reading.
+const readingKey = (loc) => `${loc.latitude.toFixed(2)},${loc.longitude.toFixed(2)}`
+
+function readStoredReadings() {
+  try {
+    const all = JSON.parse(localStorage.getItem(READINGS_KEY) ?? 'null')
+    if (all && typeof all === 'object') return all
+    const legacy = JSON.parse(localStorage.getItem(LEGACY_READING_KEY) ?? 'null')
+    if (legacy?.weather && legacy.location) return { [readingKey(legacy.location)]: legacy }
+  } catch { /* corrupt storage reads as empty */ }
+  return {}
+}
+
+// Stores `reading` as its place's latest, newest first, keeping MAX_READINGS.
+// When storage is full the oldest go first; a full quota with only this one
+// left just means the next launch loads the slow way.
+function storeReading(reading) {
+  const key = readingKey(reading.location)
+  const others = Object.entries(readStoredReadings())
+    .filter(([k, r]) => k !== key && r?.weather && r.location)
+    .sort(([, a], [, b]) => (b.updated ?? 0) - (a.updated ?? 0))
+    .slice(0, MAX_READINGS - 1)
+  for (let keep = others.length; keep >= 0; keep--) {
+    try {
+      localStorage.setItem(READINGS_KEY, JSON.stringify(Object.fromEntries([[key, reading], ...others.slice(0, keep)])))
+      localStorage.removeItem(LEGACY_READING_KEY)
+      return
+    } catch { /* quota: retry with one fewer */ }
+  }
+}
+
+// The cached reading for `loc`, or null if there is none or it is too old.
+// Corrupt storage reads as null rather than throwing during the first render.
 function loadLastReading(loc) {
   if (!loc) return null
   try {
-    const r = JSON.parse(localStorage.getItem(LAST_READING_KEY) ?? 'null')
+    const r = readStoredReadings()[readingKey(loc)]
     if (!r?.weather || !r.location) return null
-    if (r.location.latitude !== loc.latitude || r.location.longitude !== loc.longitude) return null
     if (!(Date.now() - r.updated < LAST_READING_MAX_AGE_MS)) return null
     return r
   } catch { return null }
@@ -1051,7 +1126,9 @@ function loadLastReading(loc) {
 // before the mount fetch runs.
 export function useWeather(initialCity = null) {
   const [cached] = useState(() => loadLastReading(initialCity))
-  const [location, setLocation] = useState(cached?.location ?? null)
+  // The place asked for, not the stored one: readings are matched to ~1 km, so
+  // the stored location can be a GPS fix with another name for the same spot.
+  const [location, setLocation] = useState(cached ? initialCity : null)
   const [weather, setWeather] = useState(cached?.weather ?? null)
   const [airQuality, setAirQuality] = useState(cached?.airQuality ?? null)
   const [alerts, setAlerts] = useState(cached?.alerts ?? [])
@@ -1061,19 +1138,16 @@ export function useWeather(initialCity = null) {
   const [loading, setLoading] = useState(!!initialCity && !cached)
 
   // Persist every complete reading. Keyed on lastUpdated so it writes once per
-  // fetch, plus once more when air quality lands after it. A full quota just
-  // means the next launch loads the slow way.
+  // fetch, plus once more when air quality lands after it.
   useEffect(() => {
     if (!weather || !location || !lastUpdated) return
-    try {
-      localStorage.setItem(LAST_READING_KEY, JSON.stringify({
-        location, weather, alerts, airQuality, updated: lastUpdated.getTime(),
-      }))
-    } catch { /* quota or storage disabled */ }
+    storeReading({ location, weather, alerts, airQuality, updated: lastUpdated.getTime() })
   }, [lastUpdated, airQuality]) // eslint-disable-line react-hooks/exhaustive-deps
   const [error, setError] = useState(null)
   const geoActiveRef = useRef(false)
   const fetchIdRef = useRef(0)
+  // The place whose forecast last failed, for the error card's Try again.
+  const failedLocRef = useRef(null)
 
   const reset = useCallback(() => {
     fetchIdRef.current++
@@ -1098,7 +1172,7 @@ export function useWeather(initialCity = null) {
     if (!r) return null
     fetchIdRef.current++ // whatever was in flight is for a reading we've left
     geoActiveRef.current = false
-    setLocation(r.location)
+    setLocation(loc)
     setWeather(r.weather)
     setAirQuality(r.airQuality ?? null)
     setAlerts(r.alerts ?? [])
@@ -1144,7 +1218,17 @@ export function useWeather(initialCity = null) {
       // Log the cause: a network/DNS fault and a bad API response both surface
       // as the same user-facing message, and are otherwise indistinguishable.
       console.error('Weather fetch failed:', e)
-      if (!silent && fetchIdRef.current === fetchId) setError('Failed to fetch weather data. Please try again.')
+      if (!silent && fetchIdRef.current === fetchId) {
+        failedLocRef.current = loc
+        // 429 is Open-Meteo's free-tier quota (per IP, per day/hour/minute).
+        // Every place fails alike until it resets, so say so rather than
+        // leaving the user to try one city after another. The `quota:` prefix
+        // is the card's cue to offer the help article (as `geo:` is for the
+        // location card).
+        setError(e?.status === 429
+          ? 'quota:The forecast service has hit its request limit for now. Please try again later.'
+          : 'Failed to fetch weather data. Please try again.')
+      }
     } finally {
       if (!silent && fetchIdRef.current === fetchId) setLoading(false)
     }
@@ -1268,8 +1352,16 @@ export function useWeather(initialCity = null) {
   // "location not found / denied" card leaves the existing forecast in place).
   const clearError = useCallback(() => setError(null), [])
 
+  // Re-run the forecast fetch that just failed. A tap on Try again overrides
+  // the request-limit pause (see clearOpenMeteoBlock).
+  const retry = useCallback(() => {
+    if (!failedLocRef.current) return
+    clearOpenMeteoBlock()
+    fetchWeather(failedLocRef.current)
+  }, [fetchWeather])
+
   return {
     location, weather, airQuality, alerts, lastUpdated, searchResults, loading, error,
-    searchCity, selectCity, locateMe, setSearchResults, fetchWeather, restoreReading, reset, clearError,
+    searchCity, selectCity, locateMe, setSearchResults, fetchWeather, restoreReading, reset, clearError, retry,
   }
 }

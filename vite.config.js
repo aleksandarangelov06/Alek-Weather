@@ -69,7 +69,9 @@ export default defineConfig({
         theme_color: '#f0f2f5',
         background_color: '#f0f2f5',
         display: 'standalone',
-        orientation: 'portrait',
+        // Not locked to portrait: the Web style is a desktop/tablet layout, and
+        // an installed app on a landscape screen should be able to use it.
+        orientation: 'any',
         scope: base,
         start_url: base,
         icons: [
@@ -77,8 +79,39 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg}'],
+        globPatterns: ['**/*.{js,mjs,css,html,svg}'],
+        // MapLibre (~1.6 MB with its worker) only runs once a map opens, so it
+        // isn't downloaded with every install and update; the first map caches
+        // it instead (the MapLibre entry below).
+        globIgnores: ['**/maplibre-gl-*', '**/leaflet-maplibre-gl-*'],
         runtimeCaching: [
+          {
+            // Hashed filenames never change content, so the cached copy is final.
+            urlPattern: /\/assets\/(?:leaflet-)?maplibre-gl-[^/]+\.(?:m?js|css)$/,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'maplibre',
+              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 60 },
+            },
+          },
+          {
+            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+            handler: 'StaleWhileRevalidate',
+            options: {
+              cacheName: 'google-fonts-css',
+              expiration: { maxEntries: 5, maxAgeSeconds: 60 * 60 * 24 * 30 },
+            },
+          },
+          {
+            // Font files are versioned by URL, so a year is safe.
+            urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'google-fonts',
+              cacheableResponse: { statuses: [0, 200] },
+              expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 },
+            },
+          },
           {
             urlPattern: /^https:\/\/api\.open-meteo\.com\/.*/i,
             handler: 'NetworkFirst',

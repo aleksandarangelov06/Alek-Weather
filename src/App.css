@@ -3263,6 +3263,181 @@ body {
   color: #fff;
 }
 
+.location-error-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.location-error-help {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Help page (Settings → About → Help, or the request-limit card) ──
+   Full screen over everything, Settings included: on a wide screen the list
+   of articles down the left and the open one on the right; on a narrow one the
+   list first, then the article in its place. */
+.help-page {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text-primary);
+  animation: helpIn 0.2s ease;
+}
+@keyframes helpIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .help-page { animation: none; }
+}
+
+.help-page-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60px;
+  padding: 0 16px;
+  padding-top: env(safe-area-inset-top);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.help-page-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 17px;
+  font-weight: 600;
+}
+.help-back {
+  position: absolute;
+  left: 16px;
+}
+.help-close {
+  position: absolute;
+  right: 12px;
+}
+
+.help-layout {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: 32px;
+  width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 32px 32px 0;
+  box-sizing: border-box;
+}
+
+.help-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  padding-bottom: 32px;
+}
+.help-list-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: var(--card-bg);
+  color: inherit;
+  font-family: var(--font);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.help-list-item:hover { border-color: var(--border); }
+.help-list-item--active { border-color: var(--accent); }
+.help-list-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+.help-list-title { font-size: 14px; font-weight: 600; line-height: 1.35; }
+.help-list-summary { font-size: 12.5px; color: var(--text-secondary); line-height: 1.4; }
+.help-list-chevron { color: var(--text-tertiary); flex-shrink: 0; }
+
+.help-article {
+  overflow-y: auto;
+  padding: 0 4px 48px;
+  max-width: 760px;
+  color: var(--text-secondary);
+  font-size: 15px;
+  line-height: 1.65;
+}
+.help-article .help-title {
+  margin: 0 0 14px;
+  font-size: 26px;
+  line-height: 1.25;
+  color: var(--text-primary);
+}
+.help-article h3 {
+  margin: 28px 0 8px;
+  font-size: 16px;
+  color: var(--text-primary);
+}
+.help-article p { margin: 0 0 10px; }
+.help-article ul { margin: 0 0 10px; padding-left: 22px; }
+.help-article li { margin-bottom: 6px; }
+.help-article strong { color: var(--text-primary); }
+.help-status {
+  margin: 0 0 4px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 13.5px;
+}
+.help-status--ok { background: rgba(34, 197, 94, 0.12); }
+.help-status--paused { background: rgba(239, 68, 68, 0.12); }
+
+/* Narrow: one column, the list until an article is opened, then the article. */
+@media (max-width: 899px) {
+  .help-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+    padding: 16px 16px 0;
+    overflow-y: auto;
+  }
+  .help-list, .help-article { overflow: visible; }
+  .help-page--article .help-list { display: none; }
+  .help-page:not(.help-page--article) .help-article { display: none; }
+  .help-article .help-title { font-size: 21px; }
+}
+
+.about-help-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
+  background: none;
+  border: 1.5px solid var(--accent);
+  color: var(--accent);
+  border-radius: 8px;
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.about-help-btn:hover { background: var(--accent); color: #fff; }
+.ws-row .about-help-btn { margin-top: 0; flex-shrink: 0; }
+
 .spinner {
   width: 20px;
   height: 20px;
@@ -3715,7 +3890,35 @@ body {
   bottom: calc(var(--sa-bottom) + 52px);
   width: min(420px, calc(100vw - 32px));
   display: flex;
+  flex-direction: column;
   gap: 10px;
+}
+
+.splash-mini-row {
+  display: flex;
+  gap: 10px;
+}
+
+/* The search pill shown above the cards when no place is saved. It borrows
+   .splash-mini-card for its material (frost on iOS, the tonal container on
+   Android, the dark-sky variants) and lays out as one centred line. */
+.splash-mini-card.splash-mini-search {
+  flex: none;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 0 18px;
+  border-radius: 999px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.splash-mini-search svg {
+  flex-shrink: 0;
+  color: var(--text-secondary);
 }
 
 [data-theme="dark"] .splash-mini {
@@ -9133,7 +9336,8 @@ body {
    text colour rather than fixed greys, so the one set of rules reads on the
    plain card, the dark theme, the sky-tinted panel and the iOS glass alike. */
 
-.search-overlay--sheet {
+.search-overlay--sheet,
+.saved-cities-page {
   --ss-fill: color-mix(in srgb, var(--text-primary) 7%, transparent);
   --ss-fill-strong: color-mix(in srgb, var(--text-primary) 11%, transparent);
   --ss-line: color-mix(in srgb, var(--text-primary) 9%, transparent);
@@ -10158,6 +10362,100 @@ body {
   color: rgba(255, 255, 255, 0.7);
 }
 
+/* ── Light mode over a light sky: the splash card's light glass ──
+   The dark --ios-frost above is what the splash location cards wear over a
+   dark sky or in dark mode. Over a light sky in light mode they are pale glass
+   with dark text instead (.splash-mini: 55% white, a 60% white hairline, an
+   8px blur), and the forecast cards follow them so the two screens match.
+   .sky-tone-light (App.jsx) is the same light/dark sky split the splash uses.
+   The tokens the dark rule re-pointed go back to their light-mode values. */
+:root[data-theme="light"][data-shell="mobile"][data-platform="ios"] .app.sky-active.sky-tone-light {
+  /* Card Transparency thins it like the dark frost (--card-glass-t, 0–1):
+     55% → 33%, the same 40% step the frost takes from 50% to 30%. */
+  --ios-light-glass: rgb(255 255 255 / calc(0.55 - 0.22 * var(--card-glass-t, 0)));
+  --ios-light-glass-press: rgb(255 255 255 / calc(0.75 - 0.22 * var(--card-glass-t, 0)));
+  /* The header buttons (and the hero's save/favourite circles) wear the same
+     light glass as the cards, as they do on the splash. */
+  --icon-circle-bg: var(--ios-light-glass);
+  --icon-circle-press: var(--ios-light-glass-press);
+  --icon-circle-ring: rgba(255, 255, 255, 0.6);
+}
+:root[data-theme="light"][data-shell="mobile"][data-platform="ios"] .app.sky-active.sky-tone-light :is(
+  .app-header .header-icon-btn, .app-header .settings-btn,
+  .current-card .fav-btn, .current-card .save-btn
+) {
+  color: #64748b;
+}
+:root[data-theme="light"][data-shell="mobile"][data-platform="ios"] .app.sky-active.sky-tone-light .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) {
+  --card-glass-fill: var(--ios-light-glass);
+  --glass-tint: 0;
+  --glass-rim: rgba(255, 255, 255, 0.6);
+  --text-primary: #1a1a2e;
+  --text-secondary: #64748b;
+  /* A step darker than the white-card #94a3b8: the sky shows through this
+     glass, and the paler grey all but vanished into it. */
+  --text-tertiary: #7b8798;
+  --accent: #3b82f6;
+  --accent-light: rgba(59, 130, 246, 0.1);
+  --border: rgba(0, 0, 0, 0.06);
+  --hover-subtle: rgba(0, 0, 0, 0.03);
+  --hover-medium: rgba(0, 0, 0, 0.05);
+  --ios-tile-tint: rgb(118, 118, 128);
+  --ios-tile-alpha: calc(9% + 7% * var(--ios-glass-clarity));
+  --li-sun: #e58a00;
+  --li-moon: #d9a514;
+  --li-cloud: #64748b;
+  --li-fog: #6b7785;
+  --li-rain: #2563eb;
+  --li-snow: #1f8fcf;
+  --li-storm: #6d4ae8;
+  --li-therm: #e0583a;
+}
+:root[data-theme="light"][data-shell="mobile"][data-platform="ios"] .app.sky-active.sky-tone-light .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) .section-label {
+  color: var(--text-secondary);
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme])[data-shell="mobile"][data-platform="ios"] .app.sky-active.sky-tone-light {
+    --ios-light-glass: rgb(255 255 255 / calc(0.55 - 0.22 * var(--card-glass-t, 0)));
+    --ios-light-glass-press: rgb(255 255 255 / calc(0.75 - 0.22 * var(--card-glass-t, 0)));
+    --icon-circle-bg: var(--ios-light-glass);
+    --icon-circle-press: var(--ios-light-glass-press);
+    --icon-circle-ring: rgba(255, 255, 255, 0.6);
+  }
+  :root:not([data-theme])[data-shell="mobile"][data-platform="ios"] .app.sky-active.sky-tone-light :is(
+    .app-header .header-icon-btn, .app-header .settings-btn,
+    .current-card .fav-btn, .current-card .save-btn
+  ) {
+    color: #64748b;
+  }
+  :root:not([data-theme])[data-shell="mobile"][data-platform="ios"] .app.sky-active.sky-tone-light .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) {
+    --card-glass-fill: var(--ios-light-glass);
+    --glass-tint: 0;
+    --glass-rim: rgba(255, 255, 255, 0.6);
+    --text-primary: #1a1a2e;
+    --text-secondary: #64748b;
+    --text-tertiary: #7b8798;
+    --accent: #3b82f6;
+    --accent-light: rgba(59, 130, 246, 0.1);
+    --border: rgba(0, 0, 0, 0.06);
+    --hover-subtle: rgba(0, 0, 0, 0.03);
+    --hover-medium: rgba(0, 0, 0, 0.05);
+    --ios-tile-tint: rgb(118, 118, 128);
+    --ios-tile-alpha: calc(9% + 7% * var(--ios-glass-clarity));
+    --li-sun: #e58a00;
+    --li-moon: #d9a514;
+    --li-cloud: #64748b;
+    --li-fog: #6b7785;
+    --li-rain: #2563eb;
+    --li-snow: #1f8fcf;
+    --li-storm: #6d4ae8;
+    --li-therm: #e0583a;
+  }
+  :root:not([data-theme])[data-shell="mobile"][data-platform="ios"] .app.sky-active.sky-tone-light .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) .section-label {
+    color: var(--text-secondary);
+  }
+}
+
 /* No opaque cover fill over the glass. A tapped tile's cover keeps the card's
    own transparency: the circle is the faint --ios-tile-tint wash from the iOS
    cover rule, and the rows it would have had to hide fade out under it (see
@@ -10190,4 +10488,17 @@ body {
 }
 :root[data-card-glass="on"][data-shell="mobile"][data-platform="android"] .app.sky-active .app-header :is(.header-icon-btn, .settings-btn) {
   background-image: linear-gradient(var(--md-glass-veil), var(--md-glass-veil));
+}
+
+/* ── Saved Cities (phone shells) ──
+   SavedCitiesPage.jsx lays its lists out with the search sheet's rows and
+   panels (the .ss-* rules above, and the --ss-* tints set with the sheet's).
+   The page's own body handles the entrance fade, so this wrapper only spaces
+   the sections the way .ss-body does. */
+.saved-ss {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  width: 100%;
+  padding-top: 4px;
 }

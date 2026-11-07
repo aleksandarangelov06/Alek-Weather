@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, Bookmark, Clock, House, LocateFixed, MapPin, Search, SearchX, X } from 'lucide-react'
-import { sameCity } from '../utils/location'
+import { sameCity, placeRegion } from '../utils/location'
+import { PlaceRow, PlaceSection } from './PlaceRows'
 
 // The phone shells' search page. One full-screen sheet rather than a field with
 // a dropdown under it: the dropdown closed whenever the field lost focus, so
@@ -11,10 +12,7 @@ import { sameCity } from '../utils/location'
 // searches — and once you type it is the results list, in the same rows.
 // The desktop layout keeps SearchBar, which is built for its splash.
 
-function region(city, { full = false } = {}) {
-  const country = full ? (city.country ?? city.country_code) : (city.country_code ?? city.country)
-  return [city.admin1 !== city.name ? city.admin1 : null, country].filter(Boolean).join(', ')
-}
+const region = placeRegion
 
 // The part of the name you've typed, drawn in bold, so a result shows why it
 // matched. Prefix only: that is how the geocoder matches, and highlighting a
@@ -30,34 +28,8 @@ function Highlight({ text, query }) {
   )
 }
 
-function Row({ icon: Icon, tone, name, sub, badge, onSelect, onRemove, removeLabel }) {
-  return (
-    <div className="ss-row">
-      <button className="ss-row-main" onClick={onSelect}>
-        <span className={`ss-tile${tone ? ` ss-tile--${tone}` : ''}`}><Icon size={17} aria-hidden="true" /></span>
-        <span className="ss-row-text">
-          <span className="ss-row-name">{name}</span>
-          {sub && <span className="ss-row-sub">{sub}</span>}
-        </span>
-        {badge}
-      </button>
-      {onRemove && (
-        <button className="ss-row-remove" onClick={onRemove} aria-label={removeLabel}>
-          <X size={16} />
-        </button>
-      )}
-    </div>
-  )
-}
-
-function Section({ title, children }) {
-  return (
-    <section className="ss-section">
-      <h3 className="ss-section-title">{title}</h3>
-      <div className="ss-group">{children}</div>
-    </section>
-  )
-}
+const Row = PlaceRow
+const Section = PlaceSection
 
 export function SearchSheet({
   barRef, initialQuery, onBack, onSearch, results, onClear,

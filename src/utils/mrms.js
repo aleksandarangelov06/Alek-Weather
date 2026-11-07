@@ -21,3 +21,26 @@ const MRMS_REGIONS = [
 
 export const inMrmsDomain = (lat, lon) =>
   MRMS_REGIONS.some(([s, n, w, e]) => lat >= s && lat <= n && lon >= w && lon <= e)
+
+// What the radar map may show while it is drawing a US feed (MRMS, NEXRAD or
+// the HRRR forecast): the US region the location is in, as [[S, W], [N, E]].
+// Tighter than MRMS_REGIONS, which pad out to the radars' reach over Canada,
+// Mexico and the sea; these are the land itself plus a small margin.
+const US_VIEW_REGIONS = [
+  [[24.0, -125.5], [49.6, -66.5]],   // Lower 48
+  [[51.0, -179.9], [71.6, -129.5]],  // Alaska
+  [[18.6, -160.6], [22.5, -154.5]],  // Hawaii
+  [[17.6, -67.5], [18.8, -65.1]],    // Puerto Rico & USVI
+  [[13.1, 144.5], [13.8, 145.1]],    // Guam
+]
+
+// The region to lock the map to for a location, or null outside all of them.
+// A location in the padding around a region (a border town, say) still gets
+// that region, so the map never locks out the place it is centred on.
+export function usViewBounds(lat, lon) {
+  const contains = ([[s, w], [n, e]], pad) =>
+    lat >= s - pad && lat <= n + pad && lon >= w - pad && lon <= e + pad
+  return US_VIEW_REGIONS.find((r) => contains(r, 0))
+    ?? US_VIEW_REGIONS.find((r) => contains(r, 3))
+    ?? null
+}

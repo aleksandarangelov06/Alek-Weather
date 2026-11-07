@@ -130,7 +130,7 @@ export function DailyForecast({ daily, hourly, timezone, unit, units, colorCodin
       // wait has to be measured from — see scheduleHours.
       scheduleHours()
     }))
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     if (!expanded) return

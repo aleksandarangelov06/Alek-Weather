@@ -31,3 +31,12 @@ export function sameCity(a, b) {
   return Math.abs(a.latitude - b.latitude) < SAME_CITY_EPS &&
     Math.abs(a.longitude - b.longitude) < SAME_CITY_EPS
 }
+
+// The line under a place's name in the search sheet and Saved Cities: its
+// region (unless that just repeats the name) and country. `full` spells the
+// country out where the geocoder gave one; lists of your own places keep the
+// short code so the line stays short.
+export function placeRegion(city, { full = false } = {}) {
+  const country = full ? (city.country ?? city.country_code) : (city.country_code ?? city.country)
+  return [city.admin1 !== city.name ? city.admin1 : null, country].filter(Boolean).join(', ')
+}

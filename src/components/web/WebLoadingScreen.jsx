@@ -18,6 +18,8 @@
 // appear. Radar is the exception: it has no card structure to imitate, only a
 // map filling the window.
 
+import { HOURS_BY_SLOT, PAIR_MQ, spans, useMediaQuery, useTodayLayout } from './todayLayout'
+
 const rep = (n) => Array.from({ length: n }, (_, i) => i)
 
 // The stacked tiles (hour columns, week days, glance cells) are all the same
@@ -34,12 +36,14 @@ function StackTile({ className, lines }) {
   )
 }
 
-function TodaySkeleton() {
-  return (
-    <div className="web-today-grid">
-      {/* Current conditions — the one narrow widget, so it keeps a track of its
-          own at the paired width and folds with the rest below that. */}
-      <div className="web-widget">
+// One placeholder per Today card, in the same card classes the real ones wear
+// (.web-glance, .web-preview …) so their padding and the slot-sizing rules in
+// WebApp.css reach the skeleton too.
+function TodayCardSkeleton({ id, slot }) {
+  switch (id) {
+    // Current conditions: no card surface, centred in whatever slot it gets.
+    case 'current':
+      return (
         <div className="card skeleton-card skeleton-web-current">
           <div className="skeleton-line skeleton-loc" />
           <div className="skeleton-line skeleton-date" />
@@ -48,11 +52,11 @@ function TodaySkeleton() {
           <div className="skeleton-line skeleton-cond" />
           <div className="skeleton-line skeleton-feels" />
         </div>
-      </div>
-
-      {/* At a glance — eight readings; the grid decides how many per row. */}
-      <div className="web-widget">
-        <div className="card skeleton-card">
+      )
+    // At a glance: eight readings; the grid decides how many per row.
+    case 'glance':
+      return (
+        <div className="card skeleton-card web-glance">
           <div className="skeleton-line skeleton-label" />
           <div className="web-glance-grid">
             {rep(8).map((i) => (
@@ -64,14 +68,14 @@ function TodaySkeleton() {
             ))}
           </div>
         </div>
-      </div>
-
-      {/* Hourly strip and week ahead both span the full grid. */}
-      <div className="web-widget web-widget--full">
-        <div className="card skeleton-card">
+      )
+    // As many hours as the real strip will draw in this slot.
+    case 'hourly':
+      return (
+        <div className="card skeleton-card web-preview web-strip">
           <div className="skeleton-line skeleton-label" />
           <div className="web-mini-hours">
-            {rep(13).map((i) => (
+            {rep(HOURS_BY_SLOT[slot] ?? HOURS_BY_SLOT.full).map((i) => (
               <StackTile
                 key={i}
                 className="web-mini-hour"
@@ -80,10 +84,10 @@ function TodaySkeleton() {
             ))}
           </div>
         </div>
-      </div>
-
-      <div className="web-widget web-widget--full">
-        <div className="card skeleton-card">
+      )
+    case 'week':
+      return (
+        <div className="card skeleton-card web-preview web-week">
           <div className="skeleton-line skeleton-label" />
           <div className="web-week-days">
             {rep(7).map((i) => (
@@ -95,9 +99,40 @@ function TodaySkeleton() {
             ))}
           </div>
         </div>
-      </div>
-    </div>
-  )
+      )
+    default:
+      return null
+  }
+}
+
+// Laid out exactly as TodayPage lays out the real cards: the user's saved rows,
+// each card spanning its share of the 12-column grid (or the whole row once the
+// grid folds to one column). Without the spans every card in a shared row got
+// a single grid column, and the current and glance placeholders were crushed
+// into slivers. The precipitation chart is left out, as the real page leaves
+// it out until it knows there's rain to show.
+function TodaySkeleton() {
+  const { rows } = useTodayLayout()
+  const paired = useMediaQuery(PAIR_MQ)
+  const items = []
+  for (const row of rows) {
+    const ids = row.filter((id) => id !== 'nowcast')
+    if (!ids.length) continue
+    const s = spans(ids)
+    for (const id of ids) {
+      const slot = paired ? s[id].slot : 'full'
+      items.push(
+        <div
+          key={id}
+          className={`web-widget${slot === 'full' ? ' web-widget--full' : ''} web-widget--${slot}`}
+          style={{ gridColumn: paired ? `span ${s[id].span}` : '1 / -1' }}
+        >
+          <TodayCardSkeleton id={id} slot={slot} />
+        </div>,
+      )
+    }
+  }
+  return <div className="web-today-grid">{items}</div>
 }
 
 function DailySkeleton() {

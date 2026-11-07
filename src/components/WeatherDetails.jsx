@@ -278,14 +278,12 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, units, 
       value: `${current.relative_humidity_2m}%`,
       sub: <span style={{ color: humInfo.color, fontWeight: 600 }}>{humInfo.label}</span>,
       color: humInfo.color,
-      onClick: (e) => openDetail('humidity', e), isExpanded: expanded === 'humidity',
     },
     wind: {
       icon: <WindTurbine size={19} />, label: 'Wind',
       value: `${unitText('wind', current.wind_speed_10m, units)} ${unitSuffix('wind', units)}`,
       sub: windDir,
       color: windInfo.color,
-      onClick: (e) => openDetail('wind', e), isExpanded: expanded === 'wind',
     },
     pressure: {
       icon: <Gauge size={19} />, label: 'Pressure',
@@ -293,14 +291,12 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, units, 
       value: <>{unitText('pressure', current.surface_pressure, units)}<span className="detail-value-unit"> {unitSuffix('pressure', units)}</span></>,
       sub: <span style={{ color: presInfo.color, fontWeight: 600 }}>{presInfo.label}</span>,
       color: presInfo.color,
-      onClick: (e) => openDetail('pressure', e), isExpanded: expanded === 'pressure',
     },
     visibility: {
       icon: <Eye size={19} />, label: 'Visibility',
       value: `${unitText('visibility', current.visibility, units)} ${unitSuffix('visibility', units)}`,
       sub: <span style={{ color: visInfo.color, fontWeight: 600 }}>{visInfo.label}</span>,
       color: visInfo.color,
-      onClick: (e) => openDetail('visibility', e), isExpanded: expanded === 'visibility',
     },
     // Sunrise, sunset, and UV share one standard-size tile: all three describe
     // the sun's arc through the day. The two times stand in for the usual big
@@ -308,7 +304,6 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, units, 
     sun: {
       icon: uvHigh ? <AlertTriangle size={19} /> : <Sun size={19} />, label: 'Sun & UV',
       color: uv.color,
-      onClick: (e) => openDetail('sun', e), isExpanded: expanded === 'sun',
       content: (
         <div className="sun-body">
           {/* Same icon/label/value/sub run as every other tile, so the UV reading
@@ -347,7 +342,6 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, units, 
       value: airQuality.us_aqi,
       sub: aqiInfo?.label,
       color: aqiInfo?.color,
-      onClick: (e) => openDetail('aqi', e), isExpanded: expanded === 'aqi',
     } : null,
   }
 
@@ -563,6 +557,8 @@ export function WeatherDetails({ current, daily, hourly, timezone, unit, units, 
             <DetailCard
               key={key}
               {...cardDefs[key]}
+              onClick={(e) => openDetail(key, e)}
+              isExpanded={expanded === key}
               onDragStart={() => handleDragStart(key)}
               onDragEnter={() => handleDragEnter(key)}
               onDragOver={handleDragOver}

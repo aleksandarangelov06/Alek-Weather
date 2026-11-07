@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { House, Navigation } from 'lucide-react'
+import { House, Navigation, Search } from 'lucide-react'
 import { WeatherIcon } from './WeatherIcon'
 import { useCityConditions, conditionKey } from '../hooks/useCityConditions'
 import { getWeatherInfo, toTemp } from '../utils/weatherCodes'
@@ -16,7 +16,11 @@ const MAX_CARDS = 2
 // tap from the forecast — without taking the poster apart. Recents are the
 // list; saved cities stand in only when a city was saved but never searched
 // (the recents list was cleared, say), matching SplashHome.
-export function SplashCities({ recents, savedCities, unit, exiting, busy, onSelect, isHome }) {
+//
+// With no place saved (and so nothing that opens on launch), the poster also
+// carries a search pill above the cards: on a first run it is the obvious way
+// in, where otherwise the only route to search was the corner button.
+export function SplashCities({ recents, savedCities, unit, exiting, busy, onSelect, isHome, onSearch }) {
   // The splash covers the loading skeleton underneath it, so the card that was
   // tapped carries the spinner — otherwise picking a city looks like nothing
   // happened until the forecast lands. Only ever read alongside `busy`, so a
@@ -26,7 +30,7 @@ export function SplashCities({ recents, savedCities, unit, exiting, busy, onSele
   const cities = (recents.length > 0 ? recents : savedCities).slice(0, MAX_CARDS)
   const conditions = useCityConditions(cities)
 
-  if (!cities.length) return null
+  if (!cities.length && !onSearch) return null
 
   const openCity = (city) => {
     setPending(conditionKey(city))
@@ -35,6 +39,14 @@ export function SplashCities({ recents, savedCities, unit, exiting, busy, onSele
 
   return (
     <div className={`splash-mini${exiting ? ' splash-mini--exit' : ''}${busy ? ' splash-mini--busy' : ''}`}>
+      {onSearch && (
+        <button className="splash-mini-card splash-mini-search" onClick={onSearch}>
+          <Search size={18} aria-hidden="true" />
+          <span>Search for a city</span>
+        </button>
+      )}
+      {cities.length > 0 && (
+      <div className="splash-mini-row">
       {cities.map((city, i) => {
         const key = conditionKey(city)
         const cond = conditions[key]
@@ -81,6 +93,8 @@ export function SplashCities({ recents, savedCities, unit, exiting, busy, onSele
           </button>
         )
       })}
+      </div>
+      )}
     </div>
   )
 }

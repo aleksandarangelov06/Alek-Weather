@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import {
-  ArrowLeft, ChevronRight, ChevronDown, X, Info,
+  ArrowLeft, ChevronRight, ChevronDown, X, Info, LifeBuoy,
   Palette, Flame, Thermometer, CloudRain, Radar as RadarIcon, Bell, Database, RefreshCw, Trash2,
 } from 'lucide-react'
 import { APP_VERSION, ANDROID_VERSION, IS_ANDROID_APP } from '../utils/version'
@@ -181,7 +181,7 @@ const ABOUT_APIS = [
   ['Geocoding', 'geocoding-api.open-meteo.com'],
 ]
 
-function AboutSection() {
+function AboutSection({ onHelpOpen }) {
   const [open, setOpen] = useState(false)
 
   return (
@@ -201,6 +201,12 @@ function AboutSection() {
               </div>
             ))}
           </div>
+          {onHelpOpen && (
+            <button className="about-help-btn" onClick={onHelpOpen}>
+              <LifeBuoy size={15} aria-hidden="true" />
+              Help
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -763,7 +769,7 @@ function radarViewProps(bodyProps) {
   }
 }
 
-function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, units, onUnitGroupChange, nowcastMode, onNowcastModeChange, onColorCodingOpen, onOverviewOpen, onRadarOpen, onWeatherEffectsOpen, onIconsOpen, onThemeOpen, onNotificationsOpen, weatherAnimations, onWeatherAnimationsChange, installPrompt, onInstall, webShell }) {
+function SettingsBody({ onHelpOpen, darkMode, onDarkModeChange, unit, onUnitChange, units, onUnitGroupChange, nowcastMode, onNowcastModeChange, onColorCodingOpen, onOverviewOpen, onRadarOpen, onWeatherEffectsOpen, onIconsOpen, onThemeOpen, onNotificationsOpen, weatherAnimations, onWeatherAnimationsChange, installPrompt, onInstall, webShell }) {
   return (
     <>
       <div className="settings-group-label">Appearance</div>
@@ -902,7 +908,7 @@ function SettingsBody({ darkMode, onDarkModeChange, unit, onUnitChange, units, o
       {IS_ANDROID_APP && <UpdateSection />}
       <InstallSection installPrompt={installPrompt} onInstall={onInstall} />
       <ClearStorageSection />
-      <AboutSection />
+      <AboutSection onHelpOpen={onHelpOpen} />
 
       <div className="settings-footer">
         <p className="settings-version">Version {APP_VERSION}</p>
@@ -980,7 +986,7 @@ function WebSettings({
   nowcastMode, onNowcastModeChange,
   radarMode, onRadarModeChange, radarSource, onRadarSourceChange, radarEnhanced, onRadarEnhancedChange,
   weatherAnimations, onWeatherAnimationsChange, iconMotion, onIconMotionChange, iconSet, onIconSetChange,
-  colorCoding, onColorCodingToggle, webShell,
+  colorCoding, onColorCodingToggle, webShell, onHelpOpen,
   notifyEnabled, notifyTypes, notifyPermission, onNotifyEnabledChange, onNotifyTypeToggle,
 }) {
   const sections = [
@@ -1187,6 +1193,16 @@ function WebSettings({
               </WebRow>
             ))}
           </WebGroup>
+          {onHelpOpen && (
+            <WebGroup>
+              <WebRow label="Help" desc="Answers for when something isn’t working, like forecasts that won’t load.">
+                <button className="about-help-btn" onClick={onHelpOpen}>
+                  <LifeBuoy size={15} aria-hidden="true" />
+                  Open Help
+                </button>
+              </WebRow>
+            </WebGroup>
+          )}
           <div className="ws-footer">
             <span>Version {APP_VERSION}</span>
             {IS_ANDROID_APP && <span>Android {ANDROID_VERSION}</span>}
@@ -1255,9 +1271,16 @@ export function SettingsPage({ onBack, onDismiss, inline, page, modal, closing, 
   // slide — since waiting on an event that never fires would mean a page that
   // never frosts at all. Whichever lands first wins; the other is a no-op.
   const [settled, setSettled] = useState(false)
+  // Going out is a slide too, so the glass comes off again for it. Reset while
+  // rendering (React's pattern for state that follows a prop) rather than in
+  // the effect, which would paint one frame of frosted glass on the way out.
+  const [prevClosing, setPrevClosing] = useState(closing)
+  if (closing !== prevClosing) {
+    setPrevClosing(closing)
+    if (closing) setSettled(false)
+  }
   useEffect(() => {
-    // Going out is a slide too, so the glass comes off again for it.
-    if (closing) { setSettled(false); return }
+    if (closing) return
     // Past the iOS push (0.44s) plus the arming frames below, so the fallback
     // never frosts the page while it is still moving.
     const t = setTimeout(() => setSettled(true), 520)

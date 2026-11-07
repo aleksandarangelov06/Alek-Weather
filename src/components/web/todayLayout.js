@@ -1,5 +1,29 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { cardAt } from './cardDrag'
+
+// The width where .web-today-grid still has its 12 columns — WebApp.css folds it
+// to one column at 1279px. Below that nothing sits beside anything and every
+// card renders at full size. Shared with the loading skeleton, which lays its
+// placeholders out by the same rule so the page doesn't jump when data lands.
+export const PAIR_MQ = '(min-width: 1280px)'
+
+// Hours in the strip, by how much of the row the card has. Thirteen tiles fill
+// a full row; beside the current card there's about three quarters of it, and
+// half a row fits seven at the same tile size. The heading counts from
+// whichever is in play, so it never promises hours that aren't drawn.
+export const HOURS_BY_SLOT = { full: 13, wide: 9, half: 7, narrow: 5 }
+
+export function useMediaQuery(query) {
+  const [matches, setMatches] = useState(() => window.matchMedia(query).matches)
+  useEffect(() => {
+    const mq = window.matchMedia(query)
+    const onChange = () => setMatches(mq.matches)
+    onChange() // the width may have changed between the first render and this effect
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [query])
+  return matches
+}
 
 // Today's layout is a list of rows, each holding one card (full width) or two
 // side by side. It's stored as exactly that, rather than as an order that the

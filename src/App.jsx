@@ -94,11 +94,12 @@ const STARS = Array.from({ length: 40 }, () => ({
   dur:   `${(Math.random() * 3 + 2).toFixed(1)}s`,
   delay: `${-(Math.random() * 4).toFixed(1)}s`,
 }))
-import { Search, MapPin, MapPinOff, ArrowLeft, GripHorizontal, Building2, X, Navigation, House, Settings as SettingsIcon } from 'lucide-react'
+import { Search, MapPin, MapPinOff, AlertCircle, HelpCircle, ArrowLeft, GripHorizontal, Building2, X, Navigation, House } from 'lucide-react'
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useWeather } from './hooks/useWeather'
+import { useStaleRefresh } from './hooks/useStaleRefresh'
 import { RADAR_ENHANCED_KEY } from './hooks/useRadarPrecip'
 import { useSavedCities } from './hooks/useSavedCities'
 import { useRecentSearches } from './hooks/useRecentSearches'
@@ -117,6 +118,7 @@ import { PrecipNowcast } from './components/PrecipNowcast'
 import { WeatherAlerts } from './components/WeatherAlerts'
 import { WeatherOverview } from './components/WeatherOverview'
 import { SettingsPage } from './components/SettingsPageLazy'
+import { HelpPage } from './components/HelpPage'
 import { preloadSettings } from './components/settingsChunk'
 import { BuildingsIcon, GearIcon, SearchIcon } from './components/headerGlyphs'
 import { SlidersIcon } from './components/SlidersIcon'
@@ -134,6 +136,7 @@ import { isSnowing } from './utils/conditions'
 import { WeatherIcon } from './components/WeatherIcon'
 import { useIconSet, setIconSet } from './utils/iconSet'
 import { useLocalConditions, locatedPlace, localConditionsFailed } from './hooks/useLocalConditions'
+import { rememberConditions } from './hooks/placeConditions'
 import { loadUnits, saveUnit } from './utils/units'
 import { APP_VERSION, IS_ANDROID_APP } from './utils/version'
 import { UpdateToast } from './components/UpdateToast'
@@ -244,14 +247,6 @@ const PRESS_DIP_SELECTOR = '.app-header .header-icon-btn, .app-header .settings-
 // Passed to App.css as the --long-press-ms custom property so the fill animation
 // always matches this value.
 const LONG_PRESS_MS = 2000
-
-// How old a reading may be before the app quietly refetches it. A radar sweep
-// lands every ~6 minutes and minutely_15 steps every 15, so ten minutes is about
-// the point past which the current condition can be describing weather that has
-// already moved on. The check runs every minute; nothing is fetched until the
-// reading is actually stale.
-const STALE_MS = 10 * 60 * 1000
-const STALE_CHECK_MS = 60 * 1000
 
 // Corrupted localStorage (partial write, manual edit) must never crash the app
 // during the initial render — fall back to defaults instead.
@@ -404,6 +399,7 @@ function App() {
   // with nothing loaded, and leaving one returns to whichever forecast page you
   // were on. Not persisted: a reload lands on the forecast, as it always has.
   const [webPage, setWebPage] = useState(null)
+  const [help, setHelp] = useState(null) // { article } while the Help page is open
 
   // The app style setting is honoured at every width: picking "Web" and then
   // narrowing the window keeps the web app, because a layout that swapped
@@ -435,9 +431,6 @@ function App() {
   const searchAreaRef = useRef(null)
   const searchHoldTimer = useRef(null)
   const searchLongPressed = useRef(false)
-  // Guards the staleness refresh: a fetch slower than STALE_CHECK_MS would
-  // otherwise have a second one firing on top of it.
-  const refreshingRef = useRef(false)
   const [searchHolding, setSearchHolding] = useState(false)
   const [blockOrder, setBlockOrder] = useState(() => {
     const saved = loadJSON(BLOCK_ORDER_KEY)
@@ -462,8 +455,16 @@ function App() {
 
   const {
     location, weather, airQuality, alerts, lastUpdated, searchResults, loading, error,
-    searchCity, selectCity, locateMe, setSearchResults, fetchWeather, restoreReading, reset, clearError,
+    searchCity, selectCity, locateMe, setSearchResults, fetchWeather, restoreReading, reset, clearError, retry,
   } = useWeather(INITIAL_CITY)
+  // Launch load, background refresh, and refresh-after-restore (see the hook).
+  const refreshIfStale = useStaleRefresh({ initialCity: INITIAL_CITY, location, weather, lastUpdated, fetchWeather })
+
+  // Each forecast reading also fills the splash's card for that place, so going
+  // back Home doesn't ask Open-Meteo for a reading already on hand.
+  useEffect(() => {
+    if (weather && location && lastUpdated) rememberConditions(location, weather, lastUpdated.getTime())
+  }, [lastUpdated]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Radar cross-check for the current condition (opt-in "Radar enhanced accuracy").
   // The verdict is sampled with the reading itself (see loadForecast), so it is
@@ -645,73 +646,6 @@ function App() {
     }
   }, [cardTransparency, platformTheme, weatherAnimations])
 
-  // Auto-load the home city on mount (falling back to the first saved city).
-  // When useWeather already opened on the cached reading for it, refresh that in
-  // place instead — the app is on screen at once and updates when the network
-  // answers. A reading still inside STALE_MS is left alone, the same rule the
-  // staleness poll below applies.
-  useEffect(() => {
-    if (!INITIAL_CITY) return
-    if (!weather) { fetchWeather(INITIAL_CITY); return }
-    if (Date.now() - (lastUpdated?.getTime() ?? 0) < STALE_MS) return
-    refreshingRef.current = true
-    Promise.resolve(fetchWeather(INITIAL_CITY, { silent: true }))
-      .finally(() => { refreshingRef.current = false })
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Keep the reading current while the app is open.
-  //
-  // Weather was fetched exactly once per location — on mount, or when one was
-  // picked — and never again without a tap on refresh. A tab left open or a PWA
-  // resumed from the background therefore kept showing the sky as it was when it
-  // was last opened, with no indication beyond the "Updated N min ago" line. That
-  // is the inconsistency between the cards and the radar: WeatherRadar fetches
-  // its own frames every time it mounts, so the map was live while the condition
-  // card was hours old — over Bel Air MD it read "Slight Rain" (a station report
-  // from a shower that had since passed) beside a radar showing nothing at all.
-  //
-  // Refetch silently once the reading is older than a radar sweep, on whichever
-  // comes first: the app coming back to the foreground, or the poll below. Both
-  // check staleness rather than acting outright, so switching tabs a dozen times
-  // costs nothing.
-  useEffect(() => {
-    if (!location || !weather) return
-    const refreshIfStale = () => {
-      if (document.hidden || refreshingRef.current) return
-      if (Date.now() - (lastUpdated?.getTime() ?? 0) < STALE_MS) return
-      refreshingRef.current = true
-      Promise.resolve(fetchWeather(location, { silent: true }))
-        .finally(() => { refreshingRef.current = false })
-    }
-    const timer = setInterval(refreshIfStale, STALE_CHECK_MS)
-    document.addEventListener('visibilitychange', refreshIfStale)
-    window.addEventListener('focus', refreshIfStale)
-    return () => {
-      clearInterval(timer)
-      document.removeEventListener('visibilitychange', refreshIfStale)
-      window.removeEventListener('focus', refreshIfStale)
-    }
-  }, [location, weather, lastUpdated, fetchWeather])
-
-  // Close search overlay on Escape key
-  useEffect(() => {
-    if (!searchOpen) return
-    const handler = (e) => { if (e.key === 'Escape') closeSearch() }
-    document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
-  }, [searchOpen]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Escape closes the settings modal — the dialog behaviour a desktop user
-  // expects, and the web app is the only shell that draws one. It goes through
-  // history like every other way out of settings, so with a sub-page open it
-  // steps back to the main list first rather than dropping the whole modal.
-  useEffect(() => {
-    if (!showSettings || !webLayout) return
-    const handler = (e) => { if (e.key === 'Escape') closeSettings() }
-    document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
-  }, [showSettings, webLayout]) // eslint-disable-line react-hooks/exhaustive-deps
-
   // Fly splash logo to header when weather arrives; dismiss immediately on error.
   //
   // The first forecast of a session mounts every page (and pulls in their code
@@ -722,6 +656,11 @@ function App() {
   // itself. Later openings are already warm and go straight away.
   const firstOpenRef = useRef(true)
   const [splashHold, setSplashHold] = useState(false)
+  // This reacts to a reading (or an error) *arriving*, not to the state being
+  // what it is: going Home with a stale error, say, must not bounce straight
+  // back off the splash. Deriving the phase during render would do exactly
+  // that, so the effect stays and the rule is silenced for it alone.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (splashPhase !== 'visible') return
     if (error && !weather) { setSplashHold(false); setSplashPhase('done'); return }
@@ -734,6 +673,7 @@ function App() {
     // spent it then exits at once rather than leaving the splash stuck.
     return () => clearTimeout(t)
   }, [weather, error]) // eslint-disable-line react-hooks/exhaustive-deps
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // The first place picked in a session opens on Today (the overview) rather
   // than whichever page was last left open. Once any forecast has been shown —
@@ -773,34 +713,6 @@ function App() {
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
   }, [isDesktop, weather, loading, searchOpen, webSplash, navPageUp])
-
-  // Hardware back button / Android back gesture
-  useEffect(() => {
-    const handler = () => {
-      // Back pressed while the cog or the glass is still animating just stops
-      // the animation; the page itself is already open and closes below.
-      if (settingsOpenTimer.current) {
-        clearTimeout(settingsOpenTimer.current)
-        settingsOpenTimer.current = null
-        setSettingsOpening(false)
-      }
-      if (searchOpenTimer.current) {
-        clearTimeout(searchOpenTimer.current)
-        searchOpenTimer.current = null
-        setSearchSweeping(false)
-      }
-      // What closes is read from where history landed, not assumed to be one
-      // level: dismissing the web app's settings modal from a sub-page pops
-      // both of its entries at once, and that has to close the whole thing
-      // rather than surface the list underneath.
-      if (subView && history.state?.overlay === 'settings') setSubView(null)
-      else if (showSettings) doCloseSettings()
-      else if (searchOpen) doCloseSearch()
-      else if (savedOpen) doCloseSaved()
-    }
-    window.addEventListener('popstate', handler)
-    return () => window.removeEventListener('popstate', handler)
-  }, [subView, showSettings, searchOpen, savedOpen]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const changeUnit = (u) => {
     setUnit(u)
@@ -1001,6 +913,15 @@ function App() {
 
   const closeSubView = () => history.back()
 
+  // The Help page, full screen over everything (see HelpPage). `article` opens
+  // straight onto one; with none it opens on the list. It takes a history
+  // entry so Back closes it, like the other overlays.
+  const openHelp = (article = null) => {
+    if (!help) history.pushState({ overlay: 'help' }, '')
+    setHelp({ article })
+  }
+  const closeHelp = () => history.back()
+
   // Called straight from a click (the empty state, the location error's link),
   // the page grows out of whatever was tapped. The magnifier sets its own origin
   // and calls this with no event, after its sweep.
@@ -1134,6 +1055,66 @@ function App() {
 
   const closeSaved = () => history.back()
 
+  // The Escape and back-button handlers live down here, after every open and
+  // close function they call, so none of them is used before it is declared.
+
+  // Close search overlay on Escape key
+  useEffect(() => {
+    if (!searchOpen) return
+    const handler = (e) => { if (e.key === 'Escape') closeSearch() }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [searchOpen])
+
+  // Escape closes the settings modal — the dialog behaviour a desktop user
+  // expects, and the web app is the only shell that draws one. It goes through
+  // history like every other way out of settings, so with a sub-page open it
+  // steps back to the main list first rather than dropping the whole modal.
+  useEffect(() => {
+    if (!showSettings || !webLayout) return
+    const handler = (e) => { if (e.key === 'Escape') closeSettings() }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [showSettings, webLayout])
+
+  // Hardware back button / Android back gesture
+  useEffect(() => {
+    const handler = () => {
+      // Back pressed while the cog or the glass is still animating just stops
+      // the animation; the page itself is already open and closes below.
+      if (settingsOpenTimer.current) {
+        clearTimeout(settingsOpenTimer.current)
+        settingsOpenTimer.current = null
+        setSettingsOpening(false)
+      }
+      if (searchOpenTimer.current) {
+        clearTimeout(searchOpenTimer.current)
+        searchOpenTimer.current = null
+        setSearchSweeping(false)
+      }
+      // What closes is read from where history landed, not assumed to be one
+      // level: dismissing the web app's settings modal from a sub-page pops
+      // both of its entries at once, and that has to close the whole thing
+      // rather than surface the list underneath.
+      // Help sits on top of everything, so it is always the first to go.
+      if (help) { setHelp(null); return }
+      if (subView && history.state?.overlay === 'settings') setSubView(null)
+      else if (showSettings) doCloseSettings()
+      else if (searchOpen) doCloseSearch()
+      else if (savedOpen) doCloseSaved()
+    }
+    window.addEventListener('popstate', handler)
+    return () => window.removeEventListener('popstate', handler)
+  }, [help, subView, showSettings, searchOpen, savedOpen]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Escape closes the Help page.
+  useEffect(() => {
+    if (!help) return
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); history.back() } }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [help])
+
   const handleSavedPageSelect = (city) => {
     addRecent(city)
     fetchWeather(city)
@@ -1174,10 +1155,7 @@ function App() {
     addRecent(city)
     const updated = restoreReading(city)
     if (updated == null) { fetchWeather(city); return }
-    if (Date.now() - updated < STALE_MS || refreshingRef.current) return
-    refreshingRef.current = true
-    Promise.resolve(fetchWeather(city, { silent: true }))
-      .finally(() => { refreshingRef.current = false })
+    refreshIfStale(city, updated)
   }
 
   // The header's place line on the phone shells (see .app-place): the city
@@ -1190,8 +1168,9 @@ function App() {
     ? new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', ...(weather.timezone ? { timeZone: weather.timezone } : {}) })
     : ''
 
+  // Also the way out of a failed fetch, which has no forecast to drop.
   const handleLogoClick = () => {
-    if (!weather || splashPhase !== 'done') return
+    if ((!weather && !error) || splashPhase !== 'done') return
     reset()
     setSplashPhase('visible')
   }
@@ -1218,7 +1197,7 @@ function App() {
   const handleNavHome = () => {
     const wasOnPage = navPageUp
     closeNavPage()
-    if (weather && splashPhase === 'done') handleLogoClick()
+    if ((weather || error) && splashPhase === 'done') handleLogoClick()
     else if (wasOnPage && splashPhase === 'done') setSplashPhase('visible')
   }
 
@@ -1243,7 +1222,17 @@ function App() {
   // independently — the header, hero and search chrome go on reading over the
   // backdrop as they already do on a clear day, which is the one sky with no
   // level class of its own.
-  const levelC   = platformTheme === 'android' ? '' : skyLevel
+  //
+  // .sky-tone-light marks the skies the splash location cards stay light over
+  // (the same split as splashSkyTone below). In light mode the iOS weather
+  // cards follow it — light glass with dark text over a light sky, dark frost
+  // over a dark one — so the forecast and the splash match (see "Light mode
+  // over a light sky" in App.css). Those light cards want the plain white-card
+  // palette, not the level's lighter tones and text scrims, so iOS drops the
+  // level class over a light sky. Dark mode reverts the level's surfaces
+  // anyway, so nothing there depends on it.
+  const skyToneLight = !!skyC && skyLevel !== 'sky-lvl-dark' && skyLevel !== 'sky-lvl-darkest'
+  const levelC   = platformTheme === 'android' || (platformTheme === 'ios' && skyToneLight) ? '' : skyLevel
 
   // The splash dresses itself in the weather of the most recently opened place
   // (where the device is, when nothing has been opened yet): that sky behind it
@@ -1318,7 +1307,11 @@ function App() {
   //
   // Locations and Settings need no forecast, so either of them keeps the bar up
   // on its own — they can be opened from Home before anything has loaded.
-  const headerTabs = webLayout && splashPhase === 'done' && (!!weather || navPageUp)
+  //
+  // A failed fetch keeps it up too: the error card used to sit under the old
+  // corner-button header, with no Home tab to get back out by.
+  const forecastFailed = !!error && !loading && !weather
+  const headerTabs = webLayout && splashPhase === 'done' && (!!weather || navPageUp || forecastFailed)
 
   // The tab bar also stays up over the web splash, with Home selected, so going
   // between the splash and the forecast is the pill sliding along one bar
@@ -1345,7 +1338,7 @@ function App() {
   // On Locations or Settings with nothing loaded and nowhere to load (a first
   // visit that went straight to Settings), the forecast tabs have nothing to
   // open, so they are offered but disabled.
-  const navTabs = !weather && !navCity ? WEB_TABS.map(t => ({ ...t, disabled: true })) : WEB_TABS
+  const navTabs = !weather && !navCity && !forecastFailed ? WEB_TABS.map(t => ({ ...t, disabled: true })) : WEB_TABS
   // Home while the splash is idle. Once a place is picked the pill moves to the
   // page it will open on, while the forecast loads behind the splash.
   const navActive = navPageUp ? webPage
@@ -1361,6 +1354,9 @@ function App() {
     // off it): open the place you'd most likely mean on the chosen page.
     if (!weather && !loading && navCity && ((webSplash && splashPhase === 'visible') || fromPage)) {
       handleSplashCitySelect(navCity)
+    } else if (!weather && !loading && error && !fromPage) {
+      // On a failed fetch, a tab is another go at the place that failed.
+      retry()
     }
   }
   // Settings trails the bar behind a divider. There is no Locations tab: the
@@ -1436,6 +1432,7 @@ function App() {
   // Everything the settings screen reads and writes. Shared by the phone
   // shells' settings page and the web app's Settings tab.
   const settingsProps = {
+    onHelpOpen: () => openHelp(),
     // The desktop layout doesn't render the overview tile (see TodayPage), so
     // its settings come out with it rather than sitting there as controls for
     // something that isn't on the page.
@@ -1568,7 +1565,7 @@ function App() {
       {weather && weatherAnimations && <div className={`sky-bg ${skyC}`} aria-hidden="true" />}
       {weather && weatherAnimations && <WeatherCanvas code={liveCode} gyro={gyroscope} />}
     <div
-      className={`app${weatherAnimations && levelC ? ` ${levelC}` : ''}${!weatherAnimations ? ' no-effects' : ''}${weather && weatherAnimations ? ' sky-active' : ''}${headerTabs ? ' app--web-tabs' : ''}${radarPageUp ? ' app--web-radar' : ''}${webSplash ? ' app--web-splash' : ''}${webSplash && splashPhase === 'exit' ? ' app--web-splash-exit' : ''}${webLayout && splashPhase !== 'visible' ? ' app--revealed' : ''}`}
+      className={`app${weatherAnimations && levelC ? ` ${levelC}` : ''}${!weatherAnimations ? ' no-effects' : ''}${weather && weatherAnimations ? ' sky-active' : ''}${weather && weatherAnimations && skyToneLight ? ' sky-tone-light' : ''}${headerTabs ? ' app--web-tabs' : ''}${radarPageUp ? ' app--web-radar' : ''}${webSplash ? ' app--web-splash' : ''}${webSplash && splashPhase === 'exit' ? ' app--web-splash-exit' : ''}${webLayout && splashPhase !== 'visible' ? ' app--revealed' : ''}`}
       style={weather && weatherAnimations ? SKY_CARD_VARS[skyC] : undefined}
     >
       <header ref={headerRef} className={`app-header${!weather && !showNav ? ' app-header--no-city' : ''}${showNav ? ' app-header--tabs' : ''}`}>
@@ -1686,7 +1683,23 @@ function App() {
                 <button className="location-error-search" onClick={openSearch}>Search for a city instead</button>
               </div>
             ) : (
-              <div className="status-message error">{error}</div>
+              // A failed forecast with nothing loaded used to be a bare line of
+              // red text, and the logo only goes Home once a forecast is up,
+              // so search and settings were the only ways off this screen.
+              <div className="location-error-card">
+                <AlertCircle size={32} className="location-error-icon" />
+                <p className="location-error-msg">{error.replace(/^quota:/, '')}</p>
+                <div className="location-error-actions">
+                  <button className="location-error-search" onClick={retry}>Try again</button>
+                  <button className="location-error-search" onClick={handleNavHome}>Home</button>
+                  {error.startsWith('quota:') && (
+                    <button className="location-error-search location-error-help" onClick={() => openHelp('request-limits')}>
+                      <HelpCircle size={15} aria-hidden="true" />
+                      Help
+                    </button>
+                  )}
+                </div>
+              </div>
             )
           )}
           {!weather && !loading && !error && !navPageUp && splashPhase === 'done' && (
@@ -1844,6 +1857,10 @@ function App() {
               busy={loading}
               onSelect={handleSplashCitySelect}
               isHome={isHome}
+              // Nothing saved means nothing opens on launch: give the poster
+              // a way into search. Only while it is idle, so it can't open
+              // over a place that is already loading.
+              onSearch={cities.length === 0 && !home && splashPhase === 'visible' ? openSearch : undefined}
             />
           )}
         </>
@@ -1976,6 +1993,13 @@ function App() {
           loading rather than as something to act on. Mounting here is what starts
           its (throttled) check — see UpdateToast. */}
       {IS_ANDROID_APP && splashPhase === 'done' && <UpdateToast />}
+      {help && (
+        <HelpPage
+          article={help.article}
+          onSelect={(article) => setHelp({ article })}
+          onClose={closeHelp}
+        />
+      )}
       <div id="alert-portal-root" />
     </div>
       {styleCover && (
