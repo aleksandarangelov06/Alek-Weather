@@ -5,7 +5,9 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // The Android build copies the bundled web app into its assets, so those
+  // folders hold minified output, not source.
+  globalIgnores(['dist', 'android/app/build', 'android/app/src/main/assets', 'android/build']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [

@@ -17,13 +17,13 @@ import { useLayoutEffect, useRef, useState } from 'react'
 // of `tabs` so the arrow keys, which wrap around the tab list, can never land
 // on it: ← from the first page would otherwise throw you out to the splash.
 //
-// `pages` ([{ id, label, icon, onSelect }]) are the same idea at the other end
-// of the bar: Locations and Settings, which are pages of the app rather than of
-// the forecast. They take the pill like any tab, but sit apart from the forecast
-// pages (after a divider) and outside the arrow-key cycle for the same reason
-// Home does — they don't need a forecast, and the forecast tabs do.
+// `pages` ([{ id, label, onSelect }]) are the same idea at the other end of the
+// bar: Settings, a page of the app rather than of the forecast. It takes the
+// pill like any tab, but sits apart from the forecast pages (after a divider)
+// and outside the arrow-key cycle for the same reason Home does — it doesn't
+// need a forecast, and the forecast tabs do.
 export function WebTabs({
-  tabs, active, onChange, home = null, pages = [], lead = null,
+  tabs, active, onChange, home = null, pages = [],
   idPrefix = 'web-tab', controls, label = 'Forecast pages', className = '',
 }) {
   const listRef = useRef(null)
@@ -92,36 +92,22 @@ export function WebTabs({
             aria-hidden="true"
           />
         )}
-        {/* The lead slot (Locations) sits at the very start of the bar, set off
-            from Home and the forecast pages by the same divider Settings gets
-            at the other end. */}
-        {lead && (
+        {home && (
           <>
             <button
               type="button"
-              ref={(el) => { btnRefs.current[lead.id] = el }}
-              className={`web-tab web-tab--icon${active === lead.id ? ' web-tab--active' : ''}`}
-              aria-current={active === lead.id ? 'page' : undefined}
-              aria-label={lead.label}
-              title={lead.label}
-              onClick={lead.onSelect}
+              ref={(el) => { btnRefs.current.home = el }}
+              className={`web-tab web-tab--home${active === 'home' ? ' web-tab--active' : ''}`}
+              aria-current={active === 'home' ? 'page' : undefined}
+              onClick={home.onSelect}
             >
-              {lead.icon}
+              {home.icon}
+              {home.label}
             </button>
+            {/* Home leaves the forecast rather than switching page, so it is set
+                off from the forecast tabs the way Settings is at the other end. */}
             <span className="web-tabs-divider" aria-hidden="true" />
           </>
-        )}
-        {home && (
-          <button
-            type="button"
-            ref={(el) => { btnRefs.current.home = el }}
-            className={`web-tab web-tab--home${active === 'home' ? ' web-tab--active' : ''}`}
-            aria-current={active === 'home' ? 'page' : undefined}
-            onClick={home.onSelect}
-          >
-            {home.icon}
-            {home.label}
-          </button>
         )}
         {tabs.map((t) => (
           <button
@@ -145,13 +131,11 @@ export function WebTabs({
             key={p.id}
             type="button"
             ref={(el) => { btnRefs.current[p.id] = el }}
-            className={`web-tab web-tab--icon${active === p.id ? ' web-tab--active' : ''}`}
+            className={`web-tab${active === p.id ? ' web-tab--active' : ''}`}
             aria-current={active === p.id ? 'page' : undefined}
-            aria-label={p.label}
-            title={p.label}
             onClick={p.onSelect}
           >
-            {p.icon}
+            {p.label}
           </button>
         ))}
       </div>

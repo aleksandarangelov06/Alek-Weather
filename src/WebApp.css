@@ -3628,8 +3628,26 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
 /* The padding (cancelled by the negative margin) gives the cards' drop shadows
    and hover lift room inside the scroll box, which would otherwise clip them
    into a hard-edged band along its sides and bottom. */
-/* Never a scroll box: there are at most three cards (MAX_CARDS in SplashHome),
-   and they sit in one row, so there is nothing to scroll to. */
+/* The recent row and the saved list share one scroll box that fills the space
+   .splash-home leaves under the search field, so a long saved list scrolls
+   rather than running off the screen. */
+.splash-places {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin: -6px -28px 0;
+  padding: 0 28px;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-primary) 25%, transparent) transparent;
+}
+
+/* The scroll box already carries the side gutter for the shadows. */
+.splash-places .splash-recents {
+  margin: 0;
+  padding: 6px 0 24px;
+}
+
 .splash-recents {
   flex: 0 0 auto;
   margin: -6px -28px 0;
@@ -4464,9 +4482,9 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
   border-radius: 0;
 }
 
-/* ── Locations & Settings tabs ───────────────────────────────────────────── */
+/* ── Home & Settings tabs ────────────────────────────────────────────────── */
 
-/* Sets the two app pages apart from the forecast pages before them. */
+/* Sets Home and Settings apart from the forecast pages between them. */
 .web-tabs-divider {
   flex: 0 0 auto;
   align-self: center;
@@ -4485,14 +4503,6 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
   background: rgba(255, 255, 255, 0.25);
 }
 
-/* Locations (pin) and Settings (gear): icon-only stops at either end. */
-.web-tab--icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding-left: 13px;
-  padding-right: 13px;
-}
 
 
 /* A header corner button whose job the tab bar has taken over (see
@@ -4840,170 +4850,4 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
 
 @media (prefers-reduced-motion: reduce) {
   .ws-content { animation: none; }
-}
-
-/* ── Locations page ──────────────────────────────────────────────────────── */
-
-.web-loc-section {
-  margin-bottom: 0;
-}
-
-.web-loc-heading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 14px;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 1.1px;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
-
-.web-loc-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 12px;
-}
-
-.web-loc-item {
-  position: relative;
-  border-radius: 16px;
-  background: var(--web-sunken);
-  border: 1px solid transparent;
-  transition: background 0.15s, transform 0.15s, box-shadow 0.15s, border-color 0.15s;
-}
-
-.web-loc-item:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
-}
-
-/* The place the forecast is showing right now. */
-.web-loc-item--active {
-  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
-}
-
-.web-loc-btn {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 100%;
-  padding: 14px 16px 13px;
-  border: none;
-  border-radius: inherit;
-  background: none;
-  font-family: var(--font);
-  text-align: left;
-  cursor: pointer;
-}
-
-.web-loc-btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.web-loc-name {
-  padding-right: 26px; /* clear of the remove button */
-  font-size: 17px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.web-loc-sub {
-  font-size: 12.5px;
-  color: var(--text-secondary);
-}
-
-.web-loc-now {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 38px;
-  margin-top: 8px;
-}
-
-.web-loc-icon {
-  display: flex;
-  font-size: 26px;
-  line-height: 1;
-}
-
-.web-loc-temp {
-  font-size: 28px;
-  font-weight: 300;
-  letter-spacing: -1px;
-  color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
-}
-
-.web-loc-temp--unknown {
-  opacity: 0.4;
-}
-
-.web-loc-badge {
-  margin-left: auto;
-  padding: 3px 9px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--accent);
-  background: var(--accent-light);
-}
-
-/* Out of the way until the card is hovered or tabbed to, so a page of cards
-   doesn't read as a page of close buttons. */
-.web-loc-remove {
-  position: absolute;
-  top: 7px;
-  right: 7px;
-  display: flex;
-  padding: 5px;
-  border: none;
-  border-radius: 50%;
-  background: none;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s, background 0.15s, color 0.15s;
-}
-
-.web-loc-item:hover .web-loc-remove,
-.web-loc-remove:focus-visible {
-  opacity: 1;
-}
-
-.web-loc-remove:hover {
-  background: var(--hover-medium);
-  color: var(--text-primary);
-}
-
-/* Touch screens have no hover to reveal it. */
-@media (hover: none) {
-  .web-loc-remove { opacity: 0.7; }
-}
-
-.web-loc-empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  padding: 40px 24px;
-  margin-bottom: 0;
-  text-align: center;
-  color: var(--text-secondary);
-}
-
-.web-loc-empty p {
-  margin: 0;
-  max-width: 360px;
-}
-
-.web-loc-empty-icon {
-  color: var(--text-tertiary);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .web-loc-item,
-  .web-loc-item:hover { transition: none; transform: none; }
 }

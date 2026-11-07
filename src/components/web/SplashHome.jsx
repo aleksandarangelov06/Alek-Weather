@@ -4,6 +4,7 @@ import { SearchBar } from '../SearchBar'
 import { WeatherIcon } from '../WeatherIcon'
 import { useCityConditions, conditionKey } from '../../hooks/useCityConditions'
 import { getWeatherInfo, toTemp } from '../../utils/weatherCodes'
+import { sameCity } from '../../utils/location'
 
 // One row of three: enough to get back to the places you actually use, without
 // the splash turning into a list.
@@ -11,12 +12,11 @@ const MAX_CARDS = 3
 
 // The desktop splash: a search field and the places you've already looked at,
 // so opening the app on a monitor lands on something usable instead of a
-// tap-anywhere hint. Recents are the list — they're what the app fills in as
-// cities are opened — and saved cities stand in only for the case where a city
-// was saved but never searched (the recents list was cleared, say).
+// tap-anywhere hint. A row of recent places comes first, then home and every
+// saved city, which scroll inside the space under the search field.
 export function SplashHome({
-  recents, savedCities, unit, exiting, busy, active,
-  onSelect, onRemoveRecent, onRemoveSaved,
+  recents, savedCities, home, unit, exiting, busy, active,
+  onSelect, onRemoveRecent, onRemoveSaved, onRemoveHome,
   onSearch, searchResults, onSelectResult, onUseLocation, onClearSearch,
   isSaved, isHome, here,
 }) {
@@ -47,10 +47,17 @@ export function SplashHome({
   // value left over from a finished fetch marks nothing.
   const [pending, setPending] = useState(null)
 
-  const usingRecents = recents.length > 0
-  const cities = (usingRecents ? recents : savedCities).slice(0, MAX_CARDS)
-  const onRemove = usingRecents ? onRemoveRecent : onRemoveSaved
-  const conditions = useCityConditions(cities)
+  // Home is where every place the app knows about lives on the web (there is no
+  // Locations tab): one row of the most recent places, then home and the saved
+  // cities. A place already in the recent row isn't listed again below it.
+  const recentRow = recents.slice(0, MAX_CARDS)
+  const inRecents = (c) => recentRow.some((r) => sameCity(r, c))
+  const saved = [
+    ...(home && !inRecents(home) ? [home] : []),
+    ...savedCities.filter((c) => !inRecents(c) && !(home && sameCity(c, home))),
+  ]
+  const conditions = useCityConditions([...recentRow, ...saved])
+  const empty = recentRow.length === 0 && saved.length === 0
 
   const openCity = (city) => {
     setPending(conditionKey(city))
@@ -58,7 +65,7 @@ export function SplashHome({
   }
 
   return (
-    <div className={`splash-home${exiting ? ' splash-home--exit' : ''}${busy ? ' splash-home--busy' : ''}${cities.length === 0 ? ' splash-home--empty' : ''}`}>
+    <div className={`splash-home${exiting ? ' splash-home--exit' : ''}${busy ? ' splash-home--busy' : ''}${empty ? ' splash-home--empty' : ''}`}>
       <div className="splash-search">
         <SearchBar
           key={seed?.n ?? 0}
@@ -92,66 +99,84 @@ export function SplashHome({
         </button>
       )}
 
-      {cities.length > 0 ? (
-        <div className="splash-recents">
-          <div className="section-label">{usingRecents ? 'RECENT LOCATIONS' : 'SAVED LOCATIONS'}</div>
-          <div className="splash-city-grid">
-            {cities.map((city, i) => {
-              const key = conditionKey(city)
-              const cond = conditions[key]
-              const info = cond ? getWeatherInfo(cond.code, !cond.isDay, cond.severe) : null
-              const home = isHome?.(city)
-              const opening = busy && pending === key
-              return (
-                <div className={`splash-city${opening ? ' splash-city--opening' : ''}`} key={i}>
-                  <button className="splash-city-btn" onClick={() => openCity(city)}>
-                    <span className="splash-city-name">
-                      {home && <House size={14} className="splash-city-home" aria-label="Home" />}
-                      {city.name}
-                      {/* The most recent place is the one the splash's sky,
-                          icon and headline are showing (see useLocalConditions). */}
-                      {usingRecents && i === 0 && (
-                        <Navigation size={14} className="splash-city-here" aria-label="Showing this weather" />
-                      )}
-                    </span>
-                    {/* Cities stored from a search keep the country code on
-                        `country`, not `country_code` — fall back to it. */}
-                    <span className="splash-city-sub">
-                      {[city.admin1, city.country_code ?? city.country].filter(Boolean).join(', ') || ' '}
-                    </span>
-                    <span className="splash-city-now">
-                      {opening ? (
-                        <span className="spinner splash-city-spinner" role="status" aria-label="Loading" />
-                      ) : (
-                        <>
-                          {info && (
-                            <span className="splash-city-icon">
-                              <WeatherIcon id={info.icon} alt={info.label} />
-                            </span>
-                          )}
-                          <span className={`splash-city-temp${cond ? '' : ' splash-city-temp--unknown'}`}>
-                            {cond ? `${toTemp(cond.temp, unit)}°` : '—'}
-                          </span>
-                        </>
-                      )}
-                    </span>
-                    <span className="splash-city-feels">
-                      {cond ? `Feels like ${toTemp(cond.feels, unit)}°` : ' '}
-                    </span>
-                  </button>
-                  <button
-                    className="splash-city-remove"
-                    onClick={() => onRemove(city)}
-                    aria-label={`Remove ${city.name}`}
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              )
-            })}
-          </div>
+      {!empty && (
+        <div className="splash-places">
+          {recentRow.length > 0 && (
+            <div className="splash-recents">
+              <div className="section-label">RECENT LOCATIONS</div>
+              <div className="splash-city-grid">
+                {recentRow.map((city, i) => renderCard(city, onRemoveRecent, i === 0))}
+              </div>
+            </div>
+          )}
+          {saved.length > 0 && (
+            <div className="splash-recents">
+              <div className="section-label">SAVED LOCATIONS</div>
+              <div className="splash-city-grid">
+                {saved.map((city) => renderCard(
+                  city,
+                  home && sameCity(city, home) ? () => onRemoveHome() : onRemoveSaved,
+                  false,
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-      ) : null}
+      )}
     </div>
   )
+
+  function renderCard(city, onRemove, showing) {
+    const key = conditionKey(city)
+    const cond = conditions[key]
+    const info = cond ? getWeatherInfo(cond.code, !cond.isDay, cond.severe) : null
+    const atHome = isHome?.(city)
+    const opening = busy && pending === key
+    return (
+      <div className={`splash-city${opening ? ' splash-city--opening' : ''}`} key={key}>
+        <button className="splash-city-btn" onClick={() => openCity(city)}>
+          <span className="splash-city-name">
+            {atHome && <House size={14} className="splash-city-home" aria-label="Home" />}
+            {city.name}
+            {/* The most recent place is the one the splash's sky,
+                icon and headline are showing (see useLocalConditions). */}
+            {showing && (
+              <Navigation size={14} className="splash-city-here" aria-label="Showing this weather" />
+            )}
+          </span>
+          {/* Cities stored from a search keep the country code on
+              `country`, not `country_code` — fall back to it. */}
+          <span className="splash-city-sub">
+            {[city.admin1, city.country_code ?? city.country].filter(Boolean).join(', ') || ' '}
+          </span>
+          <span className="splash-city-now">
+            {opening ? (
+              <span className="spinner splash-city-spinner" role="status" aria-label="Loading" />
+            ) : (
+              <>
+                {info && (
+                  <span className="splash-city-icon">
+                    <WeatherIcon id={info.icon} alt={info.label} />
+                  </span>
+                )}
+                <span className={`splash-city-temp${cond ? '' : ' splash-city-temp--unknown'}`}>
+                  {cond ? `${toTemp(cond.temp, unit)}°` : '—'}
+                </span>
+              </>
+            )}
+          </span>
+          <span className="splash-city-feels">
+            {cond ? `Feels like ${toTemp(cond.feels, unit)}°` : ' '}
+          </span>
+        </button>
+        <button
+          className="splash-city-remove"
+          onClick={() => onRemove(city)}
+          aria-label={`Remove ${city.name}`}
+        >
+          <X size={14} />
+        </button>
+      </div>
+    )
+  }
 }

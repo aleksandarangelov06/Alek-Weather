@@ -1,4 +1,9 @@
 import { MRMS_BASE, inMrmsDomain } from '../utils/mrms'
+import { fetchWithin } from '../utils/fetchTimeout'
+
+// loadForecast waits on this sample before showing the forecast, so each step
+// gives up after this long and the verdict falls back to null (no override).
+const RADAR_TIMEOUT_MS = 6000
 
 // "Radar enhanced accuracy" — cross-checks the current condition against live
 // radar: is anything actually echoing over this location right now, whatever the
@@ -78,7 +83,7 @@ async function sampleMrms(lat, lon) {
     returnGeometry: 'false',
     f: 'json',
   })
-  const data = await fetch(`${MRMS_BASE}/identify?${q}`).then(r => r.json())
+  const data = await fetchWithin(`${MRMS_BASE}/identify?${q}`, RADAR_TIMEOUT_MS).then(r => r.json())
 
   const values = data?.properties?.Values
   const items  = data?.catalogItems?.features
@@ -102,7 +107,7 @@ async function sampleMrms(lat, lon) {
 // are transparent where there is no echo, so alpha is the signal. Used outside
 // MRMS coverage and whenever MRMS doesn't answer.
 async function sampleRainViewer(lat, lon, isCancelled) {
-  const data = await (await fetch(FRAMES_URL)).json()
+  const data = await (await fetchWithin(FRAMES_URL, RADAR_TIMEOUT_MS)).json()
   const past = data.radar?.past ?? []
   const frame = past[past.length - 1] // most recent observed frame
   if (!frame || !data.host) return null
@@ -118,8 +123,10 @@ async function sampleRainViewer(lat, lon, isCancelled) {
   const img = new Image()
   img.crossOrigin = 'anonymous'
   await new Promise((resolve, reject) => {
-    img.onload = resolve
-    img.onerror = reject
+    // An <img> has no abort signal, so the same limit is a timer here.
+    const timer = setTimeout(() => { img.src = ''; reject(new Error('Radar tile timed out')) }, RADAR_TIMEOUT_MS)
+    img.onload = () => { clearTimeout(timer); resolve() }
+    img.onerror = (e) => { clearTimeout(timer); reject(e) }
     img.src = url
   })
   if (isCancelled()) return null

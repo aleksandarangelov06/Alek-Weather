@@ -3,6 +3,7 @@ import { nowcastHourlyCode, precipTier, livePrecipRate } from '../utils/weatherC
 import { gridHourly, gridHourlyAccum, gridHourlySpans } from '../utils/nwsGrid'
 import { sampleRadar } from './useRadarPrecip'
 import { IS_ANDROID_APP } from '../utils/version'
+import { deadline, fetchWithin } from '../utils/fetchTimeout'
 
 // Where to turn location back on depends on what the app is running in, and
 // "this site in your browser settings" only means anything on a desktop. The
@@ -51,6 +52,18 @@ const NWS_POINTS_URL = 'https://api.weather.gov/points'
 // NWS requires contact info in the User-Agent. Plus-addressed so scraped spam
 // is filterable and the address is identifiable as coming from this app.
 const NWS_HEADERS = { 'User-Agent': 'AlekWeatherApp/1.0 (angelov6+alekweather@terpmail.umd.edu)' }
+
+// Time limits for the forecast pipeline (see utils/fetchTimeout). Open-Meteo is
+// the forecast itself, so it gets the longest; giving up on it is an error card.
+// NWS only refines that forecast, so each NWS request gets a shorter limit and
+// the whole NWS chain (points, then hourly/daily/grid and the station walk) a
+// shared budget, after which the Open-Meteo values stand. Without these a
+// stalled api.weather.gov held the loading screen up for as long as it stalled.
+const OPEN_METEO_TIMEOUT_MS = 15000
+const AQI_TIMEOUT_MS = 10000
+const NWS_REQUEST_TIMEOUT_MS = 6000
+const NWS_BUDGET_MS = 10000
+const GEOCODE_TIMEOUT_MS = 8000
 
 // NWS icon code → WMO weather code
 //
@@ -811,11 +824,14 @@ const AQI_PARAMS = [
 // without a refetch. sampleRadar never rejects.
 export async function loadForecast(loc) {
   const radarPromise = sampleRadar(loc.latitude, loc.longitude)
+  // One budget for every NWS request in this load; each also has its own limit.
+  const nwsBudget = AbortSignal.timeout(NWS_BUDGET_MS)
+  const nwsFetch = (url) => fetchWithin(url, NWS_REQUEST_TIMEOUT_MS, { headers: NWS_HEADERS, signal: nwsBudget })
   const [weatherResult, aqiResult, alertsResult, nwsPointsResult] = await Promise.allSettled([
-    fetch(`${WEATHER_URL}?latitude=${loc.latitude}&longitude=${loc.longitude}&${PARAMS}`),
-    fetch(`${AQI_URL}?latitude=${loc.latitude}&longitude=${loc.longitude}&${AQI_PARAMS}`),
-    fetch(`${NOAA_ALERTS_URL}?point=${loc.latitude.toFixed(4)},${loc.longitude.toFixed(4)}`, { headers: NWS_HEADERS }),
-    fetch(`${NWS_POINTS_URL}/${loc.latitude.toFixed(4)},${loc.longitude.toFixed(4)}`, { headers: NWS_HEADERS }),
+    fetchWithin(`${WEATHER_URL}?latitude=${loc.latitude}&longitude=${loc.longitude}&${PARAMS}`, OPEN_METEO_TIMEOUT_MS),
+    fetchWithin(`${AQI_URL}?latitude=${loc.latitude}&longitude=${loc.longitude}&${AQI_PARAMS}`, AQI_TIMEOUT_MS),
+    nwsFetch(`${NOAA_ALERTS_URL}?point=${loc.latitude.toFixed(4)},${loc.longitude.toFixed(4)}`),
+    nwsFetch(`${NWS_POINTS_URL}/${loc.latitude.toFixed(4)},${loc.longitude.toFixed(4)}`),
   ])
 
   if (weatherResult.status === 'rejected') throw weatherResult.reason
@@ -872,6 +888,9 @@ export async function loadForecast(loc) {
       // with this location. Distance is checked before the request, so far
       // stations cost nothing. `limit` is generous because the filter, not
       // the list length, is what ends the walk now.
+      // The in-range stations are all asked at once and then read in list
+      // order, so the answer is the same as asking them one by one, but the
+      // walk costs one round trip instead of up to eight back to back.
       // The walk also notes whether a nearby station recently reported
       // nothing falling (`dry`). That never overrides anything on its own, but
       // it stops preferForecastHour promoting a "Chance Rain Showers, 65%"
@@ -881,30 +900,36 @@ export async function loadForecast(loc) {
         let dry = false
         const stationsUrl = pointsData.properties?.observationStations
         if (!stationsUrl) return { obs: null, dry }
-        const sRes = await fetch(`${stationsUrl}?limit=8`, { headers: NWS_HEADERS })
+        const sRes = await nwsFetch(`${stationsUrl}?limit=8`)
         if (!sRes.ok) return { obs: null, dry }
         const stations = (await sRes.json()).features ?? []
+        const ids = []
         for (const s of stations) {
           const id = s.properties?.stationIdentifier
           if (!id) continue
           const [sLon, sLat] = s.geometry?.coordinates ?? []
           if (sLat == null || sLon == null) continue
           if (distanceKm(loc.latitude, loc.longitude, sLat, sLon) > MAX_STATION_KM) continue
-          try {
-            const oRes = await fetch(`https://api.weather.gov/stations/${id}/observations/latest`, { headers: NWS_HEADERS })
-            if (!oRes.ok) continue
-            const obs = (await oRes.json()).properties
-            if (obsToWmoCode(obs) != null) return { obs, dry }
-            if (obsIsDry(obs)) dry = true
-          } catch { /* try the next station */ }
+          ids.push(id)
+        }
+        const reports = ids.map((id) =>
+          nwsFetch(`https://api.weather.gov/stations/${id}/observations/latest`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d) => d?.properties ?? null)
+            .catch(() => null))
+        for (const report of reports) {
+          const obs = await report
+          if (!obs) continue // no answer: try the next station
+          if (obsToWmoCode(obs) != null) return { obs, dry }
+          if (obsIsDry(obs)) dry = true
         }
         return { obs: null, dry }
       })().catch(() => ({ obs: null, dry: false }))
 
       const [nwsHourlyRes, nwsForecastRes, nwsGridRes] = await Promise.allSettled([
-        hourlyUrl   ? fetch(hourlyUrl,   { headers: NWS_HEADERS }) : Promise.reject(),
-        forecastUrl ? fetch(forecastUrl, { headers: NWS_HEADERS }) : Promise.reject(),
-        gridUrl     ? fetch(gridUrl,     { headers: NWS_HEADERS }) : Promise.reject(),
+        hourlyUrl   ? nwsFetch(hourlyUrl)   : Promise.reject(),
+        forecastUrl ? nwsFetch(forecastUrl) : Promise.reject(),
+        gridUrl     ? nwsFetch(gridUrl)     : Promise.reject(),
       ])
       // The gridpoint carries the fields the two text products don't, and
       // its entry spans are what say how far each field stays an hourly
@@ -1133,8 +1158,9 @@ export function useWeather(initialCity = null) {
     try {
       const res = await fetch(
         `${GEO_URL}?name=${encodeURIComponent(trimmed)}&count=6&language=en&format=json`,
-        { signal: searchAbortRef.current.signal }
+        { signal: deadline(GEOCODE_TIMEOUT_MS, searchAbortRef.current.signal) }
       )
+      if (!res.ok) throw new Error(`Geocoding returned ${res.status}`)
       const data = await res.json()
       setSearchResults(data.results ?? [])
     } catch (e) {
@@ -1153,7 +1179,7 @@ export function useWeather(initialCity = null) {
     })
   }, [fetchWeather])
 
-  const useMyLocation = useCallback(async () => {
+  const locateMe = useCallback(async () => {
     if (!navigator.geolocation) { setError('Geolocation is not supported by your browser.'); return }
 
     // Check the stored permission state before starting the loading spinner.
@@ -1203,8 +1229,9 @@ export function useWeather(initialCity = null) {
           // api.bigdatacloud.net now 307-redirects here, and a cross-origin
           // redirect to a host not in the build CSP's connect-src is blocked,
           // which silently failed the lookup and left the name as "My Location".
-          const r = await fetch(
-            `https://api-bdc.io/data/reverse-geocode-client?latitude=${latitude.toFixed(2)}&longitude=${longitude.toFixed(2)}&localityLanguage=en`
+          const r = await fetchWithin(
+            `https://api-bdc.io/data/reverse-geocode-client?latitude=${latitude.toFixed(2)}&longitude=${longitude.toFixed(2)}&localityLanguage=en`,
+            GEOCODE_TIMEOUT_MS,
           )
           if (r.ok) {
             const d = await r.json()
@@ -1243,6 +1270,6 @@ export function useWeather(initialCity = null) {
 
   return {
     location, weather, airQuality, alerts, lastUpdated, searchResults, loading, error,
-    searchCity, selectCity, useMyLocation, setSearchResults, fetchWeather, restoreReading, reset, clearError,
+    searchCity, selectCity, locateMe, setSearchResults, fetchWeather, restoreReading, reset, clearError,
   }
 }

@@ -125,7 +125,6 @@ import { WebTabs } from './components/web/WebTabs'
 import { WebAlertPill } from './components/web/WebAlertPill'
 import { TABS as WEB_TABS, useWebTab } from './components/web/tabs'
 import { SplashHome } from './components/web/SplashHome'
-import { LocationsPage } from './components/web/LocationsPage'
 import { SplashCities } from './components/SplashCities'
 import { LoadingScreen } from './components/LoadingScreen'
 import { WebLoadingScreen } from './components/web/WebLoadingScreen'
@@ -397,7 +396,7 @@ function App() {
   const [subView, setSubView] = useState(null) // null | 'colorcoding' | 'overview' | 'radar' | 'effects' | 'theme' | 'notifications'
   const [isDesktop, setIsDesktop] = useState(() => window.matchMedia(DESKTOP_MQ).matches)
   const [webTab, setWebTab] = useWebTab()
-  // The web app's non-forecast pages — 'locations' | 'settings' | null. Kept
+  // The web app's non-forecast page — 'settings' | null. Kept
   // apart from webTab: they need no forecast, so they can be opened from Home
   // with nothing loaded, and leaving one returns to whichever forecast page you
   // were on. Not persisted: a reload lands on the forecast, as it always has.
@@ -460,7 +459,7 @@ function App() {
 
   const {
     location, weather, airQuality, alerts, lastUpdated, searchResults, loading, error,
-    searchCity, selectCity, useMyLocation, setSearchResults, fetchWeather, restoreReading, reset, clearError,
+    searchCity, selectCity, locateMe, setSearchResults, fetchWeather, restoreReading, reset, clearError,
   } = useWeather(INITIAL_CITY)
 
   // Radar cross-check for the current condition (opt-in "Radar enhanced accuracy").
@@ -998,7 +997,7 @@ function App() {
       searchLongPressed.current = true
       setSearchHolding(false)
       navigator.vibrate?.(40)
-      useMyLocation()
+      locateMe()
     }, LONG_PRESS_MS)
   }
 
@@ -1012,9 +1011,8 @@ function App() {
     if (searchLongPressed.current) { searchLongPressed.current = false; return }
     setRevealOrigin(e?.currentTarget)
     if (splashPhase !== 'done') {
-      // On the web, the places you've been are a page of their own now.
-      if (webLayout) openNavPage('locations')
-      else openSaved()
+      // On the web, the places you've been are already listed on Home.
+      if (!webLayout) openSaved()
       return
     }
     sweepThenOpenSearch()
@@ -1103,7 +1101,7 @@ function App() {
   }
 
   const handleUseLocation = () => {
-    useMyLocation()
+    locateMe()
     closeSearch()
   }
 
@@ -1170,13 +1168,6 @@ function App() {
     closeNavPage()
     if (weather && splashPhase === 'done') handleLogoClick()
     else if (wasOnPage && splashPhase === 'done') setSplashPhase('visible')
-  }
-
-  // Picking a place on the Locations page opens its forecast on the page you
-  // were last on, the same way the splash's cards do.
-  const handleLocationsSelect = (city) => {
-    closeNavPage()
-    handleSplashCitySelect(city)
   }
 
   const hasActiveAlert = alerts.some(a =>
@@ -1320,13 +1311,12 @@ function App() {
       handleSplashCitySelect(navCity)
     }
   }
-  // Locations leads the bar as a pin and Settings trails it as a gear, each
-  // behind a divider. The labels become their tooltips and accessible names.
-  const navLead = { id: 'locations', label: 'Locations', icon: <MapPin size={18} aria-hidden="true" />, onSelect: () => openNavPage('locations') }
+  // Settings trails the bar behind a divider. There is no Locations tab: the
+  // places you've been and saved are listed on Home.
   const navPages = [
-    { id: 'settings', label: 'Settings', icon: <SettingsIcon size={18} aria-hidden="true" />, onSelect: () => openNavPage('settings') },
+    { id: 'settings', label: 'Settings', onSelect: () => openNavPage('settings') },
   ]
-  // With the bar up, Locations and Settings are in it, so the header's corner
+  // With the bar up, Home and Settings are in it, so the header's corner
   // buttons for them (the building on Home, the cog everywhere) go. Search
   // stays: the magnifier on a forecast page has no tab of its own. When the bar
   // is down (Home with no places yet) the corner buttons are the only way in,
@@ -1593,7 +1583,6 @@ function App() {
                 // logo's place. On the splash itself it is the selected page.
                 home={{ label: 'Home', icon: <House size={17} aria-hidden="true" />, onSelect: handleNavHome }}
                 pages={navPages}
-                lead={navLead}
               />
               {headerTabs && weather && <WebAlertPill alerts={alerts} tab={navPageUp ? webPage : webTab} location={location} />}
             </div>
@@ -1617,21 +1606,7 @@ function App() {
           {navPageUp && (
             <div className="weather-content weather-content--web">
               <div className="web-shell">
-                {webPage === 'settings' ? (
-                  <SettingsPage page {...settingsProps} />
-                ) : (
-                  <LocationsPage
-                    home={home}
-                    recents={recents}
-                    cities={cities}
-                    currentLocation={weather ? location : null}
-                    unit={unit}
-                    onSelect={handleLocationsSelect}
-                    onRemoveHome={() => setHome(null)}
-                    onRemoveRecent={removeRecent}
-                    onRemoveSaved={remove}
-                  />
-                )}
+                <SettingsPage page {...settingsProps} />
               </div>
             </div>
           )}
@@ -1755,6 +1730,8 @@ function App() {
               <SplashHome
                 recents={recents}
                 savedCities={cities}
+                home={home}
+                onRemoveHome={() => setHome(null)}
                 unit={unit}
                 exiting={splashPhase === 'exit'}
                 busy={loading || splashHold}
@@ -1765,7 +1742,7 @@ function App() {
                 onSearch={searchCity}
                 searchResults={searchResults}
                 onSelectResult={handleSplashSearchSelect}
-                onUseLocation={() => { landFirstPick(); useMyLocation() }}
+                onUseLocation={() => { landFirstPick(); locateMe() }}
                 onClearSearch={() => setSearchResults([])}
                 isSaved={isSaved}
                 isHome={isHome}
