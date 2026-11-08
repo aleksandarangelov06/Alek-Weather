@@ -1715,8 +1715,8 @@ function App() {
             >
               <span className="web-brand-logo" aria-hidden="true">
                 {/* The splash logos minus their sun/moon glow and the cloud's lavender tint. */}
-                <img src="/logo-light-header.svg" alt="" className="web-brand-img web-brand-img--light" />
-                <img src="/logo-dark-header.svg" alt="" className="web-brand-img web-brand-img--dark" />
+                <img src={`${import.meta.env.BASE_URL}logo-light-header.svg`} alt="" className="web-brand-img web-brand-img--light" />
+                <img src={`${import.meta.env.BASE_URL}logo-dark-header.svg`} alt="" className="web-brand-img web-brand-img--dark" />
               </span>
               <span className="web-brand-name" aria-hidden="true">
                 <span className="web-brand-first">Alek</span>
@@ -1808,13 +1808,13 @@ function App() {
             ) : (
               <>
                 <img
-                  src="/logo-transparent.svg"
+                  src={`${import.meta.env.BASE_URL}logo-transparent.svg`}
                   alt=""
                   className={`splash-logo-img splash-logo-img-light${splashPhase === 'exit' ? ' splash-logo-img--exit' : ''}`}
                   aria-hidden="true"
                 />
                 <img
-                  src="/logo-dark.svg"
+                  src={`${import.meta.env.BASE_URL}logo-dark.svg`}
                   alt=""
                   className={`splash-logo-img splash-logo-img-dark${splashPhase === 'exit' ? ' splash-logo-img--exit' : ''}`}
                   aria-hidden="true"
