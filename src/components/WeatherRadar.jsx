@@ -5,6 +5,7 @@ import 'leaflet/dist/leaflet.css'
 import { MRMS_BASE, inMrmsDomain, usViewBounds } from '../utils/mrms'
 import { addBasemap } from '../utils/basemap'
 import { RadarRain } from './RadarRain'
+import { RadarGlow } from './RadarGlow'
 import { fetchWithin } from '../utils/fetchTimeout'
 
 // The frame lists the card waits on. Past this a source counts as down and the
@@ -1740,7 +1741,7 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
           />
         )}
       </div>
-      {!expanded && !fill && <div className="radar-map-glow" aria-hidden="true" />}
+      {!expanded && !fill && <RadarGlow />}
       </div>
 
       <div className="radar-controls">

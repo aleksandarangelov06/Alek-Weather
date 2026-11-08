@@ -29,7 +29,7 @@ function formatUpdated(date) {
   return `Updated at ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
 }
 
-export function CurrentWeather({ hideHeader = false, current, minutely, radarClear = null, location, timezone, unit, saved, onSave, onRemove, isHome, hasHome, onGoHome, onSetHome, onUnsetHome, lastUpdated, onRefresh, loading, colorCoding = true, glow = true, frost = true }) {
+export function CurrentWeather({ hideHeader = false, current, minutely, radarClear = null, location, timezone, unit, saved, onSave, onRemove, isHome, hasHome, onGoHome, onSetHome, onUnsetHome, lastUpdated, onRefresh, loading, colorCoding = true, glow = true, frost = true, children }) {
   // Home button: tapping toggles this location as home (set if it isn't, unset
   // if it is); holding navigates to the saved home — or, when no home exists
   // yet, sets this one (there's nowhere to go). A timer started on pointer-down
@@ -127,6 +127,9 @@ export function CurrentWeather({ hideHeader = false, current, minutely, radarCle
           <RefreshCw size={13} />
         </button>
       </div>
+      {/* Extra content folded into the card (the web Today page puts the
+          Today summary here). */}
+      {children}
     </div>
   )
 }

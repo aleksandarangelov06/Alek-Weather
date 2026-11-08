@@ -616,56 +616,324 @@
   .web-tabs:has(.web-tab--active:active) .web-tab-pill { scale: none; }
 }
 
-/* ── Footer wordmark ─────────────────────────────────────────────────────── */
+/* ── Header brand and version ────────────────────────────────────────────── */
 
-.web-footer {
-  display: flex;
-  flex-direction: column;
+/* Both float in the header's side gutters, over the hidden corner buttons,
+   vertically centred on the tab bar's row (the header's top padding down to
+   its 12px bottom padding). Absolute, so the bar keeps its window centring
+   no matter how wide either is. */
+.web-brand,
+.web-version {
+  position: absolute;
+  top: calc(24px + var(--sa-top));
+  bottom: 12px;
+  margin-block: auto;
+  height: fit-content;
+  display: inline-flex;
   align-items: center;
-  gap: 2px;
-  padding: 48px 0 8px;
+  animation: web-brand-in 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) 0.1s both;
 }
 
-.web-footer-mark {
-  font-family: var(--font-display);
-  font-size: 18px;
-  font-weight: 700;
-  letter-spacing: -0.3px;
-  color: var(--text-tertiary);
-  padding: 6px 10px;
-  border-radius: 10px;
+/* Room for them: the hidden corner buttons get an equal margin on their inner
+   side, so the tab bar's wrapper shrinks symmetrically (the bar stays centred)
+   and scrolls its tabs instead of running under the brand or the version. */
+.app-header--tabs {
+  --brand-room: 170px;
+}
+.app-header--tabs .header-icon-btn.header-btn--gone {
+  margin-inline-end: var(--brand-room);
+}
+.app-header--tabs .settings-btn.header-btn--gone {
+  margin-inline-start: var(--brand-room);
+}
+
+.web-brand {
+  --brand-gutter: max(clamp(14px, 3.4vw, 48px), var(--sa-left));
+  left: calc(var(--brand-gutter) - 8px);
+  isolation: isolate;
+  gap: 10px;
+  padding: 6px 14px 6px 8px;
+  border-radius: 999px;
   cursor: pointer;
+  user-select: none;
   -webkit-tap-highlight-color: transparent;
-  transition: color 0.16s, background 0.16s;
+  transition: background 0.2s ease, scale 0.35s cubic-bezier(0.34, 1.5, 0.64, 1);
 }
 
-.web-footer-mark:hover {
-  color: var(--text-secondary);
-  background: var(--hover-subtle);
+.web-version {
+  right: max(clamp(14px, 3.4vw, 48px), var(--sa-right));
 }
 
-.web-footer-mark:focus-visible {
+@keyframes web-brand-in {
+  from { opacity: 0; translate: 0 -6px; }
+  to   { opacity: 1; translate: none; }
+}
+
+.web-brand-logo {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+}
+
+.web-brand-img {
+  grid-area: 1 / 1;
+  width: 38px;
+  height: 38px;
+  transition: rotate 0.6s cubic-bezier(0.34, 1.4, 0.64, 1), scale 0.4s cubic-bezier(0.34, 1.5, 0.64, 1);
+}
+
+.web-brand-img--dark { display: none; }
+
+.web-brand-name {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-family: var(--font-display), var(--font);
+  font-size: 21px;
+  line-height: 1;
+  letter-spacing: -0.4px;
+  white-space: nowrap;
+}
+
+.web-brand-first {
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+/* "Weather" matches "Alek" (white on dark, ink on light) when nothing is
+   going on, and takes the event's colour while the brand glows for one. */
+.web-brand-last {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.web-brand--event .web-brand-last {
+  color: var(--event);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .web-brand:hover {
+    background: var(--hover-subtle);
+  }
+  .web-brand:hover .web-brand-img {
+    rotate: 18deg;
+    scale: 1.08;
+  }
+}
+
+.web-brand:active {
+  scale: 0.96;
+  transition-duration: 0.06s;
+}
+
+.web-brand:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
-.web-footer-version {
-  font-size: 11.5px;
-  color: var(--text-tertiary);
-  opacity: 0.7;
+/* ── Event glow ──
+   Only while something is happening where you're looking: a coloured aura
+   behind the brand that breathes for rain and snow, flickers for a storm, and
+   pulses red — with the logo throbbing in the same red — for a warning or an
+   Extreme alert. --event is the colour; each kind sets its own. */
+.web-brand--rain    { --event: #3b9cff; }
+.web-brand--snow    { --event: #bfe6ff; }
+.web-brand--storm   { --event: #ffc533; }
+.web-brand--extreme { --event: #ff3b30; }
+
+.web-brand--event::before {
+  content: '';
+  position: absolute;
+  inset: -4px -8px;
+  z-index: -1;
+  border-radius: 999px;
+  background: radial-gradient(ellipse at 22% 50%,
+    color-mix(in srgb, var(--event) 55%, transparent) 0%,
+    color-mix(in srgb, var(--event) 22%, transparent) 45%,
+    transparent 72%);
+  filter: blur(8px);
+  pointer-events: none;
+  animation: brand-breathe 3.2s ease-in-out infinite;
 }
 
-/* On a sky the footer sits on the backdrop, not on a card, so it carries its
-   own light-on-dark colours the way the page headings do. */
-.sky-active .web-footer-mark,
-.sky-active .web-footer-version {
-  color: rgba(255, 255, 255, 0.7);
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+.web-brand--event .web-brand-img {
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--event) 80%, transparent));
 }
 
-.sky-active .web-footer-mark:hover {
+@keyframes brand-breathe {
+  0%, 100% { opacity: 0.55; scale: 0.96; }
+  50%      { opacity: 1;    scale: 1.04; }
+}
+
+/* A storm: a steady glow broken by lightning-quick double flashes. */
+.web-brand--storm::before {
+  animation: brand-flicker 4.5s linear infinite;
+}
+
+@keyframes brand-flicker {
+  0%, 60%, 68%, 100% { opacity: 0.6; scale: 1; }
+  62%                { opacity: 1;   scale: 1.1; }
+  64%                { opacity: 0.5; scale: 1; }
+  66%                { opacity: 1;   scale: 1.12; }
+}
+
+/* Extreme: faster, wider red pulse, an expanding ring, and the logo throbbing. */
+.web-brand--extreme::before {
+  inset: -6px -10px;
+  animation: brand-alarm 1.4s ease-in-out infinite;
+}
+
+.web-brand--extreme::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 999px;
+  border: 2px solid color-mix(in srgb, var(--event) 70%, transparent);
+  pointer-events: none;
+  animation: brand-ring 1.4s ease-out infinite;
+}
+
+.web-brand--extreme .web-brand-img {
+  animation: brand-logo-alarm 1.4s ease-in-out infinite;
+}
+
+@keyframes brand-alarm {
+  0%, 100% { opacity: 0.6; scale: 0.95; }
+  50%      { opacity: 1;   scale: 1.12; }
+}
+
+@keyframes brand-ring {
+  0%   { opacity: 0.9; scale: 0.92; }
+  100% { opacity: 0;   scale: 1.25; }
+}
+
+@keyframes brand-logo-alarm {
+  0%, 100% { filter: drop-shadow(0 0 3px color-mix(in srgb, var(--event) 60%, transparent)); }
+  50%      { filter: drop-shadow(0 0 10px var(--event)); }
+}
+
+/* The version: a small glass chip in the tab bar's material. */
+.web-version {
+  gap: 7px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--card-bg) 70%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  backdrop-filter: blur(16px) saturate(160%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 2px 8px rgba(0, 0, 0, 0.08);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+
+/* Dark theme: the moon logo. */
+[data-theme="dark"] .web-brand-img--light { display: none; }
+[data-theme="dark"] .web-brand-img--dark  { display: block; }
+[data-theme="dark"] .web-version {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .web-brand-img--light { display: none; }
+  :root:not([data-theme="light"]) .web-brand-img--dark  { display: block; }
+  :root:not([data-theme="light"]) .web-version {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+}
+
+/* Over a sky — the forecast's, or a dark one behind the splash — both sit on
+   the backdrop, so they go light-on-dark like the page headings: white first
+   name and "Weather", and a clear glass chip. */
+:is(.sky-active, :root[data-splash-sky="dark"] .app--web-splash) .web-brand-first {
   color: #fff;
+}
+:is(.sky-active, :root[data-splash-sky="dark"] .app--web-splash) .web-brand:not(.web-brand--event) .web-brand-last {
+  color: #fff;
+}
+:is(.sky-active, :root[data-splash-sky="dark"] .app--web-splash) .web-brand:hover {
   background: rgba(255, 255, 255, 0.12);
+}
+:is(.sky-active, :root[data-splash-sky="dark"] .app--web-splash) .web-version {
+  color: rgba(255, 255, 255, 0.9);
+  border-color: rgba(255, 255, 255, 0.28);
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* On the splash's light sky the chip takes the splash's frosted glass. */
+:root[data-splash-sky]:not([data-splash-sky="dark"]) .app--web-splash .web-version {
+  background: var(--glass-bg);
+  border-color: var(--glass-rim);
+}
+
+/* The header carries the version now, so the splash's own line steps aside. */
+.splash-bg--web .splash-version {
+  display: none;
+}
+
+/* Radar: the map runs up behind the header, so the brand and the version both
+   float on the same see-through frosted glass — a light sheen over a blur of
+   the map, a lit rim, a soft drop shadow — at the same height, so they read as
+   a matching pair. Specific enough to beat the sky rules above. The version
+   also clears the scrollbar lane the header pads for there. */
+.app.app--web-radar .app-header--tabs :is(.web-brand, .web-version) {
+  box-sizing: border-box;
+  height: 52px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.32));
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 4px 14px rgba(0, 0, 0, 0.18);
+  -webkit-backdrop-filter: blur(18px) saturate(170%);
+  backdrop-filter: blur(18px) saturate(170%);
+}
+
+/* Over a sky, or in dark theme: clear smoky glass with white text. */
+.app.app--web-radar.sky-active .app-header--tabs :is(.web-brand, .web-version),
+[data-theme="dark"] .app.app--web-radar .app-header--tabs :is(.web-brand, .web-version) {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05)), rgba(10, 14, 22, 0.28);
+  border-color: rgba(255, 255, 255, 0.24);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 4px 14px rgba(0, 0, 0, 0.3);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .app.app--web-radar .app-header--tabs :is(.web-brand, .web-version) {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05)), rgba(10, 14, 22, 0.28);
+    border-color: rgba(255, 255, 255, 0.24);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 4px 14px rgba(0, 0, 0, 0.3);
+  }
+}
+.app.app--web-radar .app-header--tabs .web-brand {
+  left: var(--brand-gutter);
+}
+.app.app--web-radar .app-header--tabs .web-version {
+  right: calc(max(clamp(14px, 3.4vw, 48px), var(--sa-right)) + var(--scrollbar-w, 0px));
+  padding: 0 18px;
+  font-size: 13px;
+}
+
+/* Narrower windows: the wordmark folds down to its logo so the tab bar keeps
+   its room, and the version chip tightens. Both stay on screen. */
+@media (max-width: 1240px) {
+  .app-header--tabs { --brand-room: 56px; }
+  .web-brand-name { display: none; }
+  .web-brand { padding: 6px; }
+  .web-version { padding: 5px 9px; font-size: 11px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .web-brand, .web-version { animation: none; }
+  .web-brand-img { transition: none; }
+  .web-brand:hover .web-brand-img { rotate: none; scale: none; }
+  /* The glow still shows, it just holds still. */
+  .web-brand--event::before,
+  .web-brand--event .web-brand-img { animation: none; }
+  .web-brand--extreme::after { display: none; }
 }
 
 /* ── Page frame ──────────────────────────────────────────────────────────── */
@@ -776,7 +1044,7 @@
 .sky-lvl-medium .web-page > .web-page-head,
 .sky-lvl-dark .web-page > .web-page-head,
 .sky-lvl-darkest .web-page > .web-page-head {
-  --text-primary: #fff;
+  --text-primary: #fff; --temp-light: 0;
   --text-secondary: rgba(255, 255, 255, 0.82);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
@@ -1204,6 +1472,241 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
   font-size: clamp(54px, 6.2vw, 74px);
 }
 
+/* ── Current card (web Today) ──
+   A compact layout sized to sit level with At a glance beside it, so neither
+   card is stretched around empty space:
+     place / date ............ [home] [save]
+          [icon] 39°F  Mainly Clear          (centred)
+                       Feels like 35°
+     ↑ 4° warmer than yesterday
+     [ Outdoors 8 | Driving 9 | Exercise 8 ]   one panel, three columns
+     Updated 1 min ago ⟳             9/10 Great
+   The Today pieces (.today-embed and its top line) are display: contents, so
+   each is placed on this grid directly; that is what puts the score on the
+   Updated line, aligned with it. The two outer 1fr columns centre the
+   reading. Only this card changes; the phone hero keeps its own layout. */
+.web-today-grid .current-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto minmax(0, 1fr);
+  grid-template-areas:
+    "head head head  head  head"
+    ".    icon temp  cond  ."
+    ".    icon temp  feels ."
+    "cmp  cmp  cmp   cmp   cmp"
+    "acts acts acts  acts  acts"
+    "foot foot foot  foot  foot";
+  align-content: center;
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 0;
+  text-align: left;
+  padding: clamp(16px, 1.6vw, 22px);
+}
+
+.web-today-grid .current-card :is(.today-embed, .te-top) {
+  display: contents;
+}
+
+/* Header: place and date on the left, the two buttons in a row on the right. */
+.web-today-grid .current-card > .current-header {
+  grid-area: head;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  column-gap: 2px;
+  margin: 0 0 14px;
+  padding: 0;
+}
+
+.web-today-grid .current-header .current-location {
+  grid-column: 1;
+  grid-row: 1;
+  justify-content: flex-start;
+  font-size: 16px;
+  line-height: 1.25;
+}
+
+.web-today-grid .current-header .current-date {
+  grid-column: 1;
+  grid-row: 2;
+  margin-top: 1px;
+  font-size: 12.5px;
+}
+
+.web-today-grid .current-header .current-fav-group,
+.web-today-grid .current-header .save-btn {
+  position: static;
+  grid-row: 1 / span 2;
+  border-radius: 10px;
+}
+
+.web-today-grid .current-header .current-fav-group { grid-column: 2; }
+.web-today-grid .current-header .save-btn { grid-column: 3; }
+
+.web-today-grid .current-header :is(.fav-btn, .save-btn):hover {
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+}
+
+/* The reading: icon, temperature, and the words beside them. */
+.web-today-grid .current-card > .current-icon {
+  grid-area: icon;
+  align-self: center;
+  margin: 0;
+  font-size: clamp(42px, 3.8vw, 58px);
+}
+
+.web-today-grid .current-card > .current-temp {
+  grid-area: temp;
+  align-self: center;
+  margin: 0;
+  font-size: clamp(42px, 3.9vw, 58px);
+  line-height: 1;
+  letter-spacing: -1.5px;
+}
+
+.web-today-grid .current-card > .current-condition {
+  grid-area: cond;
+  align-self: end;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--text-primary);
+}
+
+.web-today-grid .current-card > .current-feels {
+  grid-area: feels;
+  align-self: start;
+  margin: 2px 0 0;
+  font-size: 13px;
+  text-align: left;
+}
+
+.web-today-grid .current-card > .current-updated {
+  grid-area: foot;
+  justify-self: start;
+  justify-content: flex-start;
+  margin: 12px 0 0;
+  font-size: 12px;
+}
+
+/* ── Today ── */
+.te-compare {
+  grid-area: cmp;
+  justify-self: start;
+  margin-top: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.te-compare svg { flex-shrink: 0; }
+.te-compare--colder svg { color: var(--cond-info); }
+.te-compare--warmer svg { color: var(--cond-orange); }
+.te-compare--same   svg { color: var(--text-tertiary); }
+
+/* Overall score: a pill tinted with its colour, bottom right on the Updated
+   line. */
+.te-overall {
+  grid-area: foot;
+  justify-self: end;
+  margin-top: 12px;
+  display: inline-flex;
+  align-items: baseline;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--te-c) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--te-c) 40%, transparent);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.te-overall b {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.te-overall small {
+  margin-right: 5px; /* "9/10 Great": tight to the score, a space before the word */
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+/* The three activities: one panel, three columns, hairlines between. */
+.te-grid {
+  grid-area: acts;
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  overflow: hidden;
+}
+
+.te-cell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "icon  score"
+    "name  name"
+    "bar   bar";
+  align-items: center;
+  row-gap: 4px;
+  min-width: 0;
+  padding: 10px 10px 9px;
+}
+
+.te-cell + .te-cell {
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--text-primary) 10%, transparent);
+}
+
+.te-cell > svg {
+  grid-area: icon;
+  color: var(--text-secondary);
+}
+
+.te-cell-score {
+  grid-area: score;
+  font-family: var(--font-display), var(--font);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.te-cell-name {
+  grid-area: name;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+}
+
+.te-cell-bar {
+  grid-area: bar;
+  height: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
+  overflow: hidden;
+}
+
+.te-cell-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--te-c);
+}
+
 .web-glance {
   display: flex;
   flex-direction: column;
@@ -1222,6 +1725,9 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
   padding: 14px 14px 12px;
   display: flex;
   flex-direction: column;
+  /* If the row is taller than the tiles need, their content sits in the
+     middle instead of leaving a band of empty tile under it. */
+  justify-content: center;
   gap: 2px;
   min-width: 0;
 }
@@ -3709,6 +4215,13 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
   scrollbar-color: color-mix(in srgb, var(--text-primary) 25%, transparent) transparent;
 }
 
+/* Three cards or fewer is a single row: nothing to scroll to, so no scroll
+   box at all. Visible rather than hidden: clipping cut the cards' soft drop
+   shadow off in a hard horizontal line along the bottom of the box. */
+.splash-places--few {
+  overflow: visible;
+}
+
 /* The scroll box already carries the side gutter for the shadows. */
 .splash-places .splash-recents {
   margin: 0;
@@ -4062,7 +4575,7 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
   .splash-search .search-dropdown,
   .splash-city
 ) {
-  --text-primary: #fff;
+  --text-primary: #fff; --temp-light: 0;
   --text-secondary: rgba(255, 255, 255, 0.82);
   --text-tertiary: rgba(255, 255, 255, 0.66);
   --hover-medium: rgba(255, 255, 255, 0.16);
@@ -4077,7 +4590,7 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
     .splash-search .search-dropdown,
     .splash-city
   ) {
-    --text-primary: #fff;
+    --text-primary: #fff; --temp-light: 0;
     --text-secondary: rgba(255, 255, 255, 0.82);
     --text-tertiary: rgba(255, 255, 255, 0.66);
     --hover-medium: rgba(255, 255, 255, 0.16);
@@ -4603,11 +5116,18 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
    .settings-card, which keeps them on the plain card surface over a sky (as the
    old settings dialog was) — the segmented controls are drawn for that surface
    and lose their selected state on a sky-tinted one. */
+/* The content column takes whatever the window gives it (up to a cap, with
+   the whole layout centred past that) and its groups flow into two columns
+   once each would be at least 420px wide — so a wide screen fills with
+   settings rather than leaving a blank half beside one narrow column. */
 .ws-layout {
   display: grid;
-  grid-template-columns: 232px minmax(0, 760px);
+  grid-template-columns: 232px minmax(0, 1fr);
   gap: 28px;
   align-items: start;
+  width: 100%;
+  max-width: 1480px;
+  margin-inline: auto;
 }
 
 .ws-nav {
@@ -4682,6 +5202,28 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
   padding: 2px 4px 0;
 }
 
+/* Masonry-style columns: groups of different heights pack top to bottom
+   instead of leaving grid holes. The negative margin takes back the last
+   item's spacing. A section with a single group (Units, Forecast, Radar…)
+   spans the full width instead of leaving the second column empty, and the
+   About footer stays centred under everything. */
+.ws-groups {
+  columns: 420px 2;
+  column-gap: 16px;
+  margin-bottom: -16px;
+}
+
+/* Two classes, to outrank .ws-group's margin-bottom: 0 further down. */
+.ws-content .ws-groups > * {
+  break-inside: avoid;
+  margin-bottom: 16px;
+}
+
+.ws-groups > :only-child,
+.ws-groups > .ws-footer {
+  column-span: all;
+}
+
 .ws-content-title {
   margin: 0;
   font-family: var(--font-display), var(--font);
@@ -4702,7 +5244,7 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
 .sky-lvl-medium .ws-content-head,
 .sky-lvl-dark .ws-content-head,
 .sky-lvl-darkest .ws-content-head {
-  --text-primary: #fff;
+  --text-primary: #fff; --temp-light: 0;
   --text-secondary: rgba(255, 255, 255, 0.82);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
@@ -4725,7 +5267,7 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
    other cards do there. */
 :is(.sky-lvl-slight, .sky-lvl-medium, .sky-lvl-dark, .sky-lvl-darkest) .web-settings-page .settings-card {
   background: var(--sky-card, #4d6078);
-  --text-primary: #fff;
+  --text-primary: #fff; --temp-light: 0;
   --text-secondary: rgba(255, 255, 255, 0.8);
   --text-tertiary: rgba(255, 255, 255, 0.58);
   --border: rgba(255, 255, 255, 0.14);

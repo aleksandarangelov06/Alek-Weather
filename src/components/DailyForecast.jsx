@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react'
 import { Droplet, ChevronUp } from 'lucide-react'
-import { getWeatherInfo, formatDay, formatHour, formatTime, getUVLabel, liveWeatherCode, nowcastHourlyCode, toTemp, tempColor, tempStyle, SUN_ORANGE } from '../utils/weatherCodes'
+import { getWeatherInfo, formatDay, formatHour, formatTime, getUVLabel, liveWeatherCode, nowcastHourlyCode, toTemp, tempInk, tempStyle, SUN_ORANGE } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
 import { formatPrecip, formatWind } from '../utils/units'
 import { coverFrom, markCoverSettled, useCoverHistory } from '../utils/detailCover'
@@ -289,7 +289,7 @@ export function DailyForecast({ daily, hourly, timezone, unit, units, colorCodin
                     left: `${pillLeft}%`,
                     width: `${pillWidth}%`,
                     background: colorCoding
-                      ? `linear-gradient(90deg, ${tempColor(minTemps[i])}, ${tempColor(maxTemps[i])})`
+                      ? `linear-gradient(90deg, ${tempInk(minTemps[i])}, ${tempInk(maxTemps[i])})`
                       : 'var(--daily-bar-bg)',
                   }} />
                   <span className="daily-high" style={{ ...tempStyle(maxTemps[i], colorCoding, 0.4, glow, frost), left: `${pillRight}%` }}>{high}°</span>

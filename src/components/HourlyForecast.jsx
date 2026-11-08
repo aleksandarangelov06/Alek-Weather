@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState, useLayoutEffect, useId } from 'react'
-import { getWeatherInfo, formatHour, liveWeatherCode, nowcastHourlyCode, toTemp, tempStyle, tempColor } from '../utils/weatherCodes'
+import { getWeatherInfo, formatHour, liveWeatherCode, nowcastHourlyCode, toTemp, tempStyle, tempInk } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
 
 const GRAPH_HEIGHT = 60
@@ -182,19 +182,19 @@ export function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glo
                   <stop
                     key={i}
                     offset={`${((points[i][0] - xMin) / (xMax - xMin || 1)) * 100}%`}
-                    stopColor={tempColor(t)}
+                    style={{ stopColor: tempInk(t) }}
                   />
                 ))}
               </linearGradient>
               <linearGradient id={areaGradId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={colorCoding ? tempColor(tMax) : monoLine} stopOpacity="0.22" />
-                <stop offset="100%" stopColor={colorCoding ? tempColor(tMin) : monoLine} stopOpacity="0" />
+                <stop offset="0%" style={{ stopColor: colorCoding ? tempInk(tMax) : monoLine }} stopOpacity="0.22" />
+                <stop offset="100%" style={{ stopColor: colorCoding ? tempInk(tMin) : monoLine }} stopOpacity="0" />
               </linearGradient>
             </defs>
             <path d={areaPath} fill={`url(#${areaGradId})`} stroke="none" />
             <path d={linePath} fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
             {points.map(([x, y], i) => (
-              <circle key={i} cx={x} cy={y} r="2.5" fill={colorCoding ? tempColor(temps[i]) : monoLine} />
+              <circle key={i} cx={x} cy={y} r="2.5" style={{ fill: colorCoding ? tempInk(temps[i]) : monoLine }} />
             ))}
           </svg>
         )}

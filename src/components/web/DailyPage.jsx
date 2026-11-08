@@ -3,7 +3,7 @@ import { ChevronDown, Droplets, Sunrise, Sunset, Sun, Wind } from 'lucide-react'
 import { WeatherIcon } from '../WeatherIcon'
 import {
   formatHour, formatTime, getUVLabel, getWeatherInfo, nowcastHourlyCode,
-  tempColor, tempStyle, toTemp,
+  tempInk, tempStyle, toTemp,
 } from '../../utils/weatherCodes'
 import { niceBounds, smoothPath, useMeasure } from './chartUtils'
 import { formatPrecip, formatWind } from '../../utils/units'
@@ -42,8 +42,8 @@ function WeekChart({ daily, timezone, unit, colorCoding }) {
         <svg width={width} height={CHART_H} role="img" aria-label="Weekly high and low temperatures">
           <defs>
             <linearGradient id="web-week-band" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={colorCoding ? tempColor(max) : 'var(--graph-line)'} stopOpacity="0.22" />
-              <stop offset="100%" stopColor={colorCoding ? tempColor(min) : 'var(--graph-line)'} stopOpacity="0.06" />
+              <stop offset="0%" style={{ stopColor: colorCoding ? tempInk(max) : 'var(--graph-line)' }} stopOpacity="0.22" />
+              <stop offset="100%" style={{ stopColor: colorCoding ? tempInk(min) : 'var(--graph-line)' }} stopOpacity="0.06" />
             </linearGradient>
           </defs>
           <path d={band} fill="url(#web-week-band)" stroke="none" />
@@ -51,13 +51,13 @@ function WeekChart({ daily, timezone, unit, colorCoding }) {
           <path d={highLine} fill="none" stroke="var(--graph-line)" strokeWidth="2.5" strokeLinecap="round" />
           {highPts.map(([px, py], i) => (
             <g key={`h${i}`}>
-              <circle cx={px} cy={py} r="3.5" fill={colorCoding ? tempColor(highs[i]) : 'var(--graph-line)'} />
+              <circle cx={px} cy={py} r="3.5" style={{ fill: colorCoding ? tempInk(highs[i]) : 'var(--graph-line)' }} />
               <text className="web-chart-temp" x={px} y={py - 11}>{toTemp(highs[i], unit)}°</text>
             </g>
           ))}
           {lowPts.map(([px, py], i) => (
             <g key={`l${i}`}>
-              <circle cx={px} cy={py} r="3.5" fill={colorCoding ? tempColor(lows[i]) : 'var(--graph-line)'} fillOpacity="0.7" />
+              <circle cx={px} cy={py} r="3.5" style={{ fill: colorCoding ? tempInk(lows[i]) : 'var(--graph-line)' }} fillOpacity="0.7" />
               <text className="web-chart-temp web-chart-temp--low" x={px} y={py + 18}>{toTemp(lows[i], unit)}°</text>
             </g>
           ))}
@@ -142,7 +142,7 @@ export function DailyPage({ weather, unit, units, colorCoding }) {
                         left: `${left}%`,
                         width: `${barWidth}%`,
                         background: colorCoding.daily
-                          ? `linear-gradient(90deg, ${tempColor(low)}, ${tempColor(high)})`
+                          ? `linear-gradient(90deg, ${tempInk(low)}, ${tempInk(high)})`
                           : 'var(--graph-line)',
                       }}
                     />

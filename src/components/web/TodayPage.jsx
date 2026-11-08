@@ -6,6 +6,7 @@ import {
   applyDrop, HOURS_BY_SLOT, keyMove, PAIR_MQ, resolveToday, spans, useMediaQuery, useTodayLayout,
 } from './todayLayout'
 import { CurrentWeather } from '../CurrentWeather'
+import { TodayCard } from '../TodayCard'
 import { PrecipNowcast } from '../PrecipNowcast'
 import { WeatherAlerts } from '../WeatherAlerts'
 import { WeatherIcon } from '../WeatherIcon'
@@ -156,7 +157,20 @@ export function TodayPage({
             colorCoding={colorCoding.current}
             glow={colorCoding.glow}
             frost={colorCoding.frost}
-          />
+          >
+            {/* The phone's Today card (vs yesterday, and how good the rest of
+                the day is for being out, driving and exercise), folded into the
+                current card under the readings. */}
+            <TodayCard
+              embedded
+              hourly={hourly}
+              daily={daily}
+              current={current}
+              yesterday={weather.yesterday}
+              timezone={timezone}
+              unit={unit}
+            />
+          </CurrentWeather>
         )
 
       case 'glance':

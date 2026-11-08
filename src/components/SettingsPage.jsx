@@ -448,7 +448,7 @@ function IconsView({ iconSet, onIconSetChange, iconMotion, onIconMotionChange, o
   )
 }
 
-function OverviewSettingsView({ showOverview, onShowOverviewChange, overviewParts, onToggle, onBack }) {
+function OverviewSettingsView({ showOverview, onShowOverviewChange, showToday, onShowTodayChange, overviewParts, onToggle, onBack }) {
   const disabled = !showOverview
   return (
     <>
@@ -480,6 +480,14 @@ function OverviewSettingsView({ showOverview, onShowOverviewChange, overviewPart
       <div className={`card settings-card${disabled ? ' settings-card--disabled' : ''}`}>
         <SettingRow label="Air Quality Warnings">
           <Toggle id="toggle-ov-aqi" checked={overviewParts.airQuality} onChange={() => onToggle('airQuality')} />
+        </SettingRow>
+      </div>
+      {/* A card of its own on the home screen, so it stays available with the
+          overview off. */}
+      <p className="color-coding-desc">Compare today with yesterday and rate conditions for being outdoors, driving and exercise.</p>
+      <div className="card settings-card">
+        <SettingRow label="Show Today Card">
+          <Toggle id="toggle-today" checked={showToday} onChange={onShowTodayChange} />
         </SettingRow>
       </div>
     </>
@@ -1186,13 +1194,9 @@ function WebSettings({
           <WebGroup>
             <p className="ws-about-desc">{ABOUT_DESC}</p>
           </WebGroup>
-          <WebGroup title="Data sources">
-            {ABOUT_APIS.map(([name, url]) => (
-              <WebRow key={name} label={name}>
-                <span className="ws-api-url">{url}</span>
-              </WebRow>
-            ))}
-          </WebGroup>
+          {/* Help before the source list so that, in two columns, the short
+              description and Help stack on the left beside the tall list on
+              the right, and the footer lands under two even columns. */}
           {onHelpOpen && (
             <WebGroup>
               <WebRow label="Help" desc="Answers for when something isn’t working, like forecasts that won’t load.">
@@ -1203,6 +1207,13 @@ function WebSettings({
               </WebRow>
             </WebGroup>
           )}
+          <WebGroup title="Data sources">
+            {ABOUT_APIS.map(([name, url]) => (
+              <WebRow key={name} label={name}>
+                <span className="ws-api-url">{url}</span>
+              </WebRow>
+            ))}
+          </WebGroup>
           <div className="ws-footer">
             <span>Version {APP_VERSION}</span>
             {IS_ANDROID_APP && <span>Android {ANDROID_VERSION}</span>}
@@ -1237,7 +1248,7 @@ function WebSettings({
             <h3 className="ws-content-title">{current.label}</h3>
             <p className="ws-content-desc">{current.desc}</p>
           </div>
-          {content}
+          <div className="ws-groups">{content}</div>
         </div>
       </div>
     </div>
@@ -1360,6 +1371,8 @@ export function SettingsPage({ onBack, onDismiss, inline, page, modal, closing, 
       <OverviewSettingsView
         showOverview={bodyProps.showOverview}
         onShowOverviewChange={bodyProps.onShowOverviewChange}
+        showToday={bodyProps.showToday}
+        onShowTodayChange={bodyProps.onShowTodayChange}
         overviewParts={overviewParts}
         onToggle={onOverviewPartToggle}
       />
@@ -1491,6 +1504,8 @@ export function SettingsPill({ expanded, onToggle, subView, onColorCodingOpen, o
       <OverviewSettingsView
         showOverview={bodyProps.showOverview}
         onShowOverviewChange={bodyProps.onShowOverviewChange}
+        showToday={bodyProps.showToday}
+        onShowTodayChange={bodyProps.onShowTodayChange}
         overviewParts={overviewParts}
         onToggle={onOverviewPartToggle}
         onBack={onSubViewBack}

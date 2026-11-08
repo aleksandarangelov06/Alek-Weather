@@ -882,6 +882,13 @@ export async function loadForecast(loc, { lite = false } = {}) {
   const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: data.timezone })
   const todayIdx = data.daily?.time.indexOf(todayStr) ?? -1
   const start = todayIdx > 0 ? todayIdx : 0
+  // Yesterday's day (past_days=1) is about to be sliced off, but the Today
+  // card compares against it, so it is kept on the side first.
+  data.yesterday = start > 0 ? {
+    date: data.daily.time[start - 1],
+    max: data.daily.temperature_2m_max?.[start - 1] ?? null,
+    min: data.daily.temperature_2m_min?.[start - 1] ?? null,
+  } : null
   if (start > 0) {
     data.daily = Object.fromEntries(
       Object.entries(data.daily).map(([k, v]) => [k, Array.isArray(v) ? v.slice(start) : v])

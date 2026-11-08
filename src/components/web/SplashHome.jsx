@@ -100,7 +100,7 @@ export function SplashHome({
       )}
 
       {!empty && (
-        <div className="splash-places">
+        <div className={`splash-places${recentRow.length + saved.length <= 3 ? ' splash-places--few' : ''}`}>
           {recentRow.length > 0 && (
             <div className="splash-recents">
               <div className="section-label">RECENT LOCATIONS</div>

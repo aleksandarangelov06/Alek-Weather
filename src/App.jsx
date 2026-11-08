@@ -117,6 +117,7 @@ import { WeatherCanvas } from './components/WeatherCanvas'
 import { PrecipNowcast } from './components/PrecipNowcast'
 import { WeatherAlerts } from './components/WeatherAlerts'
 import { WeatherOverview } from './components/WeatherOverview'
+import { TodayCard } from './components/TodayCard'
 import { SettingsPage } from './components/SettingsPageLazy'
 import { HelpPage } from './components/HelpPage'
 import { preloadSettings } from './components/settingsChunk'
@@ -271,8 +272,9 @@ const INITIAL_CITY = (() => {
 const HAS_SAVED_CITY = !!INITIAL_CITY
 
 const BLOCK_ORDER_KEY = 'alek-weather-block-order'
-const DEFAULT_BLOCK_ORDER = ['overview', 'nowcast', 'hourly', 'daily', 'details', 'radar']
+const DEFAULT_BLOCK_ORDER = ['overview', 'today', 'nowcast', 'hourly', 'daily', 'details', 'radar']
 const SHOW_OVERVIEW_KEY = 'alek-weather-show-overview'
+const SHOW_TODAY_KEY = 'alek-weather-show-today'
 const NOWCAST_MODE_KEY  = 'alek-weather-nowcast-mode'
 const COLOR_CODING_KEY  = 'alek-weather-color-coding'
 const DEFAULT_COLOR_CODING = { current: true, hourly: true, daily: true, overview: true, details: true, glow: true, frost: true }
@@ -339,6 +341,8 @@ function App() {
     return Number.isFinite(saved) ? Math.min(MAX_CARD_TRANSPARENCY, Math.max(0, saved)) : 0
   })
   const [showOverview, setShowOverview] = useState(() => localStorage.getItem(SHOW_OVERVIEW_KEY) !== 'false')
+  // On by default: only an explicit 'false' hides the Today card.
+  const [showToday, setShowToday] = useState(() => localStorage.getItem(SHOW_TODAY_KEY) !== 'false')
   const [nowcastMode, setNowcastMode] = useState(() => localStorage.getItem(NOWCAST_MODE_KEY) ?? 'auto')
   const [weatherAnimations, setWeatherAnimations] = useState(() => localStorage.getItem('alek-weather-animations') !== 'false')
   const [gyroscope, setGyroscope] = useState(() => localStorage.getItem('alek-weather-gyroscope') !== 'false')
@@ -435,8 +439,15 @@ function App() {
   const [blockOrder, setBlockOrder] = useState(() => {
     const saved = loadJSON(BLOCK_ORDER_KEY)
     if (!saved) return DEFAULT_BLOCK_ORDER
-    const merged = DEFAULT_BLOCK_ORDER.filter(id => !saved.includes(id))
-    return merged.length ? [...merged, ...saved] : saved
+    // A block added in a later version goes in after the block it follows in
+    // the default order (Today after Overview), not at the top of the stack.
+    const order = [...saved]
+    DEFAULT_BLOCK_ORDER.forEach((id, i) => {
+      if (order.includes(id)) return
+      const after = DEFAULT_BLOCK_ORDER.slice(0, i).reverse().find(p => order.includes(p))
+      order.splice(after ? order.indexOf(after) + 1 : 0, 0, id)
+    })
+    return order
   })
 
   const sensors = useSensors(
@@ -722,6 +733,11 @@ function App() {
   const changeUnitGroup = (group, value) => {
     setUnits(prev => ({ ...prev, [group]: value }))
     saveUnit(group, value)
+  }
+
+  const changeShowToday = (val) => {
+    setShowToday(val)
+    localStorage.setItem(SHOW_TODAY_KEY, String(val))
   }
 
   const changeShowOverview = (val) => {
@@ -1206,6 +1222,23 @@ function App() {
   )
 
   const liveCode = weather ? liveWeatherCode(weather.current, weather.minutely_15, radarClear) : null
+  // What the header brand glows for (web). An alert that's a Warning (the
+  // hazard is happening or imminent) or rated Extreme outranks everything and
+  // glows red; otherwise falling weather right now — storm, snow, rain —
+  // glows in its own colour. Nothing notable, no glow.
+  const brandEvent = (() => {
+    const extreme = alerts.find(a =>
+      a.properties?.severity === 'Extreme' || /warning$/i.test((a.properties?.event ?? '').trim())
+    )
+    if (extreme) return { kind: 'extreme', label: extreme.properties.event }
+    if (liveCode == null) return null
+    if (liveCode >= 95) return { kind: 'storm', label: 'Thunderstorm now' }
+    if ((liveCode >= 71 && liveCode <= 77) || liveCode === 85 || liveCode === 86) return { kind: 'snow', label: 'Snowing now' }
+    // Light drizzle (51) is left out: barely anything is falling, and it read
+    // as the brand glowing for no reason.
+    if ((liveCode >= 53 && liveCode <= 67) || (liveCode >= 80 && liveCode <= 82)) return { kind: 'rain', label: 'Raining now' }
+    return null
+  })()
   const skyC     = weather ? skyClass(liveCode, weather.current.is_day) : ''
   const skyLevel = SKY_LEVEL[skyC] ?? ''
   // The sky level class is what tints the cards toward the sky (and flips the
@@ -1285,6 +1318,7 @@ function App() {
   }, [darkMode, skyC, weather, weatherAnimations])
 
   const blockComponents = weather && !loading ? {
+    today:   <TodayCard hourly={weather.hourly} daily={weather.daily} current={weather.current} yesterday={weather.yesterday} timezone={weather.timezone} unit={unit} />,
     overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} timezone={weather.timezone} hasActiveAlert={hasActiveAlert} unit={unit} units={units} airQuality={airQuality} showInsight={overviewParts.insight} showConditions={overviewParts.conditions} showAirQuality={overviewParts.airQuality} showClothing={overviewParts.clothing} colorCode={colorCoding.overview} />,
     hourly:  <HourlyForecast hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.hourly} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
     daily:   <DailyForecast daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} units={units} colorCoding={colorCoding.daily} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
@@ -1451,6 +1485,8 @@ function App() {
     onUnitGroupChange: changeUnitGroup,
     showOverview,
     onShowOverviewChange: changeShowOverview,
+    showToday,
+    onShowTodayChange: changeShowToday,
     nowcastMode,
     onNowcastModeChange: changeNowcastMode,
     colorCoding,
@@ -1549,7 +1585,7 @@ function App() {
       <div className="weather-right">
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={blockOrder} strategy={verticalListSortingStrategy}>
-            {blockOrder.filter(id => id !== 'aqi' && (id !== 'overview' || showOverview) && !(isDesktop && id === 'nowcast') && !(isDesktop && id === 'overview')).map(id => (
+            {blockOrder.filter(id => id !== 'aqi' && (id !== 'overview' || showOverview) && (id !== 'today' || showToday) && !(isDesktop && id === 'nowcast') && !(isDesktop && id === 'overview') && !(isDesktop && id === 'today')).map(id => (
               <SortableBlock key={id} id={id}>
                 {blockComponents[id]}
               </SortableBlock>
@@ -1660,6 +1696,38 @@ function App() {
           {/* Gear on the phone styles; the web layout keeps the sliders. */}
           {webLayout ? <SlidersIcon size={22} /> : <GearIcon size={22} className="settings-gear" />}
         </button>
+        {/* Web: the brand on the left of the tab bar and the version on its
+            right, on every screen the tab bar is on, the splash included.
+            Both sit over the hidden corner buttons, positioned absolutely so
+            the bar stays centred on the window whatever their widths. The
+            brand keeps the wordmark's job: click to go back to the start —
+            and it glows while something is happening (see brandEvent). */}
+        {navOwnsCorners && (
+          <>
+            <span
+              className={`web-brand${brandEvent ? ` web-brand--event web-brand--${brandEvent.kind}` : ''}`}
+              onClick={handleLogoClick}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleLogoClick() } }}
+              aria-label={`Alek Weather${brandEvent ? ` (${brandEvent.label})` : ''} — go to home`}
+              title={brandEvent?.label}
+            >
+              <span className="web-brand-logo" aria-hidden="true">
+                {/* The splash logos minus their sun/moon glow and the cloud's lavender tint. */}
+                <img src="/logo-light-header.svg" alt="" className="web-brand-img web-brand-img--light" />
+                <img src="/logo-dark-header.svg" alt="" className="web-brand-img web-brand-img--dark" />
+              </span>
+              <span className="web-brand-name" aria-hidden="true">
+                <span className="web-brand-first">Alek</span>
+                <span className="web-brand-last">Weather</span>
+              </span>
+            </span>
+            <span className="web-version" aria-label={`Version ${APP_VERSION}`}>
+              v{APP_VERSION}
+            </span>
+          </>
+        )}
       </header>
 
       <div className="app-grid">
@@ -1713,26 +1781,6 @@ function App() {
           </div>
         </main>
 
-        {/* With the tab bar occupying the header, the wordmark moves to the
-            foot of the page. It keeps the header logo's job: click to drop the
-            current city and go back to the start. The Radar tab is the one
-            exception — the map is the whole page there, so there is no foot for
-            it to sit at. Settings is the other: its About section already
-            carries the name and version, so a second copy under every
-            section was only clutter (and extra scroll). */}
-        {headerTabs && (navPageUp ? webPage !== 'settings' : webTab !== 'radar') && (
-          <footer className="web-footer">
-            <span
-              className="web-footer-mark"
-              onClick={handleLogoClick}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleLogoClick() } }}
-              aria-label="Go to home"
-            >Alek Weather</span>
-            <span className="web-footer-version">Version {APP_VERSION}</span>
-          </footer>
-        )}
       </div>
 
       {/* Splash screen — big logo centered, animates to header on city select */}

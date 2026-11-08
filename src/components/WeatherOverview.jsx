@@ -1,7 +1,7 @@
 import { Sun, Moon, Cloud, CloudSun, CloudFog, CloudRain, CloudSnow, CloudLightning, Thermometer, Shirt, Wind, Snowflake } from 'lucide-react'
 import { TankTop, Shorts, LongSleeve, Hoodie, Jacket, Coat, Parka, Beanie, Mitten, Boot, RainUmbrella } from './clothingGlyphs'
 import { WindTurbine } from './WindTurbine'
-import { getWeatherInfo, liveWeatherCode, nowcastHourlyCode, precipTier, tempColor } from '../utils/weatherCodes'
+import { getWeatherInfo, liveWeatherCode, nowcastHourlyCode, precipTier, tempInk } from '../utils/weatherCodes'
 import { formatWind, unitSuffix, unitValue } from '../utils/units'
 import { LINE_ICON_FOR_ID } from '../utils/iconSet'
 
@@ -1513,7 +1513,7 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
               <conditions.Icon
                 size={18}
                 className="overview-detail-icon"
-                style={colorCode ? { color: tempColor(conditions.temp) } : undefined}
+                style={colorCode ? { color: tempInk(conditions.temp) } : undefined}
                 aria-hidden="true"
               />
             )}
@@ -1529,7 +1529,7 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
               <clothingLine.Icon
                 size={18}
                 className="overview-detail-icon"
-                style={colorCode ? { color: tempColor(clothingLine.feels) } : undefined}
+                style={colorCode ? { color: tempInk(clothingLine.feels) } : undefined}
                 aria-hidden="true"
               />
               {clothingLine.Accessory && (

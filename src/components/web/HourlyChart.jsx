@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Droplet, Sunrise, Sunset } from 'lucide-react'
 import { WeatherIcon } from '../WeatherIcon'
 import {
-  getWeatherInfo, precipTier, tempColor, toTemp, RAIN_CODES, SNOW_CODES,
+  getWeatherInfo, precipTier, tempInk, toTemp, RAIN_CODES, SNOW_CODES,
 } from '../../utils/weatherCodes'
 import { smoothPath } from './chartUtils'
 
@@ -179,7 +179,7 @@ export function HourlyChart({
                       <stop
                         key={i}
                         offset={`${(i / (display.length - 1 || 1)) * 100}%`}
-                        stopColor={colorCoding ? tempColor(series[i] ?? tempsF[i]) : 'var(--graph-line)'}
+                        style={{ stopColor: colorCoding ? tempInk(series[i] ?? tempsF[i]) : 'var(--graph-line)' }}
                       />
                     ))}
                   </linearGradient>

@@ -18,7 +18,7 @@
 
   --bg: #f0f2f5;
   --card-bg: #ffffff;
-  --text-primary: #1a1a2e;
+  --text-primary: #1a1a2e; --temp-light: 1;
   --text-secondary: #64748b;
   --text-tertiary: #94a3b8;
   --accent: #3b82f6;
@@ -46,7 +46,7 @@
      alerts). These defaults are tuned for white cards; dark mode and the
      sky-tinted card levels swap in lighter tones below so colored readings
      stay readable on dark and slate-blue surfaces. */
-  --cond-green:  #22c55e;
+  --cond-green:  #16a34a;
   --cond-lime:   #84cc16;
   --cond-yellow: #eab308;
   --cond-orange: #f97316;
@@ -187,7 +187,7 @@
   :root:not([data-theme="light"]) {
     --bg: #000000;
     --card-bg: #1c1c1e;
-    --text-primary: #e6edf3;
+    --text-primary: #e6edf3; --temp-light: 0;
     --text-secondary: #8b949e;
     --text-tertiary: #6e7681;
     --accent: #58a6ff;
@@ -216,7 +216,7 @@
 [data-theme="dark"] {
   --bg: #000000;
   --card-bg: #1c1c1e;
-  --text-primary: #e6edf3;
+  --text-primary: #e6edf3; --temp-light: 0;
   --text-secondary: #8b949e;
   --text-tertiary: #6e7681;
   --accent: #58a6ff;
@@ -333,7 +333,7 @@ body {
 .sky-lvl-medium .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline),
 .sky-lvl-dark .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline),
 .sky-lvl-darkest .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline) {
-  --text-primary:   #ffffff;
+  --text-primary:   #ffffff; --temp-light: 0;
   --text-secondary: rgba(255,255,255,0.80);
   --text-tertiary:  rgba(255,255,255,0.55);
 }
@@ -460,10 +460,10 @@ body {
    rather than emptied. The base colour on the line above is what these keep. */
 
 .sky-active .search-overlay { background: var(--sky-card-deep, #2d3f55); }
-.sky-active .search-overlay .search-bar { background: var(--sky-card, #3a5068); border-color: transparent; --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; }
+.sky-active .search-overlay .search-bar { background: var(--sky-card, #3a5068); border-color: transparent; --text-primary: #fff; --temp-light: 0; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; }
 /* Pill and dropdown use the lighter --sky-card so they read above the darker
    --sky-card-deep overlay panel behind them. */
-.sky-active .search-dropdown { background: var(--sky-card, #3a5068); --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; }
+.sky-active .search-dropdown { background: var(--sky-card, #3a5068); --text-primary: #fff; --temp-light: 0; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; }
 
 /* Dark mode: sky tinting is a light-mode device — surfaces revert to the
    standard dark palette so cards/search/radar chrome look the same under any
@@ -1255,6 +1255,18 @@ body {
 .current-card .updated-text     { color: rgba(255,255,255,0.78); }
 .current-card .refresh-btn      { color: rgba(255,255,255,0.78); }
 
+/* The hero's temperature sits straight on the sky here, not on a card, so its
+   colour coding uses the bright scale whatever the theme (see tempInk). Where
+   the hero does get a card surface (effects off, desktop) it goes back to
+   following the theme like any other card. */
+.current-card { --temp-light: 0; }
+.no-effects .current-card { --temp-light: inherit; }
+@media (min-width: 1100px) {
+  .current-card { --temp-light: inherit; }
+  /* iOS keeps the bare hero at any width. */
+  :root[data-platform="ios"] .app:not(.no-effects) .current-card { --temp-light: 0; }
+}
+
 /* The hero has no surface of its own (mobile, and iOS at any width), so its
    white readouts sit straight on the sky — and a pale sky (fog, haze, overcast
    day) leaves them with almost no contrast. A soft downward shadow lifts them off
@@ -1292,10 +1304,10 @@ body {
     border: none;
     box-shadow: var(--shadow);
   }
-  .sky-lvl-slight .current-card  { background: var(--sky-card, #5a6d85); --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); }
-  .sky-lvl-medium .current-card  { background: var(--sky-card, #4d6078); --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); }
-  .sky-lvl-dark .current-card    { background: var(--sky-card, #3e5068); --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); }
-  .sky-lvl-darkest .current-card { background: var(--sky-card, #324055); --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); }
+  .sky-lvl-slight .current-card  { background: var(--sky-card, #5a6d85); --text-primary: #fff; --temp-light: 0; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); }
+  .sky-lvl-medium .current-card  { background: var(--sky-card, #4d6078); --text-primary: #fff; --temp-light: 0; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); }
+  .sky-lvl-dark .current-card    { background: var(--sky-card, #3e5068); --text-primary: #fff; --temp-light: 0; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); }
+  .sky-lvl-darkest .current-card { background: var(--sky-card, #324055); --text-primary: #fff; --temp-light: 0; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); }
   [data-theme="dark"] .current-card,
   [data-theme="dark"] .sky-lvl-slight .current-card,
   [data-theme="dark"] .sky-lvl-medium .current-card,
@@ -3204,7 +3216,7 @@ body {
 .sky-lvl-medium  .location-error-card,
 .sky-lvl-dark    .location-error-card,
 .sky-lvl-darkest .location-error-card {
-  --text-primary:   #ffffff;
+  --text-primary:   #ffffff; --temp-light: 0;
   --text-secondary: rgba(255,255,255,0.80);
   --text-tertiary:  rgba(255,255,255,0.55);
 }
@@ -5418,53 +5430,21 @@ body {
   z-index: 0;
   -webkit-backdrop-filter: blur(16px) saturate(1.7);
   backdrop-filter: blur(16px) saturate(1.7);
-  /* Ring only, and feathered: a horizontal and a vertical fade, intersected,
-     give a soft-edged area that is full strength at the map's edge and gone by
-     the ring's outer edge; the content box (the map's rect) is then cut out of
-     it. Without the fades the ring ended in a hard rounded rectangle at the
-     card's edges, which read as a box rather than as light. */
-  /* The fades are eased rather than linear: a straight ramp over a dozen
-     pixels drops off visibly, and reads as an edge. These tail off slowly at
-     the outside and only reach full strength right at the map.
-
-     The cut-out is a rounded rectangle (an SVG drawn at the content box's own
-     size, so its 14px radius stays 14px) to match the map's corners. A plain
-     content-box rectangle left a square of glow poking out at each corner. */
-  --glow-fade-x: linear-gradient(to right,
-    transparent,
-    rgb(0 0 0 / 0.08) calc(var(--glow-x) * 0.35),
-    rgb(0 0 0 / 0.35) calc(var(--glow-x) * 0.65),
-    rgb(0 0 0 / 0.75) calc(var(--glow-x) * 0.88),
-    #000 var(--glow-x),
-    #000 calc(100% - var(--glow-x)),
-    rgb(0 0 0 / 0.75) calc(100% - var(--glow-x) * 0.88),
-    rgb(0 0 0 / 0.35) calc(100% - var(--glow-x) * 0.65),
-    rgb(0 0 0 / 0.08) calc(100% - var(--glow-x) * 0.35),
-    transparent);
-  --glow-fade-y: linear-gradient(to bottom,
-    transparent,
-    rgb(0 0 0 / 0.08) calc(var(--glow-top) * 0.35),
-    rgb(0 0 0 / 0.35) calc(var(--glow-top) * 0.65),
-    rgb(0 0 0 / 0.75) calc(var(--glow-top) * 0.88),
-    #000 var(--glow-top),
-    #000 calc(100% - var(--glow-bottom)),
-    rgb(0 0 0 / 0.6) calc(100% - var(--glow-bottom) * 0.75),
-    rgb(0 0 0 / 0.25) calc(100% - var(--glow-bottom) * 0.45),
-    rgb(0 0 0 / 0.06) calc(100% - var(--glow-bottom) * 0.2),
-    transparent);
-  --glow-hole: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Crect width='100%25' height='100%25' rx='14' ry='14'/%3E%3C/svg%3E");
-  -webkit-mask-image: var(--glow-hole), var(--glow-fade-x), var(--glow-fade-y);
-  -webkit-mask-clip: content-box, border-box, border-box;
-  -webkit-mask-origin: content-box, border-box, border-box;
+  /* The shape — a ring that is full strength at the map's edge, fades out
+     towards the card's edges (further below the map: the reflection) and has
+     the map cut out of its middle with the map's 14px corners — is a single
+     SVG mask image that RadarGlow builds from the ring's measured size and the
+     --glow-* values above. It used to be three mask layers here, combined with
+     mask-composite and a content-box clip. The Android WebView drew that as a
+     hard-edged box around the map. One mask layer draws the same everywhere.
+     Until RadarGlow has measured the ring, this fully transparent mask keeps it
+     hidden, so it never shows as an unmasked blurred box. */
+  -webkit-mask-image: linear-gradient(transparent, transparent);
   -webkit-mask-size: 100% 100%;
   -webkit-mask-repeat: no-repeat;
-  -webkit-mask-composite: xor, source-in;
-  mask-image: var(--glow-hole), var(--glow-fade-x), var(--glow-fade-y);
-  mask-clip: content-box, border-box, border-box;
-  mask-origin: content-box, border-box, border-box;
+  mask-image: linear-gradient(transparent, transparent);
   mask-size: 100% 100%;
   mask-repeat: no-repeat;
-  mask-composite: exclude, intersect;
   opacity: 0.8;
 }
 /* The glow blurs whatever is drawn before it, and a positioned element is drawn
@@ -5571,6 +5551,113 @@ body {
 /* Accessory tints cool regardless of the garment's temperature colour, so
    "carry this" stays visually separate from "wear this". */
 .overview-detail-icon--accessory { color: var(--cond-blue); }
+
+/* ── Today card (mobile block list) ──
+   Yesterday comparison and 1–10 ratings for the rest of the day. Numbers stay in the text colour; the score colour lives on
+   the bars and the dot, where a pale yellow or lime still reads on a light card. */
+.today-compare-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.today-compare-icon { flex-shrink: 0; }
+.today-compare--colder .today-compare-icon { color: var(--cond-info); }
+.today-compare--warmer .today-compare-icon { color: var(--cond-orange); }
+.today-compare--same   .today-compare-icon { color: var(--text-tertiary); }
+.today-compare-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+  margin-left: 28px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+.today-dim { color: var(--text-tertiary); font-size: 13px; }
+
+.today-section {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.section-label + .today-section { margin-top: 0; padding-top: 0; border-top: none; }
+
+.today-overall {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.today-overall-score {
+  font-family: var(--font-display);
+  font-size: 40px;
+  line-height: 1;
+  color: var(--text-primary);
+}
+.today-overall-of { font-size: 18px; color: var(--text-tertiary); }
+.today-overall-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.today-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.today-acts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.today-act {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.today-act-icon {
+  flex-shrink: 0;
+  margin-top: 1px;
+  color: var(--accent);
+}
+.today-act-body { flex: 1; min-width: 0; }
+.today-act-top {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.today-act-label { font-weight: 600; }
+.today-act-score { font-variant-numeric: tabular-nums; color: var(--text-secondary); }
+.today-act-bar {
+  height: 6px;
+  margin-top: 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  overflow: hidden;
+}
+.today-act-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+.today-act-reason {
+  margin-top: 4px;
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .today-act-fill { transition: none; }
+}
 
 /* ── Overview icon motion ──
    The weather icons elsewhere move (see .wi-part); these line icons in the
@@ -5855,7 +5942,7 @@ body {
   --md-secondary-container: #e8def8;
   --md-on-secondary-container: #1d192b;
   --md-outline: #79747e;
-  --md-on-surface: #1d1b20;
+  --md-on-surface: #1d1b20; --temp-light: 1;
   --md-on-surface-variant: #49454f;
 }
 
@@ -5868,7 +5955,7 @@ body {
   --md-secondary-container: #4a4458;
   --md-on-secondary-container: #e8def8;
   --md-outline: #938f99;
-  --md-on-surface: #e6e0e9;
+  --md-on-surface: #e6e0e9; --temp-light: 0;
   --md-on-surface-variant: #cac4d0;
 }
 
@@ -5882,7 +5969,7 @@ body {
     --md-secondary-container: #4a4458;
     --md-on-secondary-container: #e8def8;
     --md-outline: #938f99;
-    --md-on-surface: #e6e0e9;
+    --md-on-surface: #e6e0e9; --temp-light: 0;
     --md-on-surface-variant: #cac4d0;
   }
 }
@@ -6562,7 +6649,7 @@ body {
   --rx-rim: rgb(255 255 255 / 0.12);
   --rx-gloss: rgb(255 255 255 / 0.10);
   --rx-shadow: 0 8px 28px rgb(0 0 0 / 0.28), 0 1px 3px rgb(0 0 0 / 0.2);
-  --text-primary: #fff;
+  --text-primary: #fff; --temp-light: 0;
   --text-secondary: rgb(255 255 255 / 0.72);
   --text-tertiary: rgb(255 255 255 / 0.5);
   --accent: #8fc1ff;
@@ -8481,10 +8568,10 @@ body {
 }
 
 /* Alert sheet follows sky-level card styling */
-.sky-lvl-slight .alert-sheet  { background: var(--sky-card, #5a6d85); --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; }
-.sky-lvl-medium .alert-sheet  { background: var(--sky-card, #4d6078); --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; }
-.sky-lvl-dark .alert-sheet    { background: var(--sky-card, #3e5068); --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; }
-.sky-lvl-darkest .alert-sheet { background: var(--sky-card, #324055); --text-primary: #fff; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; }
+.sky-lvl-slight .alert-sheet  { background: var(--sky-card, #5a6d85); --text-primary: #fff; --temp-light: 0; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; }
+.sky-lvl-medium .alert-sheet  { background: var(--sky-card, #4d6078); --text-primary: #fff; --temp-light: 0; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; }
+.sky-lvl-dark .alert-sheet    { background: var(--sky-card, #3e5068); --text-primary: #fff; --temp-light: 0; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; }
+.sky-lvl-darkest .alert-sheet { background: var(--sky-card, #324055); --text-primary: #fff; --temp-light: 0; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; }
 [data-theme="dark"] .alert-sheet,
 [data-theme="dark"] .sky-lvl-slight .alert-sheet,
 [data-theme="dark"] .sky-lvl-medium .alert-sheet,
@@ -9014,7 +9101,7 @@ body {
   --splash-surface-border: rgba(255, 255, 255, 0.16);
   --splash-mini-surface: linear-gradient(var(--ios-frost-sheen, transparent), var(--ios-frost-sheen, transparent)), var(--ios-frost, rgba(255, 255, 255, 0.08));
   --splash-mini-border: rgba(255, 255, 255, 0.16);
-  --text-primary: #fff;
+  --text-primary: #fff; --temp-light: 0;
   --text-secondary: rgba(255, 255, 255, 0.78);
   --text-tertiary: rgba(255, 255, 255, 0.6);
   --accent: #8fbbff;
@@ -9347,7 +9434,7 @@ body {
 /* Over a sky the panel behind is the deep sky tint, so the text goes white —
    as the old dropdown's did. */
 .sky-active .search-overlay--sheet {
-  --text-primary: #fff;
+  --text-primary: #fff; --temp-light: 0;
   --text-secondary: rgba(255, 255, 255, 0.78);
   --text-tertiary: rgba(255, 255, 255, 0.55);
   color: #fff;
@@ -9818,6 +9905,75 @@ body {
   background: color-mix(in srgb, var(--md-on-surface) 12%, transparent);
 }
 
+
+/* ── Compact settings (Android phones) ──
+   The Material sizes above were a touch generous for narrow phones: the
+   segmented buttons ran past the card edge, clipping "Web" and pinning
+   "System" to the rim. Everything here is a step smaller, and a row whose
+   buttons still don't fit beside the label (a narrow phone, or a larger
+   system font size) wraps them onto a line of their own under the label
+   rather than cutting them off. */
+:root[data-shell="mobile"][data-platform="android"] .settings-page:not(.settings-page--modal) .settings-body {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+:root[data-shell="mobile"][data-platform="android"] .settings-page:not(.settings-page--modal) .settings-page-title {
+  margin: 14px 12px 2px;
+  font-size: 26px;
+  /* The base rule keeps titles on one line for the small centred header. This
+     large left-aligned title has the full width, and a long one ("Weather
+     Overview Settings") ran off the screen, so here it wraps, balanced so the
+     two lines come out even. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+:root[data-shell="mobile"][data-platform="android"] :is(.settings-page, .settings-inline, .settings-pill) .settings-group-label {
+  margin: 22px 18px 8px;
+  font-size: 13.5px;
+}
+:root[data-shell="mobile"][data-platform="android"] :is(.settings-page, .settings-inline, .settings-pill) .settings-body > .settings-group-label:first-child {
+  margin-top: 8px;
+}
+:root[data-shell="mobile"][data-platform="android"] :is(.settings-page, .settings-inline, .settings-pill) .settings-card {
+  border-radius: 24px;
+}
+:root[data-shell="mobile"][data-platform="android"] :is(.settings-page, .settings-inline, .settings-pill) .settings-row {
+  min-height: 54px;
+  padding: 8px 12px 8px 18px;
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+:root[data-shell="mobile"][data-platform="android"] :is(.settings-page, .settings-inline, .settings-pill) .settings-row-label {
+  font-size: 15px;
+  /* The base rule never shrinks a label. Wrapping is decided on full widths,
+     so the buttons still move to their own line first; this only lets a label
+     too long for the row on its own wrap its text instead of running off. */
+  flex-shrink: 1;
+  min-width: 0;
+}
+:root[data-shell="mobile"][data-platform="android"] :is(.settings-page, .settings-inline, .settings-pill) .settings-options {
+  height: 36px;
+  flex-shrink: 0;
+  max-width: 100%;
+  margin-left: auto;
+}
+:root[data-shell="mobile"][data-platform="android"] :is(.settings-page, .settings-inline, .settings-pill) .setting-opt {
+  padding: 0 11px;
+  font-size: 13.5px;
+}
+:root[data-shell="mobile"][data-platform="android"] :is(.settings-page, .settings-inline, .settings-pill) .setting-opt.active {
+  gap: 4px;
+  padding-left: 9px;
+}
+:root[data-shell="mobile"][data-platform="android"] :is(.settings-page, .settings-inline, .settings-pill) .setting-opt::before {
+  height: 16px;
+  -webkit-mask-size: 16px 16px;
+  mask-size: 16px 16px;
+}
+:root[data-shell="mobile"][data-platform="android"] :is(.settings-page, .settings-inline, .settings-pill) .setting-opt.active::before {
+  width: 16px;
+}
 /* Chevrons: a quieter tone, so the row's label leads. */
 :root[data-shell="mobile"][data-platform="android"] :is(.settings-page, .settings-inline, .settings-pill) .about-chevron {
   color: var(--md-on-surface-variant);
@@ -10320,7 +10476,7 @@ body {
   backdrop-filter: var(--card-glass-blur);
 
   /* Text, for both styles' rules. */
-  --text-primary: #fff;
+  --text-primary: #fff; --temp-light: 0;
   --text-secondary: rgba(255, 255, 255, 0.85);
   --text-tertiary: rgba(255, 255, 255, 0.66);
   /* The accent is a saturated mid blue, drawn for a white card: on the dark
@@ -10338,7 +10494,7 @@ body {
   --md-card-fill-high: rgba(255, 255, 255, 0.1);
   --md-surface-container: rgba(255, 255, 255, 0.08);
   --md-surface-container-high: rgba(255, 255, 255, 0.12);
-  --md-on-surface: #fff;
+  --md-on-surface: #fff; --temp-light: 0;
   --md-on-surface-variant: rgba(255, 255, 255, 0.78);
   --md-outline: rgba(255, 255, 255, 0.3);
   /* iOS: the tiles' tint. */
@@ -10390,7 +10546,7 @@ body {
   --card-glass-fill: var(--ios-light-glass);
   --glass-tint: 0;
   --glass-rim: rgba(255, 255, 255, 0.6);
-  --text-primary: #1a1a2e;
+  --text-primary: #1a1a2e; --temp-light: 1;
   --text-secondary: #64748b;
   /* A step darker than the white-card #94a3b8: the sky shows through this
      glass, and the paler grey all but vanished into it. */
@@ -10432,7 +10588,7 @@ body {
     --card-glass-fill: var(--ios-light-glass);
     --glass-tint: 0;
     --glass-rim: rgba(255, 255, 255, 0.6);
-    --text-primary: #1a1a2e;
+    --text-primary: #1a1a2e; --temp-light: 1;
     --text-secondary: #64748b;
     --text-tertiary: #7b8798;
     --accent: #3b82f6;

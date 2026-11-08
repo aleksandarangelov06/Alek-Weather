@@ -322,7 +322,7 @@ export function toTemp(fahrenheit, unit) {
   return Math.round(fahrenheit)
 }
 
-// Color stops: [°F, [r, g, b]]
+// Color stops: [°F, [r, g, b]]. Bright, for dark and tinted surfaces.
 const TEMP_STOPS = [
   [10,  [94,  184, 255]],  // icy blue
   [32,  [116, 192, 252]],  // freezing blue
@@ -334,22 +334,46 @@ const TEMP_STOPS = [
   [110, [204,  93, 232]],  // extreme purple
 ]
 
-export function tempColor(fahrenheit) {
-  if (fahrenheit <= TEMP_STOPS[0][0]) return `rgb(${TEMP_STOPS[0][1].join(',')})`
-  if (fahrenheit >= TEMP_STOPS[TEMP_STOPS.length - 1][0]) {
-    return `rgb(${TEMP_STOPS[TEMP_STOPS.length - 1][1].join(',')})`
-  }
-  for (let i = 0; i < TEMP_STOPS.length - 1; i++) {
-    const [t0, c0] = TEMP_STOPS[i]
-    const [t1, c1] = TEMP_STOPS[i + 1]
+// The same scale for light surfaces. The bright stops wash out on a light card,
+// and darkening them turned the yellows and greens muddy, so these are their
+// own rich mid-tones instead. 45°F is #16a34a, the light theme's --cond-green,
+// so a cool day matches the other green icons on the card.
+const TEMP_STOPS_LIGHT = [
+  [10,  [ 37,  99, 235]],  // blue
+  [32,  [  2, 132, 199]],  // sky
+  [45,  [ 22, 163,  74]],  // green
+  [60,  [  5, 150, 105]],  // emerald
+  [75,  [202, 138,   4]],  // gold
+  [85,  [234,  88,  12]],  // orange
+  [95,  [220,  38,  38]],  // red
+  [110, [147,  51, 234]],  // purple
+]
+
+function interpolate(stops, fahrenheit) {
+  const last = stops[stops.length - 1]
+  if (fahrenheit <= stops[0][0]) return `rgb(${stops[0][1].join(',')})`
+  if (fahrenheit >= last[0]) return `rgb(${last[1].join(',')})`
+  for (let i = 0; i < stops.length - 1; i++) {
+    const [t0, c0] = stops[i]
+    const [t1, c1] = stops[i + 1]
     if (fahrenheit <= t1) {
       const t = (fahrenheit - t0) / (t1 - t0)
-      const r = Math.round(c0[0] + t * (c1[0] - c0[0]))
-      const g = Math.round(c0[1] + t * (c1[1] - c0[1]))
-      const b = Math.round(c0[2] + t * (c1[2] - c0[2]))
+      const [r, g, b] = c0.map((v, k) => Math.round(v + t * (c1[k] - v)))
       return `rgb(${r},${g},${b})`
     }
   }
+}
+
+export function tempColor(fahrenheit) {
+  return interpolate(TEMP_STOPS, fahrenheit)
+}
+
+// What the UI paints with: the light-surface colour where the card is light,
+// the bright one everywhere else. --temp-light is set by the stylesheet beside
+// every --text-primary: 1 where the text is dark (a light surface), 0 where it
+// is light, so it follows the theme, sky levels and Material You on its own.
+export function tempInk(fahrenheit) {
+  return `color-mix(in oklab, ${interpolate(TEMP_STOPS_LIGHT, fahrenheit)} calc(var(--temp-light, 0) * 100%), ${tempColor(fahrenheit)})`
 }
 
 // Color-coded temperature style: the text color plus optional effects — a heat
@@ -359,7 +383,7 @@ export function tempColor(fahrenheit) {
 // the large current temperature. Returns undefined when color coding is off.
 export function tempStyle(fahrenheit, colorCoding, scale = 1, glow = true, frost = true) {
   if (!colorCoding) return undefined
-  const style = { color: tempColor(fahrenheit) }
+  const style = { color: tempInk(fahrenheit) }
   if (glow && fahrenheit >= 90) {
     const t = Math.min((fahrenheit - 90) / 20, 1)
     style.textShadow = `0 0 ${(8 + t * 24) * scale}px currentColor`

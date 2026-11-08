@@ -239,8 +239,9 @@ export function resolveToday(rows, visRows, paired, dragId, x, y, cards) {
 }
 
 // How wide each card in a row is, out of the grid's 12 columns. The current
-// card is a compact summary, so beside another card it takes the narrow slot;
-// any other two cards split the row evenly.
+// card is a compact column (readings with the Today summary under them), so
+// beside another card it takes a quarter of the row; any other two cards split
+// the row evenly.
 export function spans(row) {
   if (row.length === 1) return { [row[0]]: { span: 12, slot: 'full' } }
   if (row.includes('current')) {
