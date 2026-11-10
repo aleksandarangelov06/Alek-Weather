@@ -69,7 +69,7 @@ function PreviewCard({ title, onOpen, openLabel, className, children }) {
 // <WeatherOverview> again.
 export function TodayPage({
   weather, location, alerts, unit, units, radarClear, lastUpdated, loading,
-  colorCoding, nowcastMode,
+  colorCoding, nowcastMode, airQuality,
   saved, onSave, onRemove, isHome, hasHome, onGoHome, onSetHome, onUnsetHome, onRefresh,
   onNavigate,
 }) {
@@ -169,6 +169,7 @@ export function TodayPage({
               yesterday={weather.yesterday}
               timezone={timezone}
               unit={unit}
+              airQuality={airQuality}
             />
           </CurrentWeather>
         )
@@ -198,7 +199,7 @@ export function TodayPage({
                 icon={CloudRain}
                 label="Precipitation"
                 color={tone('precip')}
-                value={rainToday != null ? `${rainToday}%` : '—'}
+                value={rainToday != null ? `${rainToday}%` : '-'}
                 sub={daily.precipitation_sum?.[0] != null ? `${formatPrecip(daily.precipitation_sum[0], units)} expected` : 'Chance today'}
               />
               <GlanceTile
@@ -283,7 +284,7 @@ export function TodayPage({
 
       case 'week':
         return (
-          <PreviewCard title="WEEK AHEAD" onOpen={() => onNavigate('daily')} openLabel="Outlook" className="web-week">
+          <PreviewCard title="WEEK AHEAD" onOpen={() => onNavigate('daily')} openLabel="This week" className="web-week">
             <div className="web-week-days">
               {daily.time.map((date, i) => {
                 const info = getWeatherInfo(daily.weather_code[i], false)

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 
 const TAB_KEY = 'alek-weather-web-tab'
 
@@ -14,7 +14,7 @@ const TAB_KEY = 'alek-weather-web-tab'
 // TABS, so anyone whose browser has 'hourly' in localStorage lands on Today.
 export const TABS = [
   { id: 'today',   label: 'Today'       },
-  { id: 'daily',   label: 'Outlook'     },
+  { id: 'daily',   label: 'This week'   },
   { id: 'details', label: 'Details'     },
   { id: 'radar',   label: 'Radar'       },
 ]
@@ -30,13 +30,15 @@ export function useWebTab() {
     return TABS.some((t) => t.id === saved) ? saved : 'today'
   })
 
-  const changeTab = (id) => {
+  // Stable, because the web layout (memoised) takes it as a prop: a new
+  // function every render would re-render every page with App.
+  const changeTab = useCallback((id) => {
     setTab(id)
     localStorage.setItem(TAB_KEY, id)
     // A page swap is a navigation, so it starts at the top of the new page
     // rather than wherever the previous one happened to be scrolled to.
     window.scrollTo({ top: 0, behavior: 'auto' })
-  }
+  }, [])
 
   return [tab, changeTab]
 }

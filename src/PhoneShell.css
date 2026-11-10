@@ -1,0 +1,35 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Phone-shell rules that used to sit in WebApp.css.
+
+   WebApp.css now loads with the web layout's own chunk (see
+   components/web/webShellChunk.js), so the phone shells never download or
+   match it. These three rules were the only ones in it that reach the phone
+   styles: the radar card's play-button row and the splash wordmark, which the
+   web layout doesn't render at all. App.jsx imports this file right after
+   App.css, where WebApp.css used to be, so they win the same ties as before.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.radar-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.splash-wordmark {
+  position: absolute;
+  bottom: calc(var(--sa-bottom) + 44px);
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  white-space: nowrap;
+  color: var(--text-primary);
+  pointer-events: none;
+}
+
+.splash-bg--sky .splash-wordmark {
+  color: #fff;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
+}

@@ -5,6 +5,7 @@ import { sampleRadar } from './useRadarPrecip'
 import { IS_ANDROID_APP } from '../utils/version'
 import { deadline, fetchWithin } from '../utils/fetchTimeout'
 import { assertOpenMeteoQuota, noteOpenMeteo429, clearOpenMeteoBlock } from '../utils/openMeteoQuota'
+import { cachedNwsPoint, rememberNwsPoint, rememberNwsStations, forgetNwsPoint } from '../utils/nwsPoints'
 
 // Where to turn location back on depends on what the app is running in, and
 // "this site in your browser settings" only means anything on a desktop. The
@@ -812,17 +813,131 @@ const LITE_PARAMS = [
 ].join('&')
 
 // Hourly us_aqi + pm2_5 forecast backs the multi-day air-quality insights
-// (e.g. persistent wildfire smoke "through the week"); pm10, carbon_monoxide,
-// nitrogen_dioxide, and aerosol_optical_depth ride along so the overview can
-// tell smoke apart from dust or urban smog. timezone=auto keeps the hourly
-// timestamps local so they group by calendar day the same way daily does.
+// (e.g. poor air "through the week") and the Today card's activity ratings.
+// timezone=auto keeps the hourly timestamps local so they group by calendar
+// day the same way daily does, and line up with the weather hours.
 // The pollen counts come from CAMS Europe and are null everywhere else.
 const AQI_PARAMS = [
   'current=us_aqi,pm10,pm2_5,carbon_monoxide,nitrogen_dioxide,sulphur_dioxide,ozone,aerosol_optical_depth,alder_pollen,birch_pollen,olive_pollen,grass_pollen,mugwort_pollen,ragweed_pollen',
-  'hourly=us_aqi,pm2_5,pm10,carbon_monoxide,nitrogen_dioxide,aerosol_optical_depth',
+  'hourly=us_aqi,pm2_5',
   'timezone=auto',
   'forecast_days=5',
 ].join('&')
+
+// The NWS side of a load, started at once and run beside Open-Meteo instead of
+// after it. The point lookup (which forecast office and grid square the place is
+// in, and which stations observe it) never changes for a place, so after the
+// first load it comes from storage (utils/nwsPoints) and the forecast requests go
+// out in the first round trip rather than the second; on a first load they go
+// out the moment the lookup answers, without waiting for Open-Meteo.
+//
+// Resolves to null when NWS has nothing for the place (outside its coverage, or
+// the lookup failed), else to { forecasts, obs }: the hourly, daily and
+// gridpoint responses as Promise.allSettled-style results, and the station
+// walk's { obs, dry }. Never rejects — every NWS step is non-fatal, and when
+// Open-Meteo fails the whole chain is simply left to run out.
+async function startNwsChain(loc, key, nwsFetch, lite) {
+  const cached = cachedNwsPoint(key)
+  let point = cached?.point ?? null
+  if (cached === undefined) {
+    try {
+      const res = await nwsFetch(`${NWS_POINTS_URL}/${key}`)
+      if (res.status === 404) {
+        rememberNwsPoint(key, null) // outside NWS coverage
+      } else if (res.ok) {
+        const p = (await res.json()).properties ?? {}
+        point = {
+          forecastHourly: p.forecastHourly ?? null,
+          forecast: p.forecast ?? null,
+          forecastGridData: p.forecastGridData ?? null,
+          observationStations: p.observationStations ?? null,
+        }
+        rememberNwsPoint(key, point)
+      }
+    } catch { /* no NWS this load */ }
+  }
+  if (!point) return null
+
+  const settle = (p) => p.then(
+    (value) => ({ status: 'fulfilled', value }),
+    (reason) => ({ status: 'rejected', reason }),
+  )
+  const skipped = { status: 'rejected', reason: null }
+  const forecasts = Promise.all([
+    point.forecastHourly ? settle(nwsFetch(point.forecastHourly)) : skipped,
+    point.forecast && !lite ? settle(nwsFetch(point.forecast)) : skipped, // daily only
+    point.forecastGridData ? settle(nwsFetch(point.forecastGridData)) : skipped,
+  ]).then((results) => {
+    // A stored point whose forecast URLs have stopped answering (NWS re-gridded
+    // the area) is dropped, so the next load looks the place up again.
+    if (cached && results.some((r) => r.value?.status === 404)) forgetNwsPoint(key)
+    return results
+  })
+  const obs = walkStations(loc, key, point, cached?.stations, nwsFetch)
+    .catch(() => ({ obs: null, dry: false }))
+  return { forecasts, obs }
+}
+
+// Latest real observation from nearby stations, fetched in parallel with the
+// forecast calls; failures fall through to the model pipeline (obsToWmoCode
+// returns null). Small AWOS fields often report nothing (verified: K0W3 near
+// Bel Air MD was empty during an active thunderstorm while KMTN two entries
+// later reported +TS +RA), so walk the list until a station actually reports
+// weather — which means a report that survives obsToWmoCode, not merely one
+// with a textDescription. A stale or sky-cover-only report from a nearer
+// station must not short-circuit the walk (verified during heavy showers over
+// Bel Air MD: K0W3 was 2.5 h stale with "Fog/Mist" and KAPG said "Cloudy" while
+// KMTN was reporting Rain).
+//
+// MAX_STATION_KM bounds that walk. Without it, "keep going until someone
+// reports weather" will eventually always find someone — the farther the search
+// runs, the likelier a hit and the less it has to do with this location.
+// Distance is checked before the request, so far stations cost nothing. `limit`
+// is generous because the filter, not the list length, is what ends the walk.
+// The in-range stations are all asked at once and then read in list order, so
+// the answer is the same as asking them one by one, but the walk costs one
+// round trip instead of up to eight back to back. Which stations are in range
+// is kept with the point (`known`), which saves the station list's round trip
+// on every load after the first.
+//
+// The walk also notes whether a nearby station recently reported nothing
+// falling (`dry`). That never overrides anything on its own, but it stops
+// preferForecastHour promoting a "Chance Rain Showers, 65%" hour to "Light rain
+// falling" over a town whose own airfield says partly cloudy — verified over
+// Bel Air MD, K0W3 dry at 13 km.
+async function walkStations(loc, key, point, known, nwsFetch) {
+  let dry = false
+  let ids = Array.isArray(known) ? known : null
+  if (!ids) {
+    const stationsUrl = point.observationStations
+    if (!stationsUrl) return { obs: null, dry }
+    const sRes = await nwsFetch(`${stationsUrl}?limit=8`)
+    if (!sRes.ok) return { obs: null, dry }
+    const stations = (await sRes.json()).features ?? []
+    ids = []
+    for (const s of stations) {
+      const id = s.properties?.stationIdentifier
+      if (!id) continue
+      const [sLon, sLat] = s.geometry?.coordinates ?? []
+      if (sLat == null || sLon == null) continue
+      if (distanceKm(loc.latitude, loc.longitude, sLat, sLon) > MAX_STATION_KM) continue
+      ids.push(id)
+    }
+    rememberNwsStations(key, ids)
+  }
+  const reports = ids.map((id) =>
+    nwsFetch(`https://api.weather.gov/stations/${id}/observations/latest`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d?.properties ?? null)
+      .catch(() => null))
+  for (const report of reports) {
+    const obs = await report
+    if (!obs) continue // no answer: try the next station
+    if (obsToWmoCode(obs) != null) return { obs, dry }
+    if (obsIsDry(obs)) dry = true
+  }
+  return { obs: null, dry }
+}
 
 // The whole forecast pipeline for one place: Open-Meteo, then the NWS overlay,
 // station observation and warning cross-check that decide the current
@@ -850,13 +965,14 @@ export async function loadForecast(loc, { lite = false } = {}) {
   // One budget for every NWS request in this load; each also has its own limit.
   const nwsBudget = AbortSignal.timeout(NWS_BUDGET_MS)
   const nwsFetch = (url) => fetchWithin(url, NWS_REQUEST_TIMEOUT_MS, { headers: NWS_HEADERS, signal: nwsBudget })
-  const [weatherResult, aqiResult, alertsResult, nwsPointsResult] = await Promise.allSettled([
+  const point = `${loc.latitude.toFixed(4)},${loc.longitude.toFixed(4)}`
+  const nwsChain = startNwsChain(loc, point, nwsFetch, lite)
+  const [weatherResult, aqiResult, alertsResult] = await Promise.allSettled([
     fetchWithin(`${WEATHER_URL}?latitude=${loc.latitude}&longitude=${loc.longitude}&${lite ? LITE_PARAMS : PARAMS}`, OPEN_METEO_TIMEOUT_MS),
     lite
       ? Promise.reject(new Error('air quality not requested'))
       : fetchWithin(`${AQI_URL}?latitude=${loc.latitude}&longitude=${loc.longitude}&${AQI_PARAMS}`, AQI_TIMEOUT_MS),
-    nwsFetch(`${NOAA_ALERTS_URL}?point=${loc.latitude.toFixed(4)},${loc.longitude.toFixed(4)}`),
-    nwsFetch(`${NWS_POINTS_URL}/${loc.latitude.toFixed(4)},${loc.longitude.toFixed(4)}`),
+    nwsFetch(`${NOAA_ALERTS_URL}?point=${point}`),
   ])
 
   if (weatherResult.status === 'rejected') throw weatherResult.reason
@@ -895,79 +1011,15 @@ export async function loadForecast(loc, { lite = false } = {}) {
     )
   }
 
-  // For US locations, overlay NWS data on top of Open-Meteo.
-  // Points call already ran in parallel; if it succeeded we fire the hourly,
-  // daily and gridpoint fetches in parallel, then merge all three before
-  // rendering.
+  // For US locations, overlay NWS data on top of Open-Meteo. The requests have
+  // been running since the start (see startNwsChain): the hourly, daily and
+  // gridpoint forecasts are merged here, all three before rendering, and then
+  // the station walk's verdict is applied.
   // Every step is non-fatal: any failure silently keeps the Open-Meteo values.
-  if (nwsPointsResult.status === 'fulfilled' && nwsPointsResult.value.ok) {
+  const nws = await nwsChain
+  if (nws) {
     try {
-      const pointsData = await nwsPointsResult.value.json()
-      const hourlyUrl   = pointsData.properties?.forecastHourly
-      const forecastUrl = pointsData.properties?.forecast
-      const gridUrl     = pointsData.properties?.forecastGridData
-
-      // Latest real observation from nearby stations, fetched in parallel
-      // with the forecast calls; failures fall through to the model
-      // pipeline (obsToWmoCode returns null). Small AWOS fields often
-      // report nothing (verified: K0W3 near Bel Air MD was empty during an
-      // active thunderstorm while KMTN two entries later reported +TS +RA),
-      // so walk the list until a station actually reports weather — which
-      // means a report that survives obsToWmoCode, not merely one with a
-      // textDescription. A stale or sky-cover-only report from a nearer
-      // station must not short-circuit the walk (verified during heavy
-      // showers over Bel Air MD: K0W3 was 2.5 h stale with "Fog/Mist" and
-      // KAPG said "Cloudy" while KMTN was reporting Rain).
-      //
-      // MAX_STATION_KM bounds that walk. Without it, "keep going until
-      // someone reports weather" will eventually always find someone — the
-      // farther the search runs, the likelier a hit and the less it has to do
-      // with this location. Distance is checked before the request, so far
-      // stations cost nothing. `limit` is generous because the filter, not
-      // the list length, is what ends the walk now.
-      // The in-range stations are all asked at once and then read in list
-      // order, so the answer is the same as asking them one by one, but the
-      // walk costs one round trip instead of up to eight back to back.
-      // The walk also notes whether a nearby station recently reported
-      // nothing falling (`dry`). That never overrides anything on its own, but
-      // it stops preferForecastHour promoting a "Chance Rain Showers, 65%"
-      // hour to "Light rain falling" over a town whose own airfield says
-      // partly cloudy — verified over Bel Air MD, K0W3 dry at 13 km.
-      const obsPromise = (async () => {
-        let dry = false
-        const stationsUrl = pointsData.properties?.observationStations
-        if (!stationsUrl) return { obs: null, dry }
-        const sRes = await nwsFetch(`${stationsUrl}?limit=8`)
-        if (!sRes.ok) return { obs: null, dry }
-        const stations = (await sRes.json()).features ?? []
-        const ids = []
-        for (const s of stations) {
-          const id = s.properties?.stationIdentifier
-          if (!id) continue
-          const [sLon, sLat] = s.geometry?.coordinates ?? []
-          if (sLat == null || sLon == null) continue
-          if (distanceKm(loc.latitude, loc.longitude, sLat, sLon) > MAX_STATION_KM) continue
-          ids.push(id)
-        }
-        const reports = ids.map((id) =>
-          nwsFetch(`https://api.weather.gov/stations/${id}/observations/latest`)
-            .then((r) => (r.ok ? r.json() : null))
-            .then((d) => d?.properties ?? null)
-            .catch(() => null))
-        for (const report of reports) {
-          const obs = await report
-          if (!obs) continue // no answer: try the next station
-          if (obsToWmoCode(obs) != null) return { obs, dry }
-          if (obsIsDry(obs)) dry = true
-        }
-        return { obs: null, dry }
-      })().catch(() => ({ obs: null, dry: false }))
-
-      const [nwsHourlyRes, nwsForecastRes, nwsGridRes] = await Promise.allSettled([
-        hourlyUrl   ? nwsFetch(hourlyUrl)   : Promise.reject(),
-        forecastUrl && !lite ? nwsFetch(forecastUrl) : Promise.reject(), // daily only
-        gridUrl     ? nwsFetch(gridUrl)     : Promise.reject(),
-      ])
+      const [nwsHourlyRes, nwsForecastRes, nwsGridRes] = await nws.forecasts
       // The gridpoint carries the fields the two text products don't, and
       // its entry spans are what say how far each field stays an hourly
       // forecast before NWS drops to blocks and Open-Meteo takes over.
@@ -1024,7 +1076,7 @@ export async function loadForecast(loc, { lite = false } = {}) {
 
       // A station actually observing precipitation overrides the model's
       // current condition outright — measured beats predicted.
-      const { obs, dry } = await obsPromise
+      const { obs, dry } = await nws.obs
       const obsCode = obsToWmoCode(obs)
       if (obsCode != null) {
         data.current.weather_code = obsCode
@@ -1143,6 +1195,15 @@ export function useWeather(initialCity = null) {
   const [searchResults, setSearchResults] = useState([])
   const searchAbortRef = useRef(null)
   const [loading, setLoading] = useState(!!initialCity && !cached)
+  // Mirrors `loading` for fetchWeather, which is memoised and can't read it.
+  // A silent refresh must never supersede a load the user asked for: picking a
+  // far-off place (Delhi) keeps the previous reading in state for the seconds
+  // its fetch takes, and a staleness check landing in that window — the window
+  // regaining focus as you click a tab — refreshed the *previous* place, which
+  // bumped fetchIdRef, discarded the new place's reading and put the old one
+  // back on screen.
+  const loadingRef = useRef(loading)
+  useEffect(() => { loadingRef.current = loading }, [loading])
 
   // Persist every complete reading. Keyed on lastUpdated so it writes once per
   // fetch, plus once more when air quality lands after it.
@@ -1195,6 +1256,8 @@ export function useWeather(initialCity = null) {
   // uses — a background poll must never blank the app or shout about a dropped
   // connection the user didn't ask anything of.
   const fetchWeather = useCallback(async (loc, { silent = false } = {}) => {
+    if (silent && (loadingRef.current || geoActiveRef.current)) return
+    if (!silent) loadingRef.current = true
     geoActiveRef.current = false
     const fetchId = ++fetchIdRef.current
     if (!silent) {

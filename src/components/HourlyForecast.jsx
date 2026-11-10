@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useLayoutEffect, useId } from 'react'
+import { memo, useRef, useEffect, useState, useLayoutEffect, useId } from 'react'
 import { getWeatherInfo, formatHour, liveWeatherCode, nowcastHourlyCode, toTemp, tempStyle, tempInk } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
 
@@ -29,7 +29,9 @@ function smoothPath(pts) {
   return d
 }
 
-export function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glow = true, frost = true, current, minutely, radarClear = null }) {
+// Memoised: App re-renders for every overlay, toggle and keystroke, and the
+// props here are the reading and the settings, which those leave alone.
+export const HourlyForecast = memo(function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glow = true, frost = true, current, minutely, radarClear = null }) {
   const scrollRef = useRef(null)
   const rowRef = useRef(null)
   const gradId = useId()
@@ -95,6 +97,20 @@ export function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glo
   const precip = slice(hourly.precipitation_probability)
   const isDay = slice(hourly.is_day ?? [])
 
+  // The first hour of tomorrow (local midnight in the forecast's timezone), or
+  // -1 if the strip never reaches it. Slot 0 is "Now", so it never counts.
+  const midnightIdx = hours.findIndex((t, i) => i > 0 && !t.startsWith(todayStr))
+  // Left edge of that column, where the "Tomorrow" marker under the row starts.
+  const [newDayX, setNewDayX] = useState(null)
+  // Short weekdays ("Mon", "Tue"), read off the hour strings themselves so they
+  // are the forecast location's dates, not the device's.
+  const weekdayOf = (time) => {
+    const [y, m, d] = time.slice(0, 10).split('-').map(Number)
+    return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short' })
+  }
+  const todayName = hours.length ? weekdayOf(hours[0]) : ''
+  const newDayName = midnightIdx > 0 ? weekdayOf(hours[midnightIdx]) : ''
+
   // Measure the horizontal center of every hour column so the graph points
   // line up exactly with the items, even as widths change with the unit.
   useLayoutEffect(() => {
@@ -102,12 +118,13 @@ export function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glo
     if (!row) return
     const measure = () => {
       setCenters(Array.from(row.children).map((el) => el.offsetLeft + el.offsetWidth / 2))
+      setNewDayX(midnightIdx > 0 ? (row.children[midnightIdx]?.offsetLeft ?? null) : null)
     }
     measure()
     const ro = new ResizeObserver(measure)
     ro.observe(row)
     return () => ro.disconnect()
-  }, [hours.length, unit])
+  }, [hours.length, unit, midnightIdx])
 
   // Build the temperature line graph once columns have been measured.
   const tMin = Math.min(...temps)
@@ -157,7 +174,7 @@ export function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glo
           // the live nowcast downgraded its code.
           const p = precip[i] ?? 0
           return (
-            <div key={i} className="hourly-item" data-idx={i}>
+            <div key={i} className={`hourly-item${i === midnightIdx ? ' hourly-item--new-day' : ''}`} data-idx={i}>
               <span className="hourly-time">{label}</span>
               <span className="hourly-icon">
                 {i <= drawnUpTo
@@ -169,6 +186,32 @@ export function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glo
             </div>
           )
         })}
+        </div>
+        {/* Day pills, on their own line between the hours and the graph. Each
+            day gets a span over its own columns, and its pill is sticky inside
+            that span: Today holds the strip's left edge until midnight arrives
+            and shoves it out, then Tomorrow takes over the spot. Scrolling
+            back plays it in reverse. */}
+        <div className="hourly-day-strip">
+          <div
+            className="hourly-day-span"
+            style={midnightIdx > 0 && newDayX != null ? { flex: 'none', width: newDayX } : undefined}
+          >
+            {/* At 11 PM today is a single column, too narrow for a pill that
+                would only overlap Tomorrow's, so there is none. */}
+            {midnightIdx !== 1 && (
+              <span className="hourly-day-marker">
+                Today<span className="hourly-day-name">{todayName}</span>
+              </span>
+            )}
+          </div>
+          {midnightIdx > 0 && newDayX != null && (
+            <div className="hourly-day-span">
+              <span className="hourly-day-marker">
+                Tomorrow<span className="hourly-day-name">{newDayName}</span>
+              </span>
+            </div>
+          )}
         </div>
         {points.length > 0 && (
           <svg
@@ -204,4 +247,4 @@ export function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glo
       </div>
     </div>
   )
-}
+})

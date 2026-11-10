@@ -1,11 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { outlookWindow, compareWithYesterday, rateActivities } from './todayOutlook'
+import { outlookWindow, compareWithYesterday, compareTomorrowWithToday, rateActivities } from './todayOutlook'
 
 // Two days of hourly data (yesterday + today), every hour the same unless a
 // test overrides it.
-function makeHourly(over = {}) {
+function makeHourly(over = {}, days = ['2026-11-07', '2026-11-08']) {
   const time = []
-  for (const d of ['2026-11-07', '2026-11-08']) {
+  for (const d of days) {
     for (let h = 0; h < 24; h++) time.push(`${d}T${String(h).padStart(2, '0')}:00`)
   }
   const fill = (v) => time.map(() => v)
@@ -36,8 +36,33 @@ describe('outlookWindow', () => {
   it('stretches to 12 hours late in the evening', () => {
     const hourly = makeHourly()
     // Only today's hours exist past 23:00 in this fixture, so it stops there.
-    const w = outlookWindow(hourly, '2026-11-08', '21')
+    const w = outlookWindow(hourly, '2026-11-08', '19')
     expect(w.label).toBe('Next 12 hours')
+  })
+  it("turns to tomorrow's waking hours from 9pm", () => {
+    const hourly = makeHourly({}, ['2026-11-07', '2026-11-08', '2026-11-09'])
+    const w = outlookWindow(hourly, '2026-11-08', '21')
+    expect(w.tomorrow).toBe(true)
+    expect(w.label).toBe('Tomorrow')
+    expect(hourly.time[w.start]).toBe('2026-11-09T06:00')
+    expect(hourly.time[w.end]).toBe('2026-11-09T22:00')
+  })
+  it('stays on tonight when tomorrow has no hours', () => {
+    const w = outlookWindow(makeHourly(), '2026-11-08', '22')
+    expect(w.tomorrow).toBeUndefined()
+    expect(w.label).toBe('Next 12 hours')
+  })
+})
+
+describe('compareTomorrowWithToday', () => {
+  it("compares tomorrow's high with today's", () => {
+    const c = compareTomorrowWithToday({ temperature_2m_max: [50, 58], temperature_2m_min: [35, 40] })
+    expect(c.direction).toBe('warmer')
+    expect(c.diffF).toBe(8)
+    expect(c.low.diffF).toBe(5)
+  })
+  it('returns null without tomorrow', () => {
+    expect(compareTomorrowWithToday({ temperature_2m_max: [50] })).toBeNull()
   })
 })
 
@@ -45,12 +70,21 @@ describe('compareWithYesterday', () => {
   it('leads with right now against the same hour yesterday', () => {
     const hourly = makeHourly({ temperature_2m: (t, _, v) => (t.startsWith('2026-11-07T09') ? 50 : v) })
     const c = compareWithYesterday({
-      hourly, daily: { temperature_2m_max: [52] }, yesterday: { max: 57 },
+      hourly, daily: { temperature_2m_max: [60] }, yesterday: { max: 57 },
       current: { temperature_2m: 45 }, todayStr: '2026-11-08', hourStr: '09',
     })
+    expect(c.basis).toBe('now')
     expect(c.direction).toBe('colder')
     expect(c.diffF).toBe(-5)
-    expect(c.high.diffF).toBe(-5)
+    expect(c.high.diffF).toBe(3)
+  })
+  it('falls back to the high when the same hour yesterday is missing', () => {
+    const c = compareWithYesterday({
+      hourly: null, daily: { temperature_2m_max: [60] }, yesterday: { max: 52 },
+      current: { temperature_2m: 45 }, todayStr: '2026-11-08', hourStr: '09',
+    })
+    expect(c.basis).toBe('high')
+    expect(c.direction).toBe('warmer')
   })
   it('calls a small difference the same', () => {
     const c = compareWithYesterday({

@@ -48,3 +48,17 @@ export const IS_DESKTOP = (() => {
   if (ua.includes('Macintosh') && navigator.maxTouchPoints > 1) return false
   return window.matchMedia('(hover: hover) and (pointer: fine)').matches
 })()
+
+// Modest phone or tablet hardware: four cores or fewer, or 2 GB of memory or
+// less (navigator.deviceMemory, Chromium only). The sky effects draw at half
+// rate there (see WeatherCanvas), which also halves how often every glass card
+// over the sky has its backdrop blur redone. Desktops are left out, and so are
+// Apple devices, since Safari reports no memory figure to go by.
+export const LOW_END = (() => {
+  if (IS_DESKTOP || typeof navigator === 'undefined') return false
+  const ua = navigator.userAgent
+  if (/iPhone|iPad|iPod/.test(ua) || (ua.includes('Macintosh') && navigator.maxTouchPoints > 1)) return false
+  const cores = navigator.hardwareConcurrency ?? 0
+  const memory = navigator.deviceMemory ?? 0
+  return (cores > 0 && cores <= 4) || (memory > 0 && memory <= 2)
+})()

@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useReducer } from 'react'
 
 function skyClass(code, isDay) {
   if (code == null) return ''
@@ -94,7 +94,7 @@ const STARS = Array.from({ length: 40 }, () => ({
   dur:   `${(Math.random() * 3 + 2).toFixed(1)}s`,
   delay: `${-(Math.random() * 4).toFixed(1)}s`,
 }))
-import { Search, MapPin, MapPinOff, AlertCircle, HelpCircle, ArrowLeft, GripHorizontal, Building2, X, Navigation, House } from 'lucide-react'
+import { Search, MapPin, MapPinOff, AlertCircle, HelpCircle, ArrowLeft, GripHorizontal, Building2, X, Navigation, House, Bookmark } from 'lucide-react'
 import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -124,14 +124,13 @@ import { preloadSettings } from './components/settingsChunk'
 import { BuildingsIcon, GearIcon, SearchIcon } from './components/headerGlyphs'
 import { SlidersIcon } from './components/SlidersIcon'
 import { MAX_CARD_TRANSPARENCY, IOS_FULL_CLARITY_AT } from './utils/appearance'
-import { WebLayout } from './components/web/WebLayout'
-import { WebTabs } from './components/web/WebTabs'
-import { WebAlertPill } from './components/web/WebAlertPill'
+// The web layout's components arrive with its own chunk (see webShellChunk) and
+// are read off loadedWebShell() at render; only the tab list and the hook that
+// holds the selected tab are needed whatever the style.
+import { loadWebShell, loadedWebShell } from './components/web/webShellChunk'
 import { TABS as WEB_TABS, useWebTab } from './components/web/tabs'
-import { SplashHome } from './components/web/SplashHome'
 import { SplashCities } from './components/SplashCities'
 import { LoadingScreen } from './components/LoadingScreen'
-import { WebLoadingScreen } from './components/web/WebLoadingScreen'
 import { liveWeatherCode, getWeatherInfo } from './utils/weatherCodes'
 import { isSnowing } from './utils/conditions'
 import { WeatherIcon } from './components/WeatherIcon'
@@ -141,25 +140,26 @@ import { rememberConditions } from './hooks/placeConditions'
 import { loadUnits, saveUnit } from './utils/units'
 import { APP_VERSION, IS_ANDROID_APP } from './utils/version'
 import { UpdateToast } from './components/UpdateToast'
-import { IS_PHONE, IS_DESKTOP, DEV_DEVICE } from './utils/device'
+import { ApkPrompt } from './components/ApkPrompt'
+import { IS_PHONE, IS_DESKTOP } from './utils/device'
+import { DESKTOP_MQ, PLATFORM_THEME_KEY, initialPlatformTheme } from './utils/platformTheme'
 import { applyMaterialTokens, DEFAULT_SEED, isValidSeed, resolveSeed, systemSeed, SYSTEM_SEED } from './utils/materialTheme'
 import { useNotifications } from './hooks/useNotifications'
 import { syncNotificationSettings } from './utils/notifications'
 import './App.css'
-// Imported after App.css so the web app's rules win the ties against the shared
-// card styles they refine.
-import './WebApp.css'
+// The few phone rules that used to live in WebApp.css, in the slot WebApp.css
+// had. WebApp.css itself now comes with the web layout's chunk, still after
+// App.css, so the web app's rules win the same ties against the shared card
+// styles they refine.
+import './PhoneShell.css'
 
 const THEME_KEY = 'alek-weather-theme'
-const PLATFORM_THEME_KEY = 'alek-weather-platform-theme' // 'ios' | 'android' | 'web'
 const MATERIAL_COLOR_KEY = 'alek-weather-material-color' // seed hex for the Material You palette
 const CARD_TRANSPARENCY_KEY = 'alek-weather-card-transparency' // 0–90, percent of card fill removed
 
-// Viewport width at which the desktop layout takes over. Shared with the
-// isDesktop media query below so the first-run default and the layout agree on
-// what counts as a desktop.
-const DESKTOP_MQ = '(min-width: 1100px)'
-// ...and the width it gives up at. The two differ on purpose: with a single
+// The viewport width the desktop layout takes over at is DESKTOP_MQ
+// (utils/platformTheme, shared with the first-run default)...
+// ...and this is the width it gives up at. The two differ on purpose: with a single
 // threshold, a window parked near 1100px (or a laptop at 125% browser zoom,
 // which lands right about there) flips shells on a one-pixel drag. Desktop is
 // entered at 1100 and only surrendered below 940, so the layout has to be
@@ -175,26 +175,6 @@ function nextIsDesktop(current) {
   return current
 }
 
-// First-run app style, from the device. The order matters: the APK is always
-// the phone app no matter how large the tablet it runs on, so it is settled
-// first; then Apple touch devices take the iOS look (modern iPads report as
-// "Macintosh", so touch support is the tell that separates them from actual
-// Macs); then anything on a desktop-sized screen opens in the web app rather
-// than a phone design stretched across a monitor. Everything left is a
-// non-Apple phone, which gets Android. The setting can override the default,
-// within limits: phones can't pick Web, and desktops (IS_DESKTOP) are always
-// Web.
-function defaultPlatformTheme() {
-  if (IS_ANDROID_APP) return 'android'
-  if (IS_DESKTOP) return 'web'
-  // Dev override (see device.js): a pretend phone takes its pretend OS's look.
-  if (DEV_DEVICE === 'iphone') return 'ios'
-  if (DEV_DEVICE === 'android') return 'android'
-  const isApple = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
-    (navigator.userAgent.includes('Macintosh') && navigator.maxTouchPoints > 1)
-  if (isApple) return 'ios'
-  return window.matchMedia(DESKTOP_MQ).matches ? 'web' : 'android'
-}
 // Where the phone shells' pages zoom out of (and settle back toward): the centre
 // of the button that opened them, written to the root as --page-reveal-x/y and
 // used as the page's transform-origin by the pageGrowIn/pageShrinkOut keyframes in
@@ -271,6 +251,10 @@ const INITIAL_CITY = (() => {
 })()
 const HAS_SAVED_CITY = !!INITIAL_CITY
 
+// Launch boot screen timing (see the #boot effect in App), in ms since page start.
+const BOOT_MIN_MS = 700
+const BOOT_MAX_MS = 8000
+
 const BLOCK_ORDER_KEY = 'alek-weather-block-order'
 const DEFAULT_BLOCK_ORDER = ['overview', 'today', 'nowcast', 'hourly', 'daily', 'details', 'radar']
 const SHOW_OVERVIEW_KEY = 'alek-weather-show-overview'
@@ -314,19 +298,10 @@ function App() {
   // `unit` — it is threaded through colour coding and toTemp separately.
   const [units, setUnits] = useState(loadUnits)
   const [darkMode, setDarkMode] = useState(() => localStorage.getItem(THEME_KEY) ?? 'system')
-  const [platformTheme, setPlatformTheme] = useState(() => {
-    const saved = localStorage.getItem(PLATFORM_THEME_KEY)
-    // The web app needs a desktop-sized viewport: on a phone its header
-    // controls run off screen, settings among them, and with settings out of
-    // reach the choice can't be undone. So a phone never keeps 'web' — the
-    // Web option is hidden there (see SettingsPage), and anything already
-    // stored, from an older build or another device, falls back to the phone
-    // look on the next launch. A desktop is the reverse: it is always Web, so
-    // a stored iOS or Android choice is ignored there.
-    if (IS_DESKTOP) return 'web'
-    if (!saved || (saved === 'web' && IS_PHONE)) return defaultPlatformTheme()
-    return saved
-  })
+  // Phones never keep 'web' and desktops are always it — see
+  // initialPlatformTheme, which main.jsx also reads to load the web layout's
+  // chunk before the first render when this comes out as 'web'.
+  const [platformTheme, setPlatformTheme] = useState(initialPlatformTheme)
   // A hex, or SYSTEM_SEED to follow the wallpaper (Material You, Android 12+
   // app only). Someone who has never picked a colour gets the wallpaper's
   // wherever there is one, the way Android's own apps do.
@@ -390,6 +365,9 @@ function App() {
   // The full-screen cover over an app-style switch: { to, leaving } or null.
   const [styleCover, setStyleCover] = useState(null)
   const styleCoverTimers = useRef([])
+  // Counts style switches, so a switch still waiting on the web layout's chunk
+  // can tell it has been superseded (see changePlatformTheme).
+  const styleSwitchRef = useRef(0)
   useEffect(() => () => styleCoverTimers.current.forEach(clearTimeout), [])
   const settingsOpenTimer = useRef(null)
   // The same, for the magnifier's sweep and the search overlay.
@@ -418,12 +396,28 @@ function App() {
   // to come back by, so the page is dropped with the layout.
   if (!webLayout && webPage != null) setWebPage(null)
 
+  // The web layout's components (WebLayout, WebTabs, SplashHome…), from its own
+  // chunk. Nothing switches the style to Web before that chunk is in (main.jsx
+  // waits for it at launch, changePlatformTheme before a switch), so this is
+  // set whenever webLayout is. Should the fetch have failed anyway (offline with
+  // nothing cached), the web-only parts render as nothing and it is retried.
+  const web = webLayout ? loadedWebShell() : null
+  const [, webShellLanded] = useReducer((n) => n + 1, 0)
+  useEffect(() => {
+    if (webLayout && !loadedWebShell()) loadWebShell().then(webShellLanded, () => {})
+  }, [webLayout])
+
   const [searchOpen, setSearchOpen] = useState(false)
   const [searchClosing, setSearchClosing] = useState(false)
   const [searchInitialQuery, setSearchInitialQuery] = useState('')
   const [savedOpen, setSavedOpen] = useState(false)
   const [savedClosing, setSavedClosing] = useState(false)
   const [splashPhase, setSplashPhase] = useState(HAS_SAVED_CITY ? 'done' : 'visible') // 'visible' | 'exit' | 'done'
+  // The web splash's saved-locations view, opened from the button at its foot.
+  // It belongs to the splash, so leaving the splash (a place picked, a tab
+  // chosen) puts it away: coming back Home lands on the recents again.
+  const [splashSaved, setSplashSaved] = useState(false)
+  if (splashSaved && splashPhase === 'done') setSplashSaved(false)
 
   // The web app's splash doubles as its home screen (search field + the places
   // you've been), so it replaces the phone splash's tap-anywhere-to-search
@@ -488,6 +482,15 @@ function App() {
   const { recents, addRecent, removeRecent } = useRecentSearches()
   const { notifyEnabled, notifyTypes, permission: notifyPermission, toggleNotifyEnabled, toggleType } = useNotifications()
 
+  // The current-weather card's actions (both shells), held stable so the
+  // memoised WebLayout and CurrentWeather can skip the renders App does for
+  // every overlay, toggle and keystroke that has nothing to do with them.
+  const saveCurrent = useCallback(() => save(location), [save, location])
+  const removeCurrent = useCallback(() => remove(location), [remove, location])
+  const setHomeCurrent = useCallback(() => setHome(location), [setHome, location])
+  const goHome = useCallback(() => { if (home) fetchWeather(home) }, [home, fetchWeather])
+  const refreshCurrent = useCallback(() => fetchWeather(location), [fetchWeather, location])
+
   // Weather notifications are APK-only (they ride the native bridge). The page
   // only publishes settings: the native worker does the checking, on its own
   // schedule, so notifications keep arriving with the app closed. Re-syncing on
@@ -545,8 +548,10 @@ function App() {
     else root.setAttribute('data-icon-motion', 'off')
   }, [iconMotion])
 
-  // Apply dark mode theme
-  useEffect(() => {
+  // Apply dark mode theme. A layout effect so it lands before the first paint:
+  // as a plain effect the cards painted in the OS scheme first and then ran
+  // their background transition into the saved one on every launch.
+  useLayoutEffect(() => {
     const root = document.documentElement
     if (darkMode === 'on') root.setAttribute('data-theme', 'dark')
     else if (darkMode === 'off') root.setAttribute('data-theme', 'light')
@@ -587,7 +592,10 @@ function App() {
   // be generated and written inline to outrank it — which means knowing which
   // scheme is actually on screen, including when Theme is System and the OS
   // flips it out from under us.
-  useEffect(() => {
+  // A layout effect for the same reason as the theme above: the custom palette
+  // has to be on the root before the first paint, or the cards flash the
+  // baseline colours and fade across to it.
+  useLayoutEffect(() => {
     const root = document.documentElement
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
     const paint = () => {
@@ -606,6 +614,16 @@ function App() {
       document.removeEventListener('visibilitychange', onVisible)
     }
   }, [materialColor, platformTheme, darkMode])
+
+  // Startup guard (see data-booting in main.jsx / index.css): transitions stay
+  // off until the first frames have painted with the final theme, so nothing
+  // animates from a default look into the saved one on load.
+  useEffect(() => {
+    let id = requestAnimationFrame(() => {
+      id = requestAnimationFrame(() => document.documentElement.removeAttribute('data-booting'))
+    })
+    return () => cancelAnimationFrame(id)
+  }, [])
 
   // Card transparency, the other half of that picker — one stored value, but
   // the two styles start from opposite places, so each reads it its own way:
@@ -630,7 +648,9 @@ function App() {
   // out. The stored value is left alone rather than zeroed, so turning effects
   // back on restores the look the user had picked; the Theme page greys the
   // control out for as long as it can't do anything (see CardTransparencyRow).
-  useEffect(() => {
+  // A layout effect, like the theme and palette, so it is in place for the
+  // first paint.
+  useLayoutEffect(() => {
     const root = document.documentElement
     const thinned = cardTransparency > 0 && weatherAnimations
     if (thinned && platformTheme === 'android') {
@@ -686,6 +706,30 @@ function App() {
   }, [weather, error]) // eslint-disable-line react-hooks/exhaustive-deps
   /* eslint-enable react-hooks/set-state-in-effect */
 
+  // The boot screen (#boot in index.html) covers the launch. With a saved city
+  // it stays up until the first reading (or an error) lands, so the app opens
+  // straight onto the forecast instead of skeletons; with none, the splash is
+  // the next screen and it lifts as soon as the app has mounted. It shows for
+  // at least BOOT_MIN_MS so it never just flickers, and never longer than
+  // BOOT_MAX_MS, so a slow or offline launch still reaches the app.
+  const bootReady = !HAS_SAVED_CITY || !!weather || !!error
+  const [bootTimedOut, setBootTimedOut] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setBootTimedOut(true), BOOT_MAX_MS)
+    return () => clearTimeout(t)
+  }, [])
+  useEffect(() => {
+    if (!bootReady && !bootTimedOut) return
+    const boot = document.getElementById('boot')
+    if (!boot || boot.classList.contains('boot--out')) return
+    const wait = Math.max(0, BOOT_MIN_MS - performance.now())
+    const t = setTimeout(() => {
+      boot.classList.add('boot--out')
+      setTimeout(() => boot.remove(), 450)
+    }, wait)
+    return () => clearTimeout(t)
+  }, [bootReady, bootTimedOut])
+
   // The first place picked in a session opens on Today (the overview) rather
   // than whichever page was last left open. Once any forecast has been shown —
   // including one restored on launch — picks keep the current page.
@@ -707,6 +751,19 @@ function App() {
     const t = setTimeout(() => setSplashPhase('done'), 700)
     return () => clearTimeout(t)
   }, [splashPhase])
+
+  // The phone splash is a fixed poster over the app, but the page under it can
+  // still scroll. In a phone browser a swipe would scroll it, collapse the
+  // address bar and resize the viewport, and the bottom-anchored city cards
+  // rode up with it. Lock the page while the poster is up (see .splash-lock).
+  // The web splash is a real page with its own scrolling, so it is left alone.
+  const splashLock = splashPhase !== 'done' && !webSplash
+  useEffect(() => {
+    if (!splashLock) return
+    const root = document.documentElement
+    root.classList.add('splash-lock')
+    return () => root.classList.remove('splash-lock')
+  }, [splashLock])
 
   // On desktop with no city loaded, any printable key press opens search pre-filled
   // with that character so the user can just start typing immediately. The web
@@ -849,8 +906,20 @@ function App() {
         history.go(subView ? -2 : -1)
       }
     }
+    // Web can't be put on screen before its chunk is in (see webShellChunk). The
+    // fetch starts on the tap, so it runs while the cover fades in; should it
+    // take longer than that, the switch waits under the cover. A later switch
+    // supersedes this one (switchId), so a slow fetch can't land on top of it.
+    const ready = mode === 'web' ? loadWebShell() : Promise.resolve()
+    const switchId = ++styleSwitchRef.current
+    const current = () => switchId === styleSwitchRef.current
+
     // Reduced motion: no cover, just the switch.
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) { apply(); return }
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      if (mode !== 'web' || loadedWebShell()) apply()
+      else ready.then(() => { if (current()) apply() }, () => { /* stays on this style */ })
+      return
+    }
 
     // Changing style re-skins every surface at once, and watching that happen
     // reads as the app glitching. So a full-screen cover comes up first, the
@@ -865,15 +934,26 @@ function App() {
     // as the cover starts to lift, so the lane returns with the page it
     // belongs to.
     const root = document.documentElement
-    styleCoverTimers.current = [
-      setTimeout(() => { root.dataset.styleCover = mode; apply() }, STYLE_COVER_IN_MS),
-      // A beat after the switch, so the new style has painted before it shows.
-      setTimeout(() => {
-        delete root.dataset.styleCover
-        setStyleCover(c => c && { ...c, leaving: true })
-      }, STYLE_COVER_IN_MS + STYLE_COVER_HOLD_MS),
-      setTimeout(() => setStyleCover(null), STYLE_COVER_IN_MS + STYLE_COVER_HOLD_MS + STYLE_COVER_OUT_MS),
-    ]
+    const timers = []
+    styleCoverTimers.current = timers
+    const lift = () => {
+      delete root.dataset.styleCover
+      setStyleCover(c => c && { ...c, leaving: true })
+      timers.push(setTimeout(() => setStyleCover(null), STYLE_COVER_OUT_MS))
+    }
+    timers.push(setTimeout(() => {
+      ready.then(() => {
+        if (!current()) return
+        root.dataset.styleCover = mode
+        apply()
+        // A beat after the switch, so the new style has painted before it shows.
+        timers.push(setTimeout(lift, STYLE_COVER_HOLD_MS))
+      }, () => {
+        // The web layout couldn't be fetched (offline with nothing cached): the
+        // cover lifts on the style that was already there.
+        if (current()) lift()
+      })
+    }, STYLE_COVER_IN_MS))
   }
 
   const changeMaterialColor = (hex) => {
@@ -1071,6 +1151,14 @@ function App() {
 
   const closeSaved = () => history.back()
 
+  // An entry on the history stack like the other overlays, so the browser's
+  // Back steps out of the view instead of out of the app.
+  const openSplashSaved = () => {
+    history.pushState({ overlay: 'splash-saved' }, '')
+    setSplashSaved(true)
+  }
+  const closeSplashSaved = () => history.back()
+
   // The Escape and back-button handlers live down here, after every open and
   // close function they call, so none of them is used before it is declared.
 
@@ -1118,10 +1206,19 @@ function App() {
       else if (showSettings) doCloseSettings()
       else if (searchOpen) doCloseSearch()
       else if (savedOpen) doCloseSaved()
+      else if (splashSaved) setSplashSaved(false)
     }
     window.addEventListener('popstate', handler)
     return () => window.removeEventListener('popstate', handler)
-  }, [help, subView, showSettings, searchOpen, savedOpen]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [help, subView, showSettings, searchOpen, savedOpen, splashSaved]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Escape backs out of the splash's saved view, as it does out of every page.
+  useEffect(() => {
+    if (!splashSaved || showSettings || searchOpen || help) return
+    const onKey = (e) => { if (e.key === 'Escape') history.back() }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [splashSaved, showSettings, searchOpen, help])
 
   // Escape closes the Help page.
   useEffect(() => {
@@ -1318,11 +1415,11 @@ function App() {
   }, [darkMode, skyC, weather, weatherAnimations])
 
   const blockComponents = weather && !loading ? {
-    today:   <TodayCard hourly={weather.hourly} daily={weather.daily} current={weather.current} yesterday={weather.yesterday} timezone={weather.timezone} unit={unit} />,
+    today:   <TodayCard hourly={weather.hourly} daily={weather.daily} current={weather.current} yesterday={weather.yesterday} timezone={weather.timezone} unit={unit} airQuality={airQuality} />,
     overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} timezone={weather.timezone} hasActiveAlert={hasActiveAlert} unit={unit} units={units} airQuality={airQuality} showInsight={overviewParts.insight} showConditions={overviewParts.conditions} showAirQuality={overviewParts.airQuality} showClothing={overviewParts.clothing} colorCode={colorCoding.overview} />,
     hourly:  <HourlyForecast hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.hourly} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
     daily:   <DailyForecast daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} units={units} colorCoding={colorCoding.daily} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
-    details: <WeatherDetails current={weather.current} daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} units={units} airQuality={airQuality} colorCoding={colorCoding.details} />,
+    details: <WeatherDetails latitude={weather.latitude} current={weather.current} daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} units={units} airQuality={airQuality} colorCoding={colorCoding.details} />,
     radar:   <WeatherRadar location={location} timezone={weather.timezone} mode={radarMode} source={radarSource} sky={weatherAnimations ? skyC : ''} rainFx={weatherAnimations} snow={isSnowing(weather.current)} />,
     nowcast: <PrecipNowcast minutely={weather.minutely_15} currentTime={weather.current.time} mode={nowcastMode} current={weather.current} radarClear={radarClear} />,
   } : null
@@ -1516,8 +1613,8 @@ function App() {
     onNotifyTypeToggle: toggleType,
   }
 
-  const weatherPanel = weather && !loading && !navPageUp && (webLayout ? (
-    <WebLayout
+  const weatherPanel = weather && !loading && !navPageUp && (webLayout ? web && (
+    <web.WebLayout
       tab={webTab}
       onNavigate={setWebTab}
       weather={weather}
@@ -1538,14 +1635,14 @@ function App() {
       radarSource={radarSource}
       hasActiveAlert={hasActiveAlert}
       saved={isSaved(location)}
-      onSave={() => save(location)}
-      onRemove={() => remove(location)}
+      onSave={saveCurrent}
+      onRemove={removeCurrent}
       isHome={isHome(location)}
       hasHome={!!home}
-      onGoHome={() => { if (home) fetchWeather(home) }}
-      onSetHome={() => setHome(location)}
+      onGoHome={goHome}
+      onSetHome={setHomeCurrent}
       onUnsetHome={unsetHome}
-      onRefresh={() => fetchWeather(location)}
+      onRefresh={refreshCurrent}
     />
   ) : (
     <>
@@ -1562,15 +1659,15 @@ function App() {
           timezone={weather.timezone}
           unit={unit}
           saved={isSaved(location)}
-          onSave={() => save(location)}
-          onRemove={() => remove(location)}
+          onSave={saveCurrent}
+          onRemove={removeCurrent}
           isHome={isHome(location)}
           hasHome={!!home}
-          onGoHome={() => { if (home) fetchWeather(home) }}
-          onSetHome={() => setHome(location)}
+          onGoHome={goHome}
+          onSetHome={setHomeCurrent}
           onUnsetHome={unsetHome}
           lastUpdated={lastUpdated}
-          onRefresh={() => fetchWeather(location)}
+          onRefresh={refreshCurrent}
           loading={loading}
           colorCoding={colorCoding.current}
           glow={colorCoding.glow}
@@ -1626,7 +1723,7 @@ function App() {
           onPointerLeave={endSearchHold}
           onPointerCancel={endSearchHold}
           onContextMenu={(e) => e.preventDefault()}
-          aria-label="Search — hold to use my location"
+          aria-label="Search. Hold to use my location"
         >
           <span className="header-search-icons">
             {/* The phone shells draw these from Phosphor
@@ -1671,9 +1768,9 @@ function App() {
               <span className="app-place-date">{placeDate}</span>
             </span>
           )}
-          {showNav && (
+          {showNav && web && (
             <div className="web-tabs-row">
-              <WebTabs
+              <web.WebTabs
                 tabs={navTabs} active={navActive} onChange={handleNavTab}
                 // Back to the splash — the logo-tap the phone shells use, which
                 // the web app can't offer because the tab bar has taken the
@@ -1681,7 +1778,7 @@ function App() {
                 home={{ label: 'Home', icon: <House size={17} aria-hidden="true" />, onSelect: handleNavHome }}
                 pages={navPages}
               />
-              {headerTabs && weather && <WebAlertPill alerts={alerts} tab={navPageUp ? webPage : webTab} location={location} />}
+              {headerTabs && weather && <web.WebAlertPill alerts={alerts} tab={navPageUp ? webPage : webTab} location={location} />}
             </div>
           )}
         </div>
@@ -1710,7 +1807,7 @@ function App() {
               role="button"
               tabIndex={0}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleLogoClick() } }}
-              aria-label={`Alek Weather${brandEvent ? ` (${brandEvent.label})` : ''} — go to home`}
+              aria-label={`Alek Weather${brandEvent ? ` (${brandEvent.label})` : ''}, go to home`}
               title={brandEvent?.label}
             >
               <span className="web-brand-logo" aria-hidden="true">
@@ -1739,7 +1836,7 @@ function App() {
               </div>
             </div>
           )}
-          {loading && !navPageUp && (webLayout ? <WebLoadingScreen tab={webTab} /> : <LoadingScreen />)}
+          {loading && !navPageUp && (webLayout ? web && <web.WebLoadingScreen tab={webTab} /> : <LoadingScreen />)}
           {error && !loading && !navPageUp && (
             error.startsWith('geo:') ? (
               <div className="location-error-card">
@@ -1851,8 +1948,8 @@ function App() {
                 </span>
               )}
             </div>
-            {webSplash && (
-              <SplashHome
+            {webSplash && web && (
+              <web.SplashHome
                 recents={recents}
                 savedCities={cities}
                 home={home}
@@ -1860,7 +1957,9 @@ function App() {
                 unit={unit}
                 exiting={splashPhase === 'exit'}
                 busy={loading || splashHold}
-                active={splashPhase === 'visible' && !showSettings && !savedOpen && !searchOpen}
+                active={splashPhase === 'visible' && !showSettings && !savedOpen && !searchOpen && !splashSaved}
+                showSaved={splashSaved}
+                onCloseSaved={closeSplashSaved}
                 onSelect={handleSplashCitySelect}
                 onRemoveRecent={removeRecent}
                 onRemoveSaved={remove}
@@ -1883,7 +1982,20 @@ function App() {
             </div>
             {/* Only once the weather has taken the line under the icon —
                 until then that line is the wordmark, and two would be one too many. */}
-            {(splashIcon || (webSplash && !localConditionsFailed(recents[0] ?? null))) && (
+            {/* On the web the header already carries the brand, so the foot of
+                the splash holds the way to the saved locations instead. */}
+            {webSplash ? (
+              !splashSaved && (
+                <button
+                  className={`splash-saved-btn${splashPhase === 'exit' ? ' splash-wordmark--exit' : ''}`}
+                  onClick={openSplashSaved}
+                  disabled={splashPhase !== 'visible'}
+                >
+                  <Bookmark size={15} aria-hidden="true" />
+                  Saved locations
+                </button>
+              )
+            ) : splashIcon && (
               <span className={`splash-wordmark${splashPhase === 'exit' ? ' splash-wordmark--exit' : ''}`}>Alek Weather</span>
             )}
             <p className="splash-version">Version {APP_VERSION}</p>
@@ -2041,6 +2153,9 @@ function App() {
           loading rather than as something to act on. Mounting here is what starts
           its (throttled) check — see UpdateToast. */}
       {IS_ANDROID_APP && splashPhase === 'done' && <UpdateToast />}
+      {/* The web version on an Android phone: offer the APK once. ApkPrompt
+          checks the device itself and stays empty everywhere else. */}
+      {!IS_ANDROID_APP && splashPhase === 'done' && <ApkPrompt />}
       {help && (
         <HelpPage
           article={help.article}

@@ -1,4 +1,20 @@
-import { useEffect, useRef } from 'react'
+import { memo, useEffect, useRef } from 'react'
+import { LOW_END } from '../utils/device'
+
+// Speeds in CFG are px per frame at this frame length: 74 Hz, the screen the
+// radar's rain (RadarRain) was tuned on, so the two rain layers on the web Radar
+// tab fall at the same rate. Each drawn frame moves by the time it actually
+// took, so the motion is the same at any refresh rate; it used to be per
+// display frame, which ran the weather twice as fast on a 120 Hz phone.
+const REF_FRAME_MS = 1000 / 74
+// Capped so the first frame after a pause doesn't teleport every particle.
+const MAX_STEP = 3
+// How often a frame is drawn, at most: every display frame up to this rate, and
+// on faster screens every second (or third…) one, which keeps the cadence even.
+// Drawing more often shows nothing new, and each frame also has the browser
+// redo the backdrop blur of every glass card over the sky. Low-end hardware
+// gets half (see LOW_END).
+const TARGET_FPS = LOW_END ? 30 : 60
 
 function sceneFor(code) {
   if (code == null) return null
@@ -118,7 +134,9 @@ const TILT_GAIN  = 0.8
 const ALPHA_STEPS = 6
 const quantFactor = (v) => Math.round(v * ALPHA_STEPS) / ALPHA_STEPS
 
-export function WeatherCanvas({ code, gyro = true }) {
+// Memoised: App re-renders for every overlay, toggle and keystroke, and none of
+// that concerns the sky unless the code or the gyro setting changes.
+export const WeatherCanvas = memo(function WeatherCanvas({ code, gyro = true }) {
   const scene = sceneFor(code)
   const ref = useRef(null)
   // Tilt in radians: `target` is set by the gyroscope listener, `cur` eases
@@ -159,8 +177,14 @@ export function WeatherCanvas({ code, gyro = true }) {
     const ctx = canvas.getContext('2d')
     const cfg = CFG[scene]
     let raf, flash = 0
+    // Frames until the header's position is read again (see mirrorToHeader).
+    let measureIn = 0
 
-    const resize = () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight }
+    const resize = () => {
+      canvas.width = window.innerWidth
+      canvas.height = window.innerHeight
+      measureIn = 0
+    }
     resize()
     window.addEventListener('resize', resize)
 
@@ -236,20 +260,57 @@ export function WeatherCanvas({ code, gyro = true }) {
       style: `rgba(${r},${g},${b},${alpha})`, ps,
     }))
 
-    function draw() {
+    // Paused while something opaque covers the whole screen: the settled
+    // settings page on a phone (not while its transparency thumb is held, which
+    // clears the page to show the sky), or the radar once it has finished going
+    // full-screen. Drawing under those was pure cost — and worse than its own
+    // draw calls, because every frame of moving sky also made the browser redo
+    // each glass card's backdrop blur. Checked a few times a second rather than
+    // per frame; the loop keeps ticking so it resumes on its own.
+    let covered = false, coverCheckIn = 0
+    const COVER_SEL =
+      ':root[data-shell="mobile"] .settings-page.settled:not(.peeking):not(.settings-page--modal),' +
+      ' .radar-iris:not(.radar-iris--on) > .radar-iris-circle .radar-expanded'
+
+    // Frame pacing (see TARGET_FPS): the display's frame length is measured off
+    // the callbacks themselves, smoothed, and a frame drawn every `stride` of
+    // them. `k` is how many REF_FRAME_MS the drawn frame covers, and scales
+    // every per-frame step below.
+    let displayMs = 1000 / 60
+    let lastTick = 0, lastDraw = 0, ticks = 0
+
+    function draw(now) {
+      raf = requestAnimationFrame(draw)
+      if (lastTick) {
+        const dt = now - lastTick
+        if (dt > 0 && dt < 50) displayMs += (dt - displayMs) * 0.1
+      }
+      lastTick = now
+      const stride = Math.max(1, Math.floor(1000 / displayMs / TARGET_FPS + 0.1))
+      if (++ticks % stride) return
+
+      if (coverCheckIn-- <= 0) {
+        coverCheckIn = 10
+        covered = !!document.querySelector(COVER_SEL)
+      }
+      // Restarting from k = 1 once uncovered, rather than catching up the
+      // time spent paused.
+      if (covered) { lastDraw = 0; return }
+      const k = lastDraw ? Math.min(MAX_STEP, (now - lastDraw) / REF_FRAME_MS) : 1
+      lastDraw = now
       ctx.clearRect(0, 0, W(), H())
 
       // Ease the tilt toward its target once per frame; every scene reads this.
       const t = tilt.current
-      t.cur += (t.target - t.cur) * 0.08
+      t.cur += (t.target - t.cur) * (1 - Math.pow(1 - 0.08, k))
       const windX = Math.sin(t.cur) // sideways push from the current lean
 
       if (scene === 'storm') {
         if (flash > 0) {
           ctx.fillStyle = `rgba(255,255,255,${flash * 0.12})`
           ctx.fillRect(0, 0, W(), H())
-          flash -= 0.05
-        } else if (Math.random() < 0.003) {
+          flash -= 0.05 * k
+        } else if (Math.random() < 0.003 * k) {
           flash = 1
         }
       }
@@ -258,7 +319,7 @@ export function WeatherCanvas({ code, gyro = true }) {
         // Drift left to right; the tilt nudges them, gently. A cloud that has
         // fully left the right edge comes back in from the left at a new height.
         for (const p of particles) {
-          p.x += p.spd + (still ? 0 : windX * 0.4)
+          p.x += (p.spd + (still ? 0 : windX * 0.4)) * k
           const w = p.sprite.width
           if (p.x > W() + 20) { p.x = -w - rand(0, 120); p.y = rand(-0.12, 0.6) * H() }
           else if (p.x < -w - 140) p.x = W()
@@ -288,7 +349,7 @@ export function WeatherCanvas({ code, gyro = true }) {
         for (const { style, ps } of buckets) {
           ctx.beginPath()
           for (const p of ps) {
-            p.x += vx * p.spd; p.y += vy * p.spd
+            p.x += vx * p.spd * k; p.y += vy * p.spd * k
             // Refill once a drop leaves the bottom or slides off the downwind side.
             if (p.y > H() + 20 || p.x < -40 || p.x > W() + 40) respawn(p)
             ctx.moveTo(p.x, p.y)
@@ -301,10 +362,10 @@ export function WeatherCanvas({ code, gyro = true }) {
         for (const { style, ps } of buckets) {
           ctx.beginPath()
           for (const p of ps) {
-            p.drift += p.ds
+            p.drift += p.ds * k
             // Faster-falling flakes get carried further by the tilt, like real wind.
-            p.x += Math.sin(p.drift) * 0.4 + windX * (p.vy + 1) * 1.5
-            p.y += p.vy
+            p.x += (Math.sin(p.drift) * 0.4 + windX * (p.vy + 1) * 1.5) * k
+            p.y += p.vy * k
             if (p.y > H()) { p.y = -p.r; p.x = rand(0, W()) }
             if (p.x < -p.r) p.x = W() + p.r
             if (p.x > W() + p.r) p.x = -p.r
@@ -320,7 +381,7 @@ export function WeatherCanvas({ code, gyro = true }) {
         for (const { style, ps } of buckets) {
           ctx.beginPath()
           for (const p of ps) {
-            p.x += p.vx + windX * 0.6; p.y += p.vy
+            p.x += (p.vx + windX * 0.6) * k; p.y += p.vy * k
             if (p.x < -p.r) p.x = W() + p.r
             if (p.x > W() + p.r) p.x = -p.r
             if (p.y < -p.r) p.y = H() + p.r
@@ -334,7 +395,6 @@ export function WeatherCanvas({ code, gyro = true }) {
       }
 
       mirrorToHeader()
-      raf = requestAnimationFrame(draw)
     }
 
     // The desktop tab bar is sticky and has to hide the page scrolling under it,
@@ -345,24 +405,42 @@ export function WeatherCanvas({ code, gyro = true }) {
     // the slice of this one it covers is copied into it: one drawImage. The phone shells
     // have no such element; the lookup is retried twice a second, not per frame.
     // The copy is mapped through this canvas's on-screen scale (see below).
+    //
+    // Where the header sits is measured rather than read on every frame, where a
+    // layout read forced a synchronous layout whenever anything on the page had
+    // changed since the last one. It is read again after a scroll or a resize
+    // (of the window, this canvas or the header), and a few times a second
+    // regardless, which covers the header moving without any of those.
     let mirror = null, lookupIn = 0
+    let box = null, sx = 1, sy = 1
+    const remeasure = () => { measureIn = 0 }
+    const ro = new ResizeObserver(remeasure)
+    ro.observe(canvas)
+    window.addEventListener('scroll', remeasure, { passive: true })
     function mirrorToHeader() {
       if (!mirror?.isConnected) {
+        if (mirror) ro.unobserve(mirror)
         mirror = null
         if (lookupIn-- > 0) return
         lookupIn = 30
         mirror = document.querySelector('.header-fx')
         if (!mirror) return
+        ro.observe(mirror)
+        measureIn = 0
       }
-      const box = mirror.getBoundingClientRect()
-      const w = Math.round(box.width), h = Math.round(box.height)
-      if (mirror.width !== w || mirror.height !== h) { mirror.width = w; mirror.height = h }
-      // This canvas is drawn at window.innerWidth, which counts the scrollbar,
-      // but displayed across the page, which doesn't — so on screen it is
-      // squeezed a little. Read the slice through that same squeeze, or the copy
-      // drifts out of line with the canvas below it, worst at the right edge.
-      const sx = canvas.width / (canvas.clientWidth || canvas.width)
-      const sy = canvas.height / (canvas.clientHeight || canvas.height)
+      if (measureIn-- <= 0) {
+        measureIn = 15
+        box = mirror.getBoundingClientRect()
+        const w = Math.round(box.width), h = Math.round(box.height)
+        if (mirror.width !== w || mirror.height !== h) { mirror.width = w; mirror.height = h }
+        // This canvas is drawn at window.innerWidth, which counts the scrollbar,
+        // but displayed across the page, which doesn't — so on screen it is
+        // squeezed a little. Read the slice through that same squeeze, or the copy
+        // drifts out of line with the canvas below it, worst at the right edge.
+        sx = canvas.width / (canvas.clientWidth || canvas.width)
+        sy = canvas.height / (canvas.clientHeight || canvas.height)
+      }
+      const w = mirror.width, h = mirror.height
       const mctx = mirror.getContext('2d')
       mctx.clearRect(0, 0, w, h)
       if (w > 0 && h > 0) {
@@ -373,6 +451,8 @@ export function WeatherCanvas({ code, gyro = true }) {
     raf = requestAnimationFrame(draw)
     return () => {
       cancelAnimationFrame(raf)
+      ro.disconnect()
+      window.removeEventListener('scroll', remeasure)
       window.removeEventListener('resize', resize)
       // Leave the header's copy empty rather than frozen on the last frame.
       if (mirror?.isConnected) mirror.getContext('2d').clearRect(0, 0, mirror.width, mirror.height)
@@ -381,4 +461,4 @@ export function WeatherCanvas({ code, gyro = true }) {
 
   if (!scene) return null
   return <canvas ref={ref} className="weather-canvas" />
-}
+})

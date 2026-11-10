@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { memo, useMemo } from 'react'
 import { liveWeatherCode, precipTier, SNOW_CODES } from '../utils/weatherCodes'
 import { useMeasure } from './web/chartUtils'
 
@@ -58,7 +58,9 @@ function buildPath(pts, cb) {
   }
 }
 
-export function PrecipNowcast({ minutely, currentTime, mode = 'auto', current = null, radarClear = null, wide = false }) {
+// Memoised: App re-renders for every overlay, toggle and keystroke, and the
+// props here are the reading and the settings, which those leave alone.
+export const PrecipNowcast = memo(function PrecipNowcast({ minutely, currentTime, mode = 'auto', current = null, radarClear = null, wide = false }) {
   const [plotRef, measured] = useMeasure()
 
   const L = wide ? WIDE : PHONE
@@ -215,4 +217,4 @@ export function PrecipNowcast({ minutely, currentTime, mode = 'auto', current = 
       </div>
     </div>
   )
-}
+})

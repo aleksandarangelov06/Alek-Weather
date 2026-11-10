@@ -18,8 +18,54 @@
          <link rel="stylesheet"> in the head blocks first paint on a round trip
          to fonts.googleapis.com, which on a cold phone radio is seconds. -->
     <title>Alek Weather</title>
+    <!-- Boot screen (phone only): inline so the very first paint, before the
+         JS bundle and App.css arrive, is already the loading screen. Colours
+         follow the OS scheme; main.jsx applies a saved Theme choice and removes
+         it on desktop; App.jsx fades it out once the app is ready. -->
+    <style>
+      #boot {
+        --boot-bg: #f0f2f5; --boot-text: #1a1a2e;
+        --boot-track: rgba(0, 0, 0, 0.07); --boot-fill: #3b82f6;
+        position: fixed; inset: 0; z-index: 10000;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        background: var(--boot-bg); color: var(--boot-text);
+        font-family: 'Google Sans', 'Product Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        transition: opacity 0.35s ease, visibility 0s linear 0.35s;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme="light"]) #boot {
+          --boot-bg: #000000; --boot-text: #e6edf3;
+          --boot-track: rgba(255, 255, 255, 0.1); --boot-fill: #60a5fa;
+        }
+      }
+      :root[data-theme="dark"] #boot {
+        --boot-bg: #000000; --boot-text: #e6edf3;
+        --boot-track: rgba(255, 255, 255, 0.1); --boot-fill: #60a5fa;
+      }
+      /* Desktops (fine pointer that can hover) never show it. */
+      @media (hover: hover) and (pointer: fine) { #boot { display: none; } }
+      #boot.boot--out { opacity: 0; visibility: hidden; pointer-events: none; }
+      #boot .boot-logo { width: 88px; height: 88px; }
+      #boot .boot-name { margin: 14px 0 28px; font-size: 22px; font-weight: 500; letter-spacing: -0.01em; }
+      #boot .boot-bar {
+        position: relative; width: 96px; height: 3px; border-radius: 2px;
+        overflow: hidden; background: var(--boot-track);
+      }
+      #boot .boot-bar::after {
+        content: ''; position: absolute; inset: 0 auto 0 0; width: 40%;
+        border-radius: 2px; background: var(--boot-fill);
+        animation: boot-slide 1.3s ease-in-out infinite;
+      }
+      @keyframes boot-slide { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+      @media (prefers-reduced-motion: reduce) { #boot .boot-bar::after { animation-duration: 2.6s; } }
+    </style>
   </head>
   <body>
+    <div id="boot" role="status" aria-label="Loading Alek Weather">
+      <img class="boot-logo" src="/logo-transparent.svg" alt="" />
+      <p class="boot-name">Alek Weather</p>
+      <div class="boot-bar" aria-hidden="true"></div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>

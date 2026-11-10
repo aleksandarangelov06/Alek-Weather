@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { memo, useEffect, useReducer, useRef, useState } from 'react'
 import { Bookmark, RefreshCw, House } from 'lucide-react'
 import { getWeatherInfo, liveWeatherCode, toTemp, tempStyle } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
@@ -29,7 +29,22 @@ function formatUpdated(date) {
   return `Updated at ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
 }
 
-export function CurrentWeather({ hideHeader = false, current, minutely, radarClear = null, location, timezone, unit, saved, onSave, onRemove, isHome, hasHome, onGoHome, onSetHome, onUnsetHome, lastUpdated, onRefresh, loading, colorCoding = true, glow = true, frost = true, children }) {
+// The age line keeps itself current. The card is memoised, so it no longer
+// re-renders along with every unrelated change in App, which is what used to
+// move "Updated 2 min ago" along.
+function UpdatedText({ date }) {
+  const [, tick] = useReducer((n) => n + 1, 0)
+  useEffect(() => {
+    if (!date) return
+    const id = setInterval(tick, 30 * 1000)
+    return () => clearInterval(id)
+  }, [date])
+  return <span className="updated-text">{formatUpdated(date)}</span>
+}
+
+// Memoised: App re-renders for every overlay, toggle and keystroke. The
+// callbacks App passes are stable (useCallback there), so those renders stop here.
+export const CurrentWeather = memo(function CurrentWeather({ hideHeader = false, current, minutely, radarClear = null, location, timezone, unit, saved, onSave, onRemove, isHome, hasHome, onGoHome, onSetHome, onUnsetHome, lastUpdated, onRefresh, loading, colorCoding = true, glow = true, frost = true, children }) {
   // Home button: tapping toggles this location as home (set if it isn't, unset
   // if it is); holding navigates to the saved home — or, when no home exists
   // yet, sets this one (there's nowhere to go). A timer started on pointer-down
@@ -117,7 +132,7 @@ export function CurrentWeather({ hideHeader = false, current, minutely, radarCle
       <div className="current-condition">{info.label}</div>
       <div className="current-feels">Feels like {feelsLike}°{unit}</div>
       <div className="current-updated">
-        <span className="updated-text">{formatUpdated(lastUpdated)}</span>
+        <UpdatedText date={lastUpdated} />
         <button
           className={`refresh-btn ${loading ? 'spinning' : ''}`}
           onClick={onRefresh}
@@ -132,4 +147,4 @@ export function CurrentWeather({ hideHeader = false, current, minutely, radarCle
       {children}
     </div>
   )
-}
+})

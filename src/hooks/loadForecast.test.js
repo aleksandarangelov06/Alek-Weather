@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { loadForecast } from './useWeather'
+import { clearNwsPoints } from '../utils/nwsPoints'
 
 // loadForecast against a fake network. Each test describes the servers as a
 // list of [match, respond] pairs; `respond` returns a body, or HANG for a
@@ -45,6 +46,9 @@ beforeEach(() => {
   vi.useFakeTimers()
   vi.setSystemTime(NOW)
   vi.spyOn(AbortSignal, 'timeout').mockImplementation(timeoutOnFakeClock)
+  // Every test describes its own NWS point; one stored by an earlier test (or
+  // its 404 remembered as "outside coverage") would stand in for it.
+  clearNwsPoints()
 })
 afterEach(() => {
   vi.useRealTimers()

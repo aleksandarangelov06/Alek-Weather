@@ -61,14 +61,27 @@ export function useCoverHistory(open, close) {
     if (!open) return
     history.pushState({ overlay: 'detailCover', coverId: id }, '')
     let popped = false
+    // Going back to the entry under ours restores the scroll position the
+    // browser saved for it — where the page sat when the cover opened — so
+    // closing after scrolling yanked the page back there. Track where the page
+    // actually is (scroll events land a frame late, so this still holds the
+    // pre-restore value when popstate fires) and put it back after the pop.
+    let y = window.scrollY
+    const onScroll = () => { y = window.scrollY }
     const onPop = () => {
       backPending.delete(id)
       if (history.state?.coverId === id) return
       popped = true
+      const keep = y
+      window.scrollTo(0, keep)
+      // Some browsers restore after popstate rather than before it.
+      requestAnimationFrame(() => { if (window.scrollY !== keep) window.scrollTo(0, keep) })
       close()
     }
+    window.addEventListener('scroll', onScroll, { passive: true })
     window.addEventListener('popstate', onPop)
     return () => {
+      window.removeEventListener('scroll', onScroll)
       window.removeEventListener('popstate', onPop)
       // Unmounted with the cover still up (a new city loaded under it): spend
       // the entry so back isn't left pointing at a cover that's gone.

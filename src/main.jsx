@@ -6,6 +6,35 @@ import App from './App.jsx'
 import { ErrorBoundary } from './components/ErrorBoundary.jsx'
 import { installPredictiveBack } from './utils/predictiveBack.js'
 import { IS_ANDROID_APP } from './utils/version.js'
+import { initialPlatformTheme } from './utils/platformTheme.js'
+import { loadWebShell } from './components/web/webShellChunk.js'
+
+// Opening in the Web style: that layout (and WebApp.css) is its own chunk, which
+// the phone styles never download (see webShellChunk). It is requested here,
+// first, so it loads alongside the setup below, and the first render waits for
+// it — without it the tab bar and pages would come up unstyled. A failed fetch
+// still renders; App retries it. Every other style renders straight away.
+const opensInWeb = initialPlatformTheme() === 'web'
+const webShellReady = opensInWeb ? loadWebShell().catch(() => {}) : null
+
+// data-booting switches every transition off until App has painted its first
+// frames (App removes it), so the cards don't animate into the saved look.
+document.documentElement.setAttribute('data-booting', '')
+
+// Apply a saved Theme choice before the first render so the boot screen in
+// index.html (which can only follow the OS scheme until now — the CSP blocks
+// inline scripts) switches to it right away. App's own effect keeps it in sync.
+try {
+  const theme = localStorage.getItem('alek-weather-theme')
+  if (theme === 'on') document.documentElement.setAttribute('data-theme', 'dark')
+  else if (theme === 'off') document.documentElement.setAttribute('data-theme', 'light')
+} catch { /* storage unavailable: OS scheme it is */ }
+
+// The boot screen is for the phone app only. index.html already hides it on
+// hover-and-fine-pointer screens; this also drops it for anything else that
+// opens in the web (desktop) layout, e.g. a tablet set to the Web style.
+// (Phones never open in Web: initialPlatformTheme falls back to the phone look.)
+if (opensInWeb) document.getElementById('boot')?.remove()
 
 // Android app only in effect: listens for the back-gesture events MainActivity
 // sends, and animates the open overlay along with the swipe.
@@ -66,10 +95,12 @@ fonts.rel = 'stylesheet'
 fonts.href = 'https://fonts.googleapis.com/css2?family=Google+Sans:wght@300;400;500;700&family=Inter:wght@300..700&display=swap'
 document.head.appendChild(fonts)
 
-createRoot(document.getElementById('root')).render(
+const render = () => createRoot(document.getElementById('root')).render(
   <StrictMode>
     <ErrorBoundary>
       <App />
     </ErrorBoundary>
   </StrictMode>,
 )
+if (webShellReady) webShellReady.then(render)
+else render()

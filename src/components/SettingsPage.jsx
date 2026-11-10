@@ -4,6 +4,7 @@ import {
   Palette, Flame, Thermometer, CloudRain, Radar as RadarIcon, Bell, Database, RefreshCw, Trash2,
 } from 'lucide-react'
 import { APP_VERSION, ANDROID_VERSION, IS_ANDROID_APP } from '../utils/version'
+import { APK_URL, isAndroidWeb } from './ApkPrompt'
 import { IS_PHONE, IS_DESKTOP } from '../utils/device'
 import { UNIT_GROUPS, UNIT_GROUP_KEYS } from '../utils/units'
 import { MAX_CARD_TRANSPARENCY } from '../utils/appearance'
@@ -78,6 +79,19 @@ const isMobileDevice = () =>
   /iPad|iPhone|iPod|Android|Mobi/i.test(navigator.userAgent)
 
 const isIOS = () => /iPad|iPhone|iPod/i.test(navigator.userAgent)
+
+// The web version on an Android phone: a standing link to the APK, for anyone
+// who closed the one-time bar (ApkPrompt) and wants the app later.
+function ApkSection() {
+  if (!isAndroidWeb()) return null
+  return (
+    <div className="card settings-card">
+      <SettingRow label="Android app">
+        <a className="install-btn apk-download-btn" href={APK_URL}>Download APK</a>
+      </SettingRow>
+    </div>
+  )
+}
 
 function InstallSection({ installPrompt, onInstall }) {
   if (isStandalone() || !isMobileDevice()) return null
@@ -171,7 +185,7 @@ function useClearStorage() {
   return { cleared, confirmDelete, setConfirmDelete, deleting, handleClear, handleDelete }
 }
 
-const ABOUT_DESC = 'Alek Weather uses free, open-source weather APIs. Open-Meteo provides the forecast, including the full seven-day outlook. In the US, current conditions and the next day or two of hourly detail come from NWS instead — the range it forecasts hour by hour.'
+const ABOUT_DESC = 'Alek Weather uses free, open-source weather APIs. Open-Meteo provides the forecast, including the full seven-day outlook. In the US, current conditions and the next day or two of hourly detail come from NWS instead, for the range it forecasts hour by hour.'
 
 const ABOUT_APIS = [
   ['Weather & Forecast', 'api.open-meteo.com'],
@@ -914,6 +928,7 @@ function SettingsBody({ onHelpOpen, darkMode, onDarkModeChange, unit, onUnitChan
 
       <div className="settings-group-label">Other</div>
       {IS_ANDROID_APP && <UpdateSection />}
+      <ApkSection />
       <InstallSection installPrompt={installPrompt} onInstall={onInstall} />
       <ClearStorageSection />
       <AboutSection onHelpOpen={onHelpOpen} />
@@ -1000,7 +1015,7 @@ function WebSettings({
   const sections = [
     { id: 'appearance', label: 'Appearance', Icon: Palette, desc: 'How the app looks, and what moves.' },
     { id: 'colors', label: 'Color Coding', Icon: Flame, desc: 'Color readings by how hot, cold or severe they are.' },
-    { id: 'units', label: 'Units', Icon: Thermometer, desc: 'Switching is instant — the forecast is converted, not fetched again.' },
+    { id: 'units', label: 'Units', Icon: Thermometer, desc: 'Switching is instant. The forecast is converted, not fetched again.' },
     { id: 'forecast', label: 'Forecast', Icon: CloudRain, desc: 'What the forecast pages show.' },
     { id: 'radar', label: 'Radar', Icon: RadarIcon, desc: 'How the radar map plays and where its data comes from.' },
     ...(IS_ANDROID_APP ? [{ id: 'notifications', label: 'Notifications', Icon: Bell, desc: 'Rain on the way, weather alerts and tomorrow’s outlook.' }] : []),
@@ -1149,7 +1164,7 @@ function WebSettings({
               ]}
             />
           </WebRow>
-          <WebRow label="Radar source" desc="US only. MRMS is NOAA's national mosaic; NEXRAD is the nearest single radar — sharper, but it ends about 230 km out. Auto uses each where it's best.">
+          <WebRow label="Radar source" desc="US only. MRMS is NOAA's national mosaic; NEXRAD is the nearest single radar: sharper, but it ends about 230 km out. Auto uses each where it's best.">
             <SegmentedControl
               value={radarSource}
               onChange={onRadarSourceChange}
@@ -1184,6 +1199,7 @@ function WebSettings({
       content = (
         <>
           {IS_ANDROID_APP && <div className="ws-legacy"><UpdateSection /></div>}
+          {isAndroidWeb() && <div className="ws-legacy"><ApkSection /></div>}
           <WebDataSection />
         </>
       )

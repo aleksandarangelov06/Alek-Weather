@@ -14,17 +14,35 @@ const FOG_CODES = new Set([45, 48])
 
 // ── Time window ────────────────────────────────────────────────────────────
 
-function dateMinusOne(dateStr) {
+function addDays(dateStr, n) {
   const d = new Date(`${dateStr}T12:00:00Z`)
-  d.setUTCDate(d.getUTCDate() - 1)
+  d.setUTCDate(d.getUTCDate() + n)
   return d.toISOString().slice(0, 10)
 }
+const dateMinusOne = (dateStr) => addDays(dateStr, -1)
 
-// The hours the ratings cover: from the current hour to the end of today. Late
-// in the evening that is only a few hours, so it stretches to the next 12 and
-// says so, rather than rating the day on one or two hours.
+// From 9pm the day is as good as over, so the card turns to tomorrow.
+const TOMORROW_FROM_HOUR = 21
+// "Tomorrow" is rated over its waking hours: the small hours would only drag
+// every score down for being dark and cold while nobody is out.
+const TOMORROW_HOURS = ['06', '22']
+
+export function showsTomorrow(hourStr) {
+  return Number(hourStr) >= TOMORROW_FROM_HOUR
+}
+
+// The hours the ratings cover: from the current hour to the end of today. In
+// the evening that is only a few hours, so it stretches to the next 12 and
+// says so, rather than rating the day on one or two hours; from 9pm it is
+// tomorrow's day instead.
 export function outlookWindow(hourly, todayStr, hourStr) {
   const times = hourly?.time ?? []
+  if (showsTomorrow(hourStr)) {
+    const tomorrow = addDays(todayStr, 1)
+    const start = times.findIndex(t => t.startsWith(`${tomorrow}T${TOMORROW_HOURS[0]}`))
+    const end = times.findIndex(t => t.startsWith(`${tomorrow}T${TOMORROW_HOURS[1]}`))
+    if (start !== -1 && end > start) return { start, end, label: 'Tomorrow', tomorrow: true }
+  }
   const start = times.findIndex(t => t.startsWith(`${todayStr}T${hourStr}`))
   if (start === -1) return null
   let end = start
@@ -51,10 +69,20 @@ export function compareWithYesterday({ hourly, daily, yesterday, current, todayS
     high = { today: todayHigh, yesterday: yesterday.max, diffF: todayHigh - yesterday.max }
   }
   if (!now && !high) return null
-  // The headline compares the days, so it follows the high; right now is the
-  // fallback (and the second line), since the same hour can be an outlier.
-  const lead = high ?? now
-  return { now, high, diffF: lead.diffF, direction: direction(lead.diffF) }
+  // The headline compares right now with the same hour yesterday; the day's
+  // high is the fallback (and the second line) when that hour is missing.
+  const lead = now ?? high
+  return { now, high, basis: now ? 'now' : 'high', diffF: lead.diffF, direction: direction(lead.diffF) }
+}
+
+// Tomorrow's day against today's: the highs lead, the lows are the second line.
+// daily[0] is today and daily[1] tomorrow.
+export function compareTomorrowWithToday(daily) {
+  const hi = daily?.temperature_2m_max, lo = daily?.temperature_2m_min
+  const high = hi?.[0] != null && hi?.[1] != null ? { tomorrow: hi[1], today: hi[0], diffF: hi[1] - hi[0] } : null
+  const low = lo?.[0] != null && lo?.[1] != null ? { tomorrow: lo[1], today: lo[0], diffF: lo[1] - lo[0] } : null
+  if (!high) return null
+  return { high, low, diffF: high.diffF, direction: direction(high.diffF) }
 }
 
 function direction(diffF) {
@@ -89,8 +117,9 @@ const WET_COST = {
   exercise: { thunder: 9, freezing: 7, heavySnow: 6, snow: 4, heavyRain: 7, rain: 5, lightRain: 3 },
 }
 
-function hourAt(hourly, i) {
+function hourAt(hourly, i, aqiByHour) {
   return {
+    aqi: aqiByHour?.get(hourly.time?.[i]?.slice(0, 13)) ?? null,
     temp: hourly.temperature_2m?.[i],
     feels: hourly.apparent_temperature?.[i] ?? hourly.temperature_2m?.[i],
     pop: hourly.precipitation_probability?.[i] ?? 0,
@@ -147,6 +176,17 @@ function hourCosts(h) {
   }
   if (sight) out.driving.push([sight, FOG_CODES.has(h.code) ? 'Fog' : 'Low visibility'])
 
+  // Air quality, on the US AQI scale. Moderate air (up to 100) costs nothing;
+  // past that, exertion is hit hardest (deeper, faster breathing), time
+  // outside less so, and driving only once the air is thick enough with smoke
+  // or smog to haze the road (very unhealthy, 200+).
+  if (h.aqi != null && h.aqi > 100) {
+    const why = h.aqi > 200 ? 'Very unhealthy air' : h.aqi > 150 ? 'Unhealthy air' : 'Poor air quality'
+    out.exercise.push([Math.min(9, 1 + (h.aqi - 100) / 20), why])
+    out.outside.push([Math.min(7, 0.5 + (h.aqi - 100) / 30), why])
+    if (h.aqi > 200) out.driving.push([Math.min(3, (h.aqi - 200) / 40), 'Heavy smog'])
+  }
+
   // Below freezing with anything falling, the road surface is the problem, on
   // top of the precipitation itself.
   if (h.temp != null && h.temp <= 32 && likelihood >= 0.3) out.driving.push([2, 'Icy roads'])
@@ -164,14 +204,23 @@ const GOOD_REASON = { outside: 'Pleasant', driving: 'Clear roads', exercise: 'Go
 // An hour-by-hour score, then a blend of the average and the worst hour: a
 // mostly fine day with one storm should not rate as fine, but nor should one
 // bad hour sink an otherwise good day.
-export function rateActivities(hourly, win) {
+// `aqHourly` is the air-quality forecast ({ time, us_aqi }), on its own time
+// axis; it is matched to the weather hours by "YYYY-MM-DDTHH" (both are local).
+export function rateActivities(hourly, win, aqHourly) {
   if (!win || win.end <= win.start) return null
+  let aqiByHour = null
+  if (aqHourly?.time && aqHourly.us_aqi) {
+    aqiByHour = new Map()
+    aqHourly.time.forEach((t, j) => {
+      if (aqHourly.us_aqi[j] != null) aqiByHour.set(t.slice(0, 13), aqHourly.us_aqi[j])
+    })
+  }
   const acts = ['outside', 'driving', 'exercise']
   const scores = Object.fromEntries(acts.map(a => [a, []]))
   const reasons = Object.fromEntries(acts.map(a => [a, new Map()]))
   const peaks = Object.fromEntries(acts.map(a => [a, new Map()]))
   for (let i = win.start; i < win.end; i++) {
-    const costs = hourCosts(hourAt(hourly, i))
+    const costs = hourCosts(hourAt(hourly, i, aqiByHour))
     for (const a of acts) {
       let total = 0
       for (const [c, why] of costs[a]) {

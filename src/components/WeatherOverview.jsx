@@ -1,9 +1,11 @@
-import { Sun, Moon, Cloud, CloudSun, CloudFog, CloudRain, CloudSnow, CloudLightning, Thermometer, Shirt, Wind, Snowflake } from 'lucide-react'
+import { memo } from 'react'
+import { Sun, Moon, Cloud, CloudMoon, CloudSun, CloudFog, CloudRain, CloudSnow, CloudLightning, Droplets, Sunset, Thermometer, Shirt, Wind, Snowflake } from 'lucide-react'
 import { TankTop, Shorts, LongSleeve, Hoodie, Jacket, Coat, Parka, Beanie, Mitten, Boot, RainUmbrella } from './clothingGlyphs'
 import { WindTurbine } from './WindTurbine'
 import { getWeatherInfo, liveWeatherCode, nowcastHourlyCode, precipTier, tempInk } from '../utils/weatherCodes'
 import { formatWind, unitSuffix, unitValue } from '../utils/units'
 import { LINE_ICON_FOR_ID } from '../utils/iconSet'
+import { getMoonInfo } from '../utils/moon'
 
 // Maps the icon key from getWeatherInfo() to a tintable lucide line icon, so
 // the current-conditions line can share the clothing line's look and take a
@@ -98,6 +100,27 @@ function fmtClock(hour) {
   return hour < 12 ? `${hour}am` : `${hour - 12}pm`
 }
 
+// Clock label with minutes from a naive local ISO time, e.g. "4:58pm". On the
+// hour it falls back to fmtClock, so 18:00 still reads "6pm".
+function fmtClockMinutes(iso) {
+  const h = parseInt(iso.slice(11, 13), 10)
+  const m = iso.slice(14, 16)
+  if (m === '00') return fmtClock(h)
+  return `${h % 12 === 0 ? 12 : h % 12}:${m}${h < 12 ? 'am' : 'pm'}`
+}
+
+// FNV-1a string hash. Picks one wording out of a set (see `vary` below), so a
+// line keeps the same words every time the app redraws today but can be
+// phrased differently tomorrow.
+function hashStr(s) {
+  let h = 2166136261
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 16777619)
+  }
+  return h >>> 0
+}
+
 // 16-point compass label for a bearing in degrees (0 = N, 90 = E).
 const COMPASS = ['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW']
 const compassDir = (deg) => COMPASS[Math.round((((deg % 360) + 360) % 360) / 22.5) % 16]
@@ -132,7 +155,9 @@ function timeDesc(slotIndex, currentMinute, hourlyTimes, start, timezone) {
   return `around ${fmtClock(slotHour)}`
 }
 
-export function WeatherOverview({ hourly, daily, current, minutely, radarClear = null, timezone, hasActiveAlert, unit, units, airQuality = null, showInsight = true, showConditions = true, showAirQuality = true, showClothing = true, colorCode = true }) {
+// Memoised: App re-renders for every overlay, toggle and keystroke, and the
+// props here are the reading and the settings, which those leave alone.
+export const WeatherOverview = memo(function WeatherOverview({ hourly, daily, current, minutely, radarClear = null, timezone, hasActiveAlert, unit, units, airQuality = null, showInsight = true, showConditions = true, showAirQuality = true, showClothing = true, colorCode = true }) {
   const now = new Date()
   const currentMinute = parseInt(
     now.toLocaleString('en-CA', { minute: '2-digit', timeZone: timezone }),
@@ -182,6 +207,11 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
     lower.endsWith('s') ? '' : (/^[aeiou]/.test(lower) ? 'an ' : 'a ')
 
   const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1)
+
+  // One wording out of a set, steady for the day and the place. `key` names
+  // the situation, so two different lines don't always land on the same
+  // option index together.
+  const vary = (key, options) => options[hashStr(`${todayStr}|${timezone}|${key}`) % options.length]
 
   // Date (YYYY-MM-DD) of a look-ahead slot. Used to build a "tier:date" dedupe
   // key so an hourly headline and the daily "tomorrow" summary describing the
@@ -773,9 +803,26 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
   }
 
   // Fog is independent of rain, so it can accompany a precipitation insight.
+  // Fog already overhead gets its own wording: "Foggy conditions expected right
+  // now" read as a forecast for something that was already happening.
   if (firstFog !== -1 && insights.length < 2) {
     const when = timeDesc(firstFog, currentMinute, hourly.time, start, timezone)
-    insights.push({ level: 'notice', dedupeKey: `fog:${slotDateStr(firstFog)}`, text: `Foggy conditions expected ${when}.` })
+    insights.push({
+      level: 'notice',
+      dedupeKey: `fog:${slotDateStr(firstFog)}`,
+      icon: CloudFog,
+      text: firstFog === 0
+        ? vary('fog-now', [
+            'Foggy right now, with low visibility.',
+            'Fog is cutting visibility right now.',
+            'Foggy out right now; take it slow on the roads.',
+          ])
+        : vary('fog', [
+            `Foggy conditions expected ${when}.`,
+            `Fog developing ${when}.`,
+            `Patchy fog likely ${when}.`,
+          ]),
+    })
   }
 
   // Dangerous air quality is a health hazard on par with a weather warning, so
@@ -813,7 +860,7 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
   // ── Multi-day patterns: heat wave, cold spell, temperature trend, smoke ─────
   // Several-day stories the single-day callouts can't tell. Reads the 7-day
   // daily arrays (highs/lows are °F from the API) plus, when present, the hourly
-  // air-quality forecast to spot persistent wildfire smoke. When a rich line
+  // air-quality forecast to spot persistent particulate pollution. When a rich line
   // fires it sets tempPatternActive / heatWaveActive so the single-day
   // temperature and heat lines below stand down instead of repeating it.
   let tempPatternActive = false
@@ -846,41 +893,21 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
       return null
     }
 
-    // Fine-particulate pollution, the wildfire-smoke signature. Ozone smog reads
-    // a high AQI with low PM2.5, so we key off PM2.5 itself rather than the AQI
-    // number — smoke is worth flagging while the AQI still reads "moderate,"
-    // which is exactly where a smoky haze sits (AQI ~90 is only ~30 µg/m³). When
-    // the hourly AQI forecast is present, count how many days peak above the
-    // threshold so "right now" vs "at times through the week" stays truthful.
-    // Thresholds are µg/m³ and easy to retune.
+    // Fine-particulate pollution. Ozone smog reads a high AQI with low PM2.5, so
+    // we key off PM2.5 itself rather than the AQI number — particulates are
+    // worth flagging while the AQI still reads "moderate" (AQI ~90 is only
+    // ~30 µg/m³). When the hourly forecast is present, count how many days peak
+    // above the threshold so "right now" vs "at times through the week" stays
+    // truthful. The source isn't named: the forecast model's pollutant mix
+    // can't reliably tell wildfire smoke from urban smog or dust, and calling
+    // ordinary smog "wildfire smoke" was wrong too often. Thresholds are µg/m³.
     const smoke = (() => {
       if (!showAirQuality || !airQuality) return null
       const SMOKE_PM = 25   // elevated particulates (upper-moderate AQI and up)
-      const NAMED_PM = 30   // high enough to name wildfire smoke with confidence
       const POOR_PM  = 35   // "poor" rather than "reduced" air quality
       const HEAVY_PM = 55   // unhealthy — worth a warning
-      // High PM2.5 alone doesn't mean smoke: urban smog, inversions, and dust
-      // all raise it too. Smoke is almost entirely fine particles (PM2.5 is most
-      // of PM10, where dust is mostly coarse) and carries carbon monoxide from
-      // the burn. Traffic/heating smog shares both traits (e.g. Tehran's winter
-      // inversions), but it sits in a shallow surface layer with lots of NO₂,
-      // while a smoke plume fills the whole column (high aerosol optical depth)
-      // and brings little NO₂. Require all of it before blaming wildfires.
-      const SMOKE_RATIO = 0.7  // PM2.5 / PM10
-      const SMOKE_CO    = 300  // µg/m³; clean background sits ~100–250
-      const SMOKE_AOD   = 0.7  // column haze; urban smog rarely tops ~0.5
-      const SMOG_NO2    = 60   // µg/m³; above this the air is traffic-dominated
-      const smokeSignature = (pm25, pm10, co, no2, aod) =>
-        pm25 >= NAMED_PM &&
-        pm10 != null && pm10 > 0 && pm25 / pm10 >= SMOKE_RATIO &&
-        co != null && co >= SMOKE_CO &&
-        aod != null && aod >= SMOKE_AOD &&
-        (no2 == null || no2 <= SMOG_NO2)
       let peakPm = airQuality.pm2_5 ?? 0
       let smokyDays = 0
-      let signatureSeen = smokeSignature(
-        airQuality.pm2_5 ?? 0, airQuality.pm10, airQuality.carbon_monoxide,
-        airQuality.nitrogen_dioxide, airQuality.aerosol_optical_depth)
       const aq = airQuality.hourly
       if (aq?.time && aq?.pm2_5) {
         const perDay = new Map()
@@ -890,9 +917,6 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
           const d = aq.time[j].slice(0, 10)
           if (v > (perDay.get(d) ?? 0)) perDay.set(d, v)
           if (v > peakPm) peakPm = v
-          if (!signatureSeen && smokeSignature(
-            v, aq.pm10?.[j], aq.carbon_monoxide?.[j],
-            aq.nitrogen_dioxide?.[j], aq.aerosol_optical_depth?.[j])) signatureSeen = true
         }
         for (const v of perDay.values()) if (v >= SMOKE_PM) smokyDays++
       }
@@ -901,19 +925,13 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
       const when = smokyDays >= 3 ? 'at times through the week'
         : smokyDays === 2 ? 'over the next couple of days'
         : smokyNow ? 'right now' : 'today'
-      // Name wildfire smoke only when some hour shows the smoke signature; other
-      // particulate pollution reads as generic haze.
-      const named = signatureSeen
       const quality = peakPm >= POOR_PM ? 'poor air quality' : 'reduced air quality'
       return {
         heavy: peakPm >= HEAVY_PM,
-        named,
         quality,
         when,
         // Standalone sentence; the heat-wave line composes its own phrasing.
-        standalone: named
-          ? `${cap(quality)} from wildfire smoke ${when}.`
-          : `Hazy skies and ${quality} ${when}.`,
+        standalone: `${cap(quality)} ${when}.`,
       }
     })()
 
@@ -950,9 +968,7 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
       const hi = toDisplay(heatPeak)
       const level = heatPeak >= SEVERE_HEAT || smoke?.heavy ? 'warning' : 'notice'
       const text = smoke && !hasAqiHazard
-        ? (smoke.named
-            ? `Heat wave and ${smoke.quality} from wildfire smoke ${smoke.when}.`
-            : `Heat wave with hazy skies and ${smoke.quality} ${smoke.when}.`)
+        ? `Heat wave and ${smoke.quality} ${smoke.when}.`
         : heat.start === 0
           ? `Heat wave ${throughPhrase(heat.end)}; highs near ${hi}${degU}.`
           : `Heat wave building; highs near ${hi}${degU} ${throughPhrase(heat.end)}.`
@@ -973,7 +989,9 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
       insights.push({
         level: 'neutral',
         dedupeKey: 'temp-pattern',
-        text: trend.dir === 'cooling' ? `Cooling expected ${overN}.` : `Warming up ${overN}.`,
+        text: trend.dir === 'cooling'
+          ? vary('trend-cool', [`Cooling expected ${overN}.`, `A cooling trend ${overN}.`, `Temperatures ease down ${overN}.`])
+          : vary('trend-warm', [`Warming up ${overN}.`, `A warming trend ${overN}.`, `Temperatures climb ${overN}.`]),
       })
       tempPatternActive = true
     }
@@ -988,35 +1006,369 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
     }
   }
 
-  // Calm-day fallback. Runs after the precipitation, air-quality, and multi-day
-  // blocks so a bland "staying dry" line never outranks present-day heat or
-  // smoke; it only speaks up when nothing else has (the week-ahead context
-  // below can still add a far-out line beside it).
-  if (insights.length === 0) {
-    const allClear = codes.every(c => classify(c) === 'clear')
-    const currentHour = parseInt(currentHourStr, 10)
-    let noWeatherText
-    if (allClear) {
-      if (currentHour < 10)      noWeatherText = 'Clear skies all day, a great day to be outside.'
-      else if (currentHour < 16) noWeatherText = 'Clear skies for the rest of the day.'
-      else                       noWeatherText = 'Clear and calm for the rest of the evening.'
-    } else {
-      const cc = current?.cloud_cover ?? 50
-      if (cc <= 25) {
-        noWeatherText = currentHour < 12
-          ? 'A sunny morning with no rain expected.'
-          : 'Mostly sunny and staying dry.'
-      } else if (cc <= 50) {
-        noWeatherText = currentHour < 14
-          ? 'Partly cloudy this afternoon, staying dry.'
-          : 'Partly cloudy, staying dry.'
-      } else if (cc <= 75) {
-        noWeatherText = 'Mostly cloudy, but dry for the rest of the day.'
-      } else {
-        noWeatherText = 'Overcast but dry for the rest of the day.'
+  // ── Shared readings for the calm-day line and the callouts below ──────────
+  const hrNow = parseInt(currentHourStr, 10)
+  const isDayNow = current?.is_day !== 0
+  // Temperatures arrive in °F; shown in the user's unit.
+  const fmtTemp = (f) => `${Math.round(unit === 'C' ? (f - 32) * 5 / 9 : f)}°${unit}`
+  const weekday = (i) => new Date(`${daily.time[i]}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' })
+  const slotsAhead = (n) => Array.from({ length: Math.min(n, codes.length) }, (_, i) => i)
+  const clockAt = (i) => fmtClock(parseInt(hourly.time[start + i].slice(11, 13), 10))
+
+  // Look-ahead slots still inside today, the current hour included.
+  const todaySlots = []
+  for (let i = 0; i < codes.length && hourly.time?.[start + i]?.startsWith(todayStr); i++) todaySlots.push(i)
+
+  // The dark hours ahead, now included, off the hourly is_day flag.
+  const darkSlots = []
+  for (let i = 0; i < codes.length && hourly.is_day?.[start + i] === 0; i++) darkSlots.push(i)
+
+  // The sky over a run of slots: 'clear' when codes 0 and 1 (clear, mainly
+  // clear) dominate, 'overcast' when 3 and up do, 'mixed' otherwise. The old
+  // fallback tested classify() === 'clear', which is true of overcast too, so
+  // a gray, dry day was announced as "Clear skies all day".
+  const skyOf = (slots) => {
+    let sun = 0, over = 0
+    for (const i of slots) {
+      const c = codes[i]
+      if (c == null) continue
+      if (c <= 1) sun++
+      else if (c >= 3) over++
+    }
+    const n = slots.length
+    if (!n) return null
+    if (sun / n >= 0.6) return 'clear'
+    if (over / n >= 0.6) return 'overcast'
+    return 'mixed'
+  }
+
+  // Peak sustained wind and peak gust over the next 12 hours (hourly is mph).
+  let windPeak = 0, windPeakIdx = 0, gustPeak = 0, gustPeakIdx = 0
+  for (let i = 0; i < Math.min(12, codes.length); i++) {
+    const s = hourly.wind_speed_10m?.[start + i] ?? 0
+    if (s > windPeak) { windPeak = s; windPeakIdx = i }
+    const g = hourly.wind_gusts_10m?.[start + i] ?? 0
+    if (g > gustPeak) { gustPeak = g; gustPeakIdx = i }
+  }
+
+  // Tonight, 7pm through 8am: the low off the hourly curve (the daily minimum
+  // is the calendar day's, which by afternoon is usually this morning's low),
+  // how much of the night is clear, and its strongest wind.
+  const tonight = (() => {
+    let low = null, clear = 0, n = 0, windMax = 0
+    for (let i = 1; i < codes.length; i++) {
+      const t = hourly.time?.[start + i]
+      if (!t) break
+      const h = parseInt(t.slice(11, 13), 10)
+      if (!t.startsWith(todayStr) && h > 8) break // past tomorrow morning
+      if (t.startsWith(todayStr) && h < 19) continue
+      const temp = hourly.temperature_2m?.[start + i]
+      if (temp != null) low = low == null ? temp : Math.min(low, temp)
+      if (codes[i] <= 1) clear++
+      windMax = Math.max(windMax, hourly.wind_speed_10m?.[start + i] ?? 0)
+      n++
+    }
+    return n ? { low, clearShare: clear / n, windMax } : null
+  })()
+
+  // Where today's UV peaks, if that is still ahead.
+  let uvPeakIdx = -1, uvPeakVal = 0
+  for (const i of todaySlots) {
+    const v = hourly.uv_index?.[start + i]
+    if (v != null && v > uvPeakVal) { uvPeakVal = v; uvPeakIdx = i }
+  }
+
+  // ── Line builders ─────────────────────────────────────────────────────────
+  // Each returns an insight or null. The calm-day picker below tries them in
+  // order; the callout block after it pushes the hazard ones on any day. A
+  // shared dedupeKey stops the two from listing the same line twice.
+
+  // Extreme heat today (thresholds in °F).
+  const heatLine = () => {
+    const hi = daily?.temperature_2m_max?.[0]
+    if (heatWaveActive || hrNow >= 18 || hi == null || hi < 95) return null
+    const t = fmtTemp(hi)
+    return hi >= 100
+      ? { level: 'warning', dedupeKey: 'heat-day', icon: Thermometer, text: vary('heat-danger', [
+          `Dangerous heat today, with a high near ${t}.`,
+          `Dangerous heat today, reaching ${t}. Limit time outdoors.`,
+          `Extreme heat today near ${t}; stay hydrated and seek shade.`,
+        ]) }
+      : { level: 'notice', dedupeKey: 'heat-day', icon: Thermometer, text: vary('heat-hot', [
+          `Very hot today, with a high near ${t}.`,
+          `A scorcher today, climbing to ${t}.`,
+          `Very hot today at ${t}; drink plenty of water.`,
+        ]) }
+  }
+
+  // Dropping below freezing tonight, or a clear, still night cold enough for
+  // frost: the ground cools below the air a couple of meters up, which is
+  // where the forecast temperature is taken, so frost forms a few degrees
+  // above freezing.
+  const freezeLine = () => {
+    if (hrNow < 15 || (current?.temperature_2m ?? 0) <= 32 || tonight?.low == null) return null
+    const low = fmtTemp(tonight.low)
+    if (tonight.low <= 32) return { level: 'notice', dedupeKey: 'freeze', icon: Snowflake, text: vary('freeze', [
+      `Dropping below freezing tonight, down to ${low}.`,
+      `A freeze is likely tonight, with a low near ${low}.`,
+      `Temperatures fall below freezing tonight, near ${low}.`,
+    ]) }
+    if (tonight.low <= 36 && tonight.clearShare >= 0.6 && tonight.windMax < 8) return { level: 'notice', dedupeKey: 'freeze', icon: Snowflake, text: vary('frost', [
+      `Patchy frost possible tonight as it dips to ${low}.`,
+      'Clear and cold tonight, with frost possible by morning.',
+      `A chilly ${low} tonight; watch for frost on windshields.`,
+    ]) }
+    return null
+  }
+
+  // How the air feels when it's well off the thermometer: wind chill on a
+  // cold day, the heat index on a hot, humid one.
+  const feelsLine = () => {
+    const t = current?.temperature_2m, f = current?.apparent_temperature
+    if (t == null || f == null) return null
+    if (t <= 50 && t - f >= 7) return { level: 'notice', dedupeKey: 'feels', icon: Thermometer, text: vary('wind-chill', [
+      `Wind chill makes it feel like ${fmtTemp(f)}.`,
+      `Feels more like ${fmtTemp(f)} in the wind.`,
+      `It's ${fmtTemp(t)}, but the wind makes it feel like ${fmtTemp(f)}.`,
+    ]) }
+    if (f >= 85 && f - t >= 5) return { level: 'notice', dedupeKey: 'feels', icon: Thermometer, text: vary('heat-index', [
+      `Humidity makes it feel like ${fmtTemp(f)}.`,
+      `Feels like ${fmtTemp(f)} with the humidity.`,
+      `It's ${fmtTemp(t)}, but it feels closer to ${fmtTemp(f)}.`,
+    ]) }
+    return null
+  }
+
+  // Strong sustained wind, or gusts worth noting on a day that isn't windy
+  // overall. Speeds are rounded to a friendly step in mph, the scale the
+  // thresholds are written in, and only then converted: "up to 25 mph" becomes
+  // "up to 40 km/h" rather than the 40.2 a converted-then-rounded figure gives.
+  const windLine = () => {
+    if (windPeak >= 24) {
+      const when = timeDesc(windPeakIdx, currentMinute, hourly.time, start, timezone)
+      const speed = formatWind(Math.round(windPeak / 5) * 5, units)
+      return windPeak >= 35
+        ? { level: 'warning', dedupeKey: 'wind', icon: WindTurbine, text: vary('wind-strong', [
+            `Very windy ${when}, with winds up to ${speed}.`,
+            `Strong winds ${when}, up to ${speed}.`,
+          ]) }
+        : { level: 'notice', dedupeKey: 'wind', icon: WindTurbine, text: vary('wind', [
+            `Windy ${when}, with winds reaching ${speed}.`,
+            `Breezy to windy ${when}, up to ${speed}.`,
+          ]) }
+    }
+    if (gustPeak >= 35) {
+      const when = timeDesc(gustPeakIdx, currentMinute, hourly.time, start, timezone)
+      const gust = formatWind(Math.round(gustPeak / 5) * 5, units)
+      return { level: 'notice', dedupeKey: 'wind', icon: WindTurbine, text: vary('gusts', [
+        `Gusty ${when}, with gusts up to ${gust}.`,
+        `Wind gusts near ${gust} ${when}.`,
+      ]) }
+    }
+    return null
+  }
+
+  // Sun safety while it's still actionable (morning and midday).
+  const uvLine = () => {
+    const uv = daily?.uv_index_max?.[0]
+    if (hrNow >= 15 || uv == null || uv < 8) return null
+    const peak = uvPeakIdx > 0 ? `, strongest around ${clockAt(uvPeakIdx)}` : ''
+    return uv >= 11
+      ? { level: 'notice', dedupeKey: 'uv', icon: Sun, text: vary('uv-extreme', [
+          `Extreme UV levels today${peak}.`,
+          'Extreme UV today; limit time in the midday sun.',
+          `Extreme UV today${peak}. Cover up and wear sunscreen.`,
+        ]) }
+      : { level: 'notice', dedupeKey: 'uv', icon: Sun, text: vary('uv-high', [
+          `Very high UV today${peak}.`,
+          'Very high UV today; wear sunscreen and a hat.',
+          `Strong sun today${peak}. Sunscreen recommended.`,
+        ]) }
+  }
+
+  // A big swing worth dressing for: a cold morning that turns warm, or a warm
+  // afternoon that drops off fast after dark (common in dry climates).
+  const swingLine = () => {
+    const t = current?.temperature_2m, hi = daily?.temperature_2m_max?.[0]
+    if (t == null) return null
+    if (hrNow >= 5 && hrNow < 11 && hi != null && hi - t >= 18) return { level: 'neutral', dedupeKey: 'swing', icon: Thermometer, text: vary('warm-up', [
+      `A ${tempWord(t).toLowerCase()} ${fmtTemp(t)} now, warming to ${fmtTemp(hi)} this afternoon.`,
+      `${tempWord(t)} start, but warming to ${fmtTemp(hi)} later. Dress in layers.`,
+      `A big warm-up today, from ${fmtTemp(t)} now to ${fmtTemp(hi)} this afternoon.`,
+    ]) }
+    if (hrNow >= 16 && hrNow < 21 && tonight?.low != null && t - tonight.low >= 22) return { level: 'neutral', dedupeKey: 'swing', icon: Thermometer, text: vary('cool-down', [
+      `Cooling off quickly tonight, down to ${fmtTemp(tonight.low)}.`,
+      `Temperatures drop to ${fmtTemp(tonight.low)} tonight, so bring a layer.`,
+    ]) }
+    return null
+  }
+
+  // Muggy air, read off the dew point: it says how the air feels better than
+  // relative humidity, which runs high on every cool morning.
+  const humidLine = () => {
+    const dew = current?.dew_point_2m, t = current?.temperature_2m
+    if (dew == null || t == null || t < 70 || dew < 65) return null
+    const when = isDayNow ? 'today' : 'tonight'
+    return dew >= 70
+      ? { level: 'notice', dedupeKey: 'humid', icon: Droplets, text: vary('humid-high', [
+          `Oppressively humid ${when}.`,
+          `Very muggy ${when}, with tropical humidity.`,
+          `Thick, steamy air ${when}.`,
+        ]) }
+      : { level: 'neutral', dedupeKey: 'humid', icon: Droplets, text: vary('humid', [
+          `Sticky and humid ${when}.`,
+          `A muggy one ${when}.`,
+          `Humid air hangs around ${when}.`,
+        ]) }
+  }
+
+  // Comfortable, dry, light wind and some sun: the day worth pointing out.
+  const pleasantLine = () => {
+    const hi = daily?.temperature_2m_max?.[0], dew = current?.dew_point_2m
+    if (!isDayNow || hrNow >= 17 || hi == null || hi < 65 || hi > 82) return null
+    if ((dew != null && dew >= 60) || windPeak >= 15) return null
+    const sky = skyOf(todaySlots)
+    if (sky !== 'clear' && sky !== 'mixed') return null
+    const t = fmtTemp(hi)
+    return { level: 'good', dedupeKey: 'calm', icon: sky === 'clear' ? Sun : CloudSun, text: vary(`pleasant-${sky}`, sky === 'clear'
+      ? [
+          `A beautiful day, sunny and ${t}.`,
+          `Sunny and comfortable, topping out near ${t}. A great day to get outside.`,
+          `Near-perfect weather today: sunny, dry and ${t}.`,
+        ]
+      : [
+          `A pleasant day, with some sun and a high of ${t}.`,
+          `Comfortable and dry with a mix of sun and clouds, near ${t}.`,
+          `Mild and easy today, around ${t} with some sun.`,
+        ]) }
+  }
+
+  // The few hours before sunset, when the sky out west is clear or broken.
+  const sunsetLine = () => {
+    const ss = daily?.sunset?.[0]
+    if (!ss || !isDayNow) return null
+    const ssMin = parseInt(ss.slice(11, 13), 10) * 60 + parseInt(ss.slice(14, 16), 10)
+    const nowMin = hrNow * 60 + currentMinute
+    if (nowMin < ssMin - 180 || nowMin >= ssMin) return null
+    const ssHour = Math.floor(ssMin / 60)
+    const around = todaySlots.filter(i => {
+      const h = parseInt(hourly.time[start + i].slice(11, 13), 10)
+      return h >= ssHour - 1 && h <= ssHour
+    })
+    const sky = skyOf(around)
+    if (sky !== 'clear' && sky !== 'mixed') return null
+    const at = fmtClockMinutes(ss)
+    return { level: 'good', dedupeKey: 'calm', icon: Sunset, text: vary(`sunset-${sky}`, sky === 'clear'
+      ? [
+          `Clear skies for sunset at ${at}.`,
+          `Sunset at ${at}, with clear skies to enjoy it.`,
+          `A clear evening ahead; the sun sets at ${at}.`,
+        ]
+      : [
+          `A few clouds could make for a colorful sunset at ${at}.`,
+          `Sunset at ${at}, with some clouds to catch the color.`,
+        ]) }
+  }
+
+  // A clear night, with what the moon is doing to the stars.
+  const nightSkyLine = () => {
+    if (isDayNow || darkSlots.length < 2 || skyOf(darkSlots.slice(0, 8)) !== 'clear') return null
+    const moon = getMoonInfo()
+    const when = hrNow < 5 ? 'overnight' : 'tonight'
+    const options = moon.illumination >= 0.9
+      ? [
+          `Clear skies ${when} under a ${moon.name === 'Full Moon' ? 'full' : 'bright'} moon.`,
+          `A clear night, lit by a ${moon.name === 'Full Moon' ? 'full' : 'nearly full'} moon.`,
+        ]
+      : moon.illumination <= 0.15
+        ? [
+            `Clear and dark ${when}, ideal for stargazing.`,
+            `Clear skies and little moonlight ${when}; a good night for stars.`,
+          ]
+        : [
+            `Clear skies ${when}.`,
+            `A clear, quiet night ahead.`,
+            `Clear ${when}, with a ${moon.name.toLowerCase().replace(/ moon$/, '')} moon.`,
+          ]
+    return { level: 'good', dedupeKey: 'calm', icon: Moon, text: vary(`night-${options.length}-${moon.illumination >= 0.9 ? 'bright' : 'dim'}`, options) }
+  }
+
+  // Several dry days in a row, or how long until the next rain or snow. Rain
+  // within the next three days is left to the tomorrow and next-few-days lines.
+  const dryStretchLine = () => {
+    const probs = daily?.precipitation_probability_max, dcodes = daily?.weather_code
+    const n = daily?.time?.length ?? 0
+    if (!probs || !dcodes || n < 5) return null
+    const wetAt = (i) => probs[i] != null ? probs[i] >= 35 : precipTier(dcodes[i]) > 0
+    let first = -1
+    for (let i = 1; i < n; i++) if (wetAt(i)) { first = i; break }
+    const icon = lucideForCode(codes[0], !isDayNow)
+    if (first === -1) return { level: 'good', dedupeKey: 'calm', icon, text: vary('dry-all', [
+      `No rain in the forecast for the next ${n - 1} days.`,
+      `Dry weather holds through ${weekday(n - 1)}.`,
+      'A long dry stretch, with no rain in sight.',
+    ]) }
+    if (first < 4) return null
+    // A week out shares today's weekday name, so it gets a "next".
+    const dayRef = (i) => (i >= 7 ? `next ${weekday(i)}` : weekday(i))
+    const kind = SNOW_CODES.has(dcodes[first]) ? 'snow' : 'rain'
+    return { level: 'good', dedupeKey: 'calm', icon, text: vary('dry-until', [
+      `Dry weather holds through ${dayRef(first - 1)}.`,
+      `Staying dry until ${dayRef(first)}, when ${kind} returns.`,
+      `No ${kind} expected until ${dayRef(first)}.`,
+    ]) }
+  }
+
+  // The plain sky for the rest of the day or night. Always returns a line, as
+  // the last resort.
+  const skyLine = () => {
+    if (!isDayNow) {
+      const sky = skyOf(darkSlots.length >= 2 ? darkSlots.slice(0, 8) : slotsAhead(8)) ?? 'mixed'
+      const when = hrNow < 5 ? 'overnight' : 'tonight'
+      return {
+        level: sky === 'overcast' ? 'neutral' : 'good',
+        dedupeKey: 'calm',
+        icon: sky === 'clear' ? Moon : sky === 'overcast' ? Cloud : CloudMoon,
+        text: vary(`sky-night-${sky}`, sky === 'clear'
+          ? [`Clear skies ${when}.`, 'A clear, quiet night ahead.', `Clear and dry ${when}.`]
+          : sky === 'overcast'
+            ? [`Cloudy and dry ${when}.`, `Overcast ${when}, but staying dry.`, `Gray skies ${when}, with nothing falling.`]
+            : [`Partly cloudy ${when}, staying dry.`, `Some clouds ${when}, but dry.`, `A few clouds drifting by ${when}.`]),
       }
     }
-    insights.push({ level: 'good', text: noWeatherText })
+    const sky = skyOf(hrNow < 17 && todaySlots.length >= 3 ? todaySlots : slotsAhead(6)) ?? 'mixed'
+    const when = hrNow < 11 ? 'today' : hrNow < 17 ? 'this afternoon' : 'this evening'
+    return {
+      level: sky === 'overcast' ? 'neutral' : 'good',
+      dedupeKey: 'calm',
+      icon: sky === 'clear' ? Sun : sky === 'overcast' ? Cloud : CloudSun,
+      text: vary(`sky-day-${sky}-${when}`, sky === 'clear'
+        ? [
+            `Sunny and dry ${when}.`,
+            `Plenty of sunshine ${when}.`,
+            `Bright and sunny ${when}, with no rain in sight.`,
+            ...(when === 'today' ? ['Clear skies all day, a great day to be outside.'] : []),
+          ]
+        : sky === 'overcast'
+          ? [`Overcast but dry ${when}.`, `Gray skies ${when}, staying dry.`, `Cloudy ${when}, with no rain expected.`]
+          : [`A mix of sun and clouds ${when}.`, `Partly cloudy and dry ${when}.`, `Sun and clouds ${when}, staying dry.`]),
+    }
+  }
+
+  // ── Calm-day line ─────────────────────────────────────────────────────────
+  // Runs after the precipitation, air-quality and multi-day blocks, so it only
+  // speaks up when nothing else has. That's most days, so it tries to say
+  // something more useful than "staying dry": the candidates run in order of
+  // how much they change what you'd do (a freeze tonight beats a nice sunset),
+  // and the first that applies is the line. A long dry spell trades off with
+  // the plain sky line from day to day, or it would take every day it lasts.
+  if (insights.length === 0) {
+    const dry = dryStretchLine()
+    insights.push(
+      heatLine() ?? freezeLine() ?? feelsLine() ?? windLine() ?? uvLine()
+        ?? swingLine() ?? humidLine() ?? pleasantLine() ?? sunsetLine() ?? nightSkyLine()
+        ?? (dry && hashStr(`${todayStr}|dry`) % 2 === 0 ? dry : skyLine())
+    )
   }
 
   if (daily?.temperature_2m_max?.[0] != null) {
@@ -1053,13 +1405,18 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
     // Temperature-trend text, then either merge it into the single precipitation
     // insight already in the list (so the user sees one combined bullet instead
     // of two) or push it as its own neutral insight.
-    const tempText = comparison ? `${dayLabel} will be ${comparison}.` : null
+    const tempText = comparison
+      ? vary('week-compare', [`${dayLabel} will be ${comparison}.`, `${dayLabel} looks ${comparison}.`])
+      : null
 
     // Suppressed when a multi-day pattern line above already states the direction.
     if (tempText && !tempPatternActive) {
       // Merge into a lone precipitation headline, but not into a smoke/air-quality
-      // line — appending a temperature aside there reads as a non sequitur.
-      if (insights.length === 1 && insights[0].level !== 'severe' && insights[0].dedupeKey !== 'aqi') {
+      // line, where a temperature aside reads as a non sequitur. Nor
+      // when the two together would run long: the calm-day lines can already be
+      // two sentences, and a third makes the card a paragraph.
+      const mergedLen = (insights[0]?.text.length ?? 0) + tempText.length
+      if (insights.length === 1 && insights[0].level !== 'severe' && insights[0].dedupeKey !== 'aqi' && mergedLen <= 100) {
         const base = insights[0].text.replace(/\.$/, '')
         insights[0] = { ...insights[0], text: `${base}. ${tempText}` }
       } else {
@@ -1074,9 +1431,13 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
       const dF = daily.temperature_2m_max[1] - daily.temperature_2m_max[0]
       const deg = Math.round(unit === 'C' ? dF * 5 / 9 : dF)
       if (Math.abs(deg) >= (unit === 'C' ? 4 : 7)) {
+        const n = Math.abs(deg), dir = deg > 0 ? 'warmer' : 'cooler'
         insights.push({
           level: 'neutral',
-          text: `${Math.abs(deg)} degrees ${deg > 0 ? 'warmer' : 'cooler'} tomorrow than today.`,
+          text: vary(`tomorrow-${dir}`, [
+            `${n} degrees ${dir} tomorrow than today.`,
+            `Tomorrow runs about ${n} degrees ${dir} than today.`,
+          ]),
         })
       }
     }
@@ -1205,65 +1566,12 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
   }
 
   // ── Beyond precipitation: wind, freeze, UV, heat ──────────────────────────
-  // Single-sentence callouts. They only earn a visible slot when nothing
-  // urgent owns the card (the declutter pass drops notice/neutral lines
-  // behind warnings), so thresholds err toward genuinely notable.
-  {
-    const hr = parseInt(currentHourStr, 10)
-
-    // Windy: peak sustained wind over the next 12 hours (hourly is mph).
-    if (hourly.wind_speed_10m && insights.length < 4) {
-      let peak = 0, peakIdx = 0
-      for (let i = 0; i < Math.min(12, codes.length); i++) {
-        const s = hourly.wind_speed_10m[start + i] ?? 0
-        if (s > peak) { peak = s; peakIdx = i }
-      }
-      if (peak >= 24) {
-        const when = timeDesc(peakIdx, currentMinute, hourly.time, start, timezone)
-        // Rounded to a friendly step in mph, the scale the thresholds above are
-        // written in, and only then converted: "up to 25 mph" becomes "up to
-        // 40 km/h" rather than the 40.2 a converted-then-rounded figure gives.
-        const gust = formatWind(Math.round(peak / 5) * 5, units)
-        insights.push(peak >= 35
-          ? { level: 'warning', text: `Very windy ${when}, with winds up to ${gust}.` }
-          : { level: 'notice',  text: `Windy ${when}, with winds reaching ${gust}.` })
-      }
-    }
-
-    // Crossing below freezing tonight (only when it isn't freezing already).
-    // Uses the hourly curve — the daily minimum is the calendar-day min, which
-    // by afternoon is usually this morning's already-past low.
-    if (hr >= 15 && (current?.temperature_2m ?? 0) > 32 && insights.length < 4) {
-      let low = null
-      for (let i = 1; i < codes.length; i++) {
-        const t = hourly.time?.[start + i]
-        if (!t) break
-        const h = parseInt(t.slice(11, 13), 10)
-        if (!t.startsWith(todayStr) && h > 8) break // past tomorrow morning
-        if (t.startsWith(todayStr) && h < 19) continue
-        const temp = hourly.temperature_2m?.[start + i]
-        if (temp != null) low = low == null ? temp : Math.min(low, temp)
-      }
-      if (low != null && low <= 32) {
-        insights.push({ level: 'notice', text: 'Temperatures dropping below freezing tonight.' })
-      }
-    }
-
-    // Sun safety while it's still actionable (morning/midday).
-    const uv = daily?.uv_index_max?.[0]
-    if (hr < 15 && uv != null && uv >= 8 && insights.length < 4) {
-      insights.push({
-        level: 'notice',
-        text: uv >= 11 ? 'Extreme UV levels today.' : 'Very high UV today.',
-      })
-    }
-
-    // Extreme heat (thresholds in °F; wording stays unit-free).
-    const hi = daily?.temperature_2m_max?.[0]
-    if (!heatWaveActive && hr < 18 && hi != null && insights.length < 4) {
-      if (hi >= 100)     insights.push({ level: 'warning', text: 'Dangerous heat today.' })
-      else if (hi >= 95) insights.push({ level: 'notice',  text: 'Very hot today.' })
-    }
+  // The hazard builders from the calm-day block, on any day. Behind a rain
+  // headline they only take the card as a warning (very windy, dangerous
+  // heat), so thresholds err toward genuinely notable. On a calm day the
+  // picker may already have used one; its dedupeKey drops the repeat.
+  for (const line of [windLine(), freezeLine(), uvLine(), heatLine()]) {
+    if (line && insights.length < 4) insights.push(line)
   }
 
   // ── Next few days ─────────────────────────────────────────────────────────
@@ -1340,12 +1648,15 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
         }
       }
       if (swingDay !== -1) {
-        const much = Math.abs(swingDiff) >= 15 ? 'much ' : ''
+        const much = Math.abs(swingDiff) >= 15
+        const dir = swingDiff > 0 ? 'warmer' : 'cooler'
+        const day = dayName(swingDay)
         insights.push({
           level: 'neutral',
-          text: swingDiff > 0
-            ? `Turning ${much}warmer by ${dayName(swingDay)}.`
-            : `Turning ${much}cooler by ${dayName(swingDay)}.`,
+          text: vary(`swing-${dir}`, [
+            `Turning ${much ? 'much ' : ''}${dir} by ${day}.`,
+            `${much ? `Much ${dir}` : cap(dir)} air ${swingDiff > 0 ? 'arrives' : 'moves in'} by ${day}.`,
+          ]),
         })
       }
     }
@@ -1493,8 +1804,10 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
         {visible.map((item, i) => {
           // Live severe alerts keep the pulsing red dot so they still read as an
           // urgent, active warning; every other insight gets a tinted line icon.
+          // A line that knows its own icon (the calm-day lines and hazard
+          // callouts) carries it; the rest are matched from their wording.
           const isLiveAlert = hasActiveAlert && item.level === 'severe' && item.immediate
-          const Icon = iconForInsight(item.text, isDay)
+          const Icon = item.icon ?? iconForInsight(item.text, isDay)
           return (
             <div key={i} className={`overview-item overview-${item.level}`}>
               {isLiveAlert
@@ -1546,4 +1859,4 @@ export function WeatherOverview({ hourly, daily, current, minutely, radarClear =
       )}
     </div>
   )
-}
+})

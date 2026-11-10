@@ -121,7 +121,7 @@
    opaque with a hard bottom edge rather than a fade, so that anything parking
    itself directly below can meet that edge without a band between the two: the
    retired Hourly page's sticky column head was the case that set this, and the
-   Outlook page's rows are the one it still holds for. A soft drop shadow keeps
+   This week page's rows are the one it still holds for. A soft drop shadow keeps
    the edge from reading as a drawn border. With weather effects off this flat
    panel is the page background, so it is invisible; .header-sky below covers
    the sky case. */
@@ -649,7 +649,7 @@
 
 .web-brand {
   --brand-gutter: max(clamp(14px, 3.4vw, 48px), var(--sa-left));
-  left: calc(var(--brand-gutter) - 8px);
+  left: var(--brand-gutter);
   isolation: isolate;
   gap: 10px;
   padding: 6px 14px 6px 8px;
@@ -697,16 +697,24 @@
   white-space: nowrap;
 }
 
-.web-brand-first {
-  font-weight: 800;
-  color: var(--text-primary);
+/* The brand and the version are lettered like the nav bar's tabs: its text
+   colour at the 0.72 the unselected tabs sit at, and the same white over the
+   darker skies (see "Over a sky" below and the splash's light-text glass). */
+.web-brand,
+.web-version {
+  --brand-ink: color-mix(in srgb, var(--text-primary) 72%, transparent);
 }
 
-/* "Weather" matches "Alek" (white on dark, ink on light) when nothing is
-   going on, and takes the event's colour while the brand glows for one. */
+.web-brand-first {
+  font-weight: 800;
+  color: var(--brand-ink);
+}
+
+/* "Weather" matches "Alek" when nothing is going on, and takes the event's
+   colour while the brand glows for one. */
 .web-brand-last {
   font-weight: 600;
-  color: var(--text-primary);
+  color: var(--brand-ink);
 }
 
 .web-brand--event .web-brand-last {
@@ -715,7 +723,7 @@
 
 @media (hover: hover) and (pointer: fine) {
   .web-brand:hover {
-    background: var(--hover-subtle);
+    background: color-mix(in srgb, var(--card-bg) 88%, transparent);
   }
   .web-brand:hover .web-brand-img {
     rotate: 18deg;
@@ -815,21 +823,28 @@
   50%      { filter: drop-shadow(0 0 10px var(--event)); }
 }
 
-/* The version: a small glass chip in the tab bar's material. */
+/* The brand and the version: a matching pair of glass bubbles in the tab
+   bar's material, one in each gutter. */
+.web-brand,
 .web-version {
-  gap: 7px;
-  padding: 6px 12px;
-  border-radius: 999px;
   border: 1px solid var(--border);
   background: color-mix(in srgb, var(--card-bg) 70%, transparent);
   -webkit-backdrop-filter: blur(16px) saturate(160%);
   backdrop-filter: blur(16px) saturate(160%);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 2px 8px rgba(0, 0, 0, 0.08);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.2px;
-  color: var(--text-secondary);
+}
+
+/* Set in the wordmark's face, so the two corners read as one header. */
+.web-version {
+  gap: 7px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-family: var(--font-display), var(--font);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.1px;
+  font-variant-numeric: tabular-nums;
+  color: var(--brand-ink);
   white-space: nowrap;
 }
 
@@ -837,39 +852,40 @@
 /* Dark theme: the moon logo. */
 [data-theme="dark"] .web-brand-img--light { display: none; }
 [data-theme="dark"] .web-brand-img--dark  { display: block; }
-[data-theme="dark"] .web-version {
+[data-theme="dark"] :is(.web-brand, .web-version) {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .web-brand-img--light { display: none; }
   :root:not([data-theme="light"]) .web-brand-img--dark  { display: block; }
-  :root:not([data-theme="light"]) .web-version {
+  :root:not([data-theme="light"]) :is(.web-brand, .web-version) {
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 8px rgba(0, 0, 0, 0.3);
   }
 }
 
 /* Over a sky — the forecast's, or a dark one behind the splash — both sit on
-   the backdrop, so they go light-on-dark like the page headings: white first
-   name and "Weather", and a clear glass chip. */
-:is(.sky-active, :root[data-splash-sky="dark"] .app--web-splash) .web-brand-first {
-  color: #fff;
+   the backdrop in clear glass bubbles. Their text follows the tabs': white
+   where the bar's is (the tinted skies, below), ink where it isn't. */
+.sky-lvl-slight :is(.web-brand, .web-version),
+.sky-lvl-medium :is(.web-brand, .web-version),
+.sky-lvl-dark :is(.web-brand, .web-version),
+.sky-lvl-darkest :is(.web-brand, .web-version) {
+  --text-primary: #fff;
 }
-:is(.sky-active, :root[data-splash-sky="dark"] .app--web-splash) .web-brand:not(.web-brand--event) .web-brand-last {
-  color: #fff;
-}
-:is(.sky-active, :root[data-splash-sky="dark"] .app--web-splash) .web-brand:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
-:is(.sky-active, :root[data-splash-sky="dark"] .app--web-splash) .web-version {
-  color: rgba(255, 255, 255, 0.9);
+:is(.sky-active, :root[data-splash-sky="dark"] .app--web-splash) :is(.web-brand, .web-version) {
   border-color: rgba(255, 255, 255, 0.28);
   background: rgba(255, 255, 255, 0.12);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 2px 8px rgba(0, 0, 0, 0.15);
 }
+@media (hover: hover) and (pointer: fine) {
+  :is(.sky-active, :root[data-splash-sky="dark"] .app--web-splash) .web-brand:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+}
 
-/* On the splash's light sky the chip takes the splash's frosted glass. */
-:root[data-splash-sky]:not([data-splash-sky="dark"]) .app--web-splash .web-version {
+/* On the splash's light sky the chips take the splash's frosted glass. */
+:root[data-splash-sky]:not([data-splash-sky="dark"]) .app--web-splash :is(.web-brand, .web-version) {
   background: var(--glass-bg);
   border-color: var(--glass-rim);
 }
@@ -901,6 +917,10 @@
   border-color: rgba(255, 255, 255, 0.24);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 4px 14px rgba(0, 0, 0, 0.3);
 }
+/* Smoky glass wants light lettering whatever the sky. */
+.app.app--web-radar.sky-active .app-header--tabs :is(.web-brand, .web-version) {
+  --text-primary: #fff;
+}
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .app.app--web-radar .app-header--tabs :is(.web-brand, .web-version) {
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05)), rgba(10, 14, 22, 0.28);
@@ -923,7 +943,7 @@
   .app-header--tabs { --brand-room: 56px; }
   .web-brand-name { display: none; }
   .web-brand { padding: 6px; }
-  .web-version { padding: 5px 9px; font-size: 11px; }
+  .web-version { padding: 5px 9px; font-size: 12px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1605,9 +1625,12 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
 }
 
 .te-compare svg { flex-shrink: 0; }
+/* Thermometer after the text, marking the line as the temperature
+   comparison next to the activity scores. */
+/* Colour comes inline from the temperature scale. */
 .te-compare--colder svg { color: var(--cond-info); }
 .te-compare--warmer svg { color: var(--cond-orange); }
-.te-compare--same   svg { color: var(--text-tertiary); }
+.te-compare--same   svg { color: var(--cond-green); }
 
 /* Overall score: a pill tinted with its colour, bottom right on the Updated
    line. */
@@ -2183,7 +2206,7 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
    and the thumb padded away from the edges with a transparent border so it
    floats clear of the frame instead of butting against the rounded corner.
 
-   Shared with the hour strip inside an open day on the Outlook page, which is
+   Shared with the hour strip inside an open day on the This week page, which is
    same thing — a row of hours scrolling sideways inside a card — and had been
    left with the platform's default bar, a grey trough with square end caps
    drawn hard against the card's bottom edge. The declarations live here rather
@@ -2596,7 +2619,139 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
   .web-switch-knob { transition: none; }
 }
 
-/* ── Outlook ─────────────────────────────────────────────────────────────── */
+/* ── This week ─────────────────────────────────────────────────────────── */
+
+/* Desktop (≥1100px): the week board. One column per day, header on top and
+   that day's slice of the temperature curve under it, all inside a single
+   button, so the column's highlight runs through the chart too. The curve
+   itself is one SVG laid across the bottom of every column with
+   pointer-events off, so clicks land on the buttons beneath it. */
+.web-board-card .web-page-head {
+  align-items: center;
+}
+
+.web-board-key {
+  margin-top: 0;
+}
+
+.web-chart-key-line--dashed {
+  height: 0;
+  background: none;
+  border-top: 2px dashed var(--graph-line);
+  opacity: 0.6;
+}
+
+.web-board-key-drop {
+  color: var(--web-precip);
+}
+
+.web-board {
+  position: relative;
+}
+
+.web-board-cols {
+  display: grid;
+  grid-template-columns: repeat(var(--board-n, 7), minmax(0, 1fr));
+  gap: 0;
+}
+
+.web-board-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 12px 4px 0;
+  background: none;
+  border: none;
+  border-radius: 16px;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--text-primary);
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+.web-board-day:hover {
+  background: var(--hover-subtle);
+}
+
+.web-board-day--sel,
+.web-board-day--sel:hover {
+  background: var(--web-sunken);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.web-board-day:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.web-board-weekday {
+  font-family: var(--font-display), var(--font);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.web-board-day--sel .web-board-weekday {
+  color: var(--accent);
+}
+
+.sky-active .web-board-day--sel .web-board-weekday {
+  color: var(--text-primary);
+}
+
+.web-board-date {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+.web-board-icon {
+  font-size: 52px;
+  margin: 4px 0 2px;
+}
+
+.web-board-chance {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--web-precip);
+  font-variant-numeric: tabular-nums;
+}
+
+.web-board-chance--high { font-weight: 700; }
+.web-board-chance--zero { color: var(--text-tertiary); opacity: 0.55; }
+
+.web-board-plot-space {
+  display: block;
+  height: var(--board-plot-h, 170px);
+  flex: 0 0 auto;
+}
+
+.web-board-plot {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.web-board-temp--sel {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.web-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Narrow (<1100px): the stacked chart + accordion list below. */
 
 .web-days-card {
   padding: 6px 8px;
@@ -2842,6 +2997,297 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
 .web-day-hour-precip--high { font-weight: 700; }
 .web-day-hour-precip--zero { color: var(--text-tertiary); opacity: 0.45; }
 
+/* ── This week: selected-day panel (desktop) ─────────────────────────────── */
+
+/* Sits after the shared .web-day-stat rules so the list variant below wins
+   over their sky-tinted fills on equal specificity. */
+.web-dayview.card {
+  padding: 20px 24px 18px;
+}
+
+/* One line carries the whole summary: icon, day and conditions, high/low,
+   then the day steppers pushed to the far end. */
+.web-dayview-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 14px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--web-line);
+}
+
+.web-dayview-icon {
+  font-size: 64px;
+  flex: 0 0 auto;
+}
+
+.web-dayview-title {
+  min-width: 0;
+}
+
+.web-dayview-title h3 {
+  margin: 0;
+  font-family: var(--font-display), var(--font);
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--text-primary);
+}
+
+.web-dayview-sub {
+  display: block;
+  margin-top: 3px;
+  font-size: 14.5px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.web-dayview-temps {
+  display: flex;
+  gap: 20px;
+  margin-left: 12px;
+  padding-left: 24px;
+  border-left: 1px solid var(--web-line);
+}
+
+.web-dayview-temp {
+  display: flex;
+  flex-direction: column;
+  font-family: var(--font-display), var(--font);
+  font-size: 36px;
+  font-weight: 600;
+  line-height: 1.05;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.web-dayview-temp--low {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.web-dayview-temp-label {
+  font-family: var(--font);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.web-dayview-nav {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.web-dayview-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 999px;
+  background: var(--web-sunken);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.web-dayview-step:hover:not(:disabled) {
+  background: var(--hover-medium);
+}
+
+.web-dayview-step:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.web-dayview-step:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Hourly chart | the day's numbers. */
+.web-dayview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 300px);
+  gap: 32px;
+  align-items: start;
+}
+
+/* The day's numbers as a compact spec list beside the chart: label left,
+   value right, hairlines between. */
+.web-dayview .web-dayview-summary .web-day-stats--list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+}
+
+.web-dayview .web-dayview-summary .web-day-stats--list .web-day-stat {
+  background: none;
+  border-radius: 0;
+  padding: 8px 2px;
+  font-size: 13.5px;
+}
+
+.web-dayview .web-dayview-summary .web-day-stats--list .web-day-stat + .web-day-stat {
+  border-top: 1px solid var(--web-line);
+}
+
+.web-dayview .web-dayview-summary .web-day-stats--list .web-day-stat svg {
+  color: var(--text-tertiary);
+}
+
+.web-dayview-hours {
+  min-width: 0;
+}
+
+/* Hourly chart */
+.web-hc-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 22px;
+  margin-bottom: 8px;
+}
+
+.web-hc-head .section-label {
+  margin-bottom: 0;
+}
+
+.web-hc-readout {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.web-hc-readout strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.web-hc-readout-rain {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--web-precip);
+  font-weight: 600;
+}
+
+.web-hc-hint {
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+}
+
+.web-hc {
+  position: relative;
+}
+
+.web-hc svg {
+  display: block;
+  overflow: visible;
+}
+
+.web-hc-icons,
+.web-hc-hits {
+  display: grid;
+  grid-template-columns: repeat(var(--hc-n, 24), minmax(0, 1fr));
+}
+
+.web-hc-icons {
+  height: 34px;
+  margin-bottom: 4px;
+}
+
+.web-hc-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.web-hc-hits {
+  position: absolute;
+  inset: 0;
+}
+
+.web-hc-hits > span {
+  cursor: crosshair;
+}
+
+.web-hc-hover {
+  fill: var(--hover-medium);
+}
+
+.web-hc-now {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 4;
+  opacity: 0.7;
+}
+
+.web-hc-now-label {
+  fill: var(--accent);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-anchor: middle;
+  letter-spacing: 0.3px;
+}
+
+.sky-active .web-hc-now { stroke: #fff; }
+.sky-active .web-hc-now-label { fill: #fff; }
+
+.web-hc-axis--sel {
+  fill: var(--text-primary);
+  font-weight: 600;
+}
+
+.web-hc-empty {
+  margin: 40px 0;
+  text-align: center;
+  color: var(--text-tertiary);
+}
+
+/* The narrowest desktop widths: the numbers move under the chart, four
+   across, rather than squeeze the chart under ~600px. */
+@media (max-width: 1279px) {
+  .web-dayview-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .web-dayview .web-dayview-summary .web-day-stats--list {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    column-gap: 24px;
+  }
+
+  .web-dayview .web-dayview-summary .web-day-stats--list .web-day-stat + .web-day-stat {
+    border-top: none;
+  }
+
+  .web-dayview .web-dayview-summary .web-day-stats--list .web-day-stat {
+    border-top: 1px solid var(--web-line);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .web-board-day { transition: none; }
+}
+
 /* ── Details ─────────────────────────────────────────────────────────────── */
 
 .web-detail-grid {
@@ -2858,9 +3304,15 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
 
 /* Jump bar: one chip per section. Drawn as a card so it takes the same
    surface (and sky tint) as everything else on the page; the chip for the
-   section in view is lit. Scrolls sideways rather than wrapping when narrow. */
+   section in view is lit. Scrolls sideways rather than wrapping when narrow.
+   It sticks just under the header, like the Settings sidebar, so the jump to
+   another topic is always to hand; the cards are opaque, so they scroll under
+   it cleanly, and it sits under the header (z 6) where the two could meet. */
 .web-details-nav.card,
 .web-details-nav {
+  position: sticky;
+  top: calc(var(--web-header-h, 92px) + 12px);
+  z-index: 5;
   display: flex;
   gap: 4px;
   padding: 6px;
@@ -2904,9 +3356,11 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
   outline-offset: 2px;
 }
 
-/* Lands below the floating header when jumped to, not underneath it. */
+/* Lands below the header and the jump bar stuck under it when jumped to, not
+   underneath them: the bar's 12px offset, its 48px height (6px padding around
+   a 36px chip), and 16px of air. */
 .web-details-section {
-  scroll-margin-top: calc(var(--web-header-h, 92px) + 16px);
+  scroll-margin-top: calc(var(--web-header-h, 92px) + 76px);
 }
 
 .web-details-heading {
@@ -2945,6 +3399,19 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
 }
 .web-detail-slot--full {
   grid-column: 1 / -1;
+}
+
+/* Wind & atmosphere has four cards. The auto-fit grid put three on a row and
+   left Visibility alone under them with two empty cells beside it; four across
+   on a wide window, two by two below that, keeps every row full. */
+.web-detail-grid--atmosphere {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (min-width: 1440px) {
+  .web-detail-grid--atmosphere {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 .web-detail {
@@ -3221,6 +3688,56 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
   color: var(--text-tertiary);
 }
 
+/* UV card: the five exposure bands as a segmented bar, the current reading
+   marked on it, and the band boundaries under it. The top margin leaves room
+   for the marker, which stands taller than the bar. */
+.web-uv-scale {
+  margin: 16px 0 2px;
+}
+
+.web-uv-scale-bar {
+  position: relative;
+  display: flex;
+  gap: 3px;
+  height: 6px;
+}
+
+.web-uv-scale-band {
+  flex: 1;
+  border-radius: 999px;
+}
+
+.web-uv-scale-marker {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  translate: -50% -50%;
+  border-radius: 50%;
+  border: 2.5px solid rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  transition: left 0.4s ease;
+}
+
+.web-uv-scale-ticks {
+  position: relative;
+  height: 14px;
+  margin-top: 7px;
+}
+
+.web-uv-scale-ticks span {
+  position: absolute;
+  top: 0;
+  translate: -50% 0;
+  font-size: 11px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The 0 hugs the bar's start instead of centring past it. */
+.web-uv-scale-ticks span:first-child { translate: 0 0; }
+
 /* The shared AQI scale bar is built for the mobile detail cover, which puts its
    own spacing above it; here it follows a paragraph directly. */
 .web-detail .aqi-scale {
@@ -3323,12 +3840,6 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
   background: var(--sky-card, var(--card-bg));
   border-radius: 999px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
-}
-
-.radar-row-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
 }
 
 /* ── Radar tab: controls float over the map ──
@@ -3705,11 +4216,19 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
   font-variant-numeric: tabular-nums;
 }
 
+/* Six pollutants: one row of six when there's room, otherwise three by two —
+   never an auto-fit count like five, which left CO alone on a second row. */
 .web-poll-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   margin-top: 4px;
+}
+
+@media (min-width: 1280px) {
+  .web-poll-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
 }
 
 .web-poll {
@@ -4039,25 +4558,6 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
   text-wrap: balance;
   text-align: center;
   max-width: 88vw;
-}
-
-.splash-wordmark {
-  position: absolute;
-  bottom: calc(var(--sa-bottom) + 44px);
-  left: 50%;
-  transform: translateX(-50%);
-  font-family: var(--font-display);
-  font-size: 1.35rem;
-  font-weight: 700;
-  letter-spacing: -0.5px;
-  white-space: nowrap;
-  color: var(--text-primary);
-  pointer-events: none;
-}
-
-.splash-bg--sky .splash-wordmark {
-  color: #fff;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.35));
 }
 
 .splash-bg--web .splash-logo-img {
@@ -4408,6 +4908,125 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
 .splash-bg--sky .splash-here:hover { background: rgba(255, 255, 255, 0.26); }
 .splash-here-spinner { width: 13px; height: 13px; }
 
+/* The foot of the web splash, where the wordmark used to sit (the header
+   carries the brand now): the way into the saved locations. The same frosted
+   pill as .splash-here, a size up, since it is the only thing down there. */
+.splash-saved-btn {
+  position: absolute;
+  bottom: calc(var(--sa-bottom) + 38px);
+  left: 50%;
+  translate: -50% 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--glass-rim, var(--border, transparent));
+  background: var(--glass-bg, var(--card-bg));
+  -webkit-backdrop-filter: var(--glass-blur, none);
+  backdrop-filter: var(--glass-blur, none);
+  box-shadow: var(--glass-shadow, var(--shadow));
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  /* .splash-bg is inert; this, like .splash-home, takes its own clicks. */
+  pointer-events: auto;
+  transition:
+    scale 0.35s cubic-bezier(0.34, 1.5, 0.64, 1),
+    background 0.2s ease,
+    box-shadow 0.2s ease,
+    opacity 0.2s ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .splash-saved-btn:hover:not(:active) {
+    scale: 1.03;
+    background: var(--glass-bg-hover, color-mix(in srgb, var(--card-bg) 94%, var(--text-primary)));
+    box-shadow: var(--glass-shadow-lift, var(--shadow), 0 6px 18px rgba(0, 0, 0, 0.14));
+  }
+}
+.splash-saved-btn:active {
+  scale: 0.97;
+  transition: scale 0.06s cubic-bezier(0.4, 0, 0.6, 1);
+}
+.splash-saved-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.splash-saved-btn:disabled { pointer-events: none; }
+
+/* The saved view takes the search field's place, so it can run down to just
+   above the foot of the splash: the button that opened it steps aside. */
+.splash-home--saved {
+  bottom: calc(var(--sa-bottom) + 40px);
+  animation: splashSavedIn 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes splashSavedIn {
+  from { opacity: 0; translate: 0 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .splash-home--saved { animation: none; }
+}
+
+.splash-saved-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+/* Round, in the cards' glass, the size of the search field's height scaled
+   down — the one control on the row. */
+.splash-saved-back {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--glass-rim, transparent);
+  background: var(--glass-bg, var(--card-bg));
+  -webkit-backdrop-filter: var(--glass-blur, none);
+  backdrop-filter: var(--glass-blur, none);
+  box-shadow: var(--glass-shadow, var(--shadow));
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: scale 0.35s cubic-bezier(0.34, 1.5, 0.64, 1), background 0.2s ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .splash-saved-back:hover:not(:active) {
+    scale: 1.06;
+    background: var(--glass-bg-hover, color-mix(in srgb, var(--card-bg) 94%, var(--text-primary)));
+  }
+}
+.splash-saved-back:active { scale: 0.94; transition-duration: 0.06s; }
+.splash-saved-back:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.splash-saved-title {
+  margin: 0;
+  font-family: var(--font-display), var(--font);
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.4px;
+  color: var(--text-primary);
+}
+
+.splash-saved-count {
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--splash-surface);
+  border: 1px solid var(--splash-surface-border);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+
+.splash-saved-empty {
+  margin-top: 28px;
+}
+
 .splash-home-hint {
   margin: 0;
   text-align: center;
@@ -4565,12 +5184,24 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
    its text is near-white already. */
 :root[data-splash-sky="dark"] :is(
   .app--web-splash .web-tabs,
+  .app--web-splash .web-brand,
+  .app--web-splash .web-version,
+  .splash-recents .section-label,
+  .splash-saved-btn,
+  .splash-saved-head,
+  .splash-home-hint,
   .splash-search .search-bar,
   .splash-search .search-dropdown,
   .splash-city
 ),
 :root[data-splash-sky][data-theme="dark"] :is(
   .app--web-splash .web-tabs,
+  .app--web-splash .web-brand,
+  .app--web-splash .web-version,
+  .splash-recents .section-label,
+  .splash-saved-btn,
+  .splash-saved-head,
+  .splash-home-hint,
   .splash-search .search-bar,
   .splash-search .search-dropdown,
   .splash-city
@@ -4586,6 +5217,12 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
 @media (prefers-color-scheme: dark) {
   :root[data-splash-sky]:not([data-theme="light"]) :is(
     .app--web-splash .web-tabs,
+    .app--web-splash .web-brand,
+    .app--web-splash .web-version,
+    .splash-recents .section-label,
+    .splash-saved-btn,
+    .splash-saved-head,
+    .splash-home-hint,
     .splash-search .search-bar,
     .splash-search .search-dropdown,
     .splash-city
@@ -5035,7 +5672,7 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
   flex-direction: column;
 }
 
-/* Page heading (Outlook, Conditions in detail, Air quality) — sized to the
+/* Page heading (This week, Conditions in detail, Air quality) — sized to the
    h2 it replaces rather than to the longest of those words. */
 .skeleton-web-title { width: 210px; height: 26px; border-radius: 9px; }
 
@@ -5044,6 +5681,8 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
 .skeleton-web-chart { height: 190px; border-radius: 14px; }
 .skeleton-web-panel-chart { height: 120px; border-radius: 12px; margin-top: 14px; }
 .skeleton-web-dial { height: 148px; border-radius: 14px; }
+.skeleton-web-board-day { cursor: default; gap: 8px; }
+.skeleton-web-board-plot { width: 80%; height: 150px; margin-top: 12px; border-radius: 12px; }
 .skeleton-web-hero { width: 40%; height: 34px; border-radius: 10px; }
 
 .skeleton-web-copy {
@@ -5484,4 +6123,34 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
   max-width: 560px;
   margin: 48px auto 12px;
   padding: 36px 32px;
+}
+
+/* ── Splash lettering ──
+   Every piece of text on the web splash is set in the nav bar's ink: its text
+   colour at the 0.72 the unselected tabs sit at, resolved on each element so
+   it goes white wherever the light-text glass above makes the bar's white.
+   Size and weight carry the hierarchy (name over region, temperature over
+   "feels like") instead of a different grey per line. `.splash-bg.splash-bg--web`
+   to outrank the white-over-sky rule in App.css, whose drop shadow was a lift
+   for white text and only smudges ink. */
+.splash-bg.splash-bg--web :is(
+  .splash-city-name,
+  .splash-city-sub,
+  .splash-city-temp,
+  .splash-city-feels,
+  .splash-search .search-icon,
+  .splash-search .search-bar input,
+  .splash-recents .section-label,
+  .splash-home-hint,
+  .splash-saved-btn,
+  .splash-saved-title,
+  .splash-saved-count,
+  .splash-saved-back
+) {
+  color: color-mix(in srgb, var(--text-primary) 72%, transparent);
+  filter: none;
+}
+.splash-bg.splash-bg--web .splash-search .search-bar input::placeholder {
+  color: color-mix(in srgb, var(--text-primary) 72%, transparent);
+  opacity: 1;
 }

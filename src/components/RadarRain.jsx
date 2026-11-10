@@ -372,8 +372,17 @@ export function RadarRain({ map, getLayer, snow = false }) {
     const slantLen = Math.hypot(1, RAIN_SLANT)
     const ux = RAIN_SLANT / slantLen, uy = 1 / slantLen // fall direction
 
+    // Only while the map is on screen and the app is in front. On the phone the
+    // radar is one card in the stack, often scrolled well out of view, and it
+    // used to go on rebuilding the mask (a read-back of every tile) every
+    // MASK_MS and animating every frame regardless. Off screen, the loop stops
+    // and the timers skip their work; coming back rebuilds the mask at once.
+    let onScreen = true
+    const active = () => onScreen && !document.hidden
+
     let lastFrame = 0
     const draw = (now) => {
+      if (!active()) { raf = 0; return }
       raf = requestAnimationFrame(draw)
       const step = lastFrame ? Math.min(MAX_STEP, (now - lastFrame) / FRAME_MS) : 1
       lastFrame = now
@@ -487,14 +496,29 @@ export function RadarRain({ map, getLayer, snow = false }) {
       }
     }
 
+    // Restarts the loop after a pause, from a fresh mask and without a catch-up
+    // step for the time it was stopped.
+    const wake = () => {
+      if (!alive || !active() || raf) return
+      lastFrame = 0
+      buildMask()
+      raf = requestAnimationFrame(draw)
+    }
+    const io = new IntersectionObserver(([entry]) => {
+      onScreen = entry.isIntersecting
+      wake()
+    })
+    io.observe(canvas)
+    document.addEventListener('visibilitychange', wake)
+
     resize()
     const ro = new ResizeObserver(resize)
     ro.observe(canvas)
     map.on('moveend', onMoveEnd)
     ensureField()
-    refreshTimer = setInterval(ensureField, PHASE_MAX_AGE)
+    refreshTimer = setInterval(() => { if (active()) ensureField() }, PHASE_MAX_AGE)
     buildMask()
-    timer = setInterval(buildMask, MASK_MS)
+    timer = setInterval(() => { if (active()) buildMask() }, MASK_MS)
     raf = requestAnimationFrame(draw)
     return () => {
       alive = false
@@ -504,6 +528,8 @@ export function RadarRain({ map, getLayer, snow = false }) {
       clearTimeout(fieldTimer)
       map.off('moveend', onMoveEnd)
       ro.disconnect()
+      io.disconnect()
+      document.removeEventListener('visibilitychange', wake)
     }
   }, [map, getLayer])
 

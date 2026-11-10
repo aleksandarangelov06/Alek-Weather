@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react'
+import { lazy, memo, Suspense, useState } from 'react'
 import { loadWeatherRadar, loadedWeatherRadar } from './radarChunk'
 
 // Leaflet plus the map that drives it is ~160 KB — a quarter of the whole
@@ -34,7 +34,9 @@ function RadarSkeleton({ fill }) {
   )
 }
 
-export function WeatherRadar(props) {
+// Memoised: its props are the place and a few settings, and the map below is the
+// most expensive thing on the page to re-render for an unrelated change in App.
+export const WeatherRadar = memo(function WeatherRadar(props) {
   // Already fetched (the web layout preloads it): render it straight away rather
   // than through a suspend that would put the skeleton up for a frame. Read
   // once, at mount — switching between the two paths later would change the
@@ -46,4 +48,4 @@ export function WeatherRadar(props) {
       <WeatherRadarImpl {...props} />
     </Suspense>
   )
-}
+})

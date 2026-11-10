@@ -85,7 +85,7 @@ export function SplashCities({ recents, savedCities, unit, exiting, busy, onSele
                     </span>
                   )}
                   <span className={`splash-mini-temp${cond ? '' : ' splash-mini-temp--unknown'}`}>
-                    {cond ? `${toTemp(cond.temp, unit)}°` : '—'}
+                    {cond ? `${toTemp(cond.temp, unit)}°` : '-'}
                   </span>
                 </>
               )}

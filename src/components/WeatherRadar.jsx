@@ -5,7 +5,6 @@ import 'leaflet/dist/leaflet.css'
 import { MRMS_BASE, inMrmsDomain, usViewBounds } from '../utils/mrms'
 import { addBasemap } from '../utils/basemap'
 import { RadarRain } from './RadarRain'
-import { RadarGlow } from './RadarGlow'
 import { fetchWithin } from '../utils/fetchTimeout'
 
 // The frame lists the card waits on. Past this a source counts as down and the
@@ -1011,6 +1010,9 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
     if (!playing || frames.length === 0) return
     let holds = 0
     const id = setInterval(() => {
+      // Held while the app is in the background: each step swaps the map's
+      // layers and fetches the next frame's tiles, for a loop nobody can see.
+      if (document.hidden) return
       const next = (idx + 1) % frames.length
       const layer = layerCache.current.get(layerKey(frames[next], hd))
       if (layer?._radarLoaded || ++holds >= 4) setIdx(next)
@@ -1682,9 +1684,7 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
         </div>
       )}
 
-      {/* The stage holds the map and, on the compact card, the glow that
-          spills its colours out onto the card around it (.radar-map-glow).
-          Expanded and fill modes lay the map out as before: there the stage
+      {/* The stage holds the map and its overlays. Expanded and fill modes lay the map out as before: there the stage
           is display: contents, so it is not a box at all. */}
       <div className="radar-map-stage">
       <div className="radar-map-wrap">
@@ -1741,7 +1741,6 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
           />
         )}
       </div>
-      {!expanded && !fill && <RadarGlow />}
       </div>
 
       <div className="radar-controls">

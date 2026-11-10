@@ -2,6 +2,7 @@ import { Leaf, Wind } from 'lucide-react'
 import { getAQIInfo, getAQINote } from '../../utils/conditions'
 import { smoothPath, useMeasure } from './chartUtils'
 import { weekdayLabel } from './webData'
+import { POLLUTANTS, aqiDriver } from '../../utils/airQuality'
 
 // The US AQI category breakpoints, as the fraction of the 0–300 dial each one
 // spans. Everything above 300 is "Hazardous" and pins to the end of the scale.
@@ -13,18 +14,6 @@ const BANDS = [
   { to: 300, label: 'Very bad',  color: 'var(--cond-purple)' },
 ]
 const SCALE_MAX = 300
-
-// Concentration each pollutant reaches when it alone would push the AQI to the
-// "unhealthy for sensitive groups" boundary — the point where the bar is full.
-// All values µg/m³, matching what Open-Meteo returns.
-const POLLUTANTS = [
-  { key: 'pm2_5',            name: 'PM2.5', full: 35.4,  desc: 'Fine particles' },
-  { key: 'pm10',             name: 'PM10',  full: 154,   desc: 'Coarse particles' },
-  { key: 'ozone',            name: 'O₃',    full: 140,   desc: 'Ground-level ozone' },
-  { key: 'nitrogen_dioxide', name: 'NO₂',   full: 100,   desc: 'Traffic emissions' },
-  { key: 'sulphur_dioxide',  name: 'SO₂',   full: 75,    desc: 'Industrial burning' },
-  { key: 'carbon_monoxide',  name: 'CO',    full: 10000, desc: 'Combustion gas' },
-]
 
 const polar = (cx, cy, r, frac) => {
   const rad = (Math.PI * (1 - Math.min(Math.max(frac, 0), 1)))
@@ -180,9 +169,7 @@ export function AirQualityCard({ airQuality, timezone, tint = (c) => c }) {
   const color = tint(info.color)
   // The pollutant closest to its own concern level — the one actually driving
   // the index, which the single AQI number hides.
-  const driver = POLLUTANTS
-    .map((p) => ({ ...p, value: airQuality[p.key], ratio: airQuality[p.key] != null ? airQuality[p.key] / p.full : -1 }))
-    .sort((a, b) => b.ratio - a.ratio)[0]
+  const driver = aqiDriver(airQuality)
 
   return (
     <div className="card web-detail web-aqi-card">
@@ -193,10 +180,10 @@ export function AirQualityCard({ airQuality, timezone, tint = (c) => c }) {
         <div className="web-aqi-copy">
           <div className="web-aqi-status" style={{ color }}>{info.label}</div>
           <p className="web-aqi-note">{getAQINote(airQuality.us_aqi)}</p>
-          {driver && driver.ratio >= 0 && (
+          {driver && (
             <p className="web-aqi-driver">
               <Wind size={15} aria-hidden="true" />
-              Driven mainly by <strong>{driver.name}</strong> — {driver.desc.toLowerCase()} at {driver.value.toFixed(1)} µg/m³.
+              Driven mainly by <strong>{driver.name}</strong> ({driver.desc.toLowerCase()}) at {driver.value.toFixed(1)} µg/m³.
             </p>
           )}
           <div className="web-aqi-legend">

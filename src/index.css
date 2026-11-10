@@ -3,11 +3,36 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Nothing in the app is meant to scroll the page sideways (.app already clips
+   its own overflow), but anything poking past the edge outside it — a fixed
+   layer, an overlay — made the whole page pannable left/right in a phone
+   browser, dragging the content over empty space. Clip it at the root and stop
+   the sideways rubber-band. Strips that scroll on their own (the hourly
+   forecast and the like) are their own scrollers and are unaffected.
+   On <html> this applies to the viewport (`hidden` first for browsers without
+   `clip`). <body> only gets `clip`: `hidden` there would make it a scroll box
+   and break the web header's position: sticky. */
+html {
+  overflow-x: hidden;
+  overflow-x: clip;
+  overscroll-behavior-x: none;
+}
+
 body {
+  overflow-x: clip;
   margin: 0;
   background: var(--bg, #f0f2f5);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Launch guard, set in main.jsx and cleared by App after its first frames:
+   no transitions while the saved theme and palette settle in, or the cards
+   fade across from the default colours on every refresh. */
+:root[data-booting] *,
+:root[data-booting] *::before,
+:root[data-booting] *::after {
+  transition: none !important;
 }
 
 #root {

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { memo, useState, useRef, useCallback, useEffect } from 'react'
 import { Droplet, ChevronUp } from 'lucide-react'
 import { getWeatherInfo, formatDay, formatHour, formatTime, getUVLabel, liveWeatherCode, nowcastHourlyCode, toTemp, tempInk, tempStyle, SUN_ORANGE } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
@@ -48,7 +48,9 @@ function coverTitle(date) {
   return `${name}, ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
 }
 
-export function DailyForecast({ daily, hourly, timezone, unit, units, colorCoding = true, glow = true, frost = true, current, minutely, radarClear = null }) {
+// Memoised: App re-renders for every overlay, toggle and keystroke, and the
+// props here are the reading and the settings, which those leave alone.
+export const DailyForecast = memo(function DailyForecast({ daily, hourly, timezone, unit, units, colorCoding = true, glow = true, frost = true, current, minutely, radarClear = null }) {
   const [expanded, setExpanded] = useState(null)
   const [closing, setClosing] = useState(false)
   // The tapped row's box, which the cover grows out of (see coverFrom).
@@ -344,7 +346,7 @@ export function DailyForecast({ daily, hourly, timezone, unit, units, colorCodin
               </div>
               <div className="detail-stat">
                 <span className="detail-stat-label">Humidity</span>
-                <span className="detail-stat-value" style={colorCoding && humidityAvg != null ? { color: humidityColor(humidityAvg) } : undefined}>{humidityAvg != null ? `${humidityAvg}%` : '—'}</span>
+                <span className="detail-stat-value" style={colorCoding && humidityAvg != null ? { color: humidityColor(humidityAvg) } : undefined}>{humidityAvg != null ? `${humidityAvg}%` : '-'}</span>
               </div>
             </div>
             <div className="detail-stats">
@@ -399,4 +401,4 @@ export function DailyForecast({ daily, hourly, timezone, unit, units, colorCodin
       )}
     </div>
   )
-}
+})

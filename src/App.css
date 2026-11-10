@@ -1501,6 +1501,15 @@ body {
   margin-inline: auto;
 }
 
+/* On the phone shells the place and date are in the app header, so the hero
+   starts with the card's padding, the icon's top margin and the blank top of
+   the glyph's box stacked above the art — it sat well below the middle of the
+   gap between the header and the reading. Shifted up (visually only, so the
+   reading and everything under it stay put) to sit centred in that gap. */
+:root[data-shell="mobile"] .current-card .current-icon {
+  transform: translateY(-0.25em);
+}
+
 /* Line icons in the hero. Lucide draws on a 24-unit grid with padding built in,
    and most of the weather shapes are wider than tall (the cloud fills only rows
    5-19), so at the full 1em the icon carried a band of empty box above and
@@ -2161,6 +2170,64 @@ body {
   flex-shrink: 0;
 }
 
+/* Day pills (Today / Tomorrow): a faint hairline before the midnight column,
+   and a pill per day on its own line under the hours. Each .hourly-day-span
+   covers that day's columns inside the scrolled track and its pill is sticky
+   within it, so a pill holds the left edge while its day is on screen and the
+   next day's pill pushes it out at midnight. */
+.hourly-day-strip {
+  display: flex;
+  padding: 6px 0 2px;
+}
+.hourly-day-span {
+  flex: 1;
+  display: flex;
+  min-width: 0;
+}
+.hourly-day-marker {
+  position: sticky;
+  left: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: var(--accent);
+  background: var(--accent-light);
+}
+.hourly-day-name {
+  font-weight: 500;
+  opacity: 0.7;
+}
+.hourly-day-name::before {
+  content: '·';
+  margin-right: 6px;
+}
+/* Over the sky the accent blue sinks into the card tint: frosted white. */
+.sky-active .hourly-day-marker {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+.hourly-item--new-day {
+  position: relative;
+}
+.hourly-item--new-day::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 14px;
+  bottom: 14px;
+  width: 1px;
+  background: currentColor;
+  opacity: 0.15;
+}
+
 .hourly-item:first-child {
   background: var(--accent-light);
 }
@@ -2485,6 +2552,13 @@ body {
   margin-bottom: 8px;
 }
 
+/* Phone shells: taller tiles, so the Details card (and the cover that opens
+   over it, which is clipped to the card) has more room. */
+:root[data-shell="mobile"] .card--details .detail-card {
+  padding: 20px 16px;
+  min-height: 136px;
+}
+
 .detail-label {
   font-size: 11px;
   font-weight: 600;
@@ -2655,6 +2729,57 @@ body {
   display: flex;
   justify-content: center;
 }
+
+/* Compact Sun & UV cover: it carries two full sections (sun times, then UV),
+   so everything in it runs a size down to fit the card without scrolling. */
+:root[data-shell="mobile"] .card--details .detail-cover-body.detail-cover-body--sun { gap: 14px; }
+.detail-cover-body.detail-cover-body--sun .detail-section { gap: 8px; }
+.detail-cover-body.detail-cover-body--sun .detail-section + .detail-section { padding-top: 12px; }
+.detail-cover-body.detail-cover-body--sun .detail-summary { gap: 12px; }
+.detail-cover-body.detail-cover-body--sun .detail-summary-val { font-size: clamp(28px, 8.5vw, 36px); }
+.detail-cover-body.detail-cover-body--sun .detail-summary-label { font-size: 15px; }
+.detail-cover-body.detail-cover-body--sun .detail-summary-note { font-size: 12.5px; line-height: 1.35; }
+.detail-cover-body.detail-cover-body--sun .detail-stats { gap: 6px; }
+.detail-cover-body.detail-cover-body--sun .detail-stat { padding: 6px 9px; gap: 2px; }
+.detail-cover-body.detail-cover-body--sun .detail-stat-label { font-size: 9.5px; letter-spacing: 0.4px; }
+.detail-cover-body.detail-cover-body--sun .detail-stat-value { font-size: 14px; }
+/* A shallower arc: same shape, less height. */
+.detail-cover-body.detail-cover-body--sun .sun-dial.sun-dial--wide { max-width: 78%; }
+.detail-cover-body.detail-cover-body--sun .sun-cover-times { margin-top: -2px; font-size: 12.5px; }
+.detail-cover-body.detail-cover-body--sun .sun-cover-daylight { font-size: 11.5px; }
+.detail-cover-body.detail-cover-body--sun .detail-chart-axis { margin-top: 2px; font-size: 10.5px; }
+/* The UV timeline stays on one row of six (it wraps to 3 + 3 on phones
+   elsewhere), with smaller type. */
+.detail-cover-body.detail-cover-body--sun .uv-timeline {
+  display: flex;
+  gap: 4px;
+}
+.detail-cover-body.detail-cover-body--sun .uv-timeline-item { gap: 3px; }
+.detail-cover-body.detail-cover-body--sun .uv-tl-time { font-size: 11px; }
+.detail-cover-body.detail-cover-body--sun .uv-tl-val { font-size: 18px; }
+.detail-cover-body.detail-cover-body--sun .uv-tl-lbl { font-size: 9.5px; }
+
+/* Sunrise · daylight · sunset, under the arc in the Sun & UV cover. */
+.sun-cover-times {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: -4px;
+  font-size: 13.5px;
+  color: var(--text-primary);
+}
+.sun-cover-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-weight: 500;
+}
+.sun-cover-daylight {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.sky-active .sun-cover-daylight { color: rgba(255, 255, 255, 0.75); }
 
 .sun-dial-arc {
   fill: none;
@@ -2930,8 +3055,10 @@ body {
 
 
 /* Stacks the summary hero, stat row, timeline, and description as one group at
-   the top of the card. flex-start also means a tall body — the AQI one — scrolls
-   from the top rather than having its top clipped the way centering would. */
+   the top of the card. The phone Details covers are cut to fit the card, so
+   none of them should scroll; flex-start means one that ever ran too tall
+   (very large system text) scrolls from the top rather than having its top
+   clipped the way centering would. */
 .detail-cover-body {
   flex: 1;
   display: flex;
@@ -2945,9 +3072,223 @@ body {
   overflow-x: hidden;
 }
 
+/* Phone Details covers: sections stack from the top at a steady rhythm, and
+   the spare height collects at the foot of the card rather than being spread
+   out as gaps between sections. Every cover has to fit the card whole — it is
+   clipped to it — so each one carries only what fits (see WeatherDetails). */
+:root[data-shell="mobile"] .card--details .detail-cover-body {
+  gap: 20px;
+}
+
+/* Two sections back to back (the Sun & UV cover) get a hairline between. */
+.detail-section + .detail-section {
+  padding-top: 18px;
+  border-top: 1px solid var(--bar-track-bg);
+}
+
+/* "Next 8 hours" at the foot of the phone Details covers (precipitation,
+   humidity, wind, pressure, visibility): two rows of four at every width, so
+   the covers fit the card without scrolling (TIMELINE_HOURS in WeatherDetails).
+   Each hour is a soft tile, like the stat boxes. The grid takes spare height in
+   the cover, but only up to a cap (about 117px a row), so the tiles fill out a
+   short card without turning into tall empty columns. Text is sized from each
+   tile's own width (container units), so "100%" or "Very High" fits whether the
+   card is a narrow phone's or a wide one's, in either style. "Now" is tinted,
+   as in the main hourly forecast. Qualified with .detail-cover-body so it
+   outranks the three-column phone timeline rule further down. */
+.detail-cover-body > .hour-section {
+  flex: 1 0 auto;
+}
+.detail-cover-body .uv-timeline.hour-grid {
+  flex: 1 0 auto;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-rows: 1fr;
+  gap: 6px;
+  max-height: 240px; /* 2 rows */
+}
+.hour-grid .uv-timeline-item {
+  container-type: inline-size;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px 4px;
+  border-radius: 12px;
+  background: var(--hover-subtle);
+}
+.hour-grid .uv-timeline-item:first-child {
+  background: var(--accent-light);
+}
+.detail-cover-body .hour-grid .uv-tl-time {
+  font-size: clamp(11px, 22cqi, 15px);
+}
+.detail-cover-body .hour-grid .uv-tl-val,
+.detail-cover-body .hour-grid .uv-tl-val.uv-tl-val--sm {
+  font-size: clamp(14px, 32cqi, 28px);
+  white-space: nowrap;
+}
+/* Colour on the number only; the label is plain text under it. */
+.detail-cover-body .hour-grid .uv-tl-lbl {
+  font-size: clamp(9px, 17cqi, 12.5px);
+  font-weight: 500;
+  color: var(--text-secondary) !important;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The wind arrow's size carries its strength; just keep it inside the tile. */
+.hour-grid .uv-timeline-item svg {
+  max-width: 40cqi;
+  max-height: 40cqi;
+}
+.sky-active .hour-grid .uv-timeline-item { background: rgba(255, 255, 255, 0.07); }
+.sky-active .hour-grid .uv-timeline-item:first-child { background: rgba(255, 255, 255, 0.16); }
+.sky-active .detail-cover-body .hour-grid .uv-tl-lbl { color: rgba(255, 255, 255, 0.7) !important; }
+
+/* A titled group inside a cover ("Next hours", "This week"). */
+.detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+.detail-section-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.detail-section-aside {
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-secondary);
+}
+
+/* Storms cover: 24 hourly bars of storm energy. */
+.storm-chart {
+  width: 100%;
+}
+.storm-chart-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 72px;
+  padding-top: 14px; /* room for a bolt over a full-height bar */
+  border-bottom: 1px solid var(--bar-track-bg);
+}
+.storm-chart-col {
+  position: relative;
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+}
+.storm-chart-bar {
+  display: block;
+  width: 100%;
+  min-height: 2px;
+  border-radius: 2px 2px 0 0;
+}
+.storm-chart-bolt {
+  position: absolute;
+  left: 50%;
+  top: -13px;
+  transform: translateX(-50%);
+}
+.storm-chart-axis {
+  display: flex;
+  gap: 2px;
+  margin-top: 5px;
+}
+.storm-chart-axis span {
+  flex: 1;
+  min-width: 0;
+  overflow: visible;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.storm-chart-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+.sky-active .storm-chart-axis span { color: rgba(255, 255, 255, 0.6); }
+.sky-active .storm-chart-scale { color: rgba(255, 255, 255, 0.8); }
+.sky-active .storm-chart-bars { border-bottom-color: rgba(255, 255, 255, 0.15); }
+
+/* Storms cover: the week's peak storm energy, one row a day. */
+.storm-week {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.storm-week-row {
+  display: grid;
+  grid-template-columns: 52px 1fr 92px;
+  align-items: center;
+  gap: 12px;
+  font-size: 13.5px;
+}
+.storm-week-day {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.storm-week-track {
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--bar-track-bg);
+}
+.storm-week-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+}
+.storm-week-lbl {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.sky-active .detail-section-label { color: rgba(255, 255, 255, 0.6); }
+.sky-active .detail-section-aside { color: rgba(255, 255, 255, 0.8); }
+
 .detail-cover-body .uv-timeline {
   width: 100%;
 }
+
+/* 24-hour chart in the phone detail covers (humidity, wind, pressure,
+   visibility), matching the desktop Details panels. */
+.detail-chart {
+  width: 100%;
+}
+.detail-chart-axis {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.detail-chart-range {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+.sky-active .detail-chart-axis { color: rgba(255, 255, 255, 0.6); }
+.sky-active .detail-chart-range { color: rgba(255, 255, 255, 0.8); }
 
 
 /* ── Expanded detail: current-reading summary ── */
@@ -3784,6 +4125,20 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Set on <html> while the phone splash is up (App.jsx). overflow alone is not
+   enough on iOS Safari, which still lets a swipe on a fixed layer pan the page
+   and hide the toolbar; touch-action on the layers that take the touches stops
+   the pan before it starts, and taps still go through as clicks. */
+html.splash-lock,
+html.splash-lock body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+html.splash-lock .splash-overlay,
+html.splash-lock .splash-mini {
+  touch-action: none;
+}
+
 .splash-logo {
   position: absolute;
   left: 50%;
@@ -4295,6 +4650,26 @@ body {
 }
 
 .back-btn:hover { opacity: 0.7; }
+
+/* The settings page's Back, on the phone shells: a pill in the same glass as
+   the settings cards under it (the iOS settings glass: fill, hairline rim, top
+   highlight and blur), so it reads as a button over the sky rather than loose
+   text. Android draws its own circular back button (further down). */
+:root[data-shell="mobile"]:not([data-platform="android"]) .settings-page-header .back-btn {
+  padding: 7px 14px 7px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--card-bg) calc(52% * var(--ios-glass-scale, 1)), transparent);
+  border: 0.5px solid var(--ios-glass-rim, color-mix(in srgb, var(--text-primary) 9%, transparent));
+  box-shadow: 0 3px 12px var(--ios-glass-shadow, transparent), inset 0 1px 0 var(--ios-glass-highlight, transparent);
+  -webkit-backdrop-filter: blur(var(--ios-glass-blur, 24px)) saturate(180%);
+  backdrop-filter: blur(var(--ios-glass-blur, 24px)) saturate(180%);
+  transition: background 0.15s, transform 0.12s;
+}
+:root[data-shell="mobile"]:not([data-platform="android"]) .settings-page-header .back-btn:hover { opacity: 1; }
+:root[data-shell="mobile"]:not([data-platform="android"]) .settings-page-header .back-btn:active {
+  background: color-mix(in srgb, var(--card-bg) calc(72% * var(--ios-glass-scale, 1)), transparent);
+  transform: scale(0.96);
+}
 
 .color-coding-back {
   font-size: 16px;
@@ -4852,8 +5227,9 @@ body {
 
 .aqi-pollutants {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
+  width: 100%;
 }
 
 .aqi-pollutant {
@@ -4885,11 +5261,47 @@ body {
   color: var(--text-secondary);
 }
 
+/* Level bar: fills toward the pollutant's own concern level. */
+.aqi-poll-track {
+  display: block;
+  height: 4px;
+  margin-top: 4px;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--bar-track-bg);
+}
+.aqi-poll-fill {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+}
+.aqi-poll-desc {
+  font-size: 11px;
+  line-height: 1.3;
+  color: var(--text-secondary);
+}
+
+/* The phone Air Quality cover keeps the tighter rhythm the others were raised
+   from. Its six pollutant tiles are gone (they were what pushed it past the
+   card's height); the main pollutant is named in the line under the note. */
+:root[data-shell="mobile"] .card--details .detail-cover-body.detail-cover-body--aqi { gap: 14px; }
+
+/* Which pollutant is behind the index, under the explanatory note. */
+.aqi-driver {
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+.aqi-driver strong {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
 .aqi-mask-icon {
   margin-left: auto;
 }
 
-@media (max-width: 420px) {
+@media (max-width: 360px) {
   .aqi-pollutants { grid-template-columns: repeat(2, 1fr); }
 }
 
@@ -5389,21 +5801,11 @@ body {
   background: var(--bg);
 }
 
-/* ── The map spilling onto the card (compact card, phone shells) ──
-   The map used to sit in the card as a framed rectangle, and over a thinned
-   card it read as a picture pasted onto glass. Now its colours bleed out onto
-   the card around it, the way a screen lights the wall behind it, and a little
-   further below it, like a reflection on the surface it stands on.
-
-   .radar-map-glow is a ring laid over the map's surroundings. Its backdrop
-   filter blurs whatever is under it, which near the edges is the map itself, so
-   the ring fills with the map's own colours fading out into the card. The
-   middle is masked away (content-box excluded from border-box, with padding
-   matching the ring's reach), so the map stays sharp, and nothing has to draw
-   or copy the map: it just follows whatever frame is showing.
-
-   The stage is only a box on the compact card. Expanded and fill modes keep the
-   layout they had, with no glow. */
+/* ── The compact map ──
+   A plain rounded rectangle on the card. (It used to bleed its colours onto
+   the card through a blurred glow ring, RadarGlow, which on phones read as a
+   hard-edged fuzzy box around the map.) The stage is only a box on the
+   compact card; expanded and fill modes keep their own layout. */
 .radar-map-stage {
   position: relative;
 }
@@ -5411,57 +5813,8 @@ body {
 .radar-fill .radar-map-stage {
   display: contents;
 }
-.radar-map-glow {
-  display: none;
-}
-:root[data-shell="mobile"] .radar-card:not(.radar-expanded):not(.radar-fill) .radar-map-glow {
-  --glow-x: 12px;      /* the map's side margins: reach the card's edge */
-  --glow-top: 16px;
-  --glow-bottom: 30px; /* deeper below: the reflection */
-  display: block;
-  position: absolute;
-  top: calc(0px - var(--glow-top));
-  bottom: calc(12px - var(--glow-bottom));   /* the wrap's 12px bottom margin */
-  left: 0;
-  right: 0;
-  padding: var(--glow-top) var(--glow-x) var(--glow-bottom);
-  border-radius: 24px;
-  pointer-events: none;
-  z-index: 0;
-  -webkit-backdrop-filter: blur(16px) saturate(1.7);
-  backdrop-filter: blur(16px) saturate(1.7);
-  /* The shape — a ring that is full strength at the map's edge, fades out
-     towards the card's edges (further below the map: the reflection) and has
-     the map cut out of its middle with the map's 14px corners — is a single
-     SVG mask image that RadarGlow builds from the ring's measured size and the
-     --glow-* values above. It used to be three mask layers here, combined with
-     mask-composite and a content-box clip. The Android WebView drew that as a
-     hard-edged box around the map. One mask layer draws the same everywhere.
-     Until RadarGlow has measured the ring, this fully transparent mask keeps it
-     hidden, so it never shows as an unmasked blurred box. */
-  -webkit-mask-image: linear-gradient(transparent, transparent);
-  -webkit-mask-size: 100% 100%;
-  -webkit-mask-repeat: no-repeat;
-  mask-image: linear-gradient(transparent, transparent);
-  mask-size: 100% 100%;
-  mask-repeat: no-repeat;
-  opacity: 0.8;
-}
-/* The glow blurs whatever is drawn before it, and a positioned element is drawn
-   after every plain block in the card — so the header label and the time row,
-   which the ring's edges reach into, would be smeared along with the map.
-   Lifting them over it keeps them out of what it samples. */
-:root[data-shell="mobile"] .radar-card:not(.radar-expanded):not(.radar-fill) :is(.radar-header, .radar-controls) {
-  position: relative;
-  z-index: 1;
-}
-/* The hairline frame is what made the edge hard; with the glow it goes, and
-   the corners soften to meet it. */
-:root[data-shell="mobile"] .radar-card:not(.radar-expanded):not(.radar-fill) .radar-map-wrap::after {
-  box-shadow: none;
-}
 :root[data-shell="mobile"] .radar-card:not(.radar-expanded):not(.radar-fill) .radar-map-wrap {
-  border-radius: 14px;
+  border-radius: 16px;
 }
 
 .radar-expanded .radar-map-wrap .radar-map {
@@ -5555,6 +5908,25 @@ body {
 /* ── Today card (mobile block list) ──
    Yesterday comparison and 1–10 ratings for the rest of the day. Numbers stay in the text colour; the score colour lives on
    the bars and the dot, where a pale yellow or lime still reads on a light card. */
+/* Now/High lines with a thermometer to their left, marking the comparison as
+   temperature. The thermometer sits in the same 20px column as the headline
+   icon above, so the lines stay aligned with the headline text. */
+.today-compare-detail {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.today-compare-thermo {
+  flex: 0 0 20px;
+  display: flex;
+  justify-content: center;
+}
+.today-compare-thermo svg { flex-shrink: 0; }
+.today-compare-detail .today-compare-rows {
+  margin-top: 0;
+  margin-left: 0;
+}
 .today-compare-head {
   display: flex;
   align-items: center;
@@ -5566,7 +5938,7 @@ body {
 .today-compare-icon { flex-shrink: 0; }
 .today-compare--colder .today-compare-icon { color: var(--cond-info); }
 .today-compare--warmer .today-compare-icon { color: var(--cond-orange); }
-.today-compare--same   .today-compare-icon { color: var(--text-tertiary); }
+.today-compare--same   .today-compare-icon { color: var(--cond-green); }
 .today-compare-rows {
   display: flex;
   flex-direction: column;
@@ -6931,9 +7303,9 @@ body {
      neutral body under a faint white sheen. A step toward the Android style's
      solid containers, so the text has something to sit on, while still
      reading as glass. The body thins with Card Transparency (--card-glass-t,
-     0–1): 50% → 30%, pressed 64% → 44%. */
-  --ios-frost: rgb(26 28 36 / calc(0.5 - 0.2 * var(--card-glass-t, 0)));
-  --ios-frost-press: rgb(26 28 36 / calc(0.64 - 0.2 * var(--card-glass-t, 0)));
+     0–1): 80% → 65%, pressed 90% → 75%. */
+  --ios-frost: rgb(26 28 36 / calc(0.8 - 0.15 * var(--card-glass-t, 0)));
+  --ios-frost-press: rgb(26 28 36 / calc(0.9 - 0.15 * var(--card-glass-t, 0)));
   --ios-frost-sheen: rgb(255 255 255 / 0.06);
 }
 
@@ -10445,7 +10817,7 @@ body {
    iOS: the frost the splash location cards and header buttons share
    (--ios-frost, a dark neutral body under a faint white sheen, a white
    hairline, a light blur). Card Transparency thins its body, driven by
-   --card-glass-t (0–1, from App.jsx): 50% → 30%.
+   --card-glass-t (0–1, from App.jsx): 80% → 65%.
 
    Android keeps its Material containers over the sky (the cards, the header
    buttons and the splash location cards alike): the scheme's container tone,
@@ -10518,6 +10890,25 @@ body {
   color: rgba(255, 255, 255, 0.7);
 }
 
+/* ── Blur suspensions that actually win ──
+   The suspensions further up (settings settled, a day cover opening) were
+   written against the plain iOS glass rule, and the clear-glass rule above
+   outranks them on specificity — so over a sky, which is most of the time, the
+   cards kept a live backdrop blur under the settings page and under the cover
+   reveals. These restate them with !important so they hold over the sky glass
+   too, and add the full-screen radar, which covers the stack just as fully.
+
+   · Settings: settled and not peeking (peek clears the page to show the stack).
+   · Radar: full-screen and done animating. While the window is opening or
+     closing the stack shows around it, so the blur stays for those frames.
+   · Day cover: while it is growing or shrinking over its card. */
+:root[data-shell="mobile"]:not([data-platform="android"]) .app:has(.settings-page.settled):not(:has(.settings-page.peeking)) .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline),
+:root[data-shell="mobile"] .app:has(.radar-expanded):not(:has(.radar-iris--on)) .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline):not(.radar-expanded),
+:root[data-shell="mobile"]:not([data-platform="android"]) .app.sky-active .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline):has(> .detail-cover:not(.detail-cover--settled)) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
 /* ── Light mode over a light sky: the splash card's light glass ──
    The dark --ios-frost above is what the splash location cards wear over a
    dark sky or in dark mode. Over a light sky in light mode they are pale glass
@@ -10527,9 +10918,9 @@ body {
    The tokens the dark rule re-pointed go back to their light-mode values. */
 :root[data-theme="light"][data-shell="mobile"][data-platform="ios"] .app.sky-active.sky-tone-light {
   /* Card Transparency thins it like the dark frost (--card-glass-t, 0–1):
-     55% → 33%, the same 40% step the frost takes from 50% to 30%. */
-  --ios-light-glass: rgb(255 255 255 / calc(0.55 - 0.22 * var(--card-glass-t, 0)));
-  --ios-light-glass-press: rgb(255 255 255 / calc(0.75 - 0.22 * var(--card-glass-t, 0)));
+     90% → 75%, the same step the frost takes from 80% to 65%. */
+  --ios-light-glass: rgb(255 255 255 / calc(0.9 - 0.15 * var(--card-glass-t, 0)));
+  --ios-light-glass-press: rgb(255 255 255 / calc(0.96 - 0.15 * var(--card-glass-t, 0)));
   /* The header buttons (and the hero's save/favourite circles) wear the same
      light glass as the cards, as they do on the splash. */
   --icon-circle-bg: var(--ios-light-glass);
@@ -10572,8 +10963,8 @@ body {
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme])[data-shell="mobile"][data-platform="ios"] .app.sky-active.sky-tone-light {
-    --ios-light-glass: rgb(255 255 255 / calc(0.55 - 0.22 * var(--card-glass-t, 0)));
-    --ios-light-glass-press: rgb(255 255 255 / calc(0.75 - 0.22 * var(--card-glass-t, 0)));
+    --ios-light-glass: rgb(255 255 255 / calc(0.9 - 0.15 * var(--card-glass-t, 0)));
+    --ios-light-glass-press: rgb(255 255 255 / calc(0.96 - 0.15 * var(--card-glass-t, 0)));
     --icon-circle-bg: var(--ios-light-glass);
     --icon-circle-press: var(--ios-light-glass-press);
     --icon-circle-ring: rgba(255, 255, 255, 0.6);
@@ -10657,4 +11048,13 @@ body {
   gap: 22px;
   width: 100%;
   padding-top: 4px;
+}
+
+/* The APK download is a link styled as the install button, so it needs the
+   link underline and colour taken off. */
+a.apk-download-btn {
+  display: inline-block;
+  color: #fff;
+  text-decoration: none;
+  white-space: nowrap;
 }

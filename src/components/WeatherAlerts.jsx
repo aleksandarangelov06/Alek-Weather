@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { memo, useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { TriangleAlert, X, ChevronRight, Map } from 'lucide-react'
 import { resolveStyle } from '../utils/alertStyle'
@@ -129,7 +129,9 @@ export function AlertModal({ alert, location, onClose }) {
   )
 }
 
-export function WeatherAlerts({ alerts, location }) {
+// Memoised: App re-renders for every overlay, toggle and keystroke, and the
+// props here are the reading and the settings, which those leave alone.
+export const WeatherAlerts = memo(function WeatherAlerts({ alerts, location }) {
   const [selected, setSelected] = useState(null)
   // The alert whose ground is being shown, opened straight from its row. The
   // sheet has its own button for the same map (see AlertModal); this is the one
@@ -212,4 +214,4 @@ export function WeatherAlerts({ alerts, location }) {
       )}
     </>
   )
-}
+})

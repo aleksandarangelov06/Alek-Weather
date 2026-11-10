@@ -1,6 +1,7 @@
-import { ArrowDown, ArrowUp, Equal, TreePine, Car, Footprints } from 'lucide-react'
-import { toTemp } from '../utils/weatherCodes'
-import { outlookWindow, compareWithYesterday, rateActivities, scoreLabel } from '../utils/todayOutlook'
+import { memo } from 'react'
+import { ArrowDown, ArrowUp, Check, Thermometer, TreePine, Car, Footprints } from 'lucide-react'
+import { toTemp, tempInk } from '../utils/weatherCodes'
+import { outlookWindow, compareWithYesterday, compareTomorrowWithToday, rateActivities, scoreLabel } from '../utils/todayOutlook'
 
 const ACTIVITIES = [
   { id: 'outside',  label: 'Outdoors', Icon: TreePine },
@@ -20,15 +21,22 @@ function scoreColor(score) {
 
 // `embedded`: drawn inside another card (the web current-weather card) rather
 // than as a card of its own, so it drops the card surface.
-export function TodayCard({ hourly, daily, current, yesterday, timezone, unit, embedded = false }) {
+// Memoised: App re-renders for every overlay, toggle and keystroke, and the
+// props here are the reading and the settings, which those leave alone.
+export const TodayCard = memo(function TodayCard({ hourly, daily, current, yesterday, timezone, unit, airQuality, embedded = false }) {
   const now = new Date()
   const todayStr = now.toLocaleDateString('en-CA', { timeZone: timezone })
   // en-CA gives "24" for midnight on some engines; the hourly times use "00".
   const hourStr = now.toLocaleString('en-CA', { hour: '2-digit', hour12: false, timeZone: timezone }).replace(/^24$/, '00')
 
   const win = outlookWindow(hourly, todayStr, hourStr)
-  const cmp = compareWithYesterday({ hourly, daily, yesterday, current, todayStr, hourStr })
-  const ratings = rateActivities(hourly, win)
+  // From 9pm the whole card is about tomorrow (as long as tomorrow's hours
+  // are there to rate): its high against today's, and its ratings.
+  const tomorrow = !!win?.tomorrow
+  const cmp = tomorrow
+    ? compareTomorrowWithToday(daily)
+    : compareWithYesterday({ hourly, daily, yesterday, current, todayStr, hourStr })
+  const ratings = rateActivities(hourly, win, airQuality?.hourly)
   const fmtTemp = (f) => `${toTemp(f, unit)}°`
 
   // A difference in the display unit: °C steps are bigger, so the same day can
@@ -38,26 +46,41 @@ export function TodayCard({ hourly, daily, current, yesterday, timezone, unit, e
   let headline = null
   if (cmp) {
     const d = delta(cmp.diffF)
-    if (cmp.direction === 'same' || d === 0) headline = { text: 'About the same as yesterday', Icon: Equal, cls: 'same' }
+    const same = cmp.direction === 'same' || d === 0
+    const word = cmp.direction === 'colder' ? 'colder' : 'warmer'
+    let text
+    if (tomorrow) text = same ? 'About the same as today' : `${d}° ${word} tomorrow`
     else {
-      const word = cmp.direction === 'colder' ? 'colder' : 'warmer'
-      headline = {
-        text: `${d}° ${word} than yesterday`,
-        Icon: cmp.direction === 'colder' ? ArrowDown : ArrowUp,
-        cls: cmp.direction,
-      }
+      const when = cmp.basis === 'now' ? 'this time yesterday' : 'yesterday'
+      text = same ? `About the same as ${when}` : `${d}° ${word} than ${when}`
     }
+    headline = same
+      ? { text, Icon: Check, cls: 'same' }
+      : { text, Icon: cmp.direction === 'colder' ? ArrowDown : ArrowUp, cls: cmp.direction }
   }
+
+  // The thermometer takes the colour of the temperature the headline is about:
+  // now, or the day's high when it compares highs.
+  const leadF = !cmp ? null : tomorrow ? cmp.high.tomorrow : (cmp.now ?? cmp.high).today
+  const thermoColor = leadF != null ? tempInk(leadF) : undefined
+
+  // The two lines under the headline (and the web card's tooltip).
+  const detailRows = !cmp ? [] : tomorrow
+    ? [
+        ['High', cmp.high.tomorrow, `${fmtTemp(cmp.high.today)} today`],
+        cmp.low && ['Low', cmp.low.tomorrow, `${fmtTemp(cmp.low.today)} today`],
+      ].filter(Boolean)
+    : [
+        cmp.now && ['Now', cmp.now.today, `${fmtTemp(cmp.now.yesterday)} this time yesterday`],
+        cmp.high && ['High', cmp.high.today, `${fmtTemp(cmp.high.yesterday)} yesterday`],
+      ].filter(Boolean)
 
   if (embedded) {
     if (!headline && !ratings) return null
     // The web current card's version: the comparison and the overall score on
     // one line, then the three activities as columns of one panel. The longer
     // wording (now/high, each reason) is in the tooltips.
-    const compareDetail = cmp && [
-      cmp.now && `Now ${fmtTemp(cmp.now.today)} · ${fmtTemp(cmp.now.yesterday)} this time yesterday`,
-      cmp.high && `High ${fmtTemp(cmp.high.today)} · ${fmtTemp(cmp.high.yesterday)} yesterday`,
-    ].filter(Boolean).join('\n')
+    const compareDetail = detailRows.map(([label, f, then]) => `${label} ${fmtTemp(f)} · ${then}`).join('\n')
     return (
       <div className="today-embed">
         <div className="te-top">
@@ -65,6 +88,7 @@ export function TodayCard({ hourly, daily, current, yesterday, timezone, unit, e
             <span className={`te-compare te-compare--${headline.cls}`} title={compareDetail || undefined}>
               <headline.Icon size={14} aria-hidden="true" />
               <span>{headline.text}</span>
+              <Thermometer size={16} className="te-compare-thermo" style={{ color: thermoColor }} aria-label="Temperature" />
             </span>
           )}
           {ratings && (
@@ -105,7 +129,7 @@ export function TodayCard({ hourly, daily, current, yesterday, timezone, unit, e
 
   return (
     <div className="card today-card">
-      <div className="section-label">TODAY</div>
+      <div className="section-label">{tomorrow ? 'TOMORROW' : 'TODAY'}</div>
 
       {headline && (
         <div className="today-compare">
@@ -113,13 +137,17 @@ export function TodayCard({ hourly, daily, current, yesterday, timezone, unit, e
             <headline.Icon size={20} className="today-compare-icon" aria-hidden="true" />
             <span>{headline.text}</span>
           </div>
-          <div className="today-compare-rows">
-            {cmp.now && (
-              <span>Now {fmtTemp(cmp.now.today)} <span className="today-dim">· {fmtTemp(cmp.now.yesterday)} this time yesterday</span></span>
+          <div className="today-compare-detail">
+            {detailRows.length > 0 && (
+              <span className="today-compare-thermo">
+                <Thermometer size={24} style={{ color: thermoColor }} aria-label="Temperature" />
+              </span>
             )}
-            {cmp.high && (
-              <span>High {fmtTemp(cmp.high.today)} <span className="today-dim">· {fmtTemp(cmp.high.yesterday)} yesterday</span></span>
-            )}
+            <div className="today-compare-rows">
+              {detailRows.map(([label, f, then]) => (
+                <span key={label}>{label} {fmtTemp(f)} <span className="today-dim">· {then}</span></span>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -165,4 +193,4 @@ export function TodayCard({ hourly, daily, current, yesterday, timezone, unit, e
 
     </div>
   )
-}
+})

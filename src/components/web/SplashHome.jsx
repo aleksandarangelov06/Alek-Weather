@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { House, Navigation, X } from 'lucide-react'
+import { ArrowLeft, House, Navigation, X } from 'lucide-react'
 import { SearchBar } from '../SearchBar'
 import { WeatherIcon } from '../WeatherIcon'
 import { useCityConditions, conditionKey } from '../../hooks/useCityConditions'
@@ -12,10 +12,12 @@ const MAX_CARDS = 3
 
 // The desktop splash: a search field and the places you've already looked at,
 // so opening the app on a monitor lands on something usable instead of a
-// tap-anywhere hint. A row of recent places comes first, then home and every
-// saved city, which scroll inside the space under the search field.
+// tap-anywhere hint. Home shows one row of recent places; home and every saved
+// city have their own view (`showSaved`), opened from the Saved locations
+// button at the foot of the splash, which scrolls in the space the search
+// field and recents take up.
 export function SplashHome({
-  recents, savedCities, home, unit, exiting, busy, active,
+  recents, savedCities, home, unit, exiting, busy, active, showSaved, onCloseSaved,
   onSelect, onRemoveRecent, onRemoveSaved, onRemoveHome,
   onSearch, searchResults, onSelectResult, onUseLocation, onClearSearch,
   isSaved, isHome, here,
@@ -47,22 +49,47 @@ export function SplashHome({
   // value left over from a finished fetch marks nothing.
   const [pending, setPending] = useState(null)
 
-  // Home is where every place the app knows about lives on the web (there is no
-  // Locations tab): one row of the most recent places, then home and the saved
-  // cities. A place already in the recent row isn't listed again below it.
+  // Home is the recent row; the saved view is home first, then every saved
+  // city. Conditions are only asked for the places on screen.
   const recentRow = recents.slice(0, MAX_CARDS)
-  const inRecents = (c) => recentRow.some((r) => sameCity(r, c))
   const saved = [
-    ...(home && !inRecents(home) ? [home] : []),
-    ...savedCities.filter((c) => !inRecents(c) && !(home && sameCity(c, home))),
+    ...(home ? [home] : []),
+    ...savedCities.filter((c) => !(home && sameCity(c, home))),
   ]
-  const conditions = useCityConditions([...recentRow, ...saved])
-  const empty = recentRow.length === 0 && saved.length === 0
+  const conditions = useCityConditions(showSaved ? saved : recentRow)
+  const empty = showSaved ? false : recentRow.length === 0
 
   const openCity = (city) => {
     setPending(conditionKey(city))
     onSelect(city)
   }
+
+  const removeSaved = (city) => (home && sameCity(city, home) ? onRemoveHome() : onRemoveSaved(city))
+
+  if (showSaved) return (
+    <div className={`splash-home splash-home--saved${exiting ? ' splash-home--exit' : ''}${busy ? ' splash-home--busy' : ''}`}>
+      <div className="splash-saved-head">
+        <button className="splash-saved-back" onClick={onCloseSaved} aria-label="Back to home">
+          <ArrowLeft size={18} />
+        </button>
+        <h2 className="splash-saved-title">Saved locations</h2>
+        {saved.length > 0 && <span className="splash-saved-count">{saved.length}</span>}
+      </div>
+      {saved.length > 0 ? (
+        <div className={`splash-places${saved.length <= 3 ? ' splash-places--few' : ''}`}>
+          <div className="splash-recents">
+            <div className="splash-city-grid">
+              {saved.map((city) => renderCard(city, removeSaved, false))}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <p className="splash-home-hint splash-saved-empty">
+          No saved locations yet. Open a forecast and tap the bookmark to save a place here.
+        </p>
+      )}
+    </div>
+  )
 
   return (
     <div className={`splash-home${exiting ? ' splash-home--exit' : ''}${busy ? ' splash-home--busy' : ''}${empty ? ' splash-home--empty' : ''}`}>
@@ -100,27 +127,13 @@ export function SplashHome({
       )}
 
       {!empty && (
-        <div className={`splash-places${recentRow.length + saved.length <= 3 ? ' splash-places--few' : ''}`}>
-          {recentRow.length > 0 && (
-            <div className="splash-recents">
-              <div className="section-label">RECENT LOCATIONS</div>
-              <div className="splash-city-grid">
-                {recentRow.map((city, i) => renderCard(city, onRemoveRecent, i === 0))}
-              </div>
+        <div className="splash-places splash-places--few">
+          <div className="splash-recents">
+            <div className="section-label">RECENT LOCATIONS</div>
+            <div className="splash-city-grid">
+              {recentRow.map((city, i) => renderCard(city, onRemoveRecent, i === 0))}
             </div>
-          )}
-          {saved.length > 0 && (
-            <div className="splash-recents">
-              <div className="section-label">SAVED LOCATIONS</div>
-              <div className="splash-city-grid">
-                {saved.map((city) => renderCard(
-                  city,
-                  home && sameCity(city, home) ? () => onRemoveHome() : onRemoveSaved,
-                  false,
-                ))}
-              </div>
-            </div>
-          )}
+          </div>
         </div>
       )}
     </div>
@@ -160,7 +173,7 @@ export function SplashHome({
                   </span>
                 )}
                 <span className={`splash-city-temp${cond ? '' : ' splash-city-temp--unknown'}`}>
-                  {cond ? `${toTemp(cond.temp, unit)}°` : '—'}
+                  {cond ? `${toTemp(cond.temp, unit)}°` : '-'}
                 </span>
               </>
             )}

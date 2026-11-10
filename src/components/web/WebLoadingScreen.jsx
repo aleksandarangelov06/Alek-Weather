@@ -19,6 +19,7 @@
 // map filling the window.
 
 import { HOURS_BY_SLOT, PAIR_MQ, spans, useMediaQuery, useTodayLayout } from './todayLayout'
+import { BOARD_MQ } from './DailyPage'
 
 const rep = (n) => Array.from({ length: n }, (_, i) => i)
 
@@ -136,6 +137,34 @@ function TodaySkeleton() {
 }
 
 function DailySkeleton() {
+  const board = useMediaQuery(BOARD_MQ)
+  if (board) {
+    return (
+      <>
+        <div className="card skeleton-card web-chart-card web-board-card">
+          <div className="web-page-head">
+            <div className="skeleton-line skeleton-web-title" />
+          </div>
+          <div className="web-board">
+            <div className="web-board-cols">
+              {rep(7).map((i) => (
+                <div key={i} className="web-board-day skeleton-web-board-day">
+                  <div className="skeleton-line skeleton-web-xs" />
+                  <div className="skeleton-circle skeleton-web-day-icon" />
+                  <div className="skeleton-line skeleton-web-xs" />
+                  <div className="skeleton-tile skeleton-web-board-plot" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="card skeleton-card web-dayview">
+          <div className="skeleton-line skeleton-web-hero" />
+          <div className="skeleton-tile skeleton-web-panel-chart" />
+        </div>
+      </>
+    )
+  }
   return (
     <>
       <div className="card skeleton-card web-chart-card">

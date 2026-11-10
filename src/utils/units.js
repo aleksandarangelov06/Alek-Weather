@@ -115,7 +115,7 @@ export function unitSuffix(group, units) {
 }
 
 // Value and suffix together, the common case: "10 mph", "29.90 inHg".
-export function formatUnit(group, canonical, units, fallback = '—') {
+export function formatUnit(group, canonical, units, fallback = '-') {
   const text = unitText(group, canonical, units)
   return text == null ? fallback : `${text} ${unitSuffix(group, units)}`
 }

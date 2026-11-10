@@ -92,6 +92,42 @@ function MoonCycle({ phase, south }) {
   )
 }
 
+// The UV index's five exposure bands as a bar, with the current reading marked
+// on it. The bands are drawn equal rather than to scale: Extreme is open-ended,
+// and to scale Low alone would take a quarter of the bar. Like the AQI dial the
+// bands keep their colours with colour coding off, since they are the legend.
+const UV_BANDS = [
+  { from: 0,  to: 3,  color: 'var(--cond-green)'  },
+  { from: 3,  to: 6,  color: 'var(--cond-yellow)' },
+  { from: 6,  to: 8,  color: 'var(--cond-orange)' },
+  { from: 8,  to: 11, color: 'var(--cond-red)'    },
+  { from: 11, to: 14, color: 'var(--cond-purple)' },
+]
+function UVScale({ value, label, color }) {
+  const v = Math.min(Math.max(value, 0), 13)
+  const i = UV_BANDS.findIndex((b) => v < b.to)
+  const band = UV_BANDS[i]
+  // Each whole number gets an equal cell of its band; the marker sits mid-cell.
+  const pct = ((i + (v - band.from + 0.5) / (band.to - band.from)) / UV_BANDS.length) * 100
+  return (
+    <div className="web-uv-scale" role="img" aria-label={`UV index ${value}, ${label}`}>
+      <div className="web-uv-scale-bar">
+        {UV_BANDS.map((b) => (
+          <span key={b.from} className="web-uv-scale-band" style={{ background: b.color }} />
+        ))}
+        <span className="web-uv-scale-marker" style={{ left: `${pct}%`, background: color }} />
+      </div>
+      <div className="web-uv-scale-ticks" aria-hidden="true">
+        {UV_BANDS.map((b, j) => (
+          <span key={b.from} style={{ left: `${(j / UV_BANDS.length) * 100}%` }}>
+            {j === UV_BANDS.length - 1 ? `${b.from}+` : b.from}
+          </span>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 // A panel's 24-hour history strip: the sparkline plus the two end labels, which
 // are what make it a chart rather than a decoration.
 function PanelChart({ values, times, timezone, color, step, format }) {
@@ -159,16 +195,25 @@ export function DetailsPage({ weather, unit, units, airQuality, colorCoding }) {
   // recently crossed the upper part of the window wins, so it changes as you
   // scroll into a section rather than when its last card leaves.
   const sectionRefs = useRef({})
+  const navRef = useRef(null)
   const [active, setActive] = useState(SECTIONS[0].id)
   useEffect(() => {
     const els = Object.values(sectionRefs.current).filter(Boolean)
     if (!els.length || !('IntersectionObserver' in window)) return
+    // The band starts just under the jump bar, which sticks below the header.
+    // A fixed share of the window would not clear it: after a jump, the end of
+    // the section before still shows under the bar, and on a short window that
+    // sliver sat inside the band and stole the highlight. The bar's stuck
+    // offset is read from its CSS (it follows the measured header height), plus
+    // its 48px height and a little air.
+    const stuckAt = navRef.current ? parseFloat(getComputedStyle(navRef.current).top) || 104 : 104
+    const bandTop = Math.round(stuckAt + 48 + 8)
     const io = new IntersectionObserver((entries) => {
       const visible = entries.filter(e => e.isIntersecting)
       if (!visible.length) return
       visible.sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
       setActive(visible[0].target.id.replace('details-', ''))
-    }, { rootMargin: '-15% 0px -60% 0px' })
+    }, { rootMargin: `-${bandTop}px 0px -60% 0px` })
     els.forEach(el => io.observe(el))
     return () => io.disconnect()
   }, [])
@@ -190,7 +235,10 @@ export function DetailsPage({ weather, unit, units, airQuality, colorCoding }) {
 
   const uvSeries = nextDay(hourly.uv_index)
   const uvCurrent = uvSeries[0] ?? current.uv_index ?? 0
-  const uv = getUVLabel(uvCurrent)
+  // The card shows the reading rounded, so its band is read off the rounded
+  // value too: a raw 2.4 shows as "2" and should say Low, not Moderate.
+  const uvNow = Math.round(uvCurrent)
+  const uv = getUVLabel(uvNow)
 
   // Highest reading still ahead in the 24 hours the chart covers, which at
   // night is tomorrow's midday rather than anything today.
@@ -198,6 +246,50 @@ export function DetailsPage({ weather, unit, units, airQuality, colorCoding }) {
     if (value == null || !Number.isFinite(value)) return best
     return !best || value > best.value ? { value, time: times[i] } : best
   }, null)
+
+  // The hours with UV 3 or more, when sun protection is advised: the stretch
+  // under way now, or else the next one to start in the 24 hours ahead. Its end
+  // is looked for a day further on, so a stretch that starts late in the
+  // window (tomorrow morning, seen from this afternoon) still gets one.
+  const uvAhead = (hourly.uv_index ?? []).slice(hStart, hStart + 48)
+  const uvAheadTimes = (hourly.time ?? []).slice(hStart, hStart + 48)
+  const protectFrom = uvAhead.findIndex((v, i) => i < 24 && v != null && Math.round(v) >= 3)
+  const protectTo = protectFrom < 0 ? -1
+    : uvAhead.findIndex((v, i) => i > protectFrom && (v == null || Math.round(v) < 3))
+  const uvHourAt = (i) => formatHour(uvAheadTimes[i], timezone)
+  const protectTomorrow = protectFrom > 0
+    && uvAheadTimes[protectFrom].slice(0, 10) !== uvAheadTimes[0].slice(0, 10)
+  const protection = protectFrom < 0 ? { label: 'Sun protection', value: 'Not needed' }
+    : protectFrom === 0
+      ? { label: 'Protection today', value: protectTo > 0 ? `Until ${uvHourAt(protectTo)}` : 'All day' }
+      : {
+          label: protectTomorrow ? 'Protection tomorrow' : 'Protection today',
+          value: protectTo > 0 ? `${uvHourAt(protectFrom)} – ${uvHourAt(protectTo)}` : `From ${uvHourAt(protectFrom)}`,
+        }
+
+  // UV is zero at night, but "Low risk" reads oddly then; say why it's low and
+  // when it stops being.
+  const sunUp = uvNow > 0 || (hourly.is_day?.[hStart] ?? current.is_day ?? 1) === 1
+  const protectStart = protectFrom > 0 ? `${uvHourAt(protectFrom)}${protectTomorrow ? ' tomorrow' : ''}` : null
+  const uvNote = uvNow >= 3 ? getUVNote(uvNow)
+    : protectStart
+      ? `${sunUp ? 'Low for now' : 'No UV until morning'}; protection needed from ${protectStart}.`
+      : sunUp ? getUVNote(uvNow) : 'No UV while the sun is down.'
+
+  // Roughly how long fair skin (type II, which reddens after about 250 J/m²)
+  // takes to burn unprotected. One point of UV index is 25 mW/m² of
+  // sunburn-weighted sunlight, so the time falls off as 1/UV.
+  const burnMins = uvNow > 0 ? 250 / (uvNow * 0.025) / 60 : null
+  const burnText = burnMins == null ? 'None now'
+    : burnMins >= 60 ? 'Over an hour'
+    : `~${Math.round(burnMins / 5) * 5} min`
+
+  const uvDayMax = (i) => {
+    const v = daily.uv_index_max?.[i]
+    if (v == null) return null
+    const info = getUVLabel(Math.round(v))
+    return { value: `${Math.round(v)} · ${info.label}`, color: tint(info.color) }
+  }
 
   // Wall-clock comparison in the location's own timezone — the API's sunrise and
   // sunset are naive local times, so parsing them as Dates would shift them into
@@ -537,7 +629,7 @@ export function DetailsPage({ weather, unit, units, airQuality, colorCoding }) {
       <Panel
         icon={<Eye size={18} />}
         title="VISIBILITY"
-        value={unitText('visibility', current.visibility, units) ?? '—'}
+        value={unitText('visibility', current.visibility, units) ?? '-'}
         unit={` ${unitSuffix('visibility', units)}`}
         status={visInfo?.label}
         note={visMi != null ? getVisibilityNote(visMi) : 'No visibility reading available here.'}
@@ -607,11 +699,12 @@ export function DetailsPage({ weather, unit, units, airQuality, colorCoding }) {
       <Panel
         icon={<Sun size={18} />}
         title="UV INDEX"
-        value={Math.round(uvCurrent)}
+        value={uvNow}
         status={uv.label}
-        note={getUVNote(uvCurrent)}
+        note={uvNote}
         color={tint(uv.color)}
       >
+        <UVScale value={uvNow} label={uv.label} color={tint(uv.color)} />
         <PanelChart
           values={uvSeries}
           times={times}
@@ -625,9 +718,12 @@ export function DetailsPage({ weather, unit, units, airQuality, colorCoding }) {
             {
               label: 'Peak next 24h',
               value: uvPeak ? `${Math.round(uvPeak.value)} at ${formatHour(uvPeak.time, timezone)}` : null,
-              color: uvPeak ? tint(getUVLabel(uvPeak.value).color) : undefined,
+              color: uvPeak ? tint(getUVLabel(Math.round(uvPeak.value)).color) : undefined,
             },
-            { label: 'Today’s max', value: daily.uv_index_max?.[0] != null ? Math.round(daily.uv_index_max[0]) : null },
+            { label: protection.label, value: protection.value },
+            { label: 'Burn time · fair skin', value: burnText },
+            { label: 'Today’s max', ...uvDayMax(0) },
+            { label: 'Tomorrow’s max', ...uvDayMax(1) },
           ]}
         />
       </Panel>
@@ -646,7 +742,7 @@ export function DetailsPage({ weather, unit, units, airQuality, colorCoding }) {
 
   return (
     <div className="web-page web-details">
-      <nav className="card web-details-nav" aria-label="Details sections">
+      <nav className="card web-details-nav" aria-label="Details sections" ref={navRef}>
         {sections.map(s => (
           <a
             key={s.id}
