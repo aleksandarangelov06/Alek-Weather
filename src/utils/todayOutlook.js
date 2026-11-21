@@ -43,12 +43,40 @@ export function outlookWindow(hourly, todayStr, hourStr) {
     const end = times.findIndex(t => t.startsWith(`${tomorrow}T${TOMORROW_HOURS[1]}`))
     if (start !== -1 && end > start) return { start, end, label: 'Tomorrow', tomorrow: true }
   }
+  return restOfToday(times, todayStr, hourStr)
+}
+
+function restOfToday(times, todayStr, hourStr) {
   const start = times.findIndex(t => t.startsWith(`${todayStr}T${hourStr}`))
   if (start === -1) return null
   let end = start
   while (end < times.length && times[end].startsWith(todayStr)) end++
   if (end - start >= 6) return { start, end, label: 'Rest of today' }
   return { start, end: Math.min(times.length, start + 12), label: 'Next 12 hours' }
+}
+
+// The hours a day in the 7-day forecast is rated over: its waking hours, the
+// same span tomorrow gets above. Today is rated from now on, exactly as the
+// Today card rates it before 9pm, so the two never show different scores for
+// the same day. A day the hourly series doesn't reach (or only clips) is null.
+export function dayWindow(hourly, dateStr, todayStr, hourStr) {
+  const times = hourly?.time ?? []
+  if (dateStr === todayStr) {
+    const win = restOfToday(times, todayStr, hourStr)
+    if (win) return win
+  }
+  let start = -1, end = -1
+  for (let i = 0; i < times.length; i++) {
+    if (!times[i].startsWith(dateStr)) {
+      if (start !== -1) break
+      continue
+    }
+    const h = times[i].slice(11, 13)
+    if (start === -1 && h >= TOMORROW_HOURS[0]) start = i
+    if (start !== -1 && h < TOMORROW_HOURS[1]) end = i + 1
+  }
+  if (start === -1 || end - start < 6) return null
+  return { start, end, label: 'Daytime' }
 }
 
 // ── Yesterday ──────────────────────────────────────────────────────────────
@@ -85,7 +113,7 @@ export function compareTomorrowWithToday(daily) {
   return { high, low, diffF: high.diffF, direction: direction(high.diffF) }
 }
 
-function direction(diffF) {
+export function direction(diffF) {
   if (Math.abs(diffF) < 2) return 'same'
   return diffF < 0 ? 'colder' : 'warmer'
 }
@@ -163,9 +191,15 @@ function hourCosts(h) {
   }
   if (h.gust > 35) out.driving.push([Math.min(3, (h.gust - 35) / 8), 'Strong gusts'])
 
-  if (h.isDay && h.uv >= 8) {
-    out.outside.push([1, 'Strong sun'])
-    out.exercise.push([1.5, 'Strong sun'])
+  // UV, on the WHO scale. Moderate (3-5) costs a little, enough to tip a
+  // borderline hour; from high (6+) it climbs steeply, since that is where
+  // unprotected skin burns inside half an hour. Exertion is hit a bit harder:
+  // more time in the sun, and sweat washes sunscreen off.
+  if (h.isDay && h.uv >= 3) {
+    const c = h.uv < 6 ? (h.uv - 2) * 0.25 : Math.min(3.5, 0.75 + (h.uv - 5) * 0.55)
+    const why = h.uv >= 8 ? 'Very high UV' : h.uv >= 6 ? 'High UV' : 'Moderate UV'
+    out.outside.push([c, why])
+    out.exercise.push([c * 1.2, why])
   }
 
   let sight = 0
@@ -253,6 +287,16 @@ export function rateActivities(hourly, win, aqHourly) {
 
 function clampScore(x) {
   return Math.max(1, Math.min(10, Math.round(x)))
+}
+
+// The same severity palette the rest of the app uses for readings, so a 3/10
+// reads as the same orange as a poor air quality.
+export function scoreColor(score) {
+  if (score >= 9) return 'var(--cond-green)'
+  if (score >= 7) return 'var(--cond-lime)'
+  if (score >= 5) return 'var(--cond-yellow)'
+  if (score >= 3) return 'var(--cond-orange)'
+  return 'var(--cond-red)'
 }
 
 export function scoreLabel(score) {

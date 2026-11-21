@@ -1510,6 +1510,21 @@ body {
   transform: translateY(-0.25em);
 }
 
+/* The colour glyphs on the phone: drawn larger, and centred in the gap between
+   the header and the reading. Each glyph's art is centred in its 32-unit box
+   (the full-box ones, like the sun, stop ~1.5 units short of each edge), so
+   centring the box centres the drawing for every condition rather than for one
+   shape. Negative margins rather than the transform above: they take the box's
+   blank top and bottom out of the layout, so the reading doesn't drop by the
+   whole size increase and the gap under the art closes for real instead of
+   being left behind by a visual shift. Line icons keep the rule above, since
+   they draw smaller inside the box with margins of their own. */
+:root[data-shell="mobile"] .current-card .current-icon:not(:has(.weather-icon-line)) {
+  font-size: 220px;
+  margin: -33px 0 -8px;
+  transform: none;
+}
+
 /* Line icons in the hero. Lucide draws on a 24-unit grid with padding built in,
    and most of the weather shapes are wider than tall (the cloud fills only rows
    5-19), so at the full 1em the icon carried a band of empty box above and
@@ -1524,11 +1539,47 @@ body {
   margin-block: -0.13em 0.03em;
 }
 
-/* The hero's lines, given more air on the phone shells: the reading, its
-   condition, and the feels-like / updated pair below them. */
-:root[data-shell="mobile"] .current-card .current-condition { margin-top: 14px; }
-:root[data-shell="mobile"] .current-card .current-feels     { margin-top: 22px; }
-:root[data-shell="mobile"] .current-card .current-updated   { margin-top: 8px; }
+/* The hero's lines on the phone shells, as three steps of emphasis: the
+   reading, the condition that belongs to it, and the feels-like / updated pair
+   as a quieter group below.
+
+   The reading is the one number on the screen, so it runs large, tracked in
+   so the figures hold together at that size. Regular weight rather than the
+   light display cut: at 300 the strokes thinned out against a busy sky. The
+   unit ("°C" as one mark) drops to a small label hung from the top of the
+   figures. Kept whole on purpose: a full-size degree sign beside a small
+   letter read as a ring and a stray "C". vertical-align: top pins it to the
+   line box; the nudge down lines its cap top up with the figures'. */
+:root[data-shell="mobile"] .current-card .current-temp {
+  font-size: 96px;
+  font-weight: 400;
+  letter-spacing: -0.035em;
+}
+:root[data-shell="mobile"][data-platform="android"] .current-card .current-temp {
+  letter-spacing: -0.015em;
+}
+:root[data-shell="mobile"] .current-card .current-temp-unit {
+  font-size: 0.4em;
+  font-weight: 500;
+  letter-spacing: 0;
+  vertical-align: top;
+  position: relative;
+  top: 0.15em;
+  margin-left: 0.12em;
+}
+:root[data-shell="mobile"] .current-card .current-condition {
+  margin-top: 10px;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+:root[data-shell="mobile"] .current-card .current-feels {
+  margin-top: 20px;
+  font-size: 15px;
+  font-weight: 500;
+}
+:root[data-shell="mobile"] .current-card .current-updated   { margin-top: 4px; }
+:root[data-shell="mobile"] .current-card .updated-text      { font-size: 12px; }
 
 /* Inline fog icon (WeatherIcon) — currentColor is set to a mid-tone that keeps
    the mist legible against light, dark, and sky-tinted card backgrounds. */
@@ -3507,6 +3558,180 @@ body {
   padding-bottom: 0;
 }
 
+/* ── Day cover: comparison, conditions, stats ──
+   The cover also carries the Today tab's conditions and how the day's high
+   compares with the days either side, and still has to fit the 7-day card
+   whole. Room comes from the stats: six readings in one label-over-value grid
+   instead of two rows of tiles, and the precipitation sentence folded into the
+   Precip reading, which frees the summary's second line for the comparison. */
+
+/* Under the condition label, one line per neighbouring day. Arrow colours are
+   the Today tab's (see .today-compare--*). */
+.day-compare {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.day-compare-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  line-height: 1.3;
+  color: var(--text-secondary);
+}
+.day-compare-icon { flex-shrink: 0; }
+.day-compare--warmer .day-compare-icon { color: var(--cond-orange); }
+.day-compare--colder .day-compare-icon { color: var(--cond-info); }
+.day-compare--same   .day-compare-icon { color: var(--cond-green); }
+
+/* Conditions: the overall score rides the heading, so the three activities
+   are one row of tiles, each a name and score, a bar, and the reason. */
+.day-cond {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.day-cond-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.day-cond-title {
+  font-size: clamp(10px, 2.9vw, 11.5px);
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.day-cond-when {
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.day-cond-overall {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+.day-cond-overall-score {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+.day-cond-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.day-cond-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  padding: 8px 9px;
+  border-radius: 10px;
+  background: var(--hover-subtle);
+}
+.day-cond-top {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.day-cond-icon {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+.day-cond-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.day-cond-score {
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+.day-cond-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  overflow: hidden;
+}
+.day-cond-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+}
+/* Two lines at most, so a long reason ("Very unhealthy air") wraps rather
+   than being cut, without letting one tile set a tall row for all three. */
+.day-cond-reason {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.25;
+  color: var(--text-tertiary);
+}
+
+/* The readings: the same tile, grid and gap as the conditions row above, so
+   the two rows read as one set of six boxes in three columns. */
+.day-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.day-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 9px;
+  border-radius: 10px;
+  background: var(--hover-subtle);
+}
+.day-stat-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.day-stat-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+.day-stat-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1.25;
+  color: var(--text-tertiary);
+}
+
 .uv-no-exposure {
   font-size: 15px;
   color: var(--text-secondary);
@@ -3900,6 +4125,22 @@ body {
   height: 100%;
   z-index: 1;
   pointer-events: none;
+  transition: opacity 0.6s ease;
+}
+
+/* The sky's motion waits for the launch boot screen to go (WeatherCanvas holds
+   its drawing while data-boot is set), then fades in rather than appearing all
+   at once. */
+:root[data-boot] .weather-canvas {
+  opacity: 0;
+}
+
+/* Held while a forecast loads (see `hold` in WeatherCanvas): the drawing has
+   stopped, so the frozen weather goes quickly, and comes back at the usual
+   pace once the forecast is in. */
+.weather-canvas--held {
+  opacity: 0;
+  transition-duration: 0.2s;
 }
 
 /* ── Splash background ── */
@@ -3999,12 +4240,15 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* "Where this weather is": hung below the wordmark (and the phone hint) rather
-   than in the column, so adding it never re-centres the wordmark that the
-   splash icon is positioned from. */
+/* "Where this weather is" (phone): a pill under the headline that opens that
+   place's forecast. Outside .splash-bg, which is inert and sits under the
+   overlay, so z-index clears the overlay the way .splash-mini does. App.jsx
+   sets `top` to the headline's bottom edge; being out of the headline's
+   column also means it never re-centres the line the splash icon is
+   positioned from. */
 .splash-place {
-  position: absolute;
-  top: 100%;
+  position: fixed;
+  z-index: 5;
   left: 50%;
   transform: translateX(-50%);
   margin-top: 14px;
@@ -4012,22 +4256,29 @@ body {
   align-items: center;
   gap: 6px;
   padding: 5px 12px;
+  border: 1px solid transparent;
   border-radius: 999px;
+  font: inherit;
   font-size: 13px;
   font-weight: 500;
   white-space: nowrap;
   color: var(--text-secondary);
   background: var(--hover-medium);
-  transition: opacity 0.15s ease;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.15s ease, background 0.15s ease, transform 0.15s ease;
 }
-.splash-logo--exit .splash-place { opacity: 0; }
-.splash-bg--sky .splash-place {
+.splash-place:active { transform: translateX(-50%) scale(0.97); }
+.splash-place:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.splash-place--exit { opacity: 0; pointer-events: none; }
+:root[data-splash-sky] .splash-place {
   color: #fff;
   background: rgba(255, 255, 255, 0.16);
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.25);
   -webkit-backdrop-filter: blur(10px);
   backdrop-filter: blur(10px);
 }
+:root[data-splash-sky] .splash-place:active { background: rgba(255, 255, 255, 0.26); }
 
 /* Phone splash, once the weather is known: the line under the icon is the
    headline ("Rain in 15 minutes"), which runs far longer than the wordmark the
@@ -9243,7 +9494,115 @@ html.splash-lock .splash-mini {
 }
 
 
-/* Loading skeleton — shimmering placeholders shaped like the real cards */
+/* Loading a forecast on the phone layouts: the boot screen's weather animation
+   (a clone of its .boot-stage, styled by index.html; see LoadingScreen.jsx),
+   centred in roughly the space the forecast will fill. A size down from the
+   boot screen's, since the header sits above it here. */
+.loading-cycle {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  min-height: 60vh;
+  min-height: 60dvh;
+}
+
+.loading-cycle-host,
+.loading-cycle .boot-stage {
+  width: 136px;
+  height: 136px;
+}
+
+/* The headline under it, lettered like the header's place name, so it reads
+   as the app's own chrome rather than a status message dropped in. It rises
+   in just after the first scene has popped, the way the boot screen's name
+   follows its logo. */
+.loading-cycle-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: loadingTextIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) 0.15s backwards;
+}
+
+/* The headline changes every couple of seconds (see LoadingScreen): the old
+   line rolls up and away as the new one rolls up into its place, a beat
+   behind. Both sit in the one grid cell, so the box is as wide as the wider
+   of the two and each stays centred while they pass. Transform and opacity
+   only, so the roll never waits on the main thread. */
+.loading-cycle-headline {
+  margin: 0;
+  display: grid;
+  justify-items: center;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+  line-height: 1.25;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.loading-cycle-line {
+  grid-area: 1 / 1;
+}
+
+.loading-cycle-line--in {
+  animation: loadingLineIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.08s backwards;
+}
+
+.loading-cycle-line--out {
+  animation: loadingLineOut 0.28s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+/* Over the sky, the place name's colour: white with a wide faint shadow. */
+.app.sky-active .loading-cycle-headline {
+  color: #fff;
+  text-shadow: 0 1px 14px rgba(0, 0, 0, 0.18);
+}
+
+/* The status screen readers get instead of the text above. */
+.loading-cycle-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@keyframes loadingTextIn {
+  from { opacity: 0; transform: translateY(6px); }
+}
+@keyframes loadingLineIn {
+  from { opacity: 0; transform: translateY(0.65em); }
+}
+@keyframes loadingLineOut {
+  to { opacity: 0; transform: translateY(-0.65em); }
+}
+@keyframes loadingFadeIn {
+  from { opacity: 0; }
+}
+@keyframes loadingFadeOut {
+  to { opacity: 0; }
+}
+/* Reduced motion: the headline and its lines cross-fade in place. */
+@media (prefers-reduced-motion: reduce) {
+  .loading-cycle-text,
+  .loading-cycle-line--in { animation-name: loadingFadeIn; }
+  .loading-cycle-line--out { animation-name: loadingFadeOut; }
+}
+
+/* Animated Icons off (Settings → Appearance): its pictures are the app's own
+   weather icons, so their parts hold still like every other icon's. The
+   slides still take turns, which is what says "loading". */
+[data-icon-motion="off"] .loading-cycle .boot-slide svg {
+  animation: none;
+}
+
+/* Loading skeleton (the web layout's loading pages; see WebLoadingScreen) —
+   shimmering placeholders shaped like the real cards */
 .loading-screen .skeleton-card {
   animation: skeleton-fade-in 0.25s ease;
 }
@@ -9349,6 +9708,38 @@ html.splash-lock .splash-mini {
 }
 @media (prefers-reduced-motion: reduce) {
   .weather-left, .weather-right { animation: none; }
+}
+
+/* While the launch boot screen covers the app (data-boot="cover", see main.jsx),
+   the entrances under it are held off: they used to play out unseen, mostly
+   finished by the time the screen lifted. With the animation off the content
+   sits fully drawn, which also lets the browser render it before the fade (see
+   boot--prep in index.html). When App moves data-boot to "lifting", this stops
+   matching, so each animation starts fresh and plays under the fading screen. */
+:root[data-boot="cover"] :is(
+  .weather-left,
+  .weather-right,
+  .splash-logo
+) {
+  animation: none;
+}
+
+/* The loading screen under the boot screen (a forecast still loading when the
+   app opened) waits too: the boot screen is already playing the same animation
+   on top. LoadingScreen holds its stage back until the screen starts to lift;
+   this holds the label's entrance and dots, paused rather than switched off so
+   they start from the top under the fade. Beats the `animation` shorthands
+   that set the play state back to running. */
+:root[data-boot="cover"] .loading-cycle * {
+  animation-play-state: paused;
+}
+
+/* The entrance gives each column its own compositor layer. Created now, while
+   the screen still covers them, those layers are drawn during the prep step,
+   rather than in the frame the fade starts. The animation keeps them for its
+   0.55s, the same as any entrance, and drops them after. */
+:root[data-boot="cover"] :is(.weather-left, .weather-right, .splash-logo) {
+  will-change: transform, opacity;
 }
 
 /* ── Mobile: circular backgrounds behind the icon buttons ──────────────────
@@ -9714,7 +10105,17 @@ html.splash-lock .splash-mini {
    settings sky layer at full opacity, so the Card Transparency peek (which fades
    the sky out to show the weather page) did nothing. */
 @keyframes pageGrowIn   { from { transform: scale(0.92); } to { transform: none; } }
-@keyframes pageShrinkOut { from { transform: none; } to { transform: scale(0.94); } }
+/* The way back out. It used to shrink to 94% toward the button that opened
+   the page, which is usually a top corner, so the still-solid background slid
+   off that corner and opened an L of forecast down the other two edges while
+   an empty panel drifted away. Now it recedes evenly toward the middle of the
+   screen, only to 96%, and the backdrop starts dissolving on the first frame
+   rather than 40ms in, so by the time the edges have moved at all there is
+   little left of them to see: one dissolve, settling back, rather than a sheet
+   being pulled into a corner. Centred is also where the predictive back
+   gesture shrinks it (see [data-pb]), so a button press and a swipe now leave
+   the same way. The open still grows out of its button. */
+@keyframes pageShrinkOut { from { transform: none; } to { transform: scale(0.96); } }
 /* `to`/`from` left out on purpose: they resolve to whatever background the
    page's own rules give it, across every theme and sky. */
 @keyframes pageBgIn  { from { background-color: transparent; } }
@@ -9730,15 +10131,16 @@ html.splash-lock .splash-mini {
   box-shadow: none;
 }
 :root[data-shell="mobile"][data-platform] :is(.app .search-overlay, .settings-page:not(.settings-page--modal)).closing {
+  transform-origin: 50% 50%;
   animation:
     pageShrinkOut 0.2s cubic-bezier(0.3, 0, 0.8, 0.15) forwards,
-    pageBgOut 0.16s cubic-bezier(0.4, 0, 1, 1) 0.04s forwards;
+    pageBgOut 0.2s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 :root[data-shell="mobile"][data-platform] :is(.app .search-overlay, .settings-page:not(.settings-page--modal)) > * {
   animation: pageFadeIn 0.22s cubic-bezier(0, 0, 0.2, 1) 0.08s backwards;
 }
 :root[data-shell="mobile"][data-platform] :is(.app .search-overlay, .settings-page:not(.settings-page--modal)).closing > * {
-  animation: pageFadeOut 0.12s cubic-bezier(0.4, 0, 1, 1) forwards;
+  animation: pageFadeOut 0.14s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 /* The settings list fades in one level down: the group labels and cards fade by
    their own opacity, not through .settings-body's. The same backdrop-root rule
@@ -9756,7 +10158,7 @@ html.splash-lock .splash-mini {
   animation: pageFadeIn 0.22s cubic-bezier(0, 0, 0.2, 1) 0.08s backwards;
 }
 :root[data-shell="mobile"][data-platform] .settings-page:not(.settings-page--modal).closing > .settings-body > * {
-  animation: pageFadeOut 0.12s cubic-bezier(0.4, 0, 1, 1) forwards;
+  animation: pageFadeOut 0.14s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 :root[data-shell="mobile"][data-platform] .settings-sky,
 :root[data-shell="mobile"][data-platform] .app .search-overlay::before {
@@ -9764,7 +10166,7 @@ html.splash-lock .splash-mini {
 }
 :root[data-shell="mobile"][data-platform] .settings-sky.closing,
 :root[data-shell="mobile"][data-platform] .app .search-overlay.closing::before {
-  animation: pageFadeOut 0.16s cubic-bezier(0.4, 0, 1, 1) 0.04s forwards;
+  animation: pageFadeOut 0.2s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
 /* Search fills the screen here rather than dropping a sheet from the top; its
@@ -10819,9 +11221,9 @@ html.splash-lock .splash-mini {
    hairline, a light blur). Card Transparency thins its body, driven by
    --card-glass-t (0–1, from App.jsx): 80% → 65%.
 
-   Android keeps its Material containers over the sky (the cards, the header
-   buttons and the splash location cards alike): the scheme's container tone,
-   thinned by Card Transparency through --md-card-alpha.
+   Android cards take the search page's panel over the sky too (see "Android:
+   the search page's panels too" below); its header buttons and splash
+   location cards keep the Material container tone.
 
    Rather than restyle every tile, row and control inside a card, the tokens
    they are built from are re-pointed on the card, and everything inside
@@ -10831,15 +11233,22 @@ html.splash-lock .splash-mini {
    Left out: the hero (.current-card), the settings surfaces, and the
    full-screen radar, which is a page of map rather than a card on the sky. */
 :root[data-shell="mobile"][data-platform]:not([data-platform="android"]) .app.sky-active .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) {
-  /* The splash location cards' material (.splash-mini-card over a dark sky):
-     the --ios-frost body under a 6% white sheen (5% in dark mode), a white
-     hairline and a light blur, no shadow, so the forecast stack, the splash
-     and the header buttons read as one family. */
-  --glass-tint: 0.06;
-  --glass-rim: rgba(255, 255, 255, 0.16);
-  --card-glass-fill: var(--ios-frost);
+  /* The search page's material, so the forecast reads like that page: one of
+     its grouped panels (.ss-group) is the sheet's glass (--glass-base at 52%
+     under a 24px saturated blur, the per-sky tint carried in --glass-base)
+     with a 7% white lift on top, and no outline or shadow. A card here is the
+     two layers in one: the same fill, blur and lift, so a card and a search
+     panel over the same sky come out the same colour. Card Transparency thins
+     both the same way, through --ios-glass-scale and --ios-glass-blur.
+
+     This used to be the splash cards' dark --ios-frost with a white hairline;
+     the hairline is gone with it (kept as a transparent 1px border so nothing
+     inside moves). */
+  --glass-tint: 0.07;
+  --glass-rim: transparent;
+  --card-glass-fill: color-mix(in srgb, var(--glass-base) calc(52% * var(--ios-glass-scale)), transparent);
   --card-glass-shadow: none;
-  --card-glass-blur: blur(8px);
+  --card-glass-blur: blur(var(--ios-glass-blur)) saturate(180%);
   background-color: var(--card-glass-fill);
   background-image: linear-gradient(rgb(255 255 255 / var(--glass-tint)), rgb(255 255 255 / var(--glass-tint)));
   border: 1px solid var(--glass-rim);
@@ -10873,15 +11282,41 @@ html.splash-lock .splash-mini {
   --ios-tile-tint: #fff;
   --ios-tile-alpha: 9%;
 }
+/* Dark mode: the search panels' lift is the same 7% of white text there, so
+   the cards keep it too (these used to thin the old frost's sheen and rim). */
 [data-theme="dark"]:root[data-shell="mobile"][data-platform]:not([data-platform="android"]) .app.sky-active .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) {
-  --glass-tint: 0.05;
-  --glass-rim: rgba(255, 255, 255, 0.12);
+  --glass-tint: 0.07;
+  --glass-rim: transparent;
 }
 @media (prefers-color-scheme: dark) {
   :root[data-shell="mobile"][data-platform]:not([data-platform="android"]):not([data-theme="light"]) .app.sky-active .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) {
-    --glass-tint: 0.05;
-    --glass-rim: rgba(255, 255, 255, 0.12);
+    --glass-tint: 0.07;
+    --glass-rim: transparent;
   }
+}
+
+/* The forecast cards set in Google Sans on both phone styles (Android already
+   is; this brings iOS along). Only the cards: the hero, the header, the search
+   page and settings keep the style's own fonts. The tokens are re-pointed as
+   well as the family, because most text inside a card names var(--font) or
+   var(--font-display) itself rather than inheriting.
+
+   Google Fonts serves Google Sans at 300/400/500/700 (see main.jsx), so text
+   asking for 600 resolves to the 700 face, a touch heavier than Inter's. */
+:root[data-shell="mobile"] .app .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill) {
+  --font: 'Google Sans', 'Product Sans', Roboto, 'Segoe UI', sans-serif;
+  --font-display: 'Google Sans', 'Product Sans', Roboto, 'Segoe UI', sans-serif;
+  font-family: var(--font);
+}
+
+/* Section titles in the search page's caps (.ss-section-title), on both phone
+   styles: a size down and less tracking than the cards had (Android's lighter
+   Material label included), so a card's title and a search group's read as
+   the same label. */
+:root[data-shell="mobile"] .app .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill) .section-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.9px;
 }
 
 /* Section labels: Android draws them in the primary colour, which sinks into
@@ -11003,6 +11438,45 @@ html.splash-lock .splash-mini {
   }
 }
 
+/* ── Android: the search page's panels too ──
+   Over a sky the Android cards take the search page's grouped panel as well,
+   as it is drawn on Android: the page is the deep sky tint (--sky-card-deep,
+   see .sky-active .search-overlay) and a panel lifts it by 7% white, with
+   white text. This replaces the Material containers the cards wore over the
+   sky; with weather effects off they are still the containers. The corners
+   and the missing edge are the flat-card block at the end of this file, which
+   covers every card on both styles.
+
+   Card Transparency still thins the fill through --md-card-alpha, and the
+   glass blur still applies once the slider leaves zero.
+
+   The accent is the scheme's own primary lifted toward white rather than a
+   fixed blue, so the Material You seed colour still shows (the deep primary
+   sinks into the sky). */
+:root[data-shell="mobile"][data-platform="android"] .app.sky-active .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) {
+  background-color: color-mix(in srgb, var(--sky-card-deep, #2d3f55) var(--md-card-alpha), transparent);
+  background-image: linear-gradient(rgb(255 255 255 / 0.07), rgb(255 255 255 / 0.07));
+
+  --text-primary: #fff; --temp-light: 0;
+  --text-secondary: rgba(255, 255, 255, 0.85);
+  --text-tertiary: rgba(255, 255, 255, 0.66);
+  --accent: color-mix(in srgb, var(--md-primary) 45%, #fff);
+  --accent-light: color-mix(in srgb, var(--md-primary) 22%, transparent);
+  --border: rgba(255, 255, 255, 0.14);
+  --hover-subtle: rgba(255, 255, 255, 0.06);
+  --hover-medium: rgba(255, 255, 255, 0.1);
+  --hover-clear: rgba(255, 255, 255, 0.14);
+  --md-card-fill-high: rgba(255, 255, 255, 0.1);
+  --md-surface-container: rgba(255, 255, 255, 0.08);
+  --md-surface-container-high: rgba(255, 255, 255, 0.12);
+  --md-on-surface: #fff;
+  --md-on-surface-variant: rgba(255, 255, 255, 0.78);
+  --md-outline: rgba(255, 255, 255, 0.3);
+}
+:root[data-shell="mobile"][data-platform="android"] .app.sky-active .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) .section-label {
+  color: rgba(255, 255, 255, 0.7);
+}
+
 /* No opaque cover fill over the glass. A tapped tile's cover keeps the card's
    own transparency: the circle is the faint --ios-tile-tint wash from the iOS
    cover rule, and the rows it would have had to hide fade out under it (see
@@ -11057,4 +11531,38 @@ a.apk-download-btn {
   color: #fff;
   text-decoration: none;
   white-space: nowrap;
+}
+
+/* ── Forecast cards drawn flat, like the search and settings panels ──
+   Phone shells, both styles, every sky: the forecast cards take the panels'
+   shape and nothing else around them. 18px corners (the search page's
+   .ss-group; Android's 28px Material corner included), no shadow, no outline.
+
+   The nested shapes step down with the corner on Android: Material's 20px
+   tiles inside an 18px card would round harder than the card they sit in.
+
+   !important on the two edge properties, and only those: the outlines and
+   shadows come from half a dozen rules (the iOS glass and its light-sky
+   variant, the Android glass rim and lift) at specificities up to (0,13,0),
+   and every one of them is a resting-card edge this block exists to remove.
+   Nothing else in a card's states draws its edge with them (the drag lift is
+   on .sortable-block, and the full-screen radar is left out here). The 1px
+   border stays as transparent, so nothing inside moves. */
+:root[data-shell="mobile"][data-platform] .app .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) {
+  --radius: 18px;
+  --md-shape-tile: 12px;
+  --md-shape-control: 10px;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* iOS with no sky behind the stack (weather effects off). Here the shadow was
+   the one thing separating a pale glass card from the pale page, so without it
+   the card goes solid instead: white on the grey page in light mode, the raised
+   grey on black in dark, the way a grouped settings list reads. With no sky to
+   see through, the glass and its blur had nothing to show anyway. */
+:root[data-shell="mobile"][data-platform="ios"] .app:not(.sky-active) .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) {
+  background: var(--card-bg);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }

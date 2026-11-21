@@ -1,9 +1,19 @@
 import { memo, useState, useRef, useCallback, useEffect } from 'react'
-import { Droplet, ChevronUp } from 'lucide-react'
-import { getWeatherInfo, formatDay, formatHour, formatTime, getUVLabel, liveWeatherCode, nowcastHourlyCode, toTemp, tempInk, tempStyle, SUN_ORANGE } from '../utils/weatherCodes'
+import { Droplet, ChevronUp, ArrowUp, ArrowDown, Equal, TreePine, Car, Footprints } from 'lucide-react'
+import { getWeatherInfo, formatDay, formatHour, liveWeatherCode, nowcastHourlyCode, toTemp, tempInk, tempStyle } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
 import { formatPrecip, formatWind } from '../utils/units'
 import { coverFrom, markCoverSettled, useCoverHistory } from '../utils/detailCover'
+import { dayWindow, direction, rateActivities, scoreColor, scoreLabel } from '../utils/todayOutlook'
+
+// The Today tab's three ratings, in its order and with its icons.
+const ACTIVITIES = [
+  { id: 'outside',  label: 'Outdoors', Icon: TreePine },
+  { id: 'driving',  label: 'Driving',  Icon: Car },
+  { id: 'exercise', label: 'Exercise', Icon: Footprints },
+]
+
+const COMPARE_ICON = { warmer: ArrowUp, colder: ArrowDown, same: Equal }
 
 // The cover's two lengths. Keep in step with App.css: COVER_IN_MS is
 // --cover-in (the rectangle growing out of the row — the strip waits for it),
@@ -50,7 +60,7 @@ function coverTitle(date) {
 
 // Memoised: App re-renders for every overlay, toggle and keystroke, and the
 // props here are the reading and the settings, which those leave alone.
-export const DailyForecast = memo(function DailyForecast({ daily, hourly, timezone, unit, units, colorCoding = true, glow = true, frost = true, current, minutely, radarClear = null }) {
+export const DailyForecast = memo(function DailyForecast({ daily, hourly, timezone, unit, units, colorCoding = true, glow = true, frost = true, current, minutely, radarClear = null, yesterday = null, airQuality = null }) {
   const [expanded, setExpanded] = useState(null)
   const [closing, setClosing] = useState(false)
   // The tapped row's box, which the cover grows out of (see coverFrom).
@@ -227,10 +237,62 @@ export const DailyForecast = memo(function DailyForecast({ daily, hourly, timezo
     ? `Up to a ${openPrecip}% chance of precipitation.`
     : 'No precipitation expected.'
 
+  // "Today" in the forecast's own timezone, for the ratings window and for
+  // naming the neighbouring days. Only worked out while a day is open.
+  let todayStr = null, hourStr = null
+  if (di !== -1) {
+    const now = new Date()
+    todayStr = now.toLocaleDateString('en-CA', { timeZone: timezone })
+    // en-CA gives "24" for midnight on some engines; the hourly times use "00".
+    hourStr = now.toLocaleString('en-CA', { hour: '2-digit', hour12: false, timeZone: timezone }).replace(/^24$/, '00')
+  }
+
+  // The Today tab's conditions for the open day: its 1-10 ratings for being
+  // outdoors, driving and exercise, over that day's waking hours (from now on,
+  // for today, so this and the Today tab agree).
+  const openWin = di !== -1 ? dayWindow(hourly, expanded, todayStr, hourStr) : null
+  const openRatings = openWin ? rateActivities(hourly, openWin, airQuality?.hourly) : null
+
+  // The open day's high against the days either side of it. Today's day before
+  // is yesterday, which useWeather keeps aside from the daily arrays.
+  const neighbours = di === -1 ? [] : [
+    di > 0
+      ? { date: daily.time[di - 1], max: maxTemps[di - 1] }
+      : yesterday?.max != null ? { date: yesterday.date, max: yesterday.max } : null,
+    di + 1 < daily.time.length ? { date: daily.time[di + 1], max: maxTemps[di + 1] } : null,
+  ]
+  // Relative words only where they're unambiguous: "tomorrow" on today's cover
+  // means the next day, but on Monday's it would read as Sunday's name for
+  // itself, so every other day goes by its weekday.
+  const nameOf = (date) => {
+    if (date === todayStr) return 'today'
+    if (date < todayStr) return 'yesterday'
+    if (expanded === todayStr) return 'tomorrow'
+    return new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'long' })
+  }
+  const compares = di === -1 || maxTemps[di] == null ? [] : neighbours
+    .filter(n => n && n.max != null)
+    .map(n => {
+      const diffF = maxTemps[di] - n.max
+      // A difference in the display unit, as on the Today tab: °C steps are
+      // bigger, so the same pair can be "4° colder" in °F and "2°" in °C.
+      const d = Math.round(Math.abs(unit === 'C' ? diffF * 5 / 9 : diffF))
+      const dir = d === 0 ? 'same' : direction(diffF)
+      const name = nameOf(n.date)
+      return {
+        key: n.date,
+        dir,
+        text: dir === 'same' ? `About the same as ${name}` : `${d}° ${dir} than ${name}`,
+      }
+    })
+
   // Precip accumulation (in) and peak wind (mph) come straight from the daily
   // series; humidity has no daily aggregate, so average the day's hourly values.
   const precipSum = di !== -1 ? daily.precipitation_sum?.[di] : null
   const windMax   = di !== -1 ? daily.wind_speed_10m_max?.[di] : null
+  // No daily gust aggregate either: the day's peak hourly gust.
+  const gustVals  = openIdx.map(i => hourly?.wind_gusts_10m?.[i]).filter(v => v != null)
+  const gustMax   = gustVals.length ? Math.max(...gustVals) : null
   const humVals   = openIdx.map(i => hourly?.relative_humidity_2m?.[i]).filter(v => v != null)
   const humidityAvg = humVals.length
     ? Math.round(humVals.reduce((a, b) => a + b, 0) / humVals.length)
@@ -323,7 +385,10 @@ export const DailyForecast = memo(function DailyForecast({ daily, hourly, timezo
             </span>
             <ChevronUp size={20} className="detail-cover-chevron" aria-hidden="true" />
           </button>
-          <div className="detail-cover-body">
+          <div className="detail-cover-body day-cover-body">
+            {/* The day at a glance: high / low, the sky, and how the high sits
+                against the days either side. The chance of rain that used to
+                be the line here is in the Precip stat below. */}
             <div className="detail-summary">
               <div className="detail-summary-val">
                 <span style={tempStyle(maxTemps[di], colorCoding, 0.4, glow, frost)}>{toTemp(maxTemps[di], unit)}°</span>
@@ -332,42 +397,85 @@ export const DailyForecast = memo(function DailyForecast({ daily, hourly, timezo
               </div>
               <div className="detail-summary-text">
                 <div className="detail-summary-label">{openInfo.label}</div>
-                <div className="detail-summary-note">{precipNote}</div>
+                {compares.length > 0 ? (
+                  <ul className="day-compare" aria-label="High compared with nearby days">
+                    {compares.map(({ key, dir, text }) => {
+                      const Icon = COMPARE_ICON[dir]
+                      return (
+                        <li key={key} className={`day-compare-row day-compare--${dir}`}>
+                          <Icon size={14} className="day-compare-icon" aria-hidden="true" />
+                          <span>{text}</span>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                ) : (
+                  <div className="detail-summary-note">{precipNote}</div>
+                )}
               </div>
             </div>
-            <div className="detail-stats">
-              <div className="detail-stat">
-                <span className="detail-stat-label">Precip</span>
-                <span className="detail-stat-value" style={colorCoding && precipSum != null ? { color: precipColor(precipSum) } : undefined}>{formatPrecip(precipSum, units)}</span>
-              </div>
-              <div className="detail-stat">
-                <span className="detail-stat-label">Wind</span>
-                <span className="detail-stat-value" style={colorCoding && windMax != null ? { color: windColor(windMax) } : undefined}>{formatWind(windMax, units)}</span>
-              </div>
-              <div className="detail-stat">
-                <span className="detail-stat-label">Humidity</span>
-                <span className="detail-stat-value" style={colorCoding && humidityAvg != null ? { color: humidityColor(humidityAvg) } : undefined}>{humidityAvg != null ? `${humidityAvg}%` : '-'}</span>
-              </div>
-            </div>
-            <div className="detail-stats">
-              {daily.sunrise?.[di] && (
-                <div className="detail-stat">
-                  <span className="detail-stat-label">Sunrise</span>
-                  <span className="detail-stat-value" style={colorCoding ? { color: SUN_ORANGE } : undefined}>{formatTime(daily.sunrise[di], timezone)}</span>
+
+            {/* The Today tab's conditions, for this day: the overall score in
+                the heading, then the three activities side by side. */}
+            {openRatings && (
+              <section className="day-cond" aria-label="Conditions">
+                <div className="day-cond-head">
+                  <span className="day-cond-title">
+                    Conditions
+                    {openWin.label !== 'Daytime' && <span className="day-cond-when"> · {openWin.label}</span>}
+                  </span>
+                  <span className="day-cond-overall">
+                    <span className="today-dot" style={{ background: scoreColor(openRatings.overall) }} />
+                    {scoreLabel(openRatings.overall)}
+                    <span className="day-cond-overall-score">{openRatings.overall}/10</span>
+                  </span>
                 </div>
-              )}
-              {daily.sunset?.[di] && (
-                <div className="detail-stat">
-                  <span className="detail-stat-label">Sunset</span>
-                  <span className="detail-stat-value" style={colorCoding ? { color: SUN_ORANGE } : undefined}>{formatTime(daily.sunset[di], timezone)}</span>
+                <div className="day-cond-grid">
+                  {ACTIVITIES.map(({ id, label, Icon }) => {
+                    const r = openRatings[id]
+                    return (
+                      <div
+                        key={id}
+                        className="day-cond-cell"
+                        role="meter" aria-valuemin={1} aria-valuemax={10} aria-valuenow={r.score}
+                        aria-label={`${label}: ${r.score} out of 10, ${r.reason}`}
+                      >
+                        <div className="day-cond-top">
+                          <Icon size={14} className="day-cond-icon" aria-hidden="true" />
+                          <span className="day-cond-name">{label}</span>
+                          <span className="day-cond-score">{r.score}</span>
+                        </div>
+                        <div className="day-cond-bar">
+                          <i style={{ width: `${r.score * 10}%`, background: scoreColor(r.score) }} />
+                        </div>
+                        <div className="day-cond-reason">{r.reason}</div>
+                      </div>
+                    )
+                  })}
                 </div>
-              )}
-              {daily.uv_index_max?.[di] != null && (
-                <div className="detail-stat">
-                  <span className="detail-stat-label">Peak UV</span>
-                  <span className="detail-stat-value" style={colorCoding ? { color: getUVLabel(daily.uv_index_max[di]).color } : undefined}>{Math.round(daily.uv_index_max[di])}</span>
-                </div>
-              )}
+              </section>
+            )}
+
+            {/* Three readings as tiles on the same grid as the conditions
+                above, so the two rows line up column for column: a label, the
+                reading, and one line of detail, like the activity tiles. UV
+                isn't here; it counts toward the Outdoors and Exercise scores. */}
+            <div className="day-stats">
+              <div className="day-stat">
+                <span className="day-stat-label">Precip</span>
+                <span className="day-stat-value" style={colorCoding && precipSum != null ? { color: precipColor(precipSum) } : undefined}>{openPrecip}%</span>
+                <span className="day-stat-sub">{precipSum != null ? formatPrecip(precipSum, units) : 'Chance'}</span>
+              </div>
+              <div className="day-stat">
+                <span className="day-stat-label">Wind</span>
+                <span className="day-stat-value" style={colorCoding && windMax != null ? { color: windColor(windMax) } : undefined}>{formatWind(windMax, units)}</span>
+                <span className="day-stat-sub">{gustMax != null ? `Gusts ${formatWind(gustMax, units)}` : 'Peak'}</span>
+              </div>
+              <div className="day-stat">
+                <span className="day-stat-label">Humidity</span>
+                <span className="day-stat-value" style={colorCoding && humidityAvg != null ? { color: humidityColor(humidityAvg) } : undefined}>{humidityAvg != null ? `${humidityAvg}%` : '-'}</span>
+                <span className="day-stat-sub">Day average</span>
+              </div>
             </div>
             {hoursReady && openHours.length > 0 && (
               <div className="hourly-scroll-wrapper daily-hours-in">

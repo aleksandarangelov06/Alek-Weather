@@ -8,6 +8,7 @@ import { installPredictiveBack } from './utils/predictiveBack.js'
 import { IS_ANDROID_APP } from './utils/version.js'
 import { initialPlatformTheme } from './utils/platformTheme.js'
 import { loadWebShell } from './components/web/webShellChunk.js'
+import { keepBootStage } from './utils/bootStage.js'
 
 // Opening in the Web style: that layout (and WebApp.css) is its own chunk, which
 // the phone styles never download (see webShellChunk). It is requested here,
@@ -30,11 +31,25 @@ try {
   else if (theme === 'off') document.documentElement.setAttribute('data-theme', 'light')
 } catch { /* storage unavailable: OS scheme it is */ }
 
-// The boot screen is for the phone app only. index.html already hides it on
-// hover-and-fine-pointer screens; this also drops it for anything else that
-// opens in the web (desktop) layout, e.g. a tablet set to the Web style.
+// The boot screen is for the phone app only. It is dropped for anything that
+// opens in the web (desktop) layout, e.g. a tablet set to the Web style, and on
+// hover-and-fine-pointer screens, where index.html hides it in CSS anyway;
+// removing it there too keeps App from timing a lift nobody can see.
 // (Phones never open in Web: initialPlatformTheme falls back to the phone look.)
-if (opensInWeb) document.getElementById('boot')?.remove()
+//
+// Otherwise data-boot="cover" goes on <html> for as long as it covers the app.
+// App.css and WeatherCanvas hold back what the screen hides (the sky's motion,
+// the forecast's entrance, the skeleton shimmer) so that work neither competes
+// with the boot animation nor plays out unseen. App moves it to "lifting" as
+// the fade starts and removes it once the screen is gone.
+// Its weather animation is kept first, wherever the screen itself goes: the
+// phone's forecast loading screen reuses it (see utils/bootStage.js).
+keepBootStage()
+const boot = document.getElementById('boot')
+if (boot) {
+  if (opensInWeb || window.matchMedia('(hover: hover) and (pointer: fine)').matches) boot.remove()
+  else document.documentElement.dataset.boot = 'cover'
+}
 
 // Android app only in effect: listens for the back-gesture events MainActivity
 // sends, and animates the open overlay along with the swipe.

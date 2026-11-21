@@ -193,7 +193,7 @@
    at any width that couldn't fit all six tabs the header overflowed, taking
    the settings button off the right edge of the screen with it (and with
    settings unreachable, the app style couldn't be changed back). min-width: 0
-   lets the wrapper shrink; .web-tabs already scrolls its own overflow, so the
+   lets the wrapper shrink; .web-tabs-scroll scrolls its own overflow, so the
    tabs slide under a scroll instead of pushing the chrome away. The chain has
    to hold the whole way down — every link between here and the scroll
    container is itself a flex item with the same automatic minimum. */
@@ -219,21 +219,54 @@
   .web-tabs-wrap { animation: none; }
 }
 
+/* The bar itself: the glass card. It doesn't scroll; .web-tabs-scroll inside
+   it does. min-width: 0 because, no longer being the scroll container, its
+   automatic minimum would be the full width of every tab, and the bar would
+   refuse to shrink into a narrow header. */
 .web-tabs {
   position: relative;
+  display: flex;
+  padding: 0;
+  margin-bottom: 0;
+  border-radius: 999px;
+  pointer-events: auto;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* The row of tabs, which scrolls sideways once the window is too narrow for
+   all of them: by touch or trackpad natively, by mouse wheel through WebTabs,
+   and by the arrow keys, which centre the tab they land on. The scrollbar is
+   hidden; instead an end that has tabs past it fades out, so it reads as
+   "more this way" rather than a tab sliced off by the rim. WebTabs sets
+   data-more-start / data-more-end as the row scrolls. The fade widths are
+   registered so they can ease in and out; where @property isn't supported
+   they just snap. overscroll-behavior keeps a sideways swipe that runs past
+   the end from turning into the browser's back/forward gesture. */
+@property --tabs-fade-start { syntax: '<length>'; inherits: false; initial-value: 0px; }
+@property --tabs-fade-end { syntax: '<length>'; inherits: false; initial-value: 0px; }
+
+.web-tabs-scroll {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 2px;
   padding: 6px;
-  margin-bottom: 0;
-  border-radius: 999px;
-  pointer-events: auto;
-  max-width: 100%;
+  border-radius: inherit;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
   scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--tabs-fade-start, 0px), #000 calc(100% - var(--tabs-fade-end, 0px)), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 var(--tabs-fade-start, 0px), #000 calc(100% - var(--tabs-fade-end, 0px)), transparent 100%);
+  transition: --tabs-fade-start 0.2s ease, --tabs-fade-end 0.2s ease;
 }
 
-.web-tabs::-webkit-scrollbar { display: none; }
+.web-tabs-scroll::-webkit-scrollbar { display: none; }
+
+.web-tabs-scroll[data-more-start] { --tabs-fade-start: 36px; }
+.web-tabs-scroll[data-more-end] { --tabs-fade-end: 36px; }
 
 /* The raised glass look the bar wears over the splash sky (see "Splash glass"),
    kept on every page so it doesn't flatten back into a plain card when the
@@ -4369,7 +4402,7 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
    pieces have to fold down instead. Two tiers: a tablet-ish one that drops the
    remaining two-column rows, and a phone-width one that sheds table columns
    the row cannot fit. The tab bar needs nothing here; it is already a
-   horizontally scrollable flex row (.web-tabs), so it just gets shorter. */
+   horizontally scrollable flex row (.web-tabs-scroll), so it just gets shorter. */
 
 @media (max-width: 1099px) {
   /* Anything still auto-fitting at a 300px track would leave one orphaned

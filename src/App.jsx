@@ -254,6 +254,17 @@ const HAS_SAVED_CITY = !!INITIAL_CITY
 // Launch boot screen timing (see the #boot effect in App), in ms since page start.
 const BOOT_MIN_MS = 700
 const BOOT_MAX_MS = 8000
+// How long the screen spends drawing the app beneath it before it starts to
+// fade (see boot--prep in index.html); the fade itself, which matches the #boot
+// transition there; and how long after the fade starts the screen is removed
+// and data-boot cleared: once the forecast's 0.55s entrance (weather-fade-in in
+// App.css) has finished too, so the sky starts moving on a settled page.
+const BOOT_PREP_MS = 150
+const BOOT_FADE_MS = 450
+const BOOT_DONE_MS = 600
+// The forecast's sky as last drawn, for the next launch's boot screen to open
+// on (read by public/boot-sky.js before the first paint): { bg, at: [lat, lon] }.
+const BOOT_SKY_KEY = 'alek-weather-boot-sky'
 
 const BLOCK_ORDER_KEY = 'alek-weather-block-order'
 const DEFAULT_BLOCK_ORDER = ['overview', 'today', 'nowcast', 'hourly', 'daily', 'details', 'radar']
@@ -261,7 +272,10 @@ const SHOW_OVERVIEW_KEY = 'alek-weather-show-overview'
 const SHOW_TODAY_KEY = 'alek-weather-show-today'
 const NOWCAST_MODE_KEY  = 'alek-weather-nowcast-mode'
 const COLOR_CODING_KEY  = 'alek-weather-color-coding'
-const DEFAULT_COLOR_CODING = { current: true, hourly: true, daily: true, overview: true, details: true, glow: true, frost: true }
+// The current-weather reading starts plain: it is the largest text on the
+// screen, and a coloured figure that size over a sky read as decoration more
+// than as information. The smaller readings keep their colour.
+const DEFAULT_COLOR_CODING = { current: false, hourly: true, daily: true, overview: true, details: true, glow: true, frost: true }
 const OVERVIEW_PARTS_KEY = 'alek-weather-overview-parts'
 const DEFAULT_OVERVIEW_PARTS = { insight: true, conditions: true, airQuality: true, clothing: true }
 const ICON_MOTION_KEY   = 'alek-weather-icon-motion'
@@ -464,6 +478,18 @@ function App() {
   } = useWeather(INITIAL_CITY)
   // Launch load, background refresh, and refresh-after-restore (see the hook).
   const refreshIfStale = useStaleRefresh({ initialCity: INITIAL_CITY, location, weather, lastUpdated, fetchWeather })
+
+  // Nothing to show means Home. The splash is the start screen in every style,
+  // but a few paths leave it marked done with no forecast behind it: opening a
+  // Web page from Home (Settings, Locations), switching to Web from the phone
+  // Settings page, a cleared error. Coming back from any of those (closing the
+  // page, switching back to iOS or Android) used to land on the old "Tap to
+  // find a location" screen instead. A layout effect, so that screen never gets
+  // a frame. A Web page that's up (navPageUp) is something to show, and
+  // loading and error states have screens of their own.
+  useLayoutEffect(() => {
+    if (splashPhase === 'done' && !weather && !loading && !error && !navPageUp) setSplashPhase('visible')
+  }, [splashPhase, weather, loading, error, navPageUp])
 
   // Each forecast reading also fills the splash's card for that place, so going
   // back Home doesn't ask Open-Meteo for a reading already on hand.
@@ -712,22 +738,54 @@ function App() {
   // the next screen and it lifts as soon as the app has mounted. It shows for
   // at least BOOT_MIN_MS so it never just flickers, and never longer than
   // BOOT_MAX_MS, so a slow or offline launch still reaches the app.
+  //
+  // The lift is staged so the fade gets the device to itself:
+  //   1. prep: the screen goes a hair under opaque, so the browser draws the
+  //      app beneath it now rather than in the fade's first frames;
+  //   2. a short wait, then until the main thread is idle, so the fade doesn't
+  //      start in the middle of the first render's paint or its effects;
+  //   3. the fade, with data-boot="lifting" releasing the forecast's entrance
+  //      (held back in App.css) to play under it;
+  //   4. once the fade and the entrance are done (BOOT_DONE_MS), the screen is
+  //      removed and data-boot cleared, which starts the sky (WeatherCanvas)
+  //      and lets idle work like the settings preload run.
   const bootReady = !HAS_SAVED_CITY || !!weather || !!error
   const [bootTimedOut, setBootTimedOut] = useState(false)
+  const [bootGone, setBootGone] = useState(() => !document.getElementById('boot'))
   useEffect(() => {
     const t = setTimeout(() => setBootTimedOut(true), BOOT_MAX_MS)
     return () => clearTimeout(t)
   }, [])
   useEffect(() => {
     if (!bootReady && !bootTimedOut) return
+    const root = document.documentElement
     const boot = document.getElementById('boot')
-    if (!boot || boot.classList.contains('boot--out')) return
-    const wait = Math.max(0, BOOT_MIN_MS - performance.now())
-    const t = setTimeout(() => {
+    if (!boot) { delete root.dataset.boot; return }
+    if (boot.classList.contains('boot--out')) return
+    const ric = window.requestIdleCallback
+    let t, idle
+    const lift = () => {
       boot.classList.add('boot--out')
-      setTimeout(() => boot.remove(), 450)
-    }, wait)
-    return () => clearTimeout(t)
+      root.dataset.boot = 'lifting'
+      setTimeout(() => {
+        boot.remove()
+        delete root.dataset.boot
+        root.removeAttribute('data-boot-sky')
+        root.style.removeProperty('--boot-sky')
+        setBootGone(true)
+      }, Math.max(BOOT_FADE_MS, BOOT_DONE_MS))
+    }
+    t = setTimeout(() => {
+      boot.classList.add('boot--prep')
+      t = setTimeout(() => {
+        if (ric) idle = ric(lift, { timeout: 300 })
+        else t = setTimeout(lift, 50)
+      }, BOOT_PREP_MS)
+    }, Math.max(0, BOOT_MIN_MS - performance.now()))
+    return () => {
+      clearTimeout(t)
+      if (idle) window.cancelIdleCallback?.(idle)
+    }
   }, [bootReady, bootTimedOut])
 
   // The first place picked in a session opens on Today (the overview) rather
@@ -1092,7 +1150,10 @@ function App() {
   // Settings opens on the tap now, with no cog turn to hide a download behind,
   // so its chunk is warmed once the app has gone idle after first paint rather
   // than only on pointerdown (which still runs, for a tap that beats this).
+  // Not before the boot screen has gone: the first idle moment is when the
+  // screen starts its fade, and parsing a chunk then would stall the reveal.
   useEffect(() => {
+    if (!bootGone) return
     const ric = window.requestIdleCallback
     if (ric) {
       const id = ric(() => preloadSettings(), { timeout: 3000 })
@@ -1100,7 +1161,7 @@ function App() {
     }
     const t = setTimeout(preloadSettings, 1500)
     return () => clearTimeout(t)
-  }, [])
+  }, [bootGone])
 
   // Tactile press for the round icon buttons (PRESS_DIP_SELECTOR): data-pressed
   // goes on at the touch and comes off at release, but never sooner than
@@ -1374,6 +1435,36 @@ function App() {
   const splashSkyC  = localCond && weatherAnimations ? skyClass(localCond.code, localCond.isDay) : ''
   const splashIcon  = localCond ? getWeatherInfo(localCond.code, !localCond.isDay, localCond.severe) : null
 
+  // The phone splash's "where this weather is" pill opens that place's
+  // forecast, as the web one does. It can't live in .splash-bg with the
+  // headline (that layer is inert and sits under the tap-catching overlay), so
+  // it is drawn above both and hung from the headline's measured bottom edge.
+  const splashHere = !webLayout && splashPhase !== 'done' && splashIcon && !recents.length && localCond?.name
+    ? locatedPlace()
+    : null
+  const hasSplashHere = !!splashHere
+  const splashExiting = splashPhase === 'exit'
+  const splashTextRef = useRef(null)
+  const [splashHereTop, setSplashHereTop] = useState(null)
+  useLayoutEffect(() => {
+    const el = splashTextRef.current
+    if (!hasSplashHere || splashExiting || !el) return
+    const measure = () => setSplashHereTop(el.getBoundingClientRect().bottom)
+    measure()
+    // Size changes (a wrap, the font landing), the splash's entrance
+    // animation settling, and the viewport itself all move that edge.
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    const logo = el.parentElement
+    logo?.addEventListener('animationend', measure)
+    window.addEventListener('resize', measure)
+    return () => {
+      ro.disconnect()
+      logo?.removeEventListener('animationend', measure)
+      window.removeEventListener('resize', measure)
+    }
+  }, [hasSplashHere, splashExiting])
+
   // Published on <html> because the surfaces that have to react to the splash
   // sky live in different trees: the header buttons inside .app, the location
   // cards beside it. "dark" for the skies the forecast tints its cards for most
@@ -1414,11 +1505,50 @@ function App() {
     return () => mq.removeEventListener('change', handler)
   }, [darkMode, skyC, weather, weatherAnimations])
 
+  // The sky the next launch's boot screen opens on (public/boot-sky.js): the
+  // gradient behind the forecast as actually drawn, so the theme's version of
+  // it, kept with the place it is for. With effects off the forecast sits on
+  // the flat background, so nothing is kept and the boot screen stays plain
+  // too. With no forecast up (the splash, or still loading) the last one
+  // stands. While this launch's boot screen is still up, it is brought in line
+  // with the sky the app actually opened on, should that differ from the one it
+  // started with (night has fallen since, or the theme changed): it fades in if
+  // the screen had none, and swaps otherwise.
+  const skyBgRef = useRef(null)
+  const hasWeather = !!weather
+  const skyLat = location?.latitude
+  const skyLon = location?.longitude
+  useEffect(() => {
+    if (!hasWeather) return
+    const save = () => {
+      const bg = skyBgRef.current ? getComputedStyle(skyBgRef.current).backgroundImage : ''
+      const sky = bg.includes('gradient(') ? bg : null
+      try {
+        if (sky && skyLat != null) {
+          const at = [Math.round(skyLat * 100) / 100, Math.round(skyLon * 100) / 100]
+          localStorage.setItem(BOOT_SKY_KEY, JSON.stringify({ bg: sky, at }))
+        } else localStorage.removeItem(BOOT_SKY_KEY)
+      } catch { /* not kept: the next boot screen is plain */ }
+      if (!document.getElementById('boot')) return
+      const root = document.documentElement
+      if (sky) {
+        root.style.setProperty('--boot-sky', sky)
+        root.setAttribute('data-boot-sky', '')
+      } else root.removeAttribute('data-boot-sky')
+    }
+    save()
+    // On the System theme the sky's dark version follows the OS setting.
+    if (darkMode !== 'system') return
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    mq.addEventListener('change', save)
+    return () => mq.removeEventListener('change', save)
+  }, [darkMode, skyC, hasWeather, weatherAnimations, skyLat, skyLon])
+
   const blockComponents = weather && !loading ? {
     today:   <TodayCard hourly={weather.hourly} daily={weather.daily} current={weather.current} yesterday={weather.yesterday} timezone={weather.timezone} unit={unit} airQuality={airQuality} />,
     overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} timezone={weather.timezone} hasActiveAlert={hasActiveAlert} unit={unit} units={units} airQuality={airQuality} showInsight={overviewParts.insight} showConditions={overviewParts.conditions} showAirQuality={overviewParts.airQuality} showClothing={overviewParts.clothing} colorCode={colorCoding.overview} />,
     hourly:  <HourlyForecast hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.hourly} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
-    daily:   <DailyForecast daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} units={units} colorCoding={colorCoding.daily} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
+    daily:   <DailyForecast daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} units={units} colorCoding={colorCoding.daily} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} yesterday={weather.yesterday} airQuality={airQuality} />,
     details: <WeatherDetails latitude={weather.latitude} current={weather.current} daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} units={units} airQuality={airQuality} colorCoding={colorCoding.details} />,
     radar:   <WeatherRadar location={location} timezone={weather.timezone} mode={radarMode} source={radarSource} sky={weatherAnimations ? skyC : ''} rainFx={weatherAnimations} snow={isSnowing(weather.current)} />,
     nowcast: <PrecipNowcast minutely={weather.minutely_15} currentTime={weather.current.time} mode={nowcastMode} current={weather.current} radarClear={radarClear} />,
@@ -1695,8 +1825,11 @@ function App() {
 
   return (
     <>
-      {weather && weatherAnimations && <div className={`sky-bg ${skyC}`} aria-hidden="true" />}
-      {weather && weatherAnimations && <WeatherCanvas code={liveCode} gyro={gyroscope} />}
+      {weather && weatherAnimations && <div ref={skyBgRef} className={`sky-bg ${skyC}`} aria-hidden="true" />}
+      {/* Held while a forecast loads on the phone, so the loading animation
+          has the frames to itself (see `hold` in WeatherCanvas). Not on the
+          web, whose canvas also feeds the header's copy of the sky. */}
+      {weather && weatherAnimations && <WeatherCanvas code={liveCode} gyro={gyroscope} hold={loading && !webLayout} />}
     <div
       className={`app${weatherAnimations && levelC ? ` ${levelC}` : ''}${!weatherAnimations ? ' no-effects' : ''}${weather && weatherAnimations ? ' sky-active' : ''}${weather && weatherAnimations && skyToneLight ? ' sky-tone-light' : ''}${headerTabs ? ' app--web-tabs' : ''}${radarPageUp ? ' app--web-radar' : ''}${webSplash ? ' app--web-splash' : ''}${webSplash && splashPhase === 'exit' ? ' app--web-splash-exit' : ''}${webLayout && splashPhase !== 'visible' ? ' app--revealed' : ''}`}
       style={weather && weatherAnimations ? SKY_CARD_VARS[skyC] : undefined}
@@ -1928,7 +2061,7 @@ function App() {
                   (.splash-wordmark — the foot of the screen on the web, the
                   header row on the phone). Before the weather is known it is
                   the wordmark that sits here. */}
-              <span className="splash-logo-text">
+              <span className="splash-logo-text" ref={splashTextRef}>
                 {localCond?.headline ?? splashIcon?.label ?? (
                   // The web splash keeps its wordmark at the foot from the
                   // first frame, so this line says what it's doing instead of
@@ -1936,17 +2069,6 @@ function App() {
                   webSplash && !localConditionsFailed(recents[0] ?? null) ? 'Checking the weather…' : 'Alek Weather'
                 )}
               </span>
-              {/* Names the place the sky and icon are showing. Out of flow (see
-                  .splash-place) so it never moves the line the icon is anchored
-                  to. When that place is a recent one its card carries the
-                  location mark instead, so the pill is only there to name a
-                  place found from the device. */}
-              {!webSplash && splashIcon && !recents.length && localCond.name && (
-                <span className="splash-place">
-                  <Navigation size={13} aria-hidden="true" />
-                  {localCond.name}
-                </span>
-              )}
             </div>
             {webSplash && web && (
               <web.SplashHome
@@ -2004,6 +2126,23 @@ function App() {
             // Inert: .splash-bg lets taps through, so this only keeps them from
             // reaching the app hidden underneath. Tapping the poster does nothing.
             <div className="splash-overlay" aria-hidden="true" />
+          )}
+          {/* Names the place the sky and icon are showing, found from the
+              device, and opens its forecast. When that place is a recent one
+              its card carries the location mark instead. Positioned from the
+              headline (see splashHereTop) but drawn here, above the overlay,
+              so it takes its own taps. */}
+          {splashHere && splashHereTop != null && (
+            <button
+              className={`splash-place${splashExiting ? ' splash-place--exit' : ''}`}
+              style={{ top: splashHereTop }}
+              onClick={() => handleSplashCitySelect(splashHere)}
+              disabled={splashPhase !== 'visible'}
+              aria-label={`Show weather for ${splashHere.name}`}
+            >
+              <Navigation size={13} aria-hidden="true" />
+              {splashHere.name}
+            </button>
           )}
           {/* Outside .splash-bg on purpose: that layer is inert and sits under
               the overlay, so cards drawn inside it could not be tapped at all.

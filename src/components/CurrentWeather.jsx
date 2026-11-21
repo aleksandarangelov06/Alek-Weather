@@ -128,7 +128,7 @@ export const CurrentWeather = memo(function CurrentWeather({ hideHeader = false,
       </div>
       )}
       <div className="current-icon"><WeatherIcon id={info.icon} alt={info.label} /></div>
-      <div className="current-temp" style={currentTempStyle}>{temp}°{unit}</div>
+      <div className="current-temp" style={currentTempStyle}>{temp}<span className="current-temp-unit">°{unit}</span></div>
       <div className="current-condition">{info.label}</div>
       <div className="current-feels">Feels like {feelsLike}°{unit}</div>
       <div className="current-updated">

@@ -1,23 +1,13 @@
 import { memo } from 'react'
 import { ArrowDown, ArrowUp, Check, Thermometer, TreePine, Car, Footprints } from 'lucide-react'
 import { toTemp, tempInk } from '../utils/weatherCodes'
-import { outlookWindow, compareWithYesterday, compareTomorrowWithToday, rateActivities, scoreLabel } from '../utils/todayOutlook'
+import { outlookWindow, compareWithYesterday, compareTomorrowWithToday, rateActivities, scoreLabel, scoreColor } from '../utils/todayOutlook'
 
 const ACTIVITIES = [
   { id: 'outside',  label: 'Outdoors', Icon: TreePine },
   { id: 'driving',  label: 'Driving',  Icon: Car },
   { id: 'exercise', label: 'Exercise', Icon: Footprints },
 ]
-
-// The same severity palette the rest of the app uses for readings, so a 3/10
-// reads as the same orange as a poor air quality.
-function scoreColor(score) {
-  if (score >= 9) return 'var(--cond-green)'
-  if (score >= 7) return 'var(--cond-lime)'
-  if (score >= 5) return 'var(--cond-yellow)'
-  if (score >= 3) return 'var(--cond-orange)'
-  return 'var(--cond-red)'
-}
 
 // `embedded`: drawn inside another card (the web current-weather card) rather
 // than as a card of its own, so it drops the card surface.

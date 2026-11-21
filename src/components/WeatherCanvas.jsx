@@ -136,9 +136,18 @@ const quantFactor = (v) => Math.round(v * ALPHA_STEPS) / ALPHA_STEPS
 
 // Memoised: App re-renders for every overlay, toggle and keystroke, and none of
 // that concerns the sky unless the code or the gyro setting changes.
-export const WeatherCanvas = memo(function WeatherCanvas({ code, gyro = true }) {
+//
+// `hold` stops the drawing and fades the canvas out, leaving the plain sky,
+// while a forecast loads on the phone (App passes `loading`). The loading
+// animation plays over the sky then, and every frame drawn here was main-thread
+// work during the fetch and a full recomposite behind that animation, which is
+// what made it stutter. Read through a ref so holding and releasing never
+// rebuilds the particle field: the weather picks up where it left off.
+export const WeatherCanvas = memo(function WeatherCanvas({ code, gyro = true, hold = false }) {
   const scene = sceneFor(code)
   const ref = useRef(null)
+  const holdRef = useRef(hold)
+  useEffect(() => { holdRef.current = hold }, [hold])
   // Tilt in radians: `target` is set by the gyroscope listener, `cur` eases
   // toward it each frame so the lean glides instead of snapping. A ref (not
   // state) so updates never re-render or rebuild the particle field.
@@ -293,9 +302,14 @@ export const WeatherCanvas = memo(function WeatherCanvas({ code, gyro = true }) 
         coverCheckIn = 10
         covered = !!document.querySelector(COVER_SEL)
       }
+      // Also held while the launch boot screen is up or fading out (data-boot,
+      // see main.jsx / App.jsx): nothing drawn under it shows, and the fade
+      // stays smoother with a still sky beneath it, since every frame of
+      // moving sky has each glass card redo its backdrop blur. The canvas then
+      // fades in as it starts (see .weather-canvas in App.css).
       // Restarting from k = 1 once uncovered, rather than catching up the
       // time spent paused.
-      if (covered) { lastDraw = 0; return }
+      if (covered || holdRef.current || document.documentElement.dataset.boot) { lastDraw = 0; return }
       const k = lastDraw ? Math.min(MAX_STEP, (now - lastDraw) / REF_FRAME_MS) : 1
       lastDraw = now
       ctx.clearRect(0, 0, W(), H())
@@ -460,5 +474,5 @@ export const WeatherCanvas = memo(function WeatherCanvas({ code, gyro = true }) 
   }, [scene])
 
   if (!scene) return null
-  return <canvas ref={ref} className="weather-canvas" />
+  return <canvas ref={ref} className={`weather-canvas${hold ? ' weather-canvas--held' : ''}`} />
 })
