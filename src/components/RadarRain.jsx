@@ -296,7 +296,9 @@ export function RadarRain({ map, getLayer, snow = false }) {
         const base = canvas.getBoundingClientRect()
         for (const key in tiles) {
           const el = tiles[key].el
-          if (!el?.complete || !el.naturalWidth) continue
+          // Image tiles count once loaded. Canvas tiles (the HRRR forecast, drawn
+          // in HrrrLayer) can be drawn at any point: until painted they are clear.
+          if (!(el instanceof HTMLCanvasElement) && (!el?.complete || !el.naturalWidth)) continue
           const r = el.getBoundingClientRect()
           if (r.right < base.left || r.left > base.right || r.bottom < base.top || r.top > base.bottom) continue
           mctx.drawImage(

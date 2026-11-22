@@ -1,7 +1,15 @@
-import { memo } from 'react'
-import { ArrowDown, ArrowUp, Check, Thermometer, TreePine, Car, Footprints } from 'lucide-react'
+import { memo, useEffect, useRef, useState } from 'react'
+import {
+  ArrowDown, ArrowUp, Check, Thermometer, TreePine, Car, Footprints,
+  CloudLightning, CloudHail, CloudSnow, CloudRain, CloudDrizzle, Wind, ThermometerSun,
+  ThermometerSnowflake, CloudFog, Sun, Moon, CloudSun, Cloud, Haze, Gauge, ChevronLeft, ChevronRight,
+} from 'lucide-react'
 import { toTemp, tempInk } from '../utils/weatherCodes'
-import { outlookWindow, compareWithYesterday, compareTomorrowWithToday, rateActivities, scoreLabel, scoreColor } from '../utils/todayOutlook'
+import { formatWind } from '../utils/units'
+import {
+  outlookWindow, todayWindow, tomorrowWindow, showsTomorrow, compareWithYesterday,
+  compareTomorrowWithToday, rateActivities, dayHazards, scoreLabel, scoreColor,
+} from '../utils/todayOutlook'
 
 const ACTIVITIES = [
   { id: 'outside',  label: 'Outdoors', Icon: TreePine },
@@ -9,32 +17,105 @@ const ACTIVITIES = [
   { id: 'exercise', label: 'Exercise', Icon: Footprints },
 ]
 
+// The same severity palette the readings use elsewhere in the app.
+const LEVEL_COLOR = {
+  severe: 'var(--cond-red)', warning: 'var(--cond-orange)', caution: 'var(--cond-yellow)',
+  info: 'var(--cond-info)', good: 'var(--cond-green)',
+}
+
+function hazardIcon(h, night) {
+  switch (h.id) {
+    case 'storm': return CloudLightning
+    case 'ice':   return CloudHail
+    case 'snow':  return CloudSnow
+    case 'rain':  return h.level === 'info' ? CloudDrizzle : CloudRain
+    case 'wind':  return Wind
+    case 'heat':  return ThermometerSun
+    case 'cold':  return ThermometerSnowflake
+    case 'fog':   return CloudFog
+    case 'uv':    return Sun
+    case 'air':   return Haze
+    default:      return h.sky === 'clear' ? (night ? Moon : Sun) : h.sky === 'partly' ? CloudSun : Cloud
+  }
+}
+
+const lowerFirst = (s) => s.charAt(0).toLowerCase() + s.slice(1)
+
+const reducedMotion = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+
+// A whole number that counts up from 0 when `play` turns on (or when it
+// remounts with it on), easing out over `duration` after `delay` ms; a later
+// change of value (a refresh) counts on from the number already showing. React
+// renders the final text; the count only rewrites that same text node while it
+// runs, so a missed frame or reduced motion still leaves the right number.
+function CountUp({ value, suffix = '', play, delay = 0, duration = 650 }) {
+  const ref = useRef(null)
+  const shownValue = useRef(null)
+  useEffect(() => {
+    const node = ref.current?.firstChild
+    if (!node) return
+    const final = `${value}${suffix}`
+    if (!play || reducedMotion()) { node.nodeValue = final; return }
+    const from = shownValue.current ?? 0
+    const wait = shownValue.current == null ? delay : 0
+    shownValue.current = value
+    if (from === value) { node.nodeValue = final; return }
+    let raf, t0 = null
+    node.nodeValue = `${from}${suffix}`
+    const tick = (t) => {
+      if (t0 == null) t0 = t + wait
+      const p = Math.max(0, Math.min(1, (t - t0) / duration))
+      node.nodeValue = p >= 1 ? final : `${Math.round(from + (value - from) * (1 - (1 - p) ** 3))}${suffix}`
+      if (p < 1) raf = requestAnimationFrame(tick)
+      else node.nodeValue = final
+    }
+    raf = requestAnimationFrame(tick)
+    return () => { cancelAnimationFrame(raf); node.nodeValue = final }
+  }, [value, suffix, play, delay, duration])
+  return <span ref={ref}>{`${value}${suffix}`}</span>
+}
+
 // `embedded`: drawn inside another card (the web current-weather card) rather
 // than as a card of its own, so it drops the card surface.
 // Memoised: App re-renders for every overlay, toggle and keystroke, and the
 // props here are the reading and the settings, which those leave alone.
-export const TodayCard = memo(function TodayCard({ hourly, daily, current, yesterday, timezone, unit, airQuality, embedded = false }) {
+export const TodayCard = memo(function TodayCard({ hourly, daily, current, yesterday, timezone, unit, units, airQuality, embedded = false }) {
+  // Which day the At a Glance card shows: null follows the clock (tomorrow from
+  // 9pm), a tap pins it. `slide` is the direction the last tap moved, so the
+  // pane slides in from that side; the first render doesn't animate.
+  const [picked, setPicked] = useState(null)
+  const [slide, setSlide] = useState(null)
+
+  // The entrance plays when the card first scrolls into view, not on mount, so
+  // a card further down the list isn't already settled by the time it's seen.
+  const cardRef = useRef(null)
+  const [shown, setShown] = useState(() => typeof IntersectionObserver === 'undefined')
+  useEffect(() => {
+    const el = cardRef.current
+    if (!el || shown) return
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some(e => e.isIntersecting)) { setShown(true); io.disconnect() }
+    }, { threshold: 0.15 })
+    io.observe(el)
+    return () => io.disconnect()
+  }, [shown])
+
   const now = new Date()
   const todayStr = now.toLocaleDateString('en-CA', { timeZone: timezone })
   // en-CA gives "24" for midnight on some engines; the hourly times use "00".
   const hourStr = now.toLocaleString('en-CA', { hour: '2-digit', hour12: false, timeZone: timezone }).replace(/^24$/, '00')
-
-  const win = outlookWindow(hourly, todayStr, hourStr)
-  // From 9pm the whole card is about tomorrow (as long as tomorrow's hours
-  // are there to rate): its high against today's, and its ratings.
-  const tomorrow = !!win?.tomorrow
-  const cmp = tomorrow
-    ? compareTomorrowWithToday(daily)
-    : compareWithYesterday({ hourly, daily, yesterday, current, todayStr, hourStr })
-  const ratings = rateActivities(hourly, win, airQuality?.hourly)
   const fmtTemp = (f) => `${toTemp(f, unit)}°`
 
   // A difference in the display unit: °C steps are bigger, so the same day can
   // be "4° colder" in °F and "2° colder" in °C.
   const delta = (diffF) => Math.round(Math.abs(unit === 'C' ? diffF * 5 / 9 : diffF))
 
-  let headline = null
-  if (cmp) {
+  // The temperature comparison: today against yesterday, or tomorrow against today.
+  const comparison = (tomorrow) => {
+    const cmp = tomorrow
+      ? compareTomorrowWithToday(daily)
+      : compareWithYesterday({ hourly, daily, yesterday, current, todayStr, hourStr })
+    if (!cmp) return { headline: null, thermoColor: undefined, detailRows: [] }
     const d = delta(cmp.diffF)
     const same = cmp.direction === 'same' || d === 0
     const word = cmp.direction === 'colder' ? 'colder' : 'warmer'
@@ -44,28 +125,85 @@ export const TodayCard = memo(function TodayCard({ hourly, daily, current, yeste
       const when = cmp.basis === 'now' ? 'this time yesterday' : 'yesterday'
       text = same ? `About the same as ${when}` : `${d}° ${word} than ${when}`
     }
-    headline = same
+    const headline = same
       ? { text, Icon: Check, cls: 'same' }
       : { text, Icon: cmp.direction === 'colder' ? ArrowDown : ArrowUp, cls: cmp.direction }
+    // The thermometer takes the colour of the temperature the headline is
+    // about: now, or the day's high when it compares highs.
+    const leadF = tomorrow ? cmp.high.tomorrow : (cmp.now ?? cmp.high).today
+    const detailRows = tomorrow
+      ? [
+          ['High', cmp.high.tomorrow, `${fmtTemp(cmp.high.today)} today`],
+          cmp.low && ['Low', cmp.low.tomorrow, `${fmtTemp(cmp.low.today)} today`],
+        ].filter(Boolean)
+      : [
+          cmp.now && ['Now', cmp.now.today, `${fmtTemp(cmp.now.yesterday)} this time yesterday`],
+          cmp.high && ['High', cmp.high.today, `${fmtTemp(cmp.high.yesterday)} yesterday`],
+        ].filter(Boolean)
+    return { headline, thermoColor: leadF != null ? tempInk(leadF) : undefined, detailRows }
   }
 
-  // The thermometer takes the colour of the temperature the headline is about:
-  // now, or the day's high when it compares highs.
-  const leadF = !cmp ? null : tomorrow ? cmp.high.tomorrow : (cmp.now ?? cmp.high).today
-  const thermoColor = leadF != null ? tempInk(leadF) : undefined
+  // A row's change in the display unit, signed: "+2°", "−3°", "0°".
+  const signedDelta = (diffF) => {
+    const d = delta(diffF)
+    return d === 0 ? '0°' : `${diffF > 0 ? '+' : '−'}${d}°`
+  }
+  const deltaDir = (diffF) => (delta(diffF) === 0 ? 'same' : diffF > 0 ? 'warmer' : 'colder')
 
-  // The two lines under the headline (and the web card's tooltip).
-  const detailRows = !cmp ? [] : tomorrow
-    ? [
-        ['High', cmp.high.tomorrow, `${fmtTemp(cmp.high.today)} today`],
-        cmp.low && ['Low', cmp.low.tomorrow, `${fmtTemp(cmp.low.today)} today`],
-      ].filter(Boolean)
-    : [
-        cmp.now && ['Now', cmp.now.today, `${fmtTemp(cmp.now.yesterday)} this time yesterday`],
-        cmp.high && ['High', cmp.high.today, `${fmtTemp(cmp.high.yesterday)} yesterday`],
-      ].filter(Boolean)
+  // The At a Glance temperature tile: the change as the big number, then a row
+  // per reading with its own change. Without anything to compare against it
+  // falls back to the day's high and low.
+  const tempStats = (tomorrow) => {
+    const cmp = tomorrow
+      ? compareTomorrowWithToday(daily)
+      : compareWithYesterday({ hourly, daily, yesterday, current, todayStr, hourStr })
+    if (!cmp) {
+      const i = tomorrow ? 1 : 0
+      const hi = daily?.temperature_2m_max?.[i], lo = daily?.temperature_2m_min?.[i]
+      if (hi == null) return null
+      return {
+        label: 'Temperature', cls: 'plain', big: fmtTemp(hi), bigNum: toTemp(hi, unit), ink: tempInk(hi),
+        sub: tomorrow ? 'High tomorrow' : 'High today',
+        rows: lo != null ? [{ label: 'Low', f: lo }] : [],
+      }
+    }
+    const d = delta(cmp.diffF)
+    const same = cmp.direction === 'same' || d === 0
+    const Word = cmp.direction === 'colder' ? 'Colder' : 'Warmer'
+    const than = tomorrow ? 'today' : cmp.basis === 'now' ? 'this time yesterday' : 'yesterday'
+    let rows
+    if (tomorrow) {
+      rows = [
+        { label: 'High', f: cmp.high.tomorrow, diffF: cmp.high.diffF, ref: `${fmtTemp(cmp.high.today)} today` },
+        cmp.low && { label: 'Low', f: cmp.low.tomorrow, diffF: cmp.low.diffF, ref: `${fmtTemp(cmp.low.today)} today` },
+      ]
+    } else {
+      const lo = daily?.temperature_2m_min?.[0], loY = yesterday?.min
+      rows = [
+        cmp.now && { label: 'Now', f: cmp.now.today, diffF: cmp.now.diffF, ref: `${fmtTemp(cmp.now.yesterday)} this time yesterday` },
+        cmp.high && { label: 'High', f: cmp.high.today, diffF: cmp.high.diffF, ref: `${fmtTemp(cmp.high.yesterday)} yesterday` },
+        lo != null && loY != null && { label: 'Low', f: lo, diffF: lo - loY, ref: `${fmtTemp(loY)} yesterday` },
+      ]
+    }
+    // The thermometer takes the colour of the temperature the big number is
+    // about: now, or the high when it compares highs.
+    const leadF = tomorrow ? cmp.high.tomorrow : (cmp.now ?? cmp.high).today
+    return {
+      label: tomorrow ? 'vs today' : 'vs yesterday',
+      cls: same ? 'same' : cmp.direction,
+      Icon: same ? Check : cmp.direction === 'colder' ? ArrowDown : ArrowUp,
+      big: same ? 'Same' : `${d}°`,
+      bigNum: same ? null : d,
+      sub: same ? `As ${than}` : `${Word} than ${than}`,
+      ink: leadF != null ? tempInk(leadF) : undefined,
+      rows: rows.filter(Boolean),
+    }
+  }
 
   if (embedded) {
+    const win = outlookWindow(hourly, todayStr, hourStr)
+    const ratings = rateActivities(hourly, win, airQuality?.hourly)
+    const { headline, thermoColor, detailRows } = comparison(!!win?.tomorrow)
     if (!headline && !ratings) return null
     // The web current card's version: the comparison and the overall score on
     // one line, then the three activities as columns of one panel. The longer
@@ -117,70 +255,187 @@ export const TodayCard = memo(function TodayCard({ hourly, daily, current, yeste
     )
   }
 
+  // ── At a Glance (the phone's block) ──
+  const tomorrowWin = tomorrowWindow(hourly, todayStr)
+  const autoDay = showsTomorrow(hourStr) && tomorrowWin ? 'tomorrow' : 'today'
+  const day = picked === 'tomorrow' && !tomorrowWin ? 'today' : picked ?? autoDay
+  const isTomorrow = day === 'tomorrow'
+  const win = isTomorrow ? tomorrowWin : todayWindow(hourly, todayStr, hourStr)
+  const evening = Number(hourStr) >= 18
+
+  const ratings = rateActivities(hourly, win, airQuality?.hourly)
+  const hazards = dayHazards(hourly, win, {
+    aqHourly: airQuality?.hourly,
+    fmt: {
+      temp: fmtTemp,
+      wind: (mph) => formatWind(mph, units),
+      snow: (inches) => {
+        if (units?.precip === 'mm') {
+          const cm = inches * 2.54
+          return `${cm < 1 ? cm.toFixed(1) : Math.round(cm)} cm`
+        }
+        return `${inches < 1 ? inches.toFixed(1) : Math.round(inches)} in`
+      },
+    },
+  })
+  const temp = tempStats(isTomorrow)
+  // Tonight's window runs through the small hours, so its sky reads as night.
+  const nightSky = !isTomorrow && evening
+
+  const todayLabel = evening ? 'Tonight' : 'Today'
+  const pick = (id) => {
+    if (id === day) return
+    setSlide(id === 'tomorrow' ? 'next' : 'prev')
+    setPicked(id)
+  }
+
+  // Stagger order for the entrance: the tiles, then each banner. The numbers
+  // start counting as their tile lands (CSS steps 70ms a tile on entry and
+  // 45ms on a day switch; see "At a Glance motion").
+  let order = 0
+  const tempAt = temp ? order++ : -1
+  const condAt = ratings ? order++ : -1
+  const alertsAt = order
+  const countDelay = (i) => (slide ? 80 + i * 45 : 160 + i * 70)
+
   return (
-    <div className="card today-card">
-      <div className="section-label">{tomorrow ? 'TOMORROW' : 'TODAY'}</div>
-
-      {headline && (
-        <div className="today-compare">
-          <div className={`today-compare-head today-compare--${headline.cls}`}>
-            <headline.Icon size={20} className="today-compare-icon" aria-hidden="true" />
-            <span>{headline.text}</span>
-          </div>
-          <div className="today-compare-detail">
-            {detailRows.length > 0 && (
-              <span className="today-compare-thermo">
-                <Thermometer size={24} style={{ color: thermoColor }} aria-label="Temperature" />
-              </span>
-            )}
-            <div className="today-compare-rows">
-              {detailRows.map(([label, f, then]) => (
-                <span key={label}>{label} {fmtTemp(f)} <span className="today-dim">· {then}</span></span>
-              ))}
-            </div>
-          </div>
+    <div ref={cardRef} className={`card glance-card${shown ? ' glance-card--shown' : ''}`}>
+      <div className="glance-head">
+        <div className="section-label">AT A GLANCE</div>
+        {/* A pager: the day showing, between a chevron back to today and one on
+            to tomorrow. Each chevron greys out at its end. */}
+        <div className="glance-days" role="group" aria-label="Day to show">
+          <button
+            type="button"
+            className="glance-nav"
+            onClick={() => pick('today')}
+            disabled={!isTomorrow}
+            aria-label={`Show ${todayLabel.toLowerCase()}`}
+          >
+            <ChevronLeft size={18} strokeWidth={2.25} aria-hidden="true" />
+          </button>
+          <span
+            key={day}
+            className={`glance-days-label${slide ? ` glance-days-label--${slide}` : ''}`}
+            aria-live="polite"
+          >
+            {isTomorrow ? 'Tomorrow' : todayLabel}
+          </span>
+          <button
+            type="button"
+            className="glance-nav"
+            onClick={() => pick('tomorrow')}
+            disabled={isTomorrow || !tomorrowWin}
+            aria-label="Show tomorrow"
+          >
+            <ChevronRight size={18} strokeWidth={2.25} aria-hidden="true" />
+          </button>
         </div>
-      )}
+      </div>
 
-      {ratings && (
-        <div className="today-section">
-          <div className="today-overall">
-            <div className="today-overall-score">
-              {ratings.overall}<span className="today-overall-of">/10</span>
-            </div>
-            <div>
-              <div className="today-overall-label"><span className="today-dot" style={{ background: scoreColor(ratings.overall) }} />{scoreLabel(ratings.overall)} conditions</div>
-              <div className="today-dim">{win.label}</div>
-            </div>
-          </div>
-          <div className="today-acts">
-            {ACTIVITIES.map(({ id, label, Icon }) => {
-              const r = ratings[id]
-              return (
-                <div key={id} className="today-act">
-                  <Icon size={18} className="today-act-icon" aria-hidden="true" />
-                  <div className="today-act-body">
-                    <div className="today-act-top">
-                      <span className="today-act-label">{label}</span>
-                      <span className="today-act-score">{r.score}/10</span>
-                    </div>
-                    <div
-                      className="today-act-bar"
-                      role="meter" aria-valuemin={1} aria-valuemax={10} aria-valuenow={r.score}
-                      aria-label={`${label}: ${r.score} out of 10, ${r.reason}`}
-                    >
-                      <div className="today-act-fill" style={{ width: `${r.score * 10}%`, background: scoreColor(r.score) }} />
-                    </div>
-                    <div className="today-act-reason">{r.reason}</div>
-                  </div>
+      <div key={day} className={`glance-pane${slide ? ` glance-pane--${slide}` : ''}`}>
+        {(temp || ratings) && (
+          <div className="glance-stats">
+            {temp && (
+              <div className="glance-tile glance-anim" style={{ '--i': tempAt }}>
+                <div className="glance-tile-label">
+                  <Thermometer size={13} style={{ color: temp.ink }} aria-hidden="true" />
+                  {temp.label}
                 </div>
+                <div className={`glance-big glance-big--${temp.cls}`}>
+                  {temp.Icon && <temp.Icon size={26} strokeWidth={2.5} className="glance-big-icon" aria-hidden="true" />}
+                  {temp.bigNum != null
+                    ? <CountUp value={temp.bigNum} suffix="°" play={shown} delay={countDelay(tempAt)} />
+                    : <span>{temp.big}</span>}
+                </div>
+                <div className="glance-tile-sub">{temp.sub}</div>
+                {temp.rows.length > 0 && (
+                  <div className="glance-rows">
+                    {temp.rows.map(r => (
+                      <div key={r.label} className="glance-row" title={r.ref ? `${r.label} ${fmtTemp(r.f)} · ${r.ref}` : undefined}>
+                        <span className="glance-row-name">{r.label}</span>
+                        <span className="glance-row-val">{fmtTemp(r.f)}</span>
+                        {r.diffF != null && (
+                          <span className={`glance-delta glance-delta--${deltaDir(r.diffF)}`} aria-label={r.ref}>
+                            {signedDelta(r.diffF)}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {ratings && (
+              <div
+                className="glance-tile glance-anim"
+                style={{ '--i': condAt }}
+                title={`${scoreLabel(ratings.overall)} conditions · ${win.label}`}
+              >
+                <div className="glance-tile-label">
+                  <Gauge size={13} aria-hidden="true" />
+                  Conditions
+                </div>
+                <div className="glance-big">
+                  <CountUp value={ratings.overall} play={shown} delay={countDelay(condAt)} />
+                  <span className="glance-big-of">/10</span>
+                </div>
+                <div className="glance-tile-sub">
+                  <span className="today-dot" style={{ background: scoreColor(ratings.overall) }} />
+                  {scoreLabel(ratings.overall)} conditions
+                </div>
+                <div className="glance-rows">
+                  {ACTIVITIES.map(({ id, label, Icon }, row) => {
+                    const r = ratings[id]
+                    return (
+                      <div
+                        key={id}
+                        className="glance-row"
+                        style={{ '--r': row }}
+                        title={`${label}: ${r.reason}`}
+                        role="meter" aria-valuemin={1} aria-valuemax={10} aria-valuenow={r.score}
+                        aria-label={`${label}: ${r.score} out of 10, ${r.reason}`}
+                      >
+                        <Icon size={14} className="glance-row-icon" aria-hidden="true" />
+                        <span className="glance-row-name">{label}</span>
+                        <span className="glance-row-bar"><i style={{ width: `${r.score * 10}%`, background: scoreColor(r.score) }} /></span>
+                        <span className="glance-row-val glance-row-score">{r.score}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {hazards.length > 0 && (
+          <ul className="glance-alerts" aria-label="What to expect">
+            {hazards.map((h, n) => {
+              const Icon = hazardIcon(h, nightSky)
+              return (
+                <li
+                  key={h.id}
+                  className={`glance-alert glance-alert--${h.level} glance-anim`}
+                  style={{ '--glance-c': LEVEL_COLOR[h.level], '--i': alertsAt + n }}
+                >
+                  <span className="glance-alert-icon"><Icon size={18} className="glance-alert-svg" aria-hidden="true" /></span>
+                  <div className="glance-alert-body">
+                    <div className="glance-alert-top">
+                      <span className="glance-alert-label">{h.label}</span>
+                      <span className="glance-alert-when">{h.when}</span>
+                    </div>
+                    <div className="glance-alert-detail">
+                      {h.scattered ? `On and off, ${lowerFirst(h.detail)}` : h.detail}
+                    </div>
+                  </div>
+                </li>
               )
             })}
-          </div>
-        </div>
-      )}
-
-
+          </ul>
+        )}
+      </div>
     </div>
   )
 })

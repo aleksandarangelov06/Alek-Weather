@@ -1,17 +1,18 @@
 import { memo, useState, useRef, useEffect } from 'react'
-import { Droplets, Eye, Gauge, Sun, Sunrise, Sunset, Leaf, AlertTriangle, ShieldAlert, ChevronDown, ChevronUp, Navigation2, CloudRain, CloudLightning } from 'lucide-react'
+import { Droplets, Eye, Gauge, Sun, Sunrise, Sunset, Leaf, AlertTriangle, ShieldAlert, ChevronDown, ChevronUp, Navigation2, CloudRain, CloudLightning, CloudMoon, CloudSnow, CloudSun, Wind } from 'lucide-react'
 import { WindTurbine } from './WindTurbine'
 import { getWindDirection, getUVLabel, formatTime, formatHour, toTemp, sunColor, SUN_ORANGE } from '../utils/weatherCodes'
 import {
   getAQIInfo, getAQINote, getHumidityInfo, getHumidityNote, getPrecipInfo, getPressureInfo, getPressureTrend,
-  getStormInfo, getStormNote,
+  getStormInfo,
   getUVNote, getVisibilityInfo, getVisibilityNote, getWindInfo, getWindNote,
 } from '../utils/conditions'
 import { formatPrecip, formatUnitDelta, unitSuffix, unitText, unitValue } from '../utils/units'
 import { coverFrom, markCoverSettled, useCoverHistory } from '../utils/detailCover'
-import { POLLENS, aqiDriver, pollenLevel, shortAQILabel } from '../utils/airQuality'
+import { POLLENS, POLLUTANTS, aqiDriver, pollenLevel } from '../utils/airQuality'
+import { STORM_KIND_NAME, stormHours, stormNote, stormPeak } from '../utils/stormRisk'
 import { Sparkline } from './web/Sparkline'
-import { useMeasure } from './web/chartUtils'
+import { smoothPath, useMeasure } from './web/chartUtils'
 import { formatMinutes, formatSpan, isoMinutes, sunTimes } from '../utils/sunTimes'
 
 // Metres per mile, for the miles the visibility thresholds in
@@ -82,40 +83,128 @@ function DetailChart({ values, times, timezone, color, step, format }) {
   )
 }
 
-// Storm energy hour by hour for the next 24 hours: one bar per hour, coloured
-// by its level, with a bolt over any hour that has a thunderstorm in the
-// forecast itself. The scale never drops below 1,000 J/kg ("Low"), so a calm
-// day reads as a row of stubs rather than a quiet day blown up to look stormy.
-function StormHourlyChart({ values, codes, times, timezone, ink }) {
-  if (values.length < 2) return null
-  const scale = Math.max(1000, ...values.map(v => v ?? 0))
-  const isThunder = (c) => c === 95 || c === 96 || c === 99
+// What is behind a storm reading (utils/stormRisk), as an icon. A quiet hour
+// gets a plain sky rather than a storm glyph.
+function StormIcon({ kind, quiet, isDay = true, size }) {
+  if (quiet) return isDay ? <CloudSun size={size} /> : <CloudMoon size={size} />
+  if (kind === 'rain') return <CloudRain size={size} />
+  if (kind === 'snow') return <CloudSnow size={size} />
+  if (kind === 'wind') return <Wind size={size} />
+  return <CloudLightning size={size} />
+}
+
+// Storm risk hour by hour for the next 24 hours: one bar per hour, its height
+// the 0–100 risk score and its colour the level, over faint lines at each
+// level's edge, so a quiet day reads as low on a fixed scale rather than as a
+// broken chart. A bolt marks any hour with thunder in the forecast itself.
+function StormHourlyChart({ hours, timezone, ink }) {
+  if (hours.length < 2) return null
   return (
-    <div className="storm-chart" role="img" aria-label="Storm energy over the next 24 hours">
+    <div className="storm-chart" role="img" aria-label="Storm risk over the next 24 hours">
       <div className="storm-chart-bars">
-        {values.map((v, i) => {
-          const val = v ?? 0
-          const info = getStormInfo(val)
-          return (
-            <div key={i} className="storm-chart-col" title={`${i === 0 ? 'Now' : formatHour(times[i], timezone)}: ${Math.round(val).toLocaleString('en-US')} J/kg`}>
-              {isThunder(codes[i]) && <CloudLightning size={11} className="storm-chart-bolt" style={{ color: ink('var(--cond-orange)') }} />}
-              <span
-                className="storm-chart-bar"
-                style={{ height: `${Math.max((val / scale) * 100, 3)}%`, background: ink(info.color) }}
-              />
-            </div>
-          )
-        })}
-      </div>
-      <div className="storm-chart-axis">
-        {values.map((_, i) => (
-          <span key={i}>{i % 6 === 0 ? (i === 0 ? 'Now' : formatHour(times[i], timezone)) : ''}</span>
+        {hours.map((h, i) => (
+          <div
+            key={h.time}
+            className="storm-chart-col"
+            title={`${i === 0 ? 'Now' : formatHour(h.time, timezone)}: ${h.level.label}${h.level.index > 0 ? `, ${STORM_KIND_NAME[h.kind].toLowerCase()}` : ''}`}
+          >
+            {h.thunderCode && <CloudLightning size={11} className="storm-chart-bolt" style={{ color: ink('var(--cond-orange)') }} />}
+            <span className="storm-chart-bar" style={{ height: `${Math.max(h.score, 3)}%`, background: ink(h.level.color) }} />
+          </div>
         ))}
       </div>
-      <div className="storm-chart-scale">
-        <span>Peak {Math.round(Math.max(...values.map(v => v ?? 0))).toLocaleString('en-US')} J/kg</span>
-        <span>Scale 0–{Math.round(scale).toLocaleString('en-US')}</span>
+      <div className="storm-chart-axis">
+        {hours.map((h, i) => (
+          <span key={h.time}>{i % 6 === 0 ? (i === 0 ? 'Now' : formatHour(h.time, timezone)) : ''}</span>
+        ))}
       </div>
+    </div>
+  )
+}
+
+// The US AQI category boundaries. Colours come from getAQIInfo, so the outlook
+// chart and the reading above it can never disagree.
+const AQI_BOUNDS = [50, 100, 150, 200, 300]
+
+// AQI over the whole air-quality forecast (from now to five days out), as on
+// the desktop Details page. The line takes the colour of the band it is in at
+// each height and the category boundaries are drawn behind it, so a bad day
+// reads without a legend. Day names sit along the bottom at each midnight.
+// Drawn in real pixels from the measured width, like the desktop charts, so
+// the strokes and text keep their size at any card width.
+function AqiOutlookChart({ series, dayName, ink }) {
+  const [ref, width] = useMeasure()
+  const H = 92
+  const TOP = 12   // room for the top boundary's label
+  const BASE = 72
+  const PAD = 4    // keeps the "now" dot inside the card
+  const peak = Math.max(...series.map(([, v]) => v))
+  const ceiling = Math.max(150, Math.ceil(peak / 50) * 50)
+  const x = (i) => PAD + (i / (series.length - 1)) * (width - PAD * 2)
+  const y = (v) => TOP + (1 - v / ceiling) * (BASE - TOP)
+
+  const pts = series.map(([, v], i) => [x(i), y(v)])
+  const line = smoothPath(pts)
+  const area = `${line} L ${pts[pts.length - 1][0]} ${BASE} L ${pts[0][0]} ${BASE} Z`
+
+  // Hard colour stops at each boundary below the ceiling, bottom to top.
+  const stops = [[0, getAQIInfo(0).color]]
+  AQI_BOUNDS.filter(b => b < ceiling).forEach(b => {
+    stops.push([b / ceiling, getAQIInfo(b).color], [b / ceiling, getAQIInfo(b + 1).color])
+  })
+  stops.push([1, getAQIInfo(ceiling).color])
+
+  // Boundary labels at the right edge, skipping any that would crowd the one
+  // below it when a very bad week stretches the scale.
+  const grid = []
+  for (const b of AQI_BOUNDS.filter(b => b <= ceiling)) {
+    const prev = grid[grid.length - 1]
+    grid.push({ b, labelled: !prev || !prev.labelled || prev.y - y(b) >= 12, y: y(b) })
+  }
+
+  // "Now" under the first reading, then each new day under its midnight
+  // divider, dropping a name that would run into the one before it.
+  const LABEL_W = 30
+  const days = []
+  let lastEnd = PAD + LABEL_W
+  for (let i = 1; i < series.length; i++) {
+    const date = series[i][0].slice(0, 10)
+    if (date === series[i - 1][0].slice(0, 10)) continue
+    const lx = x(i) + 4
+    days.push({ i, label: lx >= lastEnd ? dayName(date) : null })
+    if (lx >= lastEnd) lastEnd = lx + LABEL_W
+  }
+
+  return (
+    <div className="aqi-outlook" ref={ref}>
+      {width > 0 && (
+        <svg width={width} height={H} role="img" aria-label={`Air quality index forecast, peaking at ${Math.round(peak)}`}>
+          <defs>
+            <linearGradient id="aqi-outlook-ink" gradientUnits="userSpaceOnUse" x1="0" y1={BASE} x2="0" y2={TOP}>
+              {stops.map(([offset, color], i) => <stop key={i} offset={offset} stopColor={ink(color)} />)}
+            </linearGradient>
+          </defs>
+
+          {grid.map(g => (
+            <g key={g.b}>
+              <line className="aqi-outlook-grid" x1={PAD} y1={g.y} x2={width - PAD} y2={g.y} stroke={ink(getAQIInfo(g.b).color)} />
+              {g.labelled && <text className="aqi-outlook-text aqi-outlook-text--grid" x={width - PAD} y={g.y - 3}>{g.b}</text>}
+            </g>
+          ))}
+
+          {days.map(d => (
+            <g key={d.i}>
+              <line className="aqi-outlook-divider" x1={x(d.i)} y1={TOP} x2={x(d.i)} y2={BASE} />
+              {d.label && <text className="aqi-outlook-text" x={x(d.i) + 4} y={H - 4}>{d.label}</text>}
+            </g>
+          ))}
+
+          <path d={area} fill="url(#aqi-outlook-ink)" fillOpacity="0.16" stroke="none" />
+          <path d={line} fill="none" stroke="url(#aqi-outlook-ink)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+          <circle cx={pts[0][0]} cy={pts[0][1]} r="4" fill={ink(getAQIInfo(series[0][1]).color)} />
+          <text className="aqi-outlook-text" x={PAD - 4} y={H - 4}>Now</text>
+        </svg>
+      )}
     </div>
   )
 }
@@ -149,20 +238,15 @@ export function SunDial({ progress, wide = false, sunFill }) {
 
 // `content` replaces the standard icon/label/value/sub body for tiles that need
 // their own layout (the Sun tile, which packs two times and a UV reading in).
-function DetailCard({ icon, label, value, sub, color, onClick, isExpanded, content, onDragStart, onDragEnter, onDragEnd, onDragOver, isDragging, isDragOver }) {
+function DetailCard({ icon, label, value, sub, color, onClick, isExpanded, content }) {
   const expandable = Boolean(onClick)
   return (
     <div
-      className={`detail-card${expandable ? ' detail-expand-tile' : ''}${isExpanded ? ' detail-expand-tile--active' : ''}${isDragOver ? ' detail-card--drag-over' : ''}`}
+      className={`detail-card${expandable ? ' detail-expand-tile' : ''}${isExpanded ? ' detail-expand-tile--active' : ''}`}
       onClick={onClick}
       role={expandable ? 'button' : undefined}
       aria-expanded={expandable ? isExpanded : undefined}
-      draggable
-      onDragStart={onDragStart}
-      onDragEnter={onDragEnter}
-      onDragEnd={onDragEnd}
-      onDragOver={onDragOver}
-      style={{ opacity: isDragging ? 0.35 : 1, cursor: isDragging ? 'grabbing' : 'grab' }}
+      style={expandable ? { cursor: 'pointer' } : undefined}
     >
       {content ?? (
         <>
@@ -180,6 +264,11 @@ function DetailCard({ icon, label, value, sub, color, onClick, isExpanded, conte
     </div>
   )
 }
+
+// The tiles, in a fixed order. They used to be draggable at any time, which
+// moved them on a stray drag and never kept the new order past a reload; the
+// cards themselves now move only in reorder mode (App.jsx).
+const TILE_ORDER = ['precip', 'storm', 'humidity', 'wind', 'pressure', 'visibility', 'sun', 'aqi']
 
 // How long the cover stays mounted on the way out: the content fading, then the
 // rectangle shrinking back into the tile. Keep in step with --cover-content-out
@@ -224,34 +313,6 @@ export const WeatherDetails = memo(function WeatherDetails({ latitude, current, 
     return () => window.removeEventListener('keydown', onKey)
   }, [expanded]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const [cardOrder, setCardOrder] = useState(['precip', 'storm', 'humidity', 'wind', 'pressure', 'visibility', 'sun', 'aqi'])
-  const [draggingKey, setDraggingKey] = useState(null)
-  const [dragOverKey, setDragOverKey] = useState(null)
-  const dragSrc = useRef(null)
-  const dragTarget = useRef(null)
-
-  const handleDragStart = (key) => { dragSrc.current = key; setDraggingKey(key) }
-  const handleDragEnter = (key) => { dragTarget.current = key; setDragOverKey(key) }
-  const handleDragOver  = (e)   => e.preventDefault()
-  const handleDragEnd   = ()    => {
-    const src = dragSrc.current
-    const tgt = dragTarget.current
-    if (src && tgt && src !== tgt) {
-      setCardOrder(prev => {
-        const next = [...prev]
-        const from = next.indexOf(src)
-        const to   = next.indexOf(tgt)
-        next.splice(from, 1)
-        next.splice(to, 0, src)
-        return next
-      })
-    }
-    dragSrc.current = null
-    dragTarget.current = null
-    setDraggingKey(null)
-    setDragOverKey(null)
-  }
-
   const windDir = getWindDirection(current.wind_direction_10m)
   // Miles, for the condition bands only — the tile and panel below render
   // current.visibility through the chosen display unit instead.
@@ -281,17 +342,24 @@ export const WeatherDetails = memo(function WeatherDetails({ latitude, current, 
   const aqiHazardous = airQuality ? airQuality.us_aqi > 200 : false
   const aqiMain = airQuality ? aqiDriver(airQuality) : null
 
-  // The AQI forecast from now on (the feed starts at midnight today): every
-  // other hour for the next twelve.
-  const aqiHours = (() => {
+  // The AQI forecast from now to the end of the feed (it starts at midnight
+  // today and runs five days), for the outlook chart, and its highest hour.
+  const aqiSeries = (() => {
     const times = airQuality?.hourly?.time ?? []
     const vals = airQuality?.hourly?.us_aqi ?? []
     const nowKey = new Date().toLocaleString('sv', { timeZone: timezone }).slice(0, 13).replace(' ', 'T')
     const from = times.findIndex(t => t.slice(0, 13) >= nowKey)
     if (from === -1) return []
-    const pairs = times.slice(from).map((t, i) => [t, vals[from + i]]).filter(([, v]) => v != null)
-    return pairs.filter((_, i) => i % 2 === 0).slice(0, 6)
+    return times.slice(from).map((t, i) => [t, vals[from + i]]).filter(([, v]) => v != null)
   })()
+  const aqiPeak = aqiSeries.reduce((best, p) => (!best || p[1] > best[1] ? p : best), null)
+
+  // Every pollutant the feed reports, with how far each is toward its own
+  // concern level (the same scale as the desktop panel's bars).
+  const pollutants = POLLUTANTS
+    .map(p => ({ ...p, value: airQuality?.[p.key] }))
+    .filter(p => p.value != null)
+    .map(p => ({ ...p, ratio: Math.min(p.value / p.full, 1) }))
 
   // Pollen, only where it's published (Europe), highest first, top three.
   const pollen = POLLENS
@@ -411,31 +479,33 @@ export const WeatherDetails = memo(function WeatherDetails({ latitude, current, 
   const popTimes  = sliceNext(hourly?.time, TIMELINE_HOURS)
   const popNext   = sliceNext(hourly?.precipitation_probability, TIMELINE_HOURS)
 
-  // Thunderstorm potential (CAPE), as on the desktop panel. Absent from some
-  // models, in which case the tile is left out.
-  const capeSeries = day(hourly?.cape)
-  const capeNow    = capeSeries[0] ?? null
-  const stormInfo  = capeNow != null ? getStormInfo(capeNow) : null
-  // A thunderstorm in the forecast itself (WMO 95/96/99), as opposed to the
-  // energy that could feed one.
-  const isThunder = (code) => code === 95 || code === 96 || code === 99
-  // The week ahead: each day's peak storm energy, and whether thunder is
-  // forecast that day. Built from the hourly series, today included.
+  // Storm risk (utils/stormRisk): thunder potential, rain or snow, and gusts
+  // together, so a wet, windy day reads as stormy and not only a thundery
+  // one. Every hour from now to the end of the forecast; the first 24 feed the
+  // chart, and the rest the week.
+  const stormAll  = hourly ? stormHours(hourly, hStart, Infinity, current.severe_storm) : []
+  const stormDay  = stormAll.slice(0, 24)
+  const stormNow  = stormAll[0] ?? null
+  const stormNext = stormPeak(stormDay)
+  // The week ahead: each day's worst hour (today's from now on), and whether
+  // thunder is in the forecast that day.
   const stormWeek = (() => {
-    if (!hourly?.cape) return []
     const out = []
-    hourly.time.forEach((t, i) => {
-      const date = t.slice(0, 10)
+    for (const h of stormAll) {
+      const date = h.time.slice(0, 10)
       let d = out[out.length - 1]
-      if (!d || d.date !== date) { d = { date, peak: 0, thunder: false }; out.push(d) }
-      d.peak = Math.max(d.peak, hourly.cape[i] ?? 0)
-      if (isThunder(hourly.weather_code?.[i])) d.thunder = true
-    })
+      if (!d || d.date !== date) { d = { date, peak: h, thunder: false }; out.push(d) }
+      else if (h.score > d.peak.score) d.peak = h
+      if (h.thunderCode) d.thunder = true
+    }
     return out.filter(d => d.date >= todayStr).slice(0, 7)
   })()
   const weekDay = (date) => date === todayStr ? 'Today'
     : new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short' })
   const thunderDays = stormWeek.filter(d => d.thunder)
+  const stormiestDay = stormWeek.reduce((best, d) => (!best || d.peak.score > best.peak.score ? d : best), null)
+  const stormGust = current.wind_gusts_10m ?? hourly?.wind_gusts_10m?.[hStart] ?? null
+  const aqiPeakDay = aqiPeak ? weekDay(aqiPeak[0].slice(0, 10)) : null
 
   const cardDefs = {
     precip: {
@@ -444,11 +514,13 @@ export const WeatherDetails = memo(function WeatherDetails({ latitude, current, 
       sub: <span style={{ color: popInfo.color, fontWeight: 600 }}>{popInfo.label}</span>,
       color: popInfo.color,
     },
-    storm: stormInfo ? {
-      icon: <CloudLightning size={19} />, label: 'Storms',
-      value: <>{Math.round(capeNow).toLocaleString('en-US')}<span className="detail-value-unit"> J/kg</span></>,
-      sub: <span style={{ color: stormInfo.color, fontWeight: 600 }}>{stormInfo.label}</span>,
-      color: stormInfo.color,
+    // The risk level, and what is behind it. High or worse swaps the cloud
+    // for a warning symbol, as the UV and air-quality tiles do.
+    storm: stormNow ? {
+      icon: stormNow.level.index >= 3 ? <AlertTriangle size={19} /> : <CloudLightning size={19} />, label: 'Storms',
+      value: stormNow.level.label,
+      sub: stormNow.level.index > 0 ? STORM_KIND_NAME[stormNow.kind] : 'Quiet',
+      color: stormNow.level.color,
     } : null,
     humidity:   {
       icon: <Droplets size={19} />, label: 'Humidity',
@@ -564,40 +636,81 @@ export const WeatherDetails = memo(function WeatherDetails({ latitude, current, 
         )
 
       case 'storm':
-        return stormInfo ? (
+        return stormNow ? (
           <>
-            <DetailSummary
-              value={Math.round(capeNow).toLocaleString('en-US')} unit=" J/kg"
-              label={stormInfo.label} color={stormInfo.color}
-              note={getStormNote(capeNow)}
-            />
-            {/* The chart already marks the peak and any thunder hours, so the
-                stat row that restated them is gone; so is the footnote. */}
-            <StormHourlyChart
-              values={capeSeries} codes={day(hourly?.weather_code)} times={hourlyTimes}
-              timezone={timezone} ink={ink}
-            />
+            {/* The level leads, with an icon for what is driving it (thunder,
+                rain, snow or wind) in place of a number: the score behind it
+                is a blend, and only its band means anything. */}
+            <div className="detail-summary">
+              <div className="storm-badge" style={{ color: stormNow.level.color }}>
+                <StormIcon
+                  kind={stormNow.kind} quiet={stormNow.level.index === 0}
+                  isDay={hourly?.is_day?.[hStart] !== 0} size={30}
+                />
+              </div>
+              <div className="detail-summary-text">
+                <div className="detail-summary-label" style={{ color: stormNow.level.color }}>{stormNow.level.label} risk</div>
+                <div className="detail-summary-note">
+                  {stormNote(stormNow, stormNext, stormNext ? formatHour(stormNext.time, timezone) : '')}
+                </div>
+              </div>
+            </div>
+            {/* The three things the level is made of, as they stand now. */}
+            <DetailStats items={[
+              { label: 'Rain', value: `${Math.round(popNow)}%`, color: popInfo.color },
+              {
+                label: 'Gusts',
+                value: stormGust != null
+                  ? <>{unitText('wind', stormGust, units)}<span className="detail-stat-unit"> {unitSuffix('wind', units)}</span></>
+                  : null,
+                color: stormGust != null ? getWindInfo(stormGust).color : undefined,
+              },
+              {
+                label: 'Energy',
+                value: stormNow.cape != null
+                  ? <>{Math.round(stormNow.cape).toLocaleString('en-US')}<span className="detail-stat-unit"> J/kg</span></>
+                  : null,
+                color: stormNow.cape != null ? getStormInfo(stormNow.cape).color : undefined,
+              },
+            ]} />
+            {stormDay.length > 1 && (
+              <div className="detail-section">
+                <div className="detail-section-label">
+                  Next 24 hours
+                  <span className="detail-section-aside">
+                    {stormNext && stormNext.level.index > 0
+                      ? <>Peak <span style={{ color: stormNext.level.color, fontWeight: 600 }}>{stormNext.level.label}</span> {at(stormNext.time)}</>
+                      : 'All quiet'}
+                  </span>
+                </div>
+                <StormHourlyChart hours={stormDay} timezone={timezone} ink={ink} />
+              </div>
+            )}
             {stormWeek.length > 1 && (
               <div className="detail-section">
                 <div className="detail-section-label">
                   This week
                   <span className="detail-section-aside">
-                    {thunderDays.length ? `Thunder ${thunderDays.map(d => weekDay(d.date)).join(', ')}` : 'No thunder forecast'}
+                    {thunderDays.length ? `Thunder ${thunderDays.map(d => weekDay(d.date)).join(', ')}`
+                      : stormiestDay.peak.level.index > 0 ? `Stormiest ${weekDay(stormiestDay.date)}`
+                      : 'A quiet week'}
                   </span>
                 </div>
                 <div className="storm-week">
                   {stormWeek.map(d => {
-                    const info = getStormInfo(d.peak)
+                    const { level, kind } = d.peak
                     return (
                       <div key={d.date} className="storm-week-row">
                         <span className="storm-week-day">{weekDay(d.date)}</span>
+                        <span className="storm-week-icon" style={{ color: ink(level.color) }}>
+                          {(level.index > 0 || d.thunder) && (
+                            <StormIcon kind={d.thunder ? 'thunder' : kind} size={15} />
+                          )}
+                        </span>
                         <span className="storm-week-track">
-                          <span className="storm-week-fill" style={{ width: `${Math.max(Math.min(d.peak / 4000, 1) * 100, 3)}%`, background: ink(info.color) }} />
+                          <span className="storm-week-fill" style={{ width: `${Math.max(d.peak.score, 3)}%`, background: ink(level.color) }} />
                         </span>
-                        <span className="storm-week-lbl" style={{ color: ink(info.color) }}>
-                          {d.thunder && <CloudLightning size={13} aria-label="Thunder forecast" />}
-                          {info.label}
-                        </span>
+                        <span className="storm-week-lbl">{level.label}</span>
                       </div>
                     )
                   })}
@@ -866,21 +979,43 @@ export const WeatherDetails = memo(function WeatherDetails({ latitude, current, 
                 Driven mainly by <strong>{aqiMain.name}</strong>, {aqiMain.desc.toLowerCase()}.
               </div>
             )}
-            {/* The next twelve hours only: the daily peaks and the six
-                pollutant readings (the main one is named just above) are left
-                to the desktop panel. */}
-            {aqiHours.length > 1 && (
-              <div className="uv-timeline">
-                {aqiHours.map(([time, val], i) => {
-                  const info = getAQIInfo(val)
-                  return (
-                    <div key={time} className="uv-timeline-item">
-                      <span className="uv-tl-time">{i === 0 ? 'Now' : formatHour(time, timezone)}</span>
-                      <span className="uv-tl-val" style={{ color: info.color }}>{Math.round(val)}</span>
-                      <span className="uv-tl-lbl" style={{ color: info.color }}>{shortAQILabel(val)}</span>
+            {/* All six readings share one unit, so it is given once in the
+                heading rather than after every value. */}
+            {pollutants.length > 0 && (
+              <div className="detail-section">
+                <div className="detail-section-label">
+                  Pollutants
+                  <span className="detail-section-aside">µg/m³</span>
+                </div>
+                <div className="aqi-polls">
+                  {pollutants.map(p => (
+                    <div key={p.key} className="aqi-poll">
+                      <div className="aqi-poll-top">
+                        <span className="aqi-poll-name">{p.name}</span>
+                        <span className="aqi-poll-val">{p.value >= 1000 ? Math.round(p.value) : p.value.toFixed(1)}</span>
+                      </div>
+                      <span className="aqi-poll-track">
+                        <span
+                          className="aqi-poll-fill"
+                          style={{ width: `${Math.max(p.ratio * 100, 2)}%`, background: ink(getAQIInfo(p.ratio * 150).color) }}
+                        />
+                      </span>
+                      <span className="aqi-poll-desc">{p.desc}</span>
                     </div>
-                  )
-                })}
+                  ))}
+                </div>
+              </div>
+            )}
+            {aqiSeries.length > 1 && (
+              <div className="detail-section">
+                <div className="detail-section-label">
+                  AQI outlook
+                  <span className="detail-section-aside">
+                    Peak <span style={{ color: getAQIInfo(aqiPeak[1]).color, fontWeight: 600 }}>{Math.round(aqiPeak[1])}</span>
+                    {aqiPeakDay === 'Today' ? ' today' : ` ${aqiPeakDay}`}
+                  </span>
+                </div>
+                <AqiOutlookChart series={aqiSeries} dayName={weekDay} ink={ink} />
               </div>
             )}
             {pollen.length > 0 && (
@@ -903,7 +1038,7 @@ export const WeatherDetails = memo(function WeatherDetails({ latitude, current, 
     <div className={`card card--details${colorCoding ? '' : ' card--details--mono'}`} ref={cardRef}>
       <div className="section-label">DETAILS</div>
       <div className="details-grid">
-        {cardOrder
+        {TILE_ORDER
           .filter(key => cardDefs[key] != null)
           .map(key => (
             <DetailCard
@@ -911,12 +1046,6 @@ export const WeatherDetails = memo(function WeatherDetails({ latitude, current, 
               {...cardDefs[key]}
               onClick={(e) => openDetail(key, e)}
               isExpanded={expanded === key}
-              onDragStart={() => handleDragStart(key)}
-              onDragEnter={() => handleDragEnter(key)}
-              onDragOver={handleDragOver}
-              onDragEnd={handleDragEnd}
-              isDragging={draggingKey === key}
-              isDragOver={dragOverKey === key && draggingKey !== key}
             />
           ))
         }

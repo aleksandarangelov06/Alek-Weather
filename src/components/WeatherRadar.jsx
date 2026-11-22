@@ -3,6 +3,7 @@ import { Minimize2, Play, Pause, Navigation, ZoomIn, ZoomOut } from 'lucide-reac
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { MRMS_BASE, inMrmsDomain, usViewBounds } from '../utils/mrms'
+import { HrrrLayer } from '../utils/hrrrLayer'
 import { addBasemap } from '../utils/basemap'
 import { RadarRain } from './RadarRain'
 import { fetchWithin } from '../utils/fetchTimeout'
@@ -225,6 +226,10 @@ const layerKey = (frame, hd) =>
 // array is unreliable (frequently empty), so HRRR provides the forecast frames.
 // The model run can be 1–3h old; refd_0000.json carries model_init_utc, from
 // which each 15-min step gets its real valid time. CONUS coverage only.
+//
+// The tiles aren't drawn as served: they are the model's 3 km cells as hard
+// squares. HrrrLayer reads the reflectivity back out of them and draws it
+// smoothed, in the observed half's colours. See utils/hrrrLayer.js.
 const HRRR_META_URL = 'https://mesonet.agron.iastate.edu/data/gis/images/4326/hrrr/refd_0000.json'
 const HRRR_TILE_URL = (min) =>
   `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/hrrr::REFD-F${String(min).padStart(4, '0')}-0/{z}/{x}/{y}.png`
@@ -251,16 +256,15 @@ function cachedFeed(lat, lon, source) {
   const hit = feedCache.get(feedKey(lat, lon, source))
   return hit && Date.now() - hit.at < FEED_CACHE_MS ? hit.feed : null
 }
-// Two palettes, because two of the three feeds draw with the standard NWS
-// reflectivity ramp (green → yellow → orange → red) and one doesn't. MRMS and HRRR
-// are both NOAA products and share it; RainViewer has its own and ignores the
-// colour-scheme parameter on the free tier, so it can't be brought into line. The
-// legend follows whichever tiles are on screen — see legendColors below.
+// Two palettes, because the observed feeds don't share one. MRMS and NEXRAD draw
+// with the standard NWS reflectivity ramp (green → yellow → orange → red);
+// RainViewer has its own and ignores the colour-scheme parameter on the free tier,
+// so it can't be brought into line. The legend follows whichever tiles are on
+// screen — see legendColors below.
 //
-// The upside of the MRMS switch is that the ramp now holds across the handoff for
-// US locations: observed and forecast are both NWS-ramped, so scrubbing past now no
-// longer changes the colours under the cursor. Only the RainViewer fallback still
-// does, and that is the case where there was no forecast half to reach anyway.
+// The HRRR forecast has no ramp of its own any more: HrrrLayer colours it to match
+// whichever observed feed the timeline runs on (frame.pal), so scrubbing past now
+// never changes the colours under the cursor, on either setting.
 const LEGEND_RAINVIEWER = ['#43a4c3', '#326985', '#ffd900', '#ff3300', '#d193c9']
 const LEGEND_NWS        = ['#02fd02', '#0173c5', '#fdf802', '#fd9500', '#fd0000']
 
@@ -481,7 +485,8 @@ function irisGeometry(box) {
 //
 // The basemap is the exception to "already a tree of <img>": it is a MapLibre
 // canvas, and cloneNode copies a canvas's element but not its pixels — the
-// still came out with a blank map. So canvases are copied across by hand. A
+// still came out with a blank map. So canvases are copied across by hand,
+// which covers the HRRR forecast's tiles too (see HrrrLayer). A
 // WebGL canvas can only be read back in the frame it was drawn in, which is why
 // the caller has MapLibre redraw synchronously just before this.
 function snapshot(el) {
@@ -737,17 +742,31 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
       // a step that lands before the last nowcast frame would put the track out of
       // sequence. The model run can be 1–3h old, so its early steps are usually in
       // the past already and get skipped regardless.
+      //
+      // Each step carries the ramp it is drawn in, `pal`: the observed half's, so
+      // the colours hold across now. With no observed half, the ramp the setting
+      // would have shown. The run's init time goes in the key, as well as being
+      // handed to the layer, because IEM's tile URLs only name a step of whatever
+      // run is latest.
       const futFrames = []
       if (hrrrRes.status === 'fulfilled' && hrrrRes.value) {
         const init = Date.parse(hrrrRes.value.model_init_utc) / 1000
         const nowSec = Date.now() / 1000
         const covered = (rvCast.length ? rvCast[rvCast.length - 1] : newest)?.time ?? nowSec
+        const pal = (past[0]?.src ?? (source === 'rainviewer' ? 'rv' : 'mrms')) === 'rv' ? 'rv' : 'nws'
         if (Number.isFinite(init)) {
           for (let m = HRRR_STEP_MIN; m <= HRRR_MAX_MIN; m += HRRR_STEP_MIN) {
             const t = init + m * 60
             if (t <= covered + 60) continue         // already on the timeline
             if (t > nowSec + HRRR_HORIZON_SEC) break // keep the timeline short
-            futFrames.push({ key: `hrrr:${m}`, src: 'hrrr', time: t, url: HRRR_TILE_URL(m) })
+            futFrames.push({
+              key: `hrrr:${init}:${m}:${pal}`,
+              src: 'hrrr',
+              time: t,
+              url: HRRR_TILE_URL(m),
+              run: init,
+              pal,
+            })
           }
         }
       }
@@ -940,11 +959,14 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
         // MRMS builds each tile's URL from its coords (see MrmsLayer) and takes no
         // template. Its cap is its own — see MRMS_NATIVE_MAX — because it is there
         // to bound how much rendering the request asks for, not because the server
-        // would refuse the way RainViewer's does past RADAR_NATIVE_MAX.
+        // would refuse the way RainViewer's does past RADAR_NATIVE_MAX. HRRR draws
+        // its own tiles at every zoom and fetches at a level of its choosing.
         const src = drawnSrc(frame, hd)
         layer = src === 'mrms'
           ? new MrmsLayer('', { ...opts, timeRange: frame.range, maxNativeZoom: MRMS_NATIVE_MAX })
-          : L.tileLayer(frame.url, { ...opts, maxNativeZoom: src === 'nexrad' ? NEXRAD_NATIVE_MAX : RADAR_NATIVE_MAX })
+          : src === 'hrrr'
+            ? new HrrrLayer(frame.url, { ...opts, palette: frame.pal, run: frame.run })
+            : L.tileLayer(frame.url, { ...opts, maxNativeZoom: src === 'nexrad' ? NEXRAD_NATIVE_MAX : RADAR_NATIVE_MAX })
         layer.on('load', () => { layer._radarLoaded = true })
         layerCache.current.set(key, layer)
       }
@@ -1558,12 +1580,13 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
     ) : null
   }
 
-  // The legend tracks the tiles actually on screen. MRMS and HRRR are both NOAA
-  // and both draw with the NWS reflectivity ramp; RainViewer keeps its own, and
-  // the two can't be reconciled — its free tier ignores the colour-scheme
-  // parameter in the tile URL — so instead of hiding the switch the legend blocks
-  // ease between the two ramps. Read off the frame's source rather than its key,
-  // so a feed can't change its key format and silently take the legend with it.
+  // The legend tracks the tiles actually on screen. MRMS and NEXRAD draw with
+  // the NWS reflectivity ramp; RainViewer keeps its own, and the two can't be
+  // reconciled — its free tier ignores the colour-scheme parameter in the tile
+  // URL — so instead of hiding the switch the legend blocks ease between the two
+  // ramps. HRRR is drawn in whichever of them its frame says (frame.pal). Read
+  // off the frame's source rather than its key, so a feed can't change its key
+  // format and silently take the legend with it.
   // drawnSrc, not the frame's own src: an Auto frame is MRMS or NEXRAD depending
   // on the zoom, and the caption has to name the one actually on screen.
   // The frame and play state the controls show: the live ones, except while
@@ -1572,10 +1595,11 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
   const shownIdx     = frozenCtl ? frozenCtl.idx : idx
   const shownPlaying = frozenCtl ? frozenCtl.playing : playing
   const frameSrc     = frames[shownIdx] && drawnSrc(frames[shownIdx], hd)
-  const legendColors = frameSrc === 'rv' ? LEGEND_RAINVIEWER : LEGEND_NWS
+  const frameRamp    = frameSrc === 'hrrr' ? frames[shownIdx].pal : frameSrc
+  const legendColors = frameRamp === 'rv' ? LEGEND_RAINVIEWER : LEGEND_NWS
 
-  // Observed → forecast boundary, marked on the scrubber so the palette change
-  // reads as a deliberate handoff rather than a glitch. Combined only: in split
+  // Observed → forecast boundary, marked on the scrubber so the switch from
+  // radar to model reads as a deliberate handoff rather than a glitch. Combined only: in split
   // each side is all one thing, so the toggle is the boundary and a divider
   // would land on an edge of the track and say nothing.
   const showDivider = combined && pastCount > 0 && pastCount < frames.length

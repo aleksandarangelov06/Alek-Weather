@@ -36,14 +36,30 @@ export function showsTomorrow(hourStr) {
 // says so, rather than rating the day on one or two hours; from 9pm it is
 // tomorrow's day instead.
 export function outlookWindow(hourly, todayStr, hourStr) {
-  const times = hourly?.time ?? []
   if (showsTomorrow(hourStr)) {
-    const tomorrow = addDays(todayStr, 1)
-    const start = times.findIndex(t => t.startsWith(`${tomorrow}T${TOMORROW_HOURS[0]}`))
-    const end = times.findIndex(t => t.startsWith(`${tomorrow}T${TOMORROW_HOURS[1]}`))
-    if (start !== -1 && end > start) return { start, end, label: 'Tomorrow', tomorrow: true }
+    const win = tomorrowWindow(hourly, todayStr)
+    if (win) return win
   }
-  return restOfToday(times, todayStr, hourStr)
+  return todayWindow(hourly, todayStr, hourStr)
+}
+
+// Today from the current hour, whatever the time: what the At a Glance card's
+// first tab shows.
+export function todayWindow(hourly, todayStr, hourStr) {
+  return restOfToday(hourly?.time ?? [], todayStr, hourStr)
+}
+
+// Tomorrow's waking hours, whatever the time now. `leadStart` is tomorrow's
+// midnight: rain, snow, ice or fog in the small hours still shapes the morning
+// (wet or icy roads on the way in), so dayHazards looks from there for those.
+export function tomorrowWindow(hourly, todayStr) {
+  const times = hourly?.time ?? []
+  const tomorrow = addDays(todayStr, 1)
+  const start = times.findIndex(t => t.startsWith(`${tomorrow}T${TOMORROW_HOURS[0]}`))
+  const end = times.findIndex(t => t.startsWith(`${tomorrow}T${TOMORROW_HOURS[1]}`))
+  if (start === -1 || end <= start) return null
+  const midnight = times.findIndex(t => t.startsWith(`${tomorrow}T00`))
+  return { start, end, leadStart: midnight === -1 || midnight > start ? start : midnight, label: 'Tomorrow', tomorrow: true }
 }
 
 function restOfToday(times, todayStr, hourStr) {
@@ -287,6 +303,274 @@ export function rateActivities(hourly, win, aqHourly) {
 
 function clampScore(x) {
   return Math.max(1, Math.min(10, Math.round(x)))
+}
+
+// ── What to expect ─────────────────────────────────────────────────────────
+// The At a Glance card's list of things to plan around: storms, ice, snow,
+// rain, wind, heat or cold, UV, fog and bad air, each with when it happens and
+// a line on how much. A window with no rain or snow gets a "Dry" line instead,
+// since knowing you can leave the umbrella is part of preparing too.
+//
+// Precipitation and fog are looked for from `win.leadStart` when the window has
+// one (tomorrow's midnight), so overnight snow still shows on tomorrow's list;
+// the rest only count over the waking hours the window rates.
+
+// Most pressing first. The card maps each level to a colour.
+export const HAZARD_LEVELS = ['severe', 'warning', 'caution', 'info', 'good']
+
+const STRONG_STORM_CODES = new Set([96, 99])
+const SHOWER_CODES = new Set([80, 81, 82])
+
+// Canonical units in, display text out. The card passes its own so wind and
+// snow read in the units chosen in Settings.
+const DEFAULT_FMT = {
+  temp: (f) => `${Math.round(f)}°`,
+  wind: (mph) => `${Math.round(mph)} mph`,
+  snow: (inches) => `${inches < 1 ? inches.toFixed(1) : Math.round(inches)} in`,
+}
+
+function hourLabel(iso) {
+  const h = Number(iso.slice(11, 13))
+  if (h === 0) return 'midnight'
+  if (h === 12) return 'noon'
+  return `${h % 12} ${h < 12 ? 'AM' : 'PM'}`
+}
+
+// "2 to 6 PM", "11 AM to 2 PM", "10 PM to 2 AM".
+function rangeLabel(fromIso, toIso) {
+  const a = hourLabel(fromIso), b = hourLabel(toIso)
+  const sameHalf = /PM$/.test(a) && /PM$/.test(b) || /AM$/.test(a) && /AM$/.test(b)
+  return sameHalf ? `${a.replace(/ (AM|PM)$/, '')} to ${b}` : `${a} to ${b}`
+}
+
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1)
+
+const WHOLE_WINDOW = { 'Rest of today': 'Rest of the day', 'Next 12 hours': 'Next 12 hours', Tomorrow: 'All day' }
+
+// When a set of hours (indices into the hourly arrays, in order) falls inside
+// [from, to): "All day", "Until 3 PM", "From 6 PM", "2 to 6 PM", "Around 4 PM".
+// `scattered` marks hours spread thin across their span (showers on and off).
+function whenOf(times, hits, from, to, win) {
+  const first = hits[0], last = hits[hits.length - 1]
+  const span = last - first + 1
+  const scattered = span >= 4 && hits.length < span * 0.6
+  if (hits.length >= (to - from) * 0.8) return { when: WHOLE_WINDOW[win.label] ?? 'All day', scattered: false }
+  const endIso = times[last + 1] ?? times[last]
+  const atStart = first === from && !win.tomorrow
+  if (hits.length === 1) return { when: atStart ? 'This hour' : `Around ${hourLabel(times[first])}`, scattered }
+  if (atStart) return { when: `Until ${hourLabel(endIso)}`, scattered }
+  if (last === to - 1) return { when: `From ${hourLabel(times[first])}`, scattered }
+  return { when: cap(rangeLabel(times[first], endIso)), scattered }
+}
+
+const hitsWhere = (from, to, test) => {
+  const out = []
+  for (let i = from; i < to; i++) if (test(i)) out.push(i)
+  return out
+}
+const maxOver = (hits, arr) => hits.reduce((m, i) => Math.max(m, arr?.[i] ?? 0), 0)
+
+// One step down the levels, for a precipitation type the forecast puts in an
+// hour but gives only a low chance of.
+const softer = (level) => HAZARD_LEVELS[Math.min(HAZARD_LEVELS.indexOf(level) + 1, HAZARD_LEVELS.indexOf('info'))]
+
+export function dayHazards(hourly, win, { aqHourly, fmt: fmtIn } = {}) {
+  if (!win || win.end <= win.start || !hourly?.time) return []
+  const fmt = { ...DEFAULT_FMT, ...fmtIn }
+  const times = hourly.time
+  const code = hourly.weather_code ?? []
+  const pop = hourly.precipitation_probability ?? []
+  const lead = win.leadStart ?? win.start
+  const { start, end } = win
+  const out = []
+  const add = (item, hits, from, to) => {
+    const { when, scattered } = whenOf(times, hits, from, to, win)
+    out.push({ ...item, when, scattered, first: hits[0] })
+  }
+  // "Up to 60% chance", unless the probability field has nothing to say.
+  const chanceText = (p) => (p > 0 ? `Up to ${Math.round(p)}% chance` : null)
+  const join = (...parts) => parts.filter(Boolean).join(' · ')
+
+  // Thunderstorms.
+  const storm = hitsWhere(lead, end, i => THUNDER_CODES.has(code[i]))
+  if (storm.length) {
+    const p = maxOver(storm, pop)
+    const strong = storm.some(i => STRONG_STORM_CODES.has(code[i]))
+    const likely = p === 0 || p >= 35
+    add({
+      id: 'storm',
+      level: strong ? 'severe' : likely ? 'warning' : 'caution',
+      label: strong ? 'Strong storms' : likely ? 'Thunderstorms' : 'Storms possible',
+      detail: join(chanceText(p), strong ? 'Heavy downpours, lightning' : 'Lightning, stay near shelter'),
+    }, storm, lead, end)
+  }
+
+  // Freezing rain and drizzle: a glaze on every surface, at any intensity.
+  const ice = hitsWhere(lead, end, i => FREEZING_CODES.has(code[i]))
+  if (ice.length) {
+    add({
+      id: 'ice', level: 'severe', label: 'Freezing rain',
+      detail: 'Icy roads and walkways likely',
+    }, ice, lead, end)
+  }
+
+  // Snow, by how much is forecast to fall.
+  const snowfall = hourly.snowfall ?? []
+  const temp = hourly.temperature_2m ?? []
+  // A good chance with no code at all is snow when it's below freezing, rain otherwise.
+  const chancy = (i) => (pop[i] ?? 0) >= 40 && !RAIN_CODES.has(code[i]) && !SNOW_CODES.has(code[i])
+  const snow = hitsWhere(lead, end, i => SNOW_CODES.has(code[i]) || (snowfall[i] ?? 0) >= 0.05 ||
+    (chancy(i) && temp[i] != null && temp[i] <= 32))
+  if (snow.length) {
+    const total = snow.reduce((s, i) => s + (snowfall[i] ?? 0), 0)
+    const p = maxOver(snow, pop)
+    const heavyCode = snow.some(i => HEAVY_SNOW_CODES.has(code[i]))
+    let level, label
+    if (total >= 4 || (heavyCode && total >= 2)) { level = 'severe'; label = 'Heavy snow' }
+    else if (total >= 1) { level = 'warning'; label = 'Snow' }
+    else if (total >= 0.1) { level = 'caution'; label = 'Light snow' }
+    else { level = 'info'; label = 'Flurries' }
+    if (p > 0 && p < 35 && total < 1) { level = softer(level); label = 'Snow possible' }
+    const amount = total >= 0.1 ? `About ${fmt.snow(total)}` : 'Little or no accumulation'
+    add({
+      id: 'snow', level, label,
+      detail: join(amount, total >= 1 ? 'allow extra travel time' : null),
+    }, snow, lead, end)
+  }
+
+  // Rain and showers: a rain code, or a good chance without one. Storm and ice
+  // hours are already covered above.
+  const rainy = (i) => !THUNDER_CODES.has(code[i]) && !FREEZING_CODES.has(code[i]) &&
+    (RAIN_CODES.has(code[i]) || (chancy(i) && (temp[i] == null || temp[i] > 32)))
+  const rain = hitsWhere(lead, end, rainy)
+  if (rain.length) {
+    const p = maxOver(rain, pop)
+    const coded = rain.some(i => RAIN_CODES.has(code[i]))
+    const showers = rain.filter(i => SHOWER_CODES.has(code[i])).length > rain.length / 2
+    const heavy = rain.some(i => HEAVY_RAIN_CODES.has(code[i]))
+    const moderate = rain.some(i => MODERATE_RAIN_CODES.has(code[i]))
+    let level = heavy ? 'warning' : moderate ? 'caution' : 'info'
+    let label = heavy ? (showers ? 'Heavy showers' : 'Heavy rain') : showers ? 'Showers' : moderate ? 'Rain' : 'Light rain'
+    if (!coded || (p > 0 && p < 35)) {
+      if (coded) level = softer(level)
+      label = showers ? 'Chance of showers' : 'Chance of rain'
+    }
+    add({
+      id: 'rain', level, label,
+      detail: join(chanceText(p), p >= 50 || heavy ? 'bring an umbrella' : null),
+    }, rain, lead, end)
+  }
+
+  // Wind: gusts of 30 mph or a steady 20 make it a windy day.
+  const gustAt = (i) => hourly.wind_gusts_10m?.[i] ?? hourly.wind_speed_10m?.[i] ?? 0
+  const windy = hitsWhere(start, end, i => gustAt(i) >= 30 || (hourly.wind_speed_10m?.[i] ?? 0) >= 20)
+  if (windy.length) {
+    const g = windy.reduce((m, i) => Math.max(m, gustAt(i)), 0)
+    const level = g >= 58 ? 'severe' : g >= 45 ? 'warning' : 'caution'
+    add({
+      id: 'wind', level,
+      label: g >= 58 ? 'Damaging winds' : g >= 45 ? 'Very windy' : 'Windy',
+      detail: join(`Gusts to ${fmt.wind(g)}`, g >= 45 ? 'secure loose items' : null),
+    }, windy, start, end)
+  }
+
+  // Heat and cold, on the feels-like temperature.
+  const feels = (i) => hourly.apparent_temperature?.[i] ?? hourly.temperature_2m?.[i]
+  const valid = hitsWhere(start, end, i => feels(i) != null)
+  if (valid.length) {
+    const hi = Math.max(...valid.map(feels))
+    const lo = Math.min(...valid.map(feels))
+    if (hi >= 88) {
+      const level = hi >= 105 ? 'severe' : hi >= 95 ? 'warning' : 'caution'
+      add({
+        id: 'heat', level,
+        label: hi >= 105 ? 'Dangerous heat' : hi >= 95 ? 'Very hot' : 'Hot',
+        detail: join(`Feels like ${fmt.temp(hi)}`, 'stay hydrated'),
+      }, valid.filter(i => feels(i) >= 88), start, end)
+    }
+    const air = (i) => hourly.temperature_2m?.[i]
+    const freezing = valid.filter(i => feels(i) <= 10 || (air(i) != null && air(i) <= 32))
+    if (freezing.length) {
+      const level = lo <= -15 ? 'severe' : lo <= 10 ? 'warning' : 'info'
+      add({
+        id: 'cold', level,
+        label: lo <= -15 ? 'Dangerous cold' : lo <= 10 ? 'Bitter cold' : 'Below freezing',
+        detail: join(`Feels like ${fmt.temp(lo)}`, lo <= -15 ? 'frostbite risk' : lo <= 10 ? 'bundle up' : 'dress warmly'),
+      }, freezing, start, end)
+    }
+  }
+
+  // Fog, from the weather code or the visibility itself.
+  const vis = hourly.visibility ?? []
+  const fog = hitsWhere(lead, end, i => FOG_CODES.has(code[i]) || (vis[i] != null && vis[i] < 1000))
+  if (fog.length) {
+    const dense = fog.some(i => vis[i] != null && vis[i] < 400)
+    add({
+      id: 'fog', level: dense ? 'warning' : 'caution', label: dense ? 'Dense fog' : 'Fog',
+      detail: 'Low visibility, leave extra time',
+    }, fog, lead, end)
+  }
+
+  // UV in the daylight hours, on the WHO scale.
+  const uvAt = (i) => (hourly.is_day?.[i] !== 0 ? hourly.uv_index?.[i] ?? 0 : 0)
+  const sunny = hitsWhere(start, end, i => uvAt(i) >= 6)
+  if (sunny.length) {
+    const u = Math.round(sunny.reduce((m, i) => Math.max(m, uvAt(i)), 0))
+    add({
+      id: 'uv', level: u >= 11 ? 'severe' : u >= 8 ? 'warning' : 'caution',
+      label: u >= 11 ? 'Extreme UV' : u >= 8 ? 'Very high UV' : 'High UV',
+      detail: join(`UV ${u}`, 'wear sunscreen'),
+    }, sunny, start, end)
+  }
+
+  // Air quality, on the US AQI, matched to the weather hours as in rateActivities.
+  if (aqHourly?.time && aqHourly.us_aqi) {
+    const aqi = new Map()
+    aqHourly.time.forEach((t, j) => { if (aqHourly.us_aqi[j] != null) aqi.set(t.slice(0, 13), aqHourly.us_aqi[j]) })
+    const aqiAt = (i) => aqi.get(times[i]?.slice(0, 13)) ?? 0
+    const poor = hitsWhere(start, end, i => aqiAt(i) > 100)
+    if (poor.length) {
+      const a = Math.round(poor.reduce((m, i) => Math.max(m, aqiAt(i)), 0))
+      add({
+        id: 'air', level: a > 200 ? 'severe' : a > 150 ? 'warning' : 'caution',
+        label: a > 200 ? 'Very unhealthy air' : a > 150 ? 'Unhealthy air' : 'Poor air quality',
+        detail: join(`AQI ${a}`, a > 150 ? 'limit time outdoors' : 'sensitive groups take care'),
+      }, poor, start, end)
+    }
+  }
+
+  // Nothing falling: say so, with what the sky is doing.
+  const wet = out.some(h => ['storm', 'ice', 'snow', 'rain'].includes(h.id))
+  if (!wet) {
+    const sky = skyOf(code, hourly.is_day, start, end)
+    const alone = out.length === 0
+    out.push({
+      id: 'dry', level: 'good', sky: sky.id,
+      label: alone ? 'Nothing to plan around' : 'Dry',
+      detail: alone ? `${sky.text} and dry` : `${sky.text}, no rain or snow`,
+      when: WHOLE_WINDOW[win.label] ?? 'All day', scattered: false, first: start,
+    })
+  }
+
+  return out.sort((a, b) => HAZARD_LEVELS.indexOf(a.level) - HAZARD_LEVELS.indexOf(b.level) || a.first - b.first)
+}
+
+// The sky over a dry window, from the clear/cloud codes (0 clear, 1 mainly
+// clear, 2 partly cloudy, 3 overcast); fog counts as cloud.
+function skyOf(code, isDay, start, end) {
+  let sum = 0, n = 0, day = 0
+  for (let i = start; i < end; i++) {
+    const c = code[i]
+    if (c == null) continue
+    sum += c <= 3 ? c : 3
+    n++
+    if (isDay?.[i] !== 0) day++
+  }
+  const avg = n ? sum / n : 1.5
+  const night = day < n / 2
+  if (avg < 1.2) return { id: 'clear', text: night ? 'Mostly clear' : 'Mostly sunny' }
+  if (avg < 2.3) return { id: 'partly', text: 'Partly cloudy' }
+  return { id: 'cloudy', text: 'Mostly cloudy' }
 }
 
 // The same severity palette the rest of the app uses for readings, so a 3/10

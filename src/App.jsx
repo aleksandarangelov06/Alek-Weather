@@ -94,10 +94,14 @@ const STARS = Array.from({ length: 40 }, () => ({
   dur:   `${(Math.random() * 3 + 2).toFixed(1)}s`,
   delay: `${-(Math.random() * 4).toFixed(1)}s`,
 }))
-import { Search, MapPin, MapPinOff, AlertCircle, HelpCircle, ArrowLeft, GripHorizontal, Building2, X, Navigation, House, Bookmark } from 'lucide-react'
-import { DndContext, closestCenter, PointerSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
-import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from '@dnd-kit/sortable'
+import {
+  Search, MapPin, MapPinOff, AlertCircle, HelpCircle, ArrowLeft, Building2, X, Navigation, House, Bookmark,
+  ArrowUpDown, CalendarDays, Check, Clock, Eye, GripVertical, LayoutGrid, Minus, Plus, Radar as RadarIcon, Sparkles, Umbrella,
+} from 'lucide-react'
+import { DndContext, closestCenter, KeyboardSensor, MouseSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
+import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { useCoverHistory } from './utils/detailCover'
 import { useWeather } from './hooks/useWeather'
 import { useStaleRefresh } from './hooks/useStaleRefresh'
 import { RADAR_ENHANCED_KEY } from './hooks/useRadarPrecip'
@@ -252,8 +256,13 @@ const BOOT_DONE_MS = 600
 const BOOT_SKY_KEY = 'alek-weather-boot-sky'
 
 const BLOCK_ORDER_KEY = 'alek-weather-block-order'
+// The cards reorder mode can remove: Weather insight and At a glance. Every
+// other card is always in the stack. Weather insight's removal is stored here;
+// At a glance keeps its own key (SHOW_TODAY_KEY), where its old Settings
+// switch stored it, so a choice made there carries over.
+const REMOVABLE_BLOCKS = ['overview', 'today']
+const HIDDEN_BLOCKS_KEY = 'alek-weather-hidden-blocks'
 const DEFAULT_BLOCK_ORDER = ['overview', 'today', 'nowcast', 'hourly', 'daily', 'details', 'radar']
-const SHOW_OVERVIEW_KEY = 'alek-weather-show-overview'
 const SHOW_TODAY_KEY = 'alek-weather-show-today'
 const NOWCAST_MODE_KEY  = 'alek-weather-nowcast-mode'
 const COLOR_CODING_KEY  = 'alek-weather-color-coding'
@@ -261,8 +270,6 @@ const COLOR_CODING_KEY  = 'alek-weather-color-coding'
 // screen, and a coloured figure that size over a sky read as decoration more
 // than as information. The smaller readings keep their colour.
 const DEFAULT_COLOR_CODING = { current: false, hourly: true, daily: true, overview: true, details: true, glow: true, frost: true }
-const OVERVIEW_PARTS_KEY = 'alek-weather-overview-parts'
-const DEFAULT_OVERVIEW_PARTS = { insight: true, conditions: true, airQuality: true, clothing: true }
 const ICON_MOTION_KEY   = 'alek-weather-icon-motion'
 // How the radar timeline presents its two feeds.
 //   'combined'  one scrubber running observed → forecast, divided at now
@@ -273,18 +280,52 @@ const RADAR_MODE_KEY = 'alek-weather-radar-mode' // 'combined' | 'split'
 const RADAR_SOURCE_KEY = 'alek-weather-radar-source' // 'rainviewer' | 'auto' | 'mrms' | 'nexrad'
 const RADAR_SOURCES = ['rainviewer', 'auto', 'mrms', 'nexrad']
 
-function SortableBlock({ id, children }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
+// The cards as the reorder list shows them: the name each one carries on its
+// own heading, and an icon for it.
+const BLOCK_META = {
+  overview: { label: 'Weather insight', Icon: Sparkles },
+  today:    { label: 'At a glance',     Icon: Eye },
+  nowcast:  { label: 'Precipitation',   Icon: Umbrella },
+  hourly:   { label: 'Hourly forecast', Icon: Clock },
+  daily:    { label: '7-day forecast',  Icon: CalendarDays },
+  details:  { label: 'Details',         Icon: LayoutGrid },
+  radar:    { label: 'Radar',           Icon: RadarIcon },
+}
+
+// The reorder list is one column, so a dragged row only ever moves up or down.
+const lockToVertical = ({ transform }) => ({ ...transform, x: 0 })
+
+// One card in reorder mode, drawn as a short row so the whole stack fits on a
+// phone screen and a move is a short drag rather than hauling a 600px card
+// past the others. The whole row is the handle. A card that can't be removed
+// (onRemove null) gets a blank where the minus would be.
+function ReorderRow({ id, onRemove }) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id })
+  const { label, Icon } = BLOCK_META[id] ?? { label: id, Icon: LayoutGrid }
   return (
     <div
       ref={setNodeRef}
-      className={`sortable-block${isDragging ? ' dragging' : ''}`}
+      className={`card reorder-row${isDragging ? ' reorder-row--dragging' : ''}`}
       style={{ transform: CSS.Translate.toString(transform), transition }}
     >
-      <div className="drag-handle" {...attributes} {...listeners} title="Drag to reorder">
-        <GripHorizontal size={14} />
+      {/* Outside the handle, so tapping it can never start a drag. */}
+      {onRemove ? (
+        <button
+          type="button"
+          className="reorder-row-action reorder-row-action--remove"
+          onClick={() => onRemove(id)}
+          aria-label={`Remove ${label}`}
+        >
+          <Minus size={16} strokeWidth={3} aria-hidden="true" />
+        </button>
+      ) : (
+        <span className="reorder-row-action reorder-row-action--none" aria-hidden="true" />
+      )}
+      <div className="reorder-row-handle" ref={setActivatorNodeRef} {...attributes} {...listeners}>
+        <Icon size={19} className="reorder-row-icon" aria-hidden="true" />
+        <span className="reorder-row-label">{label}</span>
+        <GripVertical size={19} className="reorder-row-grip" aria-hidden="true" />
       </div>
-      {children}
     </div>
   )
 }
@@ -314,8 +355,8 @@ function App() {
     const saved = Number(localStorage.getItem(CARD_TRANSPARENCY_KEY))
     return Number.isFinite(saved) ? Math.min(MAX_CARD_TRANSPARENCY, Math.max(0, saved)) : 0
   })
-  const [showOverview, setShowOverview] = useState(() => localStorage.getItem(SHOW_OVERVIEW_KEY) !== 'false')
-  // On by default: only an explicit 'false' hides the Today card.
+  // On by default: only an explicit 'false' hides the At a Glance card (stored
+  // under its old Today card key).
   const [showToday, setShowToday] = useState(() => localStorage.getItem(SHOW_TODAY_KEY) !== 'false')
   const [nowcastMode, setNowcastMode] = useState(() => localStorage.getItem(NOWCAST_MODE_KEY) ?? 'auto')
   const [weatherAnimations, setWeatherAnimations] = useState(() => localStorage.getItem('alek-weather-animations') !== 'false')
@@ -352,10 +393,6 @@ function App() {
     const saved = loadJSON(COLOR_CODING_KEY)
     return saved ? { ...DEFAULT_COLOR_CODING, ...saved } : DEFAULT_COLOR_CODING
   })
-  const [overviewParts, setOverviewParts] = useState(() => {
-    const saved = loadJSON(OVERVIEW_PARTS_KEY)
-    return saved ? { ...DEFAULT_OVERVIEW_PARTS, ...saved } : DEFAULT_OVERVIEW_PARTS
-  })
   const [installPrompt, setInstallPrompt] = useState(null)
   const [showSettings, setShowSettings] = useState(false)
   const [settingsClosing, setSettingsClosing] = useState(false)
@@ -372,7 +409,7 @@ function App() {
   // The same, for the magnifier's sweep and the search overlay.
   const [searchSweeping, setSearchSweeping] = useState(false)
   const searchOpenTimer = useRef(null)
-  const [subView, setSubView] = useState(null) // null | 'colorcoding' | 'overview' | 'radar' | 'effects' | 'icons' | 'theme' | 'notifications'
+  const [subView, setSubView] = useState(null) // null | 'colorcoding' | 'radar' | 'effects' | 'icons' | 'theme' | 'notifications'
   const [isDesktop, setIsDesktop] = useState(() => window.matchMedia(DESKTOP_MQ).matches)
   const [webTab, setWebTab] = useWebTab()
   // The web app's non-forecast page — 'settings' | null. Kept
@@ -448,9 +485,17 @@ function App() {
     return order
   })
 
+  // Cards only move in reorder mode, entered from the button under the stack,
+  // so a stray hold or drag on a card can never pick it up. In that mode a
+  // mouse picks a row up after a few pixels, a finger after a short hold (a
+  // quick swipe still scrolls the page), and the keyboard with space and the
+  // arrow keys. Back, Done, or loading another place leaves the mode.
+  const [reordering, setReordering] = useState(false)
+  const endReorder = useCoverHistory(reordering, () => setReordering(false))
   const sensors = useSensors(
-    useSensor(PointerSensor),
-    useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } })
+    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   )
 
   const handleDragEnd = ({ active, over }) => {
@@ -466,6 +511,24 @@ function App() {
     location, weather, airQuality, alerts, lastUpdated, searchResults, loading, error,
     searchCity, selectCity, locateMe, setSearchResults, fetchWeather, restoreReading, reset, clearError, retry,
   } = useWeather(INITIAL_CITY)
+
+  // Reorder mode belongs to the stack it was opened on: another place loading
+  // closes it. Keyed on the coordinates, since a background refresh sets the
+  // same place again. Adjusted during render (React's pattern for state that
+  // follows a changing value) rather than in an effect.
+  const placeKey = location ? `${location.latitude},${location.longitude}` : ''
+  const [reorderPlace, setReorderPlace] = useState(placeKey)
+  if (reorderPlace !== placeKey) {
+    setReorderPlace(placeKey)
+    setReordering(false)
+  }
+  // On the way in, the page goes to the top: the current weather is set aside
+  // and the cards have just collapsed to rows, so the list starts right under
+  // the header.
+  useEffect(() => {
+    if (reordering) window.scrollTo(0, 0)
+  }, [reordering])
+
   // Launch load, background refresh, and refresh-after-restore (see the hook).
   const refreshIfStale = useStaleRefresh({ initialCity: INITIAL_CITY, location, weather, lastUpdated, fetchWeather })
 
@@ -850,16 +913,24 @@ function App() {
     localStorage.setItem(SHOW_TODAY_KEY, String(val))
   }
 
-  const changeShowOverview = (val) => {
-    setShowOverview(val)
-    localStorage.setItem(SHOW_OVERVIEW_KEY, String(val))
-    // Turning the overview back on while every content part is off would leave
-    // an empty card, so restore all three parts when there's nothing to show.
-    if (val && !overviewParts.insight && !overviewParts.conditions && !overviewParts.clothing) {
-      const next = { ...overviewParts, insight: true, conditions: true, clothing: true }
-      setOverviewParts(next)
-      localStorage.setItem(OVERVIEW_PARTS_KEY, JSON.stringify(next))
-    }
+  // Whether a card is in the stack. Only REMOVABLE_BLOCKS can be out of it, so
+  // a card removed before that list existed is back regardless of the stored
+  // list. At a glance reads its own key; Weather insight reads the removed
+  // list. A card that comes back returns to the place it had in the order.
+  const [hiddenBlocks, setHiddenBlocks] = useState(() => {
+    const saved = loadJSON(HIDDEN_BLOCKS_KEY)
+    return Array.isArray(saved) ? saved : []
+  })
+  const isBlockShown = (id) => (!REMOVABLE_BLOCKS.includes(id) ? true
+    : id === 'today' ? showToday
+    : !hiddenBlocks.includes(id))
+  const setBlockShown = (id, shown) => {
+    if (id === 'today') { changeShowToday(shown); return }
+    setHiddenBlocks(prev => {
+      const next = shown ? prev.filter(b => b !== id) : [...prev.filter(b => b !== id), id]
+      localStorage.setItem(HIDDEN_BLOCKS_KEY, JSON.stringify(next))
+      return next
+    })
   }
 
   const changeNowcastMode = (mode) => {
@@ -871,20 +942,6 @@ function App() {
     setColorCoding(prev => {
       const next = { ...prev, [key]: !prev[key] }
       localStorage.setItem(COLOR_CODING_KEY, JSON.stringify(next))
-      return next
-    })
-  }
-
-  const toggleOverviewPart = (key) => {
-    setOverviewParts(prev => {
-      const next = { ...prev, [key]: !prev[key] }
-      localStorage.setItem(OVERVIEW_PARTS_KEY, JSON.stringify(next))
-      // With insight, conditions, and clothing all off there's nothing left to
-      // show, so switch the whole overview tile off.
-      if (!next.insight && !next.conditions && !next.clothing) {
-        setShowOverview(false)
-        localStorage.setItem(SHOW_OVERVIEW_KEY, 'false')
-      }
       return next
     })
   }
@@ -1340,6 +1397,18 @@ function App() {
   // The header's place line on the phone shells (see .app-place): the city
   // and its region, and today's date in the forecast's own timezone.
   const placeInHeader = !webLayout && splashPhase === 'done' && !!weather && !!location
+  // With a forecast up on the phone shells the header floats, so search and
+  // settings stay on screen (.app-header--float in App.css). The place in the
+  // middle would sit over the cards as plain text, so it fades out once the
+  // page has moved. Only a change across the threshold re-renders: setting the
+  // same value again is a no-op.
+  const [scrolledDown, setScrolledDown] = useState(false)
+  useEffect(() => {
+    if (!placeInHeader) return
+    const onScroll = () => setScrolledDown(window.scrollY > 8)
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [placeInHeader])
   const placeLine = location
     ? [location.name, location.admin1 && location.admin1 !== location.name ? location.admin1 : null].filter(Boolean).join(', ')
     : ''
@@ -1553,14 +1622,21 @@ function App() {
   }, [darkMode, skyC, hasWeather, weatherAnimations, skyLat, skyLon])
 
   const blockComponents = weather && !loading ? {
-    today:   <TodayCard hourly={weather.hourly} daily={weather.daily} current={weather.current} yesterday={weather.yesterday} timezone={weather.timezone} unit={unit} airQuality={airQuality} />,
-    overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} timezone={weather.timezone} hasActiveAlert={hasActiveAlert} unit={unit} units={units} airQuality={airQuality} showInsight={overviewParts.insight} showConditions={overviewParts.conditions} showAirQuality={overviewParts.airQuality} showClothing={overviewParts.clothing} colorCode={colorCoding.overview} />,
+    today:   <TodayCard hourly={weather.hourly} daily={weather.daily} current={weather.current} yesterday={weather.yesterday} timezone={weather.timezone} unit={unit} units={units} airQuality={airQuality} />,
+    overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} timezone={weather.timezone} hasActiveAlert={hasActiveAlert} unit={unit} units={units} airQuality={airQuality} colorCode={colorCoding.overview} />,
     hourly:  <HourlyForecast hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.hourly} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
     daily:   <DailyForecast daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} units={units} colorCoding={colorCoding.daily} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} yesterday={weather.yesterday} airQuality={airQuality} />,
     details: <WeatherDetails latitude={weather.latitude} current={weather.current} daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} units={units} airQuality={airQuality} colorCoding={colorCoding.details} />,
     radar:   <WeatherRadar location={location} timezone={weather.timezone} mode={radarMode} source={radarSource} sky={weatherAnimations ? skyC : ''} rainFx={weatherAnimations} snow={isSnowing(weather.current)} />,
     nowcast: <PrecipNowcast minutely={weather.minutely_15} currentTime={weather.current.time} mode={nowcastMode} current={weather.current} radarClear={radarClear} />,
   } : null
+  // The cards the phone stack can hold (the right column on desktop, where a
+  // few live in the left column instead), in the saved order; then the ones
+  // showing, and the ones removed, which reorder mode lists to add back.
+  const stackable = blockOrder.filter(id => id !== 'aqi'
+    && !(isDesktop && (id === 'nowcast' || id === 'overview' || id === 'today')))
+  const stackBlocks = stackable.filter(isBlockShown)
+  const removedBlocks = stackable.filter(id => !isBlockShown(id))
 
   // The tab bar takes the logo's place in the header, but only once there is
   // something to navigate: with no city loaded, and while the splash logo is
@@ -1718,16 +1794,10 @@ function App() {
     onUnitChange: changeUnit,
     units,
     onUnitGroupChange: changeUnitGroup,
-    showOverview,
-    onShowOverviewChange: changeShowOverview,
-    showToday,
-    onShowTodayChange: changeShowToday,
     nowcastMode,
     onNowcastModeChange: changeNowcastMode,
     colorCoding,
     onColorCodingToggle: toggleColorCoding,
-    overviewParts,
-    onOverviewPartToggle: toggleOverviewPart,
     weatherAnimations,
     onWeatherAnimationsChange: changeWeatherAnimations,
     iconMotion,
@@ -1766,8 +1836,6 @@ function App() {
       loading={loading}
       colorCoding={colorCoding}
       weatherAnimations={weatherAnimations}
-      overviewParts={overviewParts}
-      showOverview={showOverview}
       nowcastMode={nowcastMode}
       radarMode={radarMode}
       radarSource={radarSource}
@@ -1784,7 +1852,10 @@ function App() {
     />
   ) : (
     <>
-      <div className="weather-left">
+      {/* Set aside while reordering, so the list of cards starts at the top
+          of the screen. Hidden rather than unmounted, so the reading and its
+          alerts are just as they were on Done. */}
+      <div className="weather-left" hidden={reordering}>
         <WeatherAlerts alerts={alerts} location={location} />
         <CurrentWeather
           // The phone shells show the city and date in the header, and keep
@@ -1813,20 +1884,62 @@ function App() {
         />
         {/* On desktop the compact precipitation chart sits under the current
             weather instead of stretching the wide right column. On mobile it
-            stays in the draggable block list below. */}
-        {isDesktop && blockComponents.nowcast}
-        {isDesktop && showOverview && blockComponents.overview}
+            stays in the reorderable block list below. */}
+        {isDesktop && isBlockShown('nowcast') && blockComponents.nowcast}
+        {isDesktop && isBlockShown('overview') && blockComponents.overview}
       </div>
-      <div className="weather-right">
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={blockOrder} strategy={verticalListSortingStrategy}>
-            {blockOrder.filter(id => id !== 'aqi' && (id !== 'overview' || showOverview) && (id !== 'today' || showToday) && !(isDesktop && id === 'nowcast') && !(isDesktop && id === 'overview') && !(isDesktop && id === 'today')).map(id => (
-              <SortableBlock key={id} id={id}>
-                {blockComponents[id]}
-              </SortableBlock>
-            ))}
-          </SortableContext>
-        </DndContext>
+      <div className={`weather-right${reordering ? ' weather-right--reordering' : ''}`}>
+        {reordering ? (
+          <>
+            <DndContext sensors={sensors} collisionDetection={closestCenter} modifiers={[lockToVertical]} onDragEnd={handleDragEnd}>
+              <SortableContext items={stackBlocks} strategy={verticalListSortingStrategy}>
+                {stackBlocks.map(id => (
+                  <ReorderRow
+                    key={id}
+                    id={id}
+                    onRemove={REMOVABLE_BLOCKS.includes(id) ? (b) => setBlockShown(b, false) : null}
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
+            {/* Removed cards, each one tap from coming back. */}
+            {removedBlocks.length > 0 && (
+              <div className="card reorder-removed">
+                <div className="section-label">REMOVED CARDS</div>
+                {removedBlocks.map(id => {
+                  const { label, Icon } = BLOCK_META[id] ?? { label: id, Icon: LayoutGrid }
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      className="reorder-removed-row"
+                      onClick={() => setBlockShown(id, true)}
+                      aria-label={`Add ${label} back`}
+                    >
+                      <span className="reorder-row-action reorder-row-action--add" aria-hidden="true">
+                        <Plus size={16} strokeWidth={3} />
+                      </span>
+                      <Icon size={19} className="reorder-row-icon" aria-hidden="true" />
+                      <span className="reorder-row-label">{label}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </>
+        ) : stackBlocks.map(id => (
+          <div key={id} className="sortable-block">{blockComponents[id]}</div>
+        ))}
+        {/* Under the last card: the way into reorder mode, and out of it. */}
+        <button
+          type="button"
+          className={`card reorder-btn${reordering ? ' reorder-btn--done' : ''}`}
+          onClick={reordering ? endReorder : () => setReordering(true)}
+        >
+          {reordering
+            ? <><Check size={18} aria-hidden="true" />Done</>
+            : <><ArrowUpDown size={18} aria-hidden="true" />Reorder cards</>}
+        </button>
       </div>
     </>
   ))
@@ -1842,7 +1955,7 @@ function App() {
       className={`app${weatherAnimations && levelC ? ` ${levelC}` : ''}${!weatherAnimations ? ' no-effects' : ''}${weather && weatherAnimations ? ' sky-active' : ''}${weather && weatherAnimations && skyToneLight ? ' sky-tone-light' : ''}${headerTabs ? ' app--web-tabs' : ''}${radarPageUp ? ' app--web-radar' : ''}${webSplash ? ' app--web-splash' : ''}${webSplash && splashPhase === 'exit' ? ' app--web-splash-exit' : ''}${webLayout && splashPhase !== 'visible' ? ' app--revealed' : ''}`}
       style={weather && weatherAnimations ? SKY_CARD_VARS[skyC] : undefined}
     >
-      <header ref={headerRef} className={`app-header${!weather && !showNav ? ' app-header--no-city' : ''}${showNav ? ' app-header--tabs' : ''}`}>
+      <header ref={headerRef} className={`app-header${!weather && !showNav ? ' app-header--no-city' : ''}${showNav ? ' app-header--tabs' : ''}${placeInHeader ? ' app-header--float' : ''}${placeInHeader && scrolledDown ? ' app-header--scrolled' : ''}`}>
                 {/* Backdrop for the sticky tab bar. It repaints the same sky gradient
             as .sky-bg, anchored to the viewport the same way (see .header-sky
             in WebApp.css), so it is opaque enough to hide the page scrolling
@@ -2284,7 +2397,6 @@ function App() {
           onDismiss={dismissSettings}
           subView={subView}
           onColorCodingOpen={() => openSubView('colorcoding')}
-          onOverviewOpen={() => openSubView('overview')}
           onRadarOpen={() => openSubView('radar')}
           onWeatherEffectsOpen={() => openSubView('effects')}
           onIconsOpen={() => openSubView('icons')}

@@ -8,10 +8,11 @@ import { WindTurbine } from '../WindTurbine'
 import { formatHour, getUVLabel, getWindDirection, sunColor, toTemp, SUN_ORANGE } from '../../utils/weatherCodes'
 import {
   getHumidityInfo, getHumidityNote, getPollenInfo, getPrecipInfo,
-  getPressureInfo, getPressureTrend, getSnowInfo, getStormInfo, getStormNote,
+  getPressureInfo, getPressureTrend, getSnowInfo, getStormInfo,
   getUVNote, getVisibilityInfo, getVisibilityNote, getWindInfo, getWindNote,
 } from '../../utils/conditions'
 import { getMoonInfo } from '../../utils/moon'
+import { STORM_KIND_NAME, stormHours, stormNote, stormPeak } from '../../utils/stormRisk'
 import { formatMinutes, formatSpan, isoMinutes, sunTimes } from '../../utils/sunTimes'
 import { useMeasure } from './chartUtils'
 import { Sparkline } from './Sparkline'
@@ -356,12 +357,11 @@ export function DetailsPage({ weather, unit, units, airQuality, colorCoding }) {
     : popPeak >= 20 ? `A slight chance of showers; up to ${popPeak}% later.`
     : 'No rain expected in the next 24 hours.'
 
-  const capeSeries = nextDay(hourly.cape)
-  const capeNow = capeSeries[0]
-  const capePeak = capeSeries.reduce((best, value, i) => {
-    if (value == null || !Number.isFinite(value)) return best
-    return !best || value > best.value ? { value, time: times[i] } : best
-  }, null)
+  // Storm risk from thunder potential, rain or snow, and gusts together (the
+  // same model as the phone Details cover; see utils/stormRisk).
+  const stormDay = stormHours(hourly, hStart, 24, current.severe_storm)
+  const stormNow = stormDay[0] ?? null
+  const stormNext = stormPeak(stormDay)
 
   // Snow arrives in inches (precipitation_unit=inch) and its depth in feet; the
   // card follows the precipitation unit, as centimetres rather than millimetres
@@ -451,31 +451,35 @@ export function DetailsPage({ weather, unit, units, airQuality, colorCoding }) {
       </Panel>
     ) : null,
 
-    storm: capeNow != null ? (
+    storm: stormNow ? (
       <Panel
         icon={<CloudLightning size={18} />}
-        title="THUNDERSTORM POTENTIAL"
-        value={Math.round(capeNow).toLocaleString('en-US')}
-        unit=" J/kg"
-        status={getStormInfo(capeNow).label}
-        note={getStormNote(capeNow)}
-        color={tint(getStormInfo(capeNow).color)}
+        title="STORMS"
+        value={stormNow.level.label}
+        status={stormNow.level.index > 0 ? STORM_KIND_NAME[stormNow.kind] : 'Quiet'}
+        note={stormNote(stormNow, stormNext, stormNext ? formatHour(stormNext.time, timezone) : '')}
+        color={tint(stormNow.level.color)}
       >
         <PanelChart
-          values={capeSeries}
+          values={stormDay.map((h) => h.score)}
           times={times}
           timezone={timezone}
-          color={tint(getStormInfo(capeNow).color)}
-          step={500}
+          color={tint(stormNow.level.color)}
+          step={20}
         />
         <StatRow
           items={[
             {
               label: 'Peak next 24h',
-              value: capePeak
-                ? `${getStormInfo(capePeak.value).label} ${capePeak.time === times[0] ? 'now' : `at ${formatHour(capePeak.time, timezone)}`}`
+              value: stormNext
+                ? `${stormNext.level.label} ${stormNext.time === times[0] ? 'now' : `at ${formatHour(stormNext.time, timezone)}`}`
                 : null,
-              color: capePeak ? tint(getStormInfo(capePeak.value).color) : undefined,
+              color: stormNext ? tint(stormNext.level.color) : undefined,
+            },
+            {
+              label: 'Storm energy',
+              value: stormNow.cape != null ? `${Math.round(stormNow.cape).toLocaleString('en-US')} J/kg` : null,
+              color: stormNow.cape != null ? tint(getStormInfo(stormNow.cape).color) : undefined,
             },
           ]}
         />

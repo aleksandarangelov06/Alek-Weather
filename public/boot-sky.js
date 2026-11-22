@@ -27,6 +27,14 @@
   try { native = !!(bridge && bridge.active()) } catch { /* an older APK */ }
   if (native) root.setAttribute('data-native-boot', '')
 
+  // The icon style (Settings → Icons): with Line chosen, the boot stage shows
+  // its line glyphs in place of the colour ones (see .bli in index.html), so
+  // the page is marked before the first paint. utils/iconSet.js keeps the mark
+  // current from then on, for the loading screens cloned from this stage.
+  try {
+    if (window.localStorage.getItem('alek-weather-icon-set') === 'line') root.setAttribute('data-icon-set', 'line')
+  } catch { /* storage unavailable: the colour glyphs, the default */ }
+
   // { theme, sky }: the Theme setting, and the kept sky when it is the city a
   // launch opens on (else null).
   function look() {

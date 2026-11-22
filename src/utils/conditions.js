@@ -112,21 +112,14 @@ export function getPrecipInfo(pct) {
 
 // CAPE (J/kg): the energy available to a rising parcel of air. It is the fuel
 // for thunderstorms, not a forecast of them — something still has to set them
-// off — which is why the notes say "if" rather than "will".
+// off. This colours the "storm energy" figure only; the storm level itself
+// comes from utils/stormRisk, which weighs rain and wind in as well.
 export function getStormInfo(cape) {
   if (cape < 300)  return { color: 'var(--cond-green)',  label: 'Minimal'  }
   if (cape < 1000) return { color: 'var(--cond-lime)',   label: 'Low'      }
   if (cape < 2500) return { color: 'var(--cond-yellow)', label: 'Moderate' }
   if (cape < 4000) return { color: 'var(--cond-orange)', label: 'High'     }
   return                { color: 'var(--cond-red)',     label: 'Extreme'  }
-}
-
-export function getStormNote(cape) {
-  if (cape < 300)  return 'Stable air; thunderstorms are very unlikely.'
-  if (cape < 1000) return 'Some instability; a stray storm is possible.'
-  if (cape < 2500) return 'Enough energy for thunderstorms if they form.'
-  if (cape < 4000) return 'Strong storms are possible if anything sets them off.'
-  return 'Explosive instability; severe storms are possible.'
 }
 
 // Snowfall over a period, in inches of snow (not water equivalent).

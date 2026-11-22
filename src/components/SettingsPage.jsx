@@ -293,7 +293,7 @@ const NOTIFY_TYPE_LABELS = {
 // master toggle drives the native POST_NOTIFICATIONS grant. 'default' shows an
 // off toggle that prompts on tap; 'denied' points the user to the system
 // settings; with the grant in hand the per-type toggles come alive, dimmed and
-// inert until then in the same way the Weather Overview options are.
+// inert until then in the same way Gyroscope Tilt is with the effects off.
 function NotificationsView({ notifyEnabled, notifyTypes, permission, onEnabledChange, onTypeToggle, onBack }) {
   const unsupported = permission === 'unsupported'
   const denied = permission === 'denied'
@@ -457,52 +457,6 @@ function IconsView({ iconSet, onIconSetChange, iconMotion, onIconMotionChange, o
       <div className="card settings-card">
         <SettingRow label="Animated Icons">
           <Toggle id="toggle-icon-motion" checked={iconMotion} onChange={onIconMotionChange} />
-        </SettingRow>
-      </div>
-    </>
-  )
-}
-
-function OverviewSettingsView({ showOverview, onShowOverviewChange, showToday, onShowTodayChange, overviewParts, onToggle, onBack }) {
-  const disabled = !showOverview
-  return (
-    <>
-      {onBack && (
-        <button className="back-btn color-coding-back" onClick={onBack} aria-label="Back to settings">
-          <ArrowLeft size={18} />
-          <span>Back</span>
-        </button>
-      )}
-      <p className="color-coding-desc">Show the Weather Overview tile and get a summary with insights and recommendations.</p>
-      <div className="card settings-card">
-        <SettingRow label="Show Weather Overview">
-          <Toggle id="toggle-overview" checked={showOverview} onChange={onShowOverviewChange} />
-        </SettingRow>
-      </div>
-      <p className="color-coding-desc">Choose what the overview includes.</p>
-      <div className={`card settings-card${disabled ? ' settings-card--disabled' : ''}`}>
-        <SettingRow label="Weather Insight">
-          <Toggle id="toggle-ov-insight" checked={overviewParts.insight} onChange={() => onToggle('insight')} />
-        </SettingRow>
-        <SettingRow label="Current Conditions">
-          <Toggle id="toggle-ov-conditions" checked={overviewParts.conditions} onChange={() => onToggle('conditions')} />
-        </SettingRow>
-        <SettingRow label="Clothing Suggestions">
-          <Toggle id="toggle-ov-clothing" checked={overviewParts.clothing} onChange={() => onToggle('clothing')} />
-        </SettingRow>
-      </div>
-      <p className="color-coding-desc">Recommendations</p>
-      <div className={`card settings-card${disabled ? ' settings-card--disabled' : ''}`}>
-        <SettingRow label="Air Quality Warnings">
-          <Toggle id="toggle-ov-aqi" checked={overviewParts.airQuality} onChange={() => onToggle('airQuality')} />
-        </SettingRow>
-      </div>
-      {/* A card of its own on the home screen, so it stays available with the
-          overview off. */}
-      <p className="color-coding-desc">Compare today with yesterday and rate conditions for being outdoors, driving and exercise.</p>
-      <div className="card settings-card">
-        <SettingRow label="Show Today Card">
-          <Toggle id="toggle-today" checked={showToday} onChange={onShowTodayChange} />
         </SettingRow>
       </div>
     </>
@@ -792,7 +746,7 @@ function radarViewProps(bodyProps) {
   }
 }
 
-function SettingsBody({ onHelpOpen, darkMode, onDarkModeChange, unit, onUnitChange, units, onUnitGroupChange, nowcastMode, onNowcastModeChange, onColorCodingOpen, onOverviewOpen, onRadarOpen, onWeatherEffectsOpen, onIconsOpen, onThemeOpen, onNotificationsOpen, weatherAnimations, onWeatherAnimationsChange, installPrompt, onInstall, webShell }) {
+function SettingsBody({ onHelpOpen, darkMode, onDarkModeChange, unit, onUnitChange, units, onUnitGroupChange, nowcastMode, onNowcastModeChange, onColorCodingOpen, onRadarOpen, onWeatherEffectsOpen, onIconsOpen, onThemeOpen, onNotificationsOpen, weatherAnimations, onWeatherAnimationsChange, installPrompt, onInstall }) {
   return (
     <>
       <div className="settings-group-label">Appearance</div>
@@ -881,18 +835,6 @@ function SettingsBody({ onHelpOpen, darkMode, onDarkModeChange, unit, onUnitChan
 
       <div className="settings-group-label">Tiles</div>
       <div className="card settings-card">
-        {/* Not on desktop: the Web layout's Today page doesn't render the
-            overview tile for now (see TodayPage), and a sub-view of switches for
-            a tile that isn't on the page is worse than no entry at all — every
-            one of them would appear to do nothing. The stored values are left
-            alone, so the phone shells keep theirs and this comes back with the
-            tile. */}
-        {!webShell && (
-          <button className="settings-row about-row" onClick={onOverviewOpen}>
-            <div className="settings-row-label">Weather Overview</div>
-            <ChevronRight size={16} className="about-chevron" />
-          </button>
-        )}
         <SettingRow label="Precipitation">
           <SegmentedControl
             value={nowcastMode}
@@ -905,7 +847,7 @@ function SettingsBody({ onHelpOpen, darkMode, onDarkModeChange, unit, onUnitChan
           />
         </SettingRow>
         {/* The radar settings live on their own page (RadarSettingsView), the
-            way Weather Overview's do. */}
+            way Color Coding's do. */}
         <button className="settings-row about-row" onClick={onRadarOpen}>
           <div className="settings-row-label">Radar</div>
           <ChevronRight size={16} className="about-chevron" />
@@ -914,7 +856,7 @@ function SettingsBody({ onHelpOpen, darkMode, onDarkModeChange, unit, onUnitChan
 
       {/* Notifications ride on a native bridge that only exists in the APK.
           The master toggle and the per-type ones live on their own page, the
-          way Weather Overview does. */}
+          way Radar's do. */}
       {IS_ANDROID_APP && (
         <>
           <div className="settings-group-label">Notifications</div>
@@ -943,7 +885,7 @@ function SettingsBody({ onHelpOpen, darkMode, onDarkModeChange, unit, onUnitChan
   )
 }
 
-const SUB_VIEW_TITLES = { colorcoding: 'Color Coding', overview: 'Weather Overview Settings', radar: 'Radar', effects: 'Weather Effects', icons: 'Icons', theme: 'Theme', notifications: 'Notifications' }
+const SUB_VIEW_TITLES = { colorcoding: 'Color Coding', radar: 'Radar', effects: 'Weather Effects', icons: 'Icons', theme: 'Theme', notifications: 'Notifications' }
 
 // ── Web Settings page ─────────────────────────────────────────────────────
 //
@@ -1272,7 +1214,7 @@ function WebSettings({
   )
 }
 
-export function SettingsPage({ onBack, onDismiss, inline, page, modal, closing, subView, onColorCodingOpen, onOverviewOpen, onRadarOpen, onWeatherEffectsOpen, onIconsOpen, onThemeOpen, onNotificationsOpen, onSubViewBack, colorCoding, onColorCodingToggle, overviewParts, onOverviewPartToggle, ...bodyProps }) {
+export function SettingsPage({ onBack, onDismiss, inline, page, modal, closing, subView, onColorCodingOpen, onRadarOpen, onWeatherEffectsOpen, onIconsOpen, onThemeOpen, onNotificationsOpen, onSubViewBack, colorCoding, onColorCodingToggle, ...bodyProps }) {
   // Set while the transparency thumb is held, which fades the page down to just
   // that slider (see .settings-page.peeking). A pointer released off the input
   // — dragged past the end of the track, or lifted after the browser handed the
@@ -1369,17 +1311,6 @@ export function SettingsPage({ onBack, onDismiss, inline, page, modal, closing, 
         weatherAnimations={bodyProps.weatherAnimations}
       />
     )
-  } else if (subView === 'overview') {
-    body = (
-      <OverviewSettingsView
-        showOverview={bodyProps.showOverview}
-        onShowOverviewChange={bodyProps.onShowOverviewChange}
-        showToday={bodyProps.showToday}
-        onShowTodayChange={bodyProps.onShowTodayChange}
-        overviewParts={overviewParts}
-        onToggle={onOverviewPartToggle}
-      />
-    )
   } else if (subView === 'radar') {
     body = <RadarSettingsView {...radarViewProps(bodyProps)} />
   } else if (subView === 'effects') {
@@ -1411,7 +1342,7 @@ export function SettingsPage({ onBack, onDismiss, inline, page, modal, closing, 
       />
     )
   } else {
-    body = <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} onOverviewOpen={onOverviewOpen} onRadarOpen={onRadarOpen} onWeatherEffectsOpen={onWeatherEffectsOpen} onIconsOpen={onIconsOpen} onThemeOpen={onThemeOpen} onNotificationsOpen={onNotificationsOpen} />
+    body = <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} onRadarOpen={onRadarOpen} onWeatherEffectsOpen={onWeatherEffectsOpen} onIconsOpen={onIconsOpen} onThemeOpen={onThemeOpen} onNotificationsOpen={onNotificationsOpen} />
   }
 
   // The web app's Settings tab: its own desktop layout (see WebSettings).
@@ -1492,7 +1423,7 @@ export function SettingsPage({ onBack, onDismiss, inline, page, modal, closing, 
   )
 }
 
-export function SettingsPill({ expanded, onToggle, subView, onColorCodingOpen, onOverviewOpen, onRadarOpen, onWeatherEffectsOpen, onIconsOpen, onThemeOpen, onNotificationsOpen, onSubViewBack, colorCoding, onColorCodingToggle, overviewParts, onOverviewPartToggle, ...bodyProps }) {
+export function SettingsPill({ expanded, onToggle, subView, onColorCodingOpen, onRadarOpen, onWeatherEffectsOpen, onIconsOpen, onThemeOpen, onNotificationsOpen, onSubViewBack, colorCoding, onColorCodingToggle, ...bodyProps }) {
   let body
   if (subView === 'colorcoding') {
     body = <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} onBack={onSubViewBack} webShell={bodyProps.webShell} />
@@ -1503,18 +1434,6 @@ export function SettingsPill({ expanded, onToggle, subView, onColorCodingOpen, o
         onDarkModeChange={bodyProps.onDarkModeChange}
         platformTheme={bodyProps.platformTheme}
         onPlatformThemeChange={bodyProps.onPlatformThemeChange}
-        onBack={onSubViewBack}
-      />
-    )
-  } else if (subView === 'overview') {
-    body = (
-      <OverviewSettingsView
-        showOverview={bodyProps.showOverview}
-        onShowOverviewChange={bodyProps.onShowOverviewChange}
-        showToday={bodyProps.showToday}
-        onShowTodayChange={bodyProps.onShowTodayChange}
-        overviewParts={overviewParts}
-        onToggle={onOverviewPartToggle}
         onBack={onSubViewBack}
       />
     )
@@ -1552,7 +1471,7 @@ export function SettingsPill({ expanded, onToggle, subView, onColorCodingOpen, o
       />
     )
   } else {
-    body = <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} onOverviewOpen={onOverviewOpen} onRadarOpen={onRadarOpen} onWeatherEffectsOpen={onWeatherEffectsOpen} onIconsOpen={onIconsOpen} onThemeOpen={onThemeOpen} onNotificationsOpen={onNotificationsOpen} />
+    body = <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} onRadarOpen={onRadarOpen} onWeatherEffectsOpen={onWeatherEffectsOpen} onIconsOpen={onIconsOpen} onThemeOpen={onThemeOpen} onNotificationsOpen={onNotificationsOpen} />
   }
 
   return (

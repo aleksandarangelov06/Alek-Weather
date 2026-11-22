@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { outlookWindow, compareWithYesterday, compareTomorrowWithToday, rateActivities } from './todayOutlook'
+import { outlookWindow, tomorrowWindow, compareWithYesterday, compareTomorrowWithToday, rateActivities, dayHazards } from './todayOutlook'
 
 // Two days of hourly data (yesterday + today), every hour the same unless a
 // test overrides it.
@@ -21,6 +21,7 @@ function makeHourly(over = {}, days = ['2026-11-07', '2026-11-08']) {
     wind_gusts_10m: fill(8),
     relative_humidity_2m: fill(50),
     visibility: fill(20000),
+    snowfall: fill(0),
   }
   for (const [k, fn] of Object.entries(over)) base[k] = time.map((t, i) => fn(t, i, base[k][i]))
   return base
@@ -124,3 +125,60 @@ describe('rateActivities', () => {
   })
 })
 
+
+describe('tomorrowWindow', () => {
+  it("covers tomorrow's waking hours at any time of day, looking from midnight", () => {
+    const hourly = makeHourly({}, ['2026-11-07', '2026-11-08', '2026-11-09'])
+    const w = tomorrowWindow(hourly, '2026-11-08')
+    expect(hourly.time[w.start]).toBe('2026-11-09T06:00')
+    expect(hourly.time[w.leadStart]).toBe('2026-11-09T00:00')
+  })
+})
+
+describe('dayHazards', () => {
+  const today = (hourly, hour = '06') => outlookWindow(hourly, '2026-11-08', hour)
+
+  it('says there is nothing to plan around on a mild dry day', () => {
+    const hourly = makeHourly()
+    const list = dayHazards(hourly, today(hourly))
+    expect(list).toHaveLength(1)
+    expect(list[0].id).toBe('dry')
+    expect(list[0].label).toBe('Nothing to plan around')
+  })
+
+  it('flags afternoon thunderstorms with their hours', () => {
+    const hourly = makeHourly({
+      weather_code: (t, i, v) => (t.startsWith('2026-11-08') && ['14', '15', '16', '17'].includes(t.slice(11, 13)) ? 95 : v),
+      precipitation_probability: (t, i, v) => (t.startsWith('2026-11-08') && ['14', '15', '16', '17'].includes(t.slice(11, 13)) ? 60 : v),
+    })
+    const storm = dayHazards(hourly, today(hourly)).find(h => h.id === 'storm')
+    expect(storm.label).toBe('Thunderstorms')
+    expect(storm.when).toBe('2 to 6 PM')
+    expect(storm.detail).toMatch(/60% chance/)
+  })
+
+  it('totals the snow and drops the dry line', () => {
+    const hourly = makeHourly({
+      weather_code: (t, i, v) => (t.startsWith('2026-11-08') && t.slice(11, 13) >= '18' ? 73 : v),
+      snowfall: (t) => (t.startsWith('2026-11-08') && t.slice(11, 13) >= '18' ? 0.4 : 0),
+      temperature_2m: () => 28,
+      apparent_temperature: () => 20,
+    })
+    const list = dayHazards(hourly, today(hourly))
+    const snow = list.find(h => h.id === 'snow')
+    expect(snow.label).toBe('Snow')
+    expect(snow.when).toBe('From 6 PM')
+    expect(snow.detail).toMatch(/About 2 in/)
+    expect(list.some(h => h.id === 'dry')).toBe(false)
+    expect(list.find(h => h.id === 'cold').label).toBe('Below freezing')
+  })
+
+  it('names strong gusts in the display unit', () => {
+    const hourly = makeHourly({ wind_gusts_10m: () => 48 })
+    const wind = dayHazards(hourly, today(hourly), { fmt: { wind: (mph) => `${Math.round(mph * 1.609)} km/h` } })
+      .find(h => h.id === 'wind')
+    expect(wind.label).toBe('Very windy')
+    expect(wind.detail).toMatch(/Gusts to 77 km\/h/)
+    expect(wind.when).toBe('Rest of the day')
+  })
+})

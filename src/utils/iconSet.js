@@ -25,7 +25,19 @@ function readStored() {
   }
 }
 
+// The set is also marked on <html> as data-icon-set="line", for the one icon
+// drawing React doesn't render: the boot screen's stage in index.html, and the
+// loading screens cloned from it, which swap their colour glyphs for line ones
+// on it (.bli). public/boot-sky.js sets it before the first paint; this keeps
+// it in step with the setting after that.
+function markRoot(value) {
+  if (typeof document === 'undefined') return
+  if (value === 'line') document.documentElement.setAttribute('data-icon-set', 'line')
+  else document.documentElement.removeAttribute('data-icon-set')
+}
+
 let current = readStored()
+markRoot(current)
 const listeners = new Set()
 
 export function getIconSet() {
@@ -36,6 +48,7 @@ export function setIconSet(value) {
   if (!ICON_SETS.includes(value) || value === current) return
   current = value
   try { localStorage.setItem(ICON_SET_KEY, value) } catch { /* not remembered, that's all */ }
+  markRoot(value)
   listeners.forEach(l => l())
 }
 

@@ -1831,7 +1831,7 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
   align-items: start;
 }
 
-/* With the overview card switched off in Settings the previews take the width. */
+/* With the overview card off the previews take the width. */
 .web-cols > .web-col-stack:only-child {
   grid-column: 1 / -1;
 }

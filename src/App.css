@@ -58,8 +58,16 @@
 }
 
 /* Lighter condition tones for dark/tinted surfaces. One shared set: applied by
-   dark mode below and by the light-mode sky tint levels (classes on .app). */
-.sky-lvl-slight, .sky-lvl-medium, .sky-lvl-dark, .sky-lvl-darkest {
+   dark mode below and by the light-mode sky tint levels (classes on .app).
+
+   Android's cards over a sky are the same kind of surface (white text on the
+   deep sky tint; see "Android: the search page's panels too"), but App.jsx
+   never gives Android a level class, so they kept the white-card palette:
+   #16a34a green on a slate card is about 1.2:1 and all but vanished. They take
+   the set directly. The mono Details card is left out so its own neutral
+   override (.card--details--mono, below) still holds on that card. */
+.sky-lvl-slight, .sky-lvl-medium, .sky-lvl-dark, .sky-lvl-darkest,
+:root[data-shell="mobile"][data-platform="android"] .app.sky-active .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded):not(.card--details--mono) {
   /* With colour-coding off, the neutral fallbacks assume a light or dark card.
      On a tinted sky they read as near-black / accent-blue on blue and disappear
      (the 7-day pill fill and the hourly graph line), so flip both to white. */
@@ -141,6 +149,7 @@
 .sky-lvl-medium  .card--details--mono .aqi-gradient-bar,
 .sky-lvl-dark    .card--details--mono .aqi-gradient-bar,
 .sky-lvl-darkest .card--details--mono .aqi-gradient-bar,
+:root[data-shell="mobile"][data-platform="android"] .app.sky-active .card--details--mono .aqi-gradient-bar,
 [data-theme="dark"] .card--details--mono .aqi-gradient-bar {
   --cond-green:  #4ade80;
   --cond-yellow: #facc15;
@@ -333,9 +342,12 @@ body {
 .sky-lvl-medium .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline),
 .sky-lvl-dark .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline),
 .sky-lvl-darkest .card:not(.current-card):not(.settings-card):not(.settings-pill):not(.settings-inline) {
+  /* Secondary and tertiary match the phone sky cards' (0.85 / 0.74): at 0.55
+     the small labels, axes and section headings were hard to read on the
+     lighter skies (fog, snow, overcast). */
   --text-primary:   #ffffff; --temp-light: 0;
-  --text-secondary: rgba(255,255,255,0.80);
-  --text-tertiary:  rgba(255,255,255,0.55);
+  --text-secondary: rgba(255,255,255,0.85);
+  --text-tertiary:  rgba(255,255,255,0.74);
 }
 
 /* Details subcards get a darker tint so they read as nested */
@@ -1507,7 +1519,11 @@ body {
    gap between the header and the reading. Shifted up (visually only, so the
    reading and everything under it stay put) to sit centred in that gap. */
 :root[data-shell="mobile"] .current-card .current-icon {
-  transform: translateY(-0.25em);
+  /* Only the line icons keep this (the colour glyphs replace it below). It was
+     -0.25em, which lifted the line cloud's top arc into the date line under the
+     place name; measured on a phone, -0.05em leaves the art centred between the
+     date and the reading, with room under it for the rain's fall. */
+  transform: translateY(-0.05em);
 }
 
 /* The colour glyphs on the phone: drawn larger, and centred in the gap between
@@ -1714,79 +1730,79 @@ body {
    transform-box: fill-box makes each part turn or move about its own centre
    rather than the icon's corner. --wi-row-delay (set per row for the colour
    set) puts each forecast row out of step with its neighbours. */
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon-line {
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) .weather-icon-line {
   overflow: visible;
 }
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon-line > * {
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) .weather-icon-line > * {
   transform-box: fill-box;
   transform-origin: center;
 }
 
 /* Sun and snowflake: a slow turn of the whole icon. Both are symmetric, so
    only the rays' positions change, never the outline. */
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) :is(.weather-icon-line--sun, .weather-icon-line--sunSmall) {
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) :is(.weather-icon-line--sun, .weather-icon-line--sunSmall) {
   animation: li-spin 24s linear infinite;
   animation-delay: calc(0s - var(--wi-row-delay, 0s) * 4);
 }
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon-line--snowflake {
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) .weather-icon-line--snowflake {
   animation: li-spin 18s linear infinite;
   animation-delay: calc(0s - var(--wi-row-delay, 0s) * 4);
 }
 
 /* Rays of the part-sun icons: a soft shimmer, staggered ray by ray. */
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) :is(.weather-icon-line--sunCloud, .weather-icon-line--sunRain) > path:nth-of-type(-n+4) {
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) :is(.weather-icon-line--sunCloud, .weather-icon-line--sunRain) > path:nth-of-type(-n+4) {
   animation: li-shimmer 3.2s ease-in-out infinite;
   animation-delay: calc(0s - var(--wi-row-delay, 0s));
 }
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) :is(.weather-icon-line--sunCloud, .weather-icon-line--sunRain) > path:nth-of-type(2) { animation-delay: calc(-0.8s - var(--wi-row-delay, 0s)); }
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) :is(.weather-icon-line--sunCloud, .weather-icon-line--sunRain) > path:nth-of-type(3) { animation-delay: calc(-1.6s - var(--wi-row-delay, 0s)); }
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) :is(.weather-icon-line--sunCloud, .weather-icon-line--sunRain) > path:nth-of-type(4) { animation-delay: calc(-2.4s - var(--wi-row-delay, 0s)); }
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) :is(.weather-icon-line--sunCloud, .weather-icon-line--sunRain) > path:nth-of-type(2) { animation-delay: calc(-0.8s - var(--wi-row-delay, 0s)); }
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) :is(.weather-icon-line--sunCloud, .weather-icon-line--sunRain) > path:nth-of-type(3) { animation-delay: calc(-1.6s - var(--wi-row-delay, 0s)); }
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) :is(.weather-icon-line--sunCloud, .weather-icon-line--sunRain) > path:nth-of-type(4) { animation-delay: calc(-2.4s - var(--wi-row-delay, 0s)); }
 
 /* Fog: the two bands slide against each other. */
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon-line--fog > path:nth-of-type(2) {
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) .weather-icon-line--fog > path:nth-of-type(2) {
   animation: li-slide 4.5s ease-in-out infinite;
   animation-delay: calc(0s - var(--wi-row-delay, 0s));
 }
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon-line--fog > path:nth-of-type(3) {
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) .weather-icon-line--fog > path:nth-of-type(3) {
   animation: li-slide 4.5s ease-in-out infinite reverse;
   animation-delay: calc(-1.2s - var(--wi-row-delay, 0s));
 }
 
 /* Rain: each streak falls and fades, out of step with the others. */
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) :is(
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) :is(
   .weather-icon-line--rain > path:nth-of-type(n+2),
   .weather-icon-line--sunRain > path:nth-of-type(n+7)
 ) {
   animation: li-fall 1.3s linear infinite;
   animation-delay: calc(0s - var(--wi-row-delay, 0s));
 }
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) :is(.weather-icon-line--rain > path:nth-of-type(3), .weather-icon-line--sunRain > path:nth-of-type(8)) {
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) :is(.weather-icon-line--rain > path:nth-of-type(3), .weather-icon-line--sunRain > path:nth-of-type(8)) {
   animation-duration: 1.45s;
   animation-delay: calc(-0.55s - var(--wi-row-delay, 0s));
 }
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon-line--rain > path:nth-of-type(4) {
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) .weather-icon-line--rain > path:nth-of-type(4) {
   animation-duration: 1.2s;
   animation-delay: calc(-0.9s - var(--wi-row-delay, 0s));
 }
 
 /* Snow: the six dots drift down and sideways, each on its own timing. */
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon-line--snow > path:nth-of-type(n+2) {
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) .weather-icon-line--snow > path:nth-of-type(n+2) {
   animation: li-snow 2.6s linear infinite;
   animation-delay: calc(0s - var(--wi-row-delay, 0s));
 }
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon-line--snow > path:nth-of-type(3) { animation-duration: 2.9s; animation-delay: calc(-1.1s - var(--wi-row-delay, 0s)); }
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon-line--snow > path:nth-of-type(4) { animation-duration: 2.4s; animation-delay: calc(-0.5s - var(--wi-row-delay, 0s)); }
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon-line--snow > path:nth-of-type(5) { animation-duration: 3.1s; animation-delay: calc(-1.9s - var(--wi-row-delay, 0s)); }
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon-line--snow > path:nth-of-type(6) { animation-duration: 2.7s; animation-delay: calc(-1.4s - var(--wi-row-delay, 0s)); }
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon-line--snow > path:nth-of-type(7) { animation-duration: 3s;   animation-delay: calc(-2.3s - var(--wi-row-delay, 0s)); }
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) .weather-icon-line--snow > path:nth-of-type(3) { animation-duration: 2.9s; animation-delay: calc(-1.1s - var(--wi-row-delay, 0s)); }
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) .weather-icon-line--snow > path:nth-of-type(4) { animation-duration: 2.4s; animation-delay: calc(-0.5s - var(--wi-row-delay, 0s)); }
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) .weather-icon-line--snow > path:nth-of-type(5) { animation-duration: 3.1s; animation-delay: calc(-1.9s - var(--wi-row-delay, 0s)); }
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) .weather-icon-line--snow > path:nth-of-type(6) { animation-duration: 2.7s; animation-delay: calc(-1.4s - var(--wi-row-delay, 0s)); }
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) .weather-icon-line--snow > path:nth-of-type(7) { animation-duration: 3s;   animation-delay: calc(-2.3s - var(--wi-row-delay, 0s)); }
 
 /* Lightning: two quick strikes then a long dark gap, as the colour set does.
    A severe storm strikes faster. */
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) :is(.weather-icon-line--storm, .weather-icon-line--stormStrong) > path:nth-of-type(2) {
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) :is(.weather-icon-line--storm, .weather-icon-line--stormStrong) > path:nth-of-type(2) {
   animation: li-flash 3.2s linear infinite;
   animation-delay: calc(0s - var(--wi-row-delay, 0s));
 }
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon-line--stormStrong > path:nth-of-type(2) {
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) .weather-icon-line--stormStrong > path:nth-of-type(2) {
   animation-duration: 1.9s;
 }
 
@@ -1963,7 +1979,7 @@ body {
    animation-delay is repeated in both blocks and cannot be lifted into a shared
    lower-specificity rule: the `animation` shorthand here resets it to 0s, and
    the shorthand's rule is the more specific of the two. */
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) :is(
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) :is(
   .weather-icon--rain, .weather-icon--sunRain,
   .weather-icon--storm, .weather-icon--stormStrong
 ) .wi-mote {
@@ -1974,7 +1990,7 @@ body {
 /* An SVG clips to its own box by default, and the drops' fall ends a little
    past the bottom of it — with clipping on, each drop was sliced flat on that
    edge mid-fade. Only where the icons animate: a still icon never leaves its box. */
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon {
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) .weather-icon {
   overflow: visible;
 }
 
@@ -1991,13 +2007,13 @@ body {
    These two match that block's specificity exactly and win on source order, so
    they must stay below it. --storm does not match --stormStrong; they are
    separate class names, which is why the block above lists both. */
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon--storm .wi-mote {
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) .weather-icon--storm .wi-mote {
   --wi-fall: 0.78s;
 }
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon--stormStrong .wi-mote {
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) .weather-icon--stormStrong .wi-mote {
   --wi-fall: 0.5s;
 }
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon--snow .wi-mote {
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) .weather-icon--snow .wi-mote {
   --wi-fall: 3.2s;
   animation: wi-flake calc(var(--wi-fall) * var(--wi-mote-dur, 1)) linear infinite;
   animation-delay: calc(0s - var(--wi-row-delay, 0s) - var(--wi-fall) * var(--wi-mote-lag, 0));
@@ -2009,7 +2025,7 @@ body {
    hero size it reads as drift, and it never competes with the precipitation.
    Listed per icon rather than applied to every .wi-part--body, because a
    thermometer and a snowflake also have a body and neither should drift. */
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) :is(
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) :is(
   .weather-icon--cloud, .weather-icon--rain, .weather-icon--snow,
   .weather-icon--storm, .weather-icon--stormStrong,
   .weather-icon--sunCloud, .weather-icon--sunSmall, .weather-icon--sunRain
@@ -2020,7 +2036,7 @@ body {
 
 /* transform-box keeps these in viewBox units, so the origins below are the
    coordinates the artwork is actually drawn in. */
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) :is(
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) :is(
   .weather-icon--sun .wi-part--rays,
   .weather-icon--sunCloud .wi-part--rays,
   .weather-icon--sunSmall .wi-part--rays,
@@ -2032,7 +2048,7 @@ body {
 }
 /* The sun's disc is centred at 15.53, 16.19 — not the middle of the viewBox.
    Spinning about 16,16 puts a visible wobble in the rays. */
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon--sun .wi-part--rays {
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) .weather-icon--sun .wi-part--rays {
   transform-origin: 15.53px 16.19px;
   animation: wi-spin 42s linear infinite;
 }
@@ -2040,22 +2056,22 @@ body {
    one family. Each is drawn smaller and somewhere else, so each origin is its
    own disc's centre (the core circle in weatherGlyphs). Only the rays turn: the
    core is a plain disc, and the cloud stays in front of all of it. */
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) :is(
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) :is(
   .weather-icon--sunCloud, .weather-icon--sunSmall, .weather-icon--sunRain
 ) .wi-part--rays {
   animation: wi-spin 42s linear infinite;
 }
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon--sunCloud .wi-part--rays {
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) .weather-icon--sunCloud .wi-part--rays {
   transform-origin: 12.14px 14.26px;
 }
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon--sunSmall .wi-part--rays {
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) .weather-icon--sunSmall .wi-part--rays {
   transform-origin: 14.38px 16.84px;
 }
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .weather-icon--sunRain .wi-part--rays {
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) .weather-icon--sunRain .wi-part--rays {
   transform-origin: 9.47px 9.76px;
 }
 /* The flake's own centre, not the viewBox centre — it sits slightly high. */
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) :is(
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) :is(
   .weather-icon--snowflake .wi-part--body,
   .weather-icon--snowflake .wi-part--ring
 ) {
@@ -2063,14 +2079,14 @@ body {
   animation: wi-spin 26s linear infinite;
 }
 
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon) .wi-part--bolt {
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) .wi-part--bolt {
   animation: wi-flash 3.4s ease-in-out infinite;
   animation-delay: var(--wi-row-delay, 0s);
 }
 /* The second bolt carries a transform attribute for its offset, and a CSS
    transform would replace it. Only its opacity is animated, half a beat after
    the first, so the two strikes read as one storm rather than a blink. */
-:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .hourly-item[data-live] .hourly-icon)
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon)
   .weather-icon--stormStrong .wi-part--bolt:last-of-type {
   animation-delay: calc(var(--wi-row-delay, 0s) + 0.12s);
 }
@@ -2079,13 +2095,17 @@ body {
    scoped to the containers above: this is the one rule that has to reach every
    animated part wherever it lives, so a slot added to the list above can never
    escape the setting. Same for reduced motion, which stops the icons whatever
-   the setting says. */
+   the setting says.
+   !important, as the line set's switch is: unscoped, this rule weighs (0,3,0),
+   and the motion rules above weigh (0,4,0) to (0,5,0) through the container
+   :is() (its heaviest member, .hourly-item[data-live] .hourly-icon, is three),
+   so without it every colour icon kept moving with the setting off. */
 [data-icon-motion="off"] .weather-icon :is(.wi-mote, .wi-part) {
-  animation: none;
+  animation: none !important;
 }
 @media (prefers-reduced-motion: reduce) {
   .weather-icon :is(.wi-mote, .wi-part) {
-    animation: none;
+    animation: none !important;
   }
 }
 
@@ -2644,10 +2664,6 @@ body {
   user-select: none;
 }
 
-.detail-card--drag-over {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
 
 /* ── Sun tile ──
    Narrow default: everything stacks, so the times still fit the cramped tiles of
@@ -2830,7 +2846,6 @@ body {
   font-size: 12px;
   color: var(--text-secondary);
 }
-.sky-active .sun-cover-daylight { color: rgba(255, 255, 255, 0.75); }
 
 .sun-dial-arc {
   fill: none;
@@ -3195,7 +3210,6 @@ body {
 }
 .sky-active .hour-grid .uv-timeline-item { background: rgba(255, 255, 255, 0.07); }
 .sky-active .hour-grid .uv-timeline-item:first-child { background: rgba(255, 255, 255, 0.16); }
-.sky-active .detail-cover-body .hour-grid .uv-tl-lbl { color: rgba(255, 255, 255, 0.7) !important; }
 
 /* A titled group inside a cover ("Next hours", "This week"). */
 .detail-section {
@@ -3222,17 +3236,57 @@ body {
   color: var(--text-secondary);
 }
 
-/* Storms cover: 24 hourly bars of storm energy. */
+/* Storms cover (WeatherDetails, utils/stormRisk). Like the Air Quality cover
+   it carries three groups (the reading with its three inputs, the next 24
+   hours, the week) and has to fit the card without scrolling, so it runs a
+   slightly tighter rhythm than the single-reading covers. */
+:root[data-shell="mobile"] .card--details .detail-cover-body.detail-cover-body--storm { gap: 16px; }
+.detail-cover-body--storm .detail-section { gap: 8px; }
+.detail-cover-body--storm .detail-stats { gap: 6px; }
+.detail-cover-body--storm .detail-stat { padding: 7px 10px; gap: 2px; }
+.detail-cover-body--storm .detail-stat-label { font-size: 10.5px; letter-spacing: 0.4px; }
+.detail-cover-body--storm .detail-stat-value { font-size: 16px; }
+
+/* A unit after a stat value ("28 mph", "450 J/kg"), a size down so three
+   stats still fit across a phone. */
+.detail-stat-unit {
+  font-size: 0.72em;
+  font-weight: 500;
+}
+
+/* The icon for what is driving the storm level, on a soft tile of its own
+   colour, standing in for the big number the other covers lead with. */
+.storm-badge {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: color-mix(in srgb, currentColor 16%, transparent);
+}
+
+/* 24 hourly bars of storm risk on a fixed 0–100 scale, over a faint line at
+   each level's edge (every fifth of the height), so a quiet day reads as low
+   bars on a scale rather than an empty chart. */
 .storm-chart {
   width: 100%;
 }
 .storm-chart-bars {
+  --storm-grid: var(--bar-track-bg);
   display: flex;
   align-items: flex-end;
   gap: 2px;
-  height: 72px;
+  height: 76px;
   padding-top: 14px; /* room for a bolt over a full-height bar */
   border-bottom: 1px solid var(--bar-track-bg);
+  background:
+    linear-gradient(var(--storm-grid), var(--storm-grid)) 0 20% / 100% 1px no-repeat,
+    linear-gradient(var(--storm-grid), var(--storm-grid)) 0 40% / 100% 1px no-repeat,
+    linear-gradient(var(--storm-grid), var(--storm-grid)) 0 60% / 100% 1px no-repeat,
+    linear-gradient(var(--storm-grid), var(--storm-grid)) 0 80% / 100% 1px no-repeat;
+  background-origin: content-box;
+  background-clip: content-box;
 }
 .storm-chart-col {
   position: relative;
@@ -3244,8 +3298,8 @@ body {
 .storm-chart-bar {
   display: block;
   width: 100%;
-  min-height: 2px;
-  border-radius: 2px 2px 0 0;
+  min-height: 3px;
+  border-radius: 3px 3px 0 0;
 }
 .storm-chart-bolt {
   position: absolute;
@@ -3266,34 +3320,42 @@ body {
   font-size: 11px;
   color: var(--text-tertiary);
 }
-.storm-chart-scale {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 6px;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-secondary);
+.sky-active .storm-chart-bars {
+  --storm-grid: rgba(255, 255, 255, 0.1);
+  border-bottom-color: rgba(255, 255, 255, 0.15);
 }
-.sky-active .storm-chart-axis span { color: rgba(255, 255, 255, 0.6); }
-.sky-active .storm-chart-scale { color: rgba(255, 255, 255, 0.8); }
-.sky-active .storm-chart-bars { border-bottom-color: rgba(255, 255, 255, 0.15); }
 
-/* Storms cover: the week's peak storm energy, one row a day. */
+/* Storms cover: each day's worst hour, one soft row a day, with an icon for
+   what drives it. Today is tinted, like "Now" in the hour grids. */
 .storm-week {
   display: flex;
   flex-direction: column;
-  gap: 9px;
+  gap: 5px;
 }
 .storm-week-row {
   display: grid;
-  grid-template-columns: 52px 1fr 92px;
+  grid-template-columns: 46px 16px minmax(0, 1fr) 68px;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: var(--hover-subtle);
   font-size: 13.5px;
 }
+.storm-week-row:first-child {
+  background: var(--accent-light);
+}
+.sky-active .storm-week-row { background: rgba(255, 255, 255, 0.07); }
+.sky-active .storm-week-row:first-child { background: rgba(255, 255, 255, 0.16); }
 .storm-week-day {
   color: var(--text-primary);
   font-weight: 500;
+}
+.storm-week-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .storm-week-track {
   height: 6px;
@@ -3306,16 +3368,18 @@ body {
   height: 100%;
   border-radius: 3px;
 }
+/* Plain text, like the labels in the hour grids: the bar and the icon already
+   carry the level's colour, and a small coloured word on a tinted card was the
+   hardest thing on the cover to read. */
 .storm-week-lbl {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
-  font-size: 12.5px;
+  font-size: 13px;
   font-weight: 600;
+  color: var(--text-primary);
 }
-.sky-active .detail-section-label { color: rgba(255, 255, 255, 0.6); }
-.sky-active .detail-section-aside { color: rgba(255, 255, 255, 0.8); }
 
 .detail-cover-body .uv-timeline {
   width: 100%;
@@ -3338,8 +3402,6 @@ body {
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
 }
-.sky-active .detail-chart-axis { color: rgba(255, 255, 255, 0.6); }
-.sky-active .detail-chart-range { color: rgba(255, 255, 255, 0.8); }
 
 
 /* ── Expanded detail: current-reading summary ── */
@@ -3566,7 +3628,7 @@ body {
    Precip reading, which frees the summary's second line for the comparison. */
 
 /* Under the condition label, one line per neighbouring day. Arrow colours are
-   the Today tab's (see .today-compare--*). */
+   the At a Glance card's (see .glance-delta--*). */
 .day-compare {
   list-style: none;
   margin: 0;
@@ -4875,7 +4937,7 @@ html.splash-lock .splash-mini {
   color: var(--text-primary);
   pointer-events: none;
   /* Centred absolutely with no width, so it shrink-wraps to ~half the header and
-     a long title ("Weather Overview Settings") wraps. Keep every title on one
+     a long title wraps. Keep every title on one
      line — the back button clears the centred text at these lengths. */
   white-space: nowrap;
 }
@@ -4931,8 +4993,9 @@ html.splash-lock .splash-mini {
   line-height: 1.45;
 }
 
-/* When the Weather Overview tile is hidden, its sub-option cards read as
-   inactive: dimmed and non-interactive until the master toggle is back on. */
+/* Options that depend on a switch that is off (Gyroscope Tilt with the effects
+   off, notification types without the grant) read as inactive: dimmed and
+   non-interactive until it is back on. */
 .settings-card--disabled {
   opacity: 0.5;
   pointer-events: none;
@@ -5528,10 +5591,92 @@ html.splash-lock .splash-mini {
   color: var(--text-secondary);
 }
 
-/* The phone Air Quality cover keeps the tighter rhythm the others were raised
-   from. Its six pollutant tiles are gone (they were what pushed it past the
-   card's height); the main pollutant is named in the line under the note. */
+/* The phone Air Quality cover carries the reading, all six pollutants and the
+   five-day outlook chart, and like every cover it has to fit the Details card
+   without scrolling. So it keeps the tighter rhythm the others were raised
+   from, drops the hero's own margins (the gap spaces it), runs its two
+   sections back to back without the hairline, and draws the pollutants as a
+   plain two-column list rather than the old tiles, which were what pushed it
+   past the card before. */
 :root[data-shell="mobile"] .card--details .detail-cover-body.detail-cover-body--aqi { gap: 14px; }
+.detail-cover-body--aqi .aqi-main { margin-bottom: 0; }
+.detail-cover-body--aqi .aqi-scale { margin-bottom: 0; padding: 4px 0; }
+.detail-cover-body--aqi .detail-section { gap: 8px; }
+.detail-cover-body--aqi .detail-section + .detail-section { padding-top: 0; border-top: 0; }
+/* Pollen (Europe only) is the one optional row, so it runs slim. */
+.detail-cover-body--aqi .detail-stats { gap: 6px; }
+.detail-cover-body--aqi .detail-stat { padding: 7px 10px; gap: 2px; }
+.detail-cover-body--aqi .detail-stat-label { font-size: 10px; letter-spacing: 0.4px; }
+.detail-cover-body--aqi .detail-stat-value { font-size: 14px; }
+
+/* Pollutants: name and reading over a level bar, with what it is under it. */
+.aqi-polls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 18px;
+}
+.aqi-poll {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.aqi-poll-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.aqi-poll .aqi-poll-name {
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-primary);
+}
+.aqi-poll .aqi-poll-val {
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.aqi-poll .aqi-poll-track { margin-top: 0; }
+.aqi-poll .aqi-poll-desc {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* AQI outlook chart (AqiOutlookChart in WeatherDetails). */
+.aqi-outlook {
+  width: 100%;
+}
+.aqi-outlook svg {
+  display: block;
+  overflow: visible;
+}
+.aqi-outlook-grid {
+  stroke-width: 1;
+  stroke-dasharray: 2 4;
+  opacity: 0.6;
+}
+.aqi-outlook-divider {
+  stroke: var(--text-tertiary);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+  opacity: 0.4;
+}
+.aqi-outlook-text {
+  fill: var(--text-tertiary);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+.aqi-outlook-text--grid {
+  font-size: 10px;
+  font-weight: 500;
+  text-anchor: end;
+}
 
 /* Which pollutant is behind the index, under the explanatory note. */
 .aqi-driver {
@@ -5621,7 +5766,13 @@ html.splash-lock .splash-mini {
   font-family: 'SF Mono', 'Fira Code', monospace;
 }
 
-/* ── Draggable blocks ── */
+/* ── Card stack and reorder mode ──
+   The cards no longer carry a grip: they only move in reorder mode, from the
+   button under the stack, so a hold or a drag on a card can't pick it up by
+   accident. In the mode each card becomes a short row (App.jsx ReorderRow).
+   The rows and the button are .card elements themselves, so they take the
+   card surface every style and sky already defines (glass, sky tint, text
+   colours) without restating it here. */
 .sortable-block {
   position: relative;
   width: 100%;
@@ -5630,60 +5781,181 @@ html.splash-lock .splash-mini {
   min-width: 0;
 }
 
-.sortable-block.dragging {
-  opacity: 0.5;
-  z-index: 10;
-}
-
-.drag-handle {
-  position: absolute;
-  top: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 20;
-  cursor: grab;
-  color: var(--text-tertiary);
-  padding: 4px 10px;
-  border-radius: 6px;
+/* A row is the remove button, then the handle (icon, name, grip) taking the
+   rest; only the handle picks the row up. */
+.card.reorder-row {
   display: flex;
   align-items: center;
-  opacity: 0;
-  transition: opacity 0.15s, color 0.15s, background 0.15s;
+  gap: 4px;
+  min-height: 56px;
+  padding: 0 0 0 14px;
+  margin-bottom: 8px;
+  font-size: 15.5px;
+  font-weight: 500;
+  color: var(--text-primary);
   user-select: none;
-  touch-action: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+  animation: reorder-row-in 0.22s cubic-bezier(0.2, 0, 0, 1) backwards;
+}
+.reorder-row-handle {
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px 14px 10px;
+  border-radius: inherit;
+  cursor: grab;
+  /* A quick swipe on a row still scrolls the page; a short hold picks it up
+     (the TouchSensor delay in App.jsx). */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.reorder-row-handle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
-.drag-handle:active {
+/* Remove (red minus) and add back (green plus): filled circles in fixed
+   colours, not the condition palette, so they read the same on any card or
+   sky. 26px drawn, with the tap area grown to 44px around it. */
+.reorder-row-action {
+  position: relative;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  color: #fff;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.12s ease;
+}
+.reorder-row-action::before {
+  content: '';
+  position: absolute;
+  inset: -9px;
+}
+button.reorder-row-action:active { transform: scale(0.88); }
+button.reorder-row-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.reorder-row-action--remove { background: #ef4444; }
+.reorder-row-action--add    { background: #22c55e; }
+/* Holds the minus's place on a card that can't be removed, so every row's icon
+   and label line up. */
+.reorder-row-action--none   { visibility: hidden; }
+
+/* The removed cards, gathered in one card under the list. The whole row is
+   the add-back button. */
+.card.reorder-removed {
+  padding: 16px 18px 6px;
+  margin-bottom: 8px;
+  animation: reorder-row-in 0.22s cubic-bezier(0.2, 0, 0, 1) backwards;
+}
+.card.reorder-removed .section-label {
+  margin-bottom: 4px;
+}
+.reorder-removed-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 15.5px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.15s;
+}
+.reorder-removed-row + .reorder-removed-row {
+  border-top: 1px solid var(--border);
+}
+.reorder-removed-row:active { opacity: 0.7; }
+.reorder-removed-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+.reorder-removed-row .reorder-row-icon { opacity: 0.75; }
+
+/* With the current weather set aside, the list has the whole width; on the
+   two-column desktop grid it spans both columns, kept to a list's width. */
+.weather-right--reordering {
+  grid-column: 1 / -1;
+  width: 100%;
+  max-width: 560px;
+  justify-self: center;
+}
+.reorder-row-icon {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+.reorder-row-label {
+  flex: 1;
+  min-width: 0;
+}
+.reorder-row-grip {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+/* Picked up: lifted a touch and outlined. An outline rather than a shadow,
+   since the flat phone cards have every card shadow turned off. */
+.card.reorder-row.reorder-row--dragging {
+  position: relative;
+  z-index: 10;
+  scale: 1.03;
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
   cursor: grabbing;
 }
+@keyframes reorder-row-in {
+  from { opacity: 0; transform: translateY(6px); }
+}
 
-.drag-handle:hover {
+/* Under the last card: "Reorder cards", or "Done" while reordering. */
+.card.reorder-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 52px;
+  padding: 14px 20px;
+  border: 1px solid transparent;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.15s, color 0.15s;
+}
+.card.reorder-btn:active {
+  opacity: 0.7;
+}
+.card.reorder-btn--done {
   color: var(--accent);
-  background: var(--hover-subtle);
+}
+.card.reorder-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
 
-.sortable-block:hover .drag-handle {
-  opacity: 0.6;
-}
-
-.sortable-block:hover .drag-handle:hover {
-  opacity: 1;
-}
-
-@media (hover: none) {
-  .drag-handle {
-    opacity: 0.35;
-  }
-}
-
-/* An expanded card (a day or detail cover open) is not something to pick up,
-   and the grip sits on the wrapper above the card, so it would otherwise draw
-   through the translucent cover and over its header, which is now the close
-   control, where a tap could start a drag. Four class-level parts so it
-   outranks the hover rules above in every state. */
-.sortable-block:has(.card .detail-cover) .drag-handle {
-  opacity: 0;
-  pointer-events: none;
+@media (prefers-reduced-motion: reduce) {
+  .card.reorder-row, .card.reorder-removed { animation: none; }
 }
 
 /* ── Radar ── */
@@ -6152,79 +6424,8 @@ html.splash-lock .splash-mini {
    "carry this" stays visually separate from "wear this". */
 .overview-detail-icon--accessory { color: var(--cond-blue); }
 
-/* ── Today card (mobile block list) ──
-   Yesterday comparison and 1–10 ratings for the rest of the day. Numbers stay in the text colour; the score colour lives on
-   the bars and the dot, where a pale yellow or lime still reads on a light card. */
-/* Now/High lines with a thermometer to their left, marking the comparison as
-   temperature. The thermometer sits in the same 20px column as the headline
-   icon above, so the lines stay aligned with the headline text. */
-.today-compare-detail {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 6px;
-}
-.today-compare-thermo {
-  flex: 0 0 20px;
-  display: flex;
-  justify-content: center;
-}
-.today-compare-thermo svg { flex-shrink: 0; }
-.today-compare-detail .today-compare-rows {
-  margin-top: 0;
-  margin-left: 0;
-}
-.today-compare-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.today-compare-icon { flex-shrink: 0; }
-.today-compare--colder .today-compare-icon { color: var(--cond-info); }
-.today-compare--warmer .today-compare-icon { color: var(--cond-orange); }
-.today-compare--same   .today-compare-icon { color: var(--cond-green); }
-.today-compare-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-top: 6px;
-  margin-left: 28px;
-  font-size: 14px;
-  color: var(--text-secondary);
-}
-.today-dim { color: var(--text-tertiary); font-size: 13px; }
-
-.today-section {
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
-}
-.section-label + .today-section { margin-top: 0; padding-top: 0; border-top: none; }
-
-.today-overall {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 14px;
-}
-.today-overall-score {
-  font-family: var(--font-display);
-  font-size: 40px;
-  line-height: 1;
-  color: var(--text-primary);
-}
-.today-overall-of { font-size: 18px; color: var(--text-tertiary); }
-.today-overall-label {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
+/* Score dot, beside a 1-10 rating's label (the At a Glance card, the 7-day
+   card's expanded day). */
 .today-dot {
   width: 9px;
   height: 9px;
@@ -6232,50 +6433,380 @@ html.splash-lock .splash-mini {
   flex-shrink: 0;
 }
 
-.today-acts {
+/* ── At a Glance card (mobile block list) ──
+   A Today/Tomorrow switch in the corner; two stat tiles (temperature against
+   yesterday, and the conditions rating with its three activities); then one
+   tinted banner per thing to plan around. Surfaces are mixed out of
+   --text-primary, and level colours out of the --cond-* palette, so the card
+   reads on every theme, sky tint and glass setting without overrides. */
+.glance-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.glance-head .section-label { margin-bottom: 0; }
+
+/* The day pager: round glass chevrons either side of the day's name. The name
+   keeps a fixed width so the chevrons stay put between "Today" and "Tomorrow". */
+.glance-days {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.glance-days-label {
+  min-width: 72px;
+  text-align: center;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.glance-days-label--next { animation: glance-label-next 0.25s ease-out; }
+.glance-days-label--prev { animation: glance-label-prev 0.25s ease-out; }
+@keyframes glance-label-next {
+  from { opacity: 0; transform: translateX(8px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes glance-label-prev {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: none; }
+}
+.glance-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--text-primary) 9%, transparent);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s, transform 0.1s;
+}
+.glance-nav:not(:disabled):hover { background: color-mix(in srgb, var(--text-primary) 15%, transparent); }
+.glance-nav:not(:disabled):active { transform: scale(0.92); }
+.glance-nav:disabled { opacity: 0.3; cursor: default; }
+.glance-nav:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.glance-pane {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-}
-.today-act {
-  display: flex;
-  align-items: flex-start;
   gap: 10px;
 }
-.today-act-icon {
-  flex-shrink: 0;
-  margin-top: 1px;
-  color: var(--accent);
+/* The day's tiles and banners slide in, one after another, from the side the
+   pager moved toward (see "At a Glance motion"). */
+@keyframes glance-in-next {
+  from { opacity: 0; transform: translateX(18px); }
+  to   { opacity: 1; transform: none; }
 }
-.today-act-body { flex: 1; min-width: 0; }
-.today-act-top {
+@keyframes glance-in-prev {
+  from { opacity: 0; transform: translateX(-18px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Stat tiles: side by side, or one full width when only one has data. */
+.glance-stats {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 10px;
+}
+.glance-tile {
   display: flex;
-  justify-content: space-between;
-  font-size: 14px;
+  flex-direction: column;
+  min-width: 0;
+  padding: 12px 12px 12px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+}
+.glance-tile-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.glance-tile-label svg { flex-shrink: 0; }
+.glance-big {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 10px;
+  font-family: var(--font-display);
+  font-size: 36px;
+  line-height: 1;
   color: var(--text-primary);
 }
-.today-act-label { font-weight: 600; }
-.today-act-score { font-variant-numeric: tabular-nums; color: var(--text-secondary); }
-.today-act-bar {
-  height: 6px;
-  margin-top: 5px;
-  border-radius: 3px;
-  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+.glance-big-icon { flex-shrink: 0; margin-left: -3px; }
+.glance-big--warmer .glance-big-icon { color: var(--cond-orange); }
+.glance-big--colder .glance-big-icon { color: var(--cond-info); }
+.glance-big--same   .glance-big-icon { color: var(--cond-green); }
+.glance-big-of {
+  align-self: flex-end;
+  margin-bottom: 3px;
+  font-size: 16px;
+  color: var(--text-tertiary);
+}
+.glance-tile-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text-secondary);
+}
+
+/* Reading rows, pinned to the tile's foot so both tiles' rows line up even
+   when one subtitle wraps. */
+.glance-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: auto;
+  padding-top: 12px;
+}
+.glance-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 18px;
+  font-size: 12.5px;
+}
+.glance-row-icon { flex-shrink: 0; color: var(--text-tertiary); }
+.glance-row-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+.glance-row-val {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+.glance-row-score { min-width: 14px; text-align: right; }
+.glance-row-bar {
+  flex: 0 0 30px;
+  height: 4px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
   overflow: hidden;
 }
-.today-act-fill {
+.glance-row-bar i {
+  display: block;
   height: 100%;
-  border-radius: 3px;
+  border-radius: 2px;
   transition: width 0.4s ease;
 }
-.today-act-reason {
-  margin-top: 4px;
+.glance-delta {
+  min-width: 32px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.glance-delta--warmer { color: var(--cond-orange); }
+.glance-delta--colder { color: var(--cond-info); }
+.glance-delta--same   { color: var(--text-tertiary); }
+
+/* What to expect: one banner each, tinted in its level's colour. The icon
+   tile carries the stronger tint, so pale yellows and greens still read on
+   a light card. */
+.glance-alerts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.glance-alert {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 12px 10px 10px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--glance-c) 12%, transparent);
+}
+.glance-alert-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--glance-c) 22%, transparent);
+  color: color-mix(in oklab, var(--glance-c) 80%, var(--text-primary));
+}
+.glance-alert-body { flex: 1; min-width: 0; }
+.glance-alert-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.glance-alert-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.glance-alert-when {
+  flex-shrink: 0;
   font-size: 12.5px;
-  color: var(--text-tertiary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+.glance-alert-detail {
+  margin-top: 2px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--text-secondary);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .today-act-fill { transition: none; }
+  .glance-nav, .glance-row-bar i { transition: none; }
+  .glance-days-label--next, .glance-days-label--prev { animation: none; }
+}
+
+/* ── At a Glance motion ──
+   Entrance: the tiles, then each banner, rise into place in turn (--i is each
+   one's place in that order, set in TodayCard). Inside them the activity bars
+   fill from the left row by row (--r), the arrow slides in the way it points,
+   and the big numbers count up (CountUp, in TodayCard, on the same clock). All
+   of it waits, paused on its first frame, until the card scrolls into view
+   (.glance-card--shown), and replays as a sideways slide on a day switch.
+
+   Then, while the card sits there, the banner icons act out their weather the
+   way the Weather Overview's do, on its keyframes (ov-*), and a severe banner's
+   icon gives off a slow pulse. Those loops follow the Animated Icons setting.
+   Everything here is withheld under reduced motion: the rules only exist
+   inside no-preference, so nothing has to be switched back off. */
+@media (prefers-reduced-motion: no-preference) {
+  .glance-anim {
+    animation: glance-rise 0.55s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+    animation-delay: calc(var(--i, 0) * 70ms);
+  }
+  .glance-row-bar i {
+    transform-origin: left center;
+    animation: glance-bar 0.7s cubic-bezier(0.3, 0.8, 0.3, 1) both;
+    animation-delay: calc(var(--i, 0) * 70ms + 220ms + var(--r, 0) * 80ms);
+  }
+  .glance-big-icon {
+    animation: 0.6s cubic-bezier(0.3, 1.5, 0.5, 1) 0s both;
+    animation-delay: calc(var(--i, 0) * 70ms + 180ms);
+  }
+  .glance-big--warmer .glance-big-icon { animation-name: glance-arrow-up; }
+  .glance-big--colder .glance-big-icon { animation-name: glance-arrow-down; }
+  .glance-big--same   .glance-big-icon { animation-name: glance-pop; }
+
+  /* Held on the first frame until the card is on screen. */
+  .glance-card:not(.glance-card--shown) :is(.glance-anim, .glance-row-bar i, .glance-big-icon) {
+    animation-play-state: paused;
+  }
+
+  /* A day switch: quicker, and sideways from the pager's direction. */
+  .glance-pane--next .glance-anim { animation-name: glance-in-next; }
+  .glance-pane--prev .glance-anim { animation-name: glance-in-prev; }
+  :is(.glance-pane--next, .glance-pane--prev) .glance-anim {
+    animation-duration: 0.4s;
+    animation-delay: calc(var(--i, 0) * 45ms);
+  }
+  :is(.glance-pane--next, .glance-pane--prev) .glance-row-bar i {
+    animation-delay: calc(var(--i, 0) * 45ms + 120ms + var(--r, 0) * 60ms);
+  }
+  :is(.glance-pane--next, .glance-pane--prev) .glance-big-icon {
+    animation-delay: calc(var(--i, 0) * 45ms + 120ms);
+  }
+
+  /* ── The banner icons' weather, while Animated Icons is on ── */
+  :root:not([data-icon-motion="off"]) .glance-alert-svg :is(path, circle) {
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  /* Storm: the bolt flickers. */
+  :root:not([data-icon-motion="off"]) .glance-alert-svg.lucide-cloud-lightning path:nth-child(2) {
+    animation: ov-bolt 3.2s ease-in-out infinite;
+  }
+  /* Rain, drizzle and hail: the drops fall in turn. */
+  :root:not([data-icon-motion="off"]) .glance-alert-svg:is(.lucide-cloud-rain, .lucide-cloud-drizzle, .lucide-cloud-hail) path:not(:first-child) {
+    animation: ov-drop 1.4s ease-in infinite;
+  }
+  :root:not([data-icon-motion="off"]) .glance-alert-svg:is(.lucide-cloud-rain, .lucide-cloud-drizzle, .lucide-cloud-hail) path:nth-child(3n) { animation-delay: -0.45s; }
+  :root:not([data-icon-motion="off"]) .glance-alert-svg:is(.lucide-cloud-rain, .lucide-cloud-drizzle, .lucide-cloud-hail) path:nth-child(3n+1) { animation-delay: -0.9s; }
+  /* Snow: the flakes drift down. */
+  :root:not([data-icon-motion="off"]) .glance-alert-svg.lucide-cloud-snow path:not(:first-child) {
+    animation: ov-flake 2.6s ease-in-out infinite;
+  }
+  :root:not([data-icon-motion="off"]) .glance-alert-svg.lucide-cloud-snow path:nth-child(odd) { animation-delay: -1.3s; }
+  /* Wind and fog: the lines slide past each other. */
+  :root:not([data-icon-motion="off"]) .glance-alert-svg.lucide-wind path,
+  :root:not([data-icon-motion="off"]) .glance-alert-svg.lucide-cloud-fog path:not(:first-child),
+  :root:not([data-icon-motion="off"]) .glance-alert-svg.lucide-haze path:is(:nth-child(5), :nth-child(6)) {
+    animation: ov-slide 3s ease-in-out infinite;
+  }
+  :root:not([data-icon-motion="off"]) .glance-alert-svg:is(.lucide-wind, .lucide-cloud-fog, .lucide-haze) path:nth-child(even) {
+    animation-direction: reverse;
+  }
+  /* Sun rays shimmer in turn: behind a cloud, beside the hot thermometer, over
+     the haze. The cold thermometer's snowflake glints the same way. */
+  :root:not([data-icon-motion="off"]) .glance-alert-svg.lucide-cloud-sun path:nth-child(-n+4),
+  :root:not([data-icon-motion="off"]) .glance-alert-svg.lucide-thermometer-sun path:is(:nth-child(1), :nth-child(3), :nth-child(5), :nth-child(6)),
+  :root:not([data-icon-motion="off"]) .glance-alert-svg.lucide-haze path:is(:nth-child(-n+4), :nth-child(8)),
+  :root:not([data-icon-motion="off"]) .glance-alert-svg.lucide-thermometer-snowflake path:not(:nth-child(5)) {
+    animation: ov-ray 2.4s ease-in-out infinite;
+  }
+  :root:not([data-icon-motion="off"]) .glance-alert-svg:is(.lucide-cloud-sun, .lucide-thermometer-sun, .lucide-haze) path:nth-child(2) { animation-delay: -0.6s; }
+  :root:not([data-icon-motion="off"]) .glance-alert-svg:is(.lucide-cloud-sun, .lucide-thermometer-sun, .lucide-haze) path:nth-child(3) { animation-delay: -1.2s; }
+  :root:not([data-icon-motion="off"]) .glance-alert-svg:is(.lucide-cloud-sun, .lucide-thermometer-sun, .lucide-haze) path:nth-child(4) { animation-delay: -1.8s; }
+  /* Clear sky: the sun turns, the moon rocks, a cloud drifts. */
+  :root:not([data-icon-motion="off"]) .glance-alert-svg.lucide-sun { animation: ov-spin 14s linear infinite; }
+  :root:not([data-icon-motion="off"]) .glance-alert-svg.lucide-moon { animation: ov-rock 4s ease-in-out infinite; }
+  :root:not([data-icon-motion="off"]) .glance-alert-svg.lucide-cloud { animation: ov-drift 4s ease-in-out infinite; }
+
+  /* Severe: a slow ring off the icon tile, in the banner's colour. */
+  :root:not([data-icon-motion="off"]) .glance-alert--severe .glance-alert-icon {
+    animation: glance-pulse 2.2s ease-out infinite;
+  }
+}
+
+@keyframes glance-rise {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes glance-bar {
+  from { transform: scaleX(0); }
+  to   { transform: none; }
+}
+@keyframes glance-arrow-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes glance-arrow-down {
+  from { opacity: 0; transform: translateY(-8px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes glance-pop {
+  from { opacity: 0; transform: scale(0.4); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes glance-pulse {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--glance-c) 50%, transparent); }
+  70%  { box-shadow: 0 0 0 7px color-mix(in srgb, var(--glance-c) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--glance-c) 0%, transparent); }
 }
 
 /* ── Overview icon motion ──
@@ -6393,18 +6924,21 @@ html.splash-lock .splash-mini {
 }
 
 /* Same two off switches as the weather icons: the Animated Icons setting and
-   the system's reduced-motion preference. */
+   the system's reduced-motion preference. !important for the same reason as
+   theirs: the per-path rules above (the bolt, drops, flakes, rays, fog and
+   wind lines) weigh (0,3,1) against this switch's (0,2,1), so they kept moving
+   with the setting off; only the whole-icon motions stopped. */
 /* Stopped, the drops would hang frozen in the air above the canopy, so they
    are hidden instead and what is left is a plain umbrella. */
 [data-icon-motion="off"] :is(.overview-item-icon, .overview-detail-icon),
 [data-icon-motion="off"] :is(.overview-item-icon, .overview-detail-icon) :is(path, circle) {
-  animation: none;
+  animation: none !important;
 }
 [data-icon-motion="off"] .rain-umbrella .umbrella-drop { display: none; }
 @media (prefers-reduced-motion: reduce) {
   :is(.overview-item-icon, .overview-detail-icon),
   :is(.overview-item-icon, .overview-detail-icon) :is(path, circle) {
-    animation: none;
+    animation: none !important;
   }
   .rain-umbrella .umbrella-drop { display: none; }
 }
@@ -9552,6 +10086,17 @@ html.splash-lock .splash-mini {
   animation: loadingLineOut 0.28s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
+/* The stage's line icons (Settings → Icons → Line; see .bli in index.html)
+   over the sky take the light tones, as the hero's do, beside the white
+   headline below. */
+.app.sky-active .loading-cycle {
+  --li-sun: #ffbd4a;
+  --li-cloud: #d5dde8;
+  --li-rain: #7cb7ff;
+  --li-snow: #a9defb;
+  --li-storm: #b7a4ff;
+}
+
 /* Over the sky, the place name's colour: white with a wide faint shadow. */
 .app.sky-active .loading-cycle-headline {
   color: #fff;
@@ -10705,9 +11250,8 @@ html.splash-lock .splash-mini {
   margin: 14px 12px 2px;
   font-size: 26px;
   /* The base rule keeps titles on one line for the small centred header. This
-     large left-aligned title has the full width, and a long one ("Weather
-     Overview Settings") ran off the screen, so here it wraps, balanced so the
-     two lines come out even. */
+     large left-aligned title has the full width, and a long one would run off
+     the screen, so here it wraps, balanced so the two lines come out even. */
   white-space: normal;
   overflow-wrap: anywhere;
   text-wrap: balance;
@@ -11112,6 +11656,41 @@ html.splash-lock .splash-mini {
 :root[data-shell="mobile"] .app-header .app-title-wrapper {
   min-width: 0;
 }
+
+/* ── Floating header (phone shells, forecast up) ──
+   Search and settings stay on screen as the page scrolls: the header sticks to
+   the top and its two glass circles float over the cards (their blur keeps
+   whatever passes under them from fighting the icon). The place and date in
+   the middle would sit over the cards as bare text, so they fade out as soon
+   as the page moves and come back at the top (.app-header--scrolled, set from
+   App.jsx). The wrapper fades rather than .app-place itself, whose entrance
+   animation holds its opacity. The header's empty band lets taps through to
+   the cards under it; only the buttons catch them.
+
+   .app's overflow-x: hidden makes it a scroll container, which pins a sticky
+   child to .app's own never-scrolling box. `clip` clips the same overflow
+   without one, as .app--web-tabs does for the web header. Scoped to the
+   forecast so the splash keeps the behaviour it was tuned against. */
+:root[data-shell="mobile"] .app:has(> .app-header--float) {
+  overflow-x: clip;
+}
+:root[data-shell="mobile"] .app-header.app-header--float {
+  position: sticky;
+  top: 0;
+  pointer-events: none;
+}
+:root[data-shell="mobile"] .app-header--float :is(.header-icon-btn, .settings-btn) {
+  pointer-events: auto;
+}
+:root[data-shell="mobile"] .app-header--float .app-title-wrapper {
+  transition: opacity 0.2s ease;
+}
+:root[data-shell="mobile"] .app-header--scrolled .app-title-wrapper {
+  opacity: 0;
+}
+:root[data-shell="mobile"] .app-header--scrolled .app-place {
+  pointer-events: none;
+}
 :root[data-shell="mobile"] .app-place {
   display: flex;
   flex-direction: column;
@@ -11269,7 +11848,7 @@ html.splash-lock .splash-mini {
   /* Text, for both styles' rules. */
   --text-primary: #fff; --temp-light: 0;
   --text-secondary: rgba(255, 255, 255, 0.85);
-  --text-tertiary: rgba(255, 255, 255, 0.66);
+  --text-tertiary: rgba(255, 255, 255, 0.74);
   /* The accent is a saturated mid blue, drawn for a white card: on the dark
      glass it all but vanished (the 7-day rain chances, the hourly "Now"
      highlight). A light sky blue in its place reads the same way here. */
@@ -11469,7 +12048,7 @@ html.splash-lock .splash-mini {
 
   --text-primary: #fff; --temp-light: 0;
   --text-secondary: rgba(255, 255, 255, 0.85);
-  --text-tertiary: rgba(255, 255, 255, 0.66);
+  --text-tertiary: rgba(255, 255, 255, 0.74);
   --accent: color-mix(in srgb, var(--md-primary) 45%, #fff);
   --accent-light: color-mix(in srgb, var(--md-primary) 22%, transparent);
   --border: rgba(255, 255, 255, 0.14);
@@ -11494,31 +12073,49 @@ html.splash-lock .splash-mini {
    outrank that and turn every opened card solid whatever Card Transparency
    said. */
 
-/* ── Android: Material circles over the sky too ──
-   The .app.sky-active circle tokens above (white glass) are for iOS. Android
-   keeps the same container circles it draws everywhere else, so the header
-   buttons match the cards and the splash location cards: the container tone
-   at --md-card-alpha, Material icon colours, and with Card Transparency on,
-   the cards' glass edge and veil. The :is() lifts these to the specificity of
-   the dark-theme sky variants, and they come after them. */
+/* ── Android: the circles over the sky wear the cards' panel ──
+   Over a sky the Android cards are the deep sky tint lifted by 7% white, with
+   white text, in light and dark mode alike (see "Android: the search page's
+   panels too"). The circles used to keep the theme's Material container
+   instead: a pale lavender disc with grey icons in light mode (dimmed by the
+   dark-sky brightness filter, never darkened), a near-black one in dark mode.
+   Neither matched the cards, and in light mode the buttons stayed bright over
+   a night or storm sky whatever the theme said. They take the cards' fill and
+   white icons now, so the theme switch, the sky and the cards all move them
+   together. Card Transparency thins them through --md-card-alpha as it thins
+   the cards. The cards are drawn flat (see the end of this file), so the
+   circles keep only a soft lift and a hairline top light, no glass rim.
+
+   The current card's save/favourite circles re-declare the tokens on
+   .current-card (the Android block in Current weather), so they are named
+   here too; above 1100px that card turns opaque and keeps its own tint. */
 :root[data-shell="mobile"][data-platform="android"]:is([data-theme], :not([data-theme])) .app.sky-active {
-  --icon-circle-bg: color-mix(in srgb, var(--md-surface-container) var(--md-card-alpha), transparent);
-  --icon-circle-press: var(--md-surface-container-high);
+  --icon-circle-bg: color-mix(in srgb, var(--sky-card-deep, #2d3f55) var(--md-card-alpha), transparent);
+  --icon-circle-press: color-mix(in srgb, var(--sky-card-deep, #2d3f55) 82%, #fff);
   --icon-circle-ring: transparent;
-  --icon-circle-shadow: 0 1px 2px rgba(0, 0, 0, 0.10), 0 2px 6px rgba(0, 0, 0, 0.05);
-  --icon-circle-shadow-press: inset 0 2px 4px rgba(0, 0, 0, 0.16);
+  --icon-circle-shadow: inset 0 0.5px 0 rgb(255 255 255 / 0.14), 0 1px 2px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);
+  --icon-circle-shadow-press: inset 0 2px 4px rgba(0, 0, 0, 0.22);
 }
-:root[data-card-glass="on"][data-shell="mobile"][data-platform="android"]:is([data-theme], :not([data-theme])) .app.sky-active {
-  --icon-circle-shadow:
-    inset 0 1px 0 var(--md-glass-gloss),
-    inset 0 0 0 1px var(--md-glass-rim),
-    0 2px 10px var(--md-glass-lift);
+@media (max-width: 1099px) {
+  :root[data-shell="mobile"][data-platform="android"]:is([data-theme], :not([data-theme])) .app.sky-active .current-card {
+    --icon-circle-bg: color-mix(in srgb, var(--sky-card-deep, #2d3f55) var(--md-card-alpha), transparent);
+    --icon-circle-press: color-mix(in srgb, var(--sky-card-deep, #2d3f55) 82%, #fff);
+    --icon-circle-ring: transparent;
+    --icon-circle-shadow: inset 0 0.5px 0 rgb(255 255 255 / 0.14), 0 1px 2px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);
+    --icon-circle-shadow-press: inset 0 2px 4px rgba(0, 0, 0, 0.22);
+  }
+  :root[data-shell="mobile"][data-platform="android"] .app.sky-active .current-card :is(.fav-btn, .save-btn) {
+    background-image: linear-gradient(rgb(255 255 255 / 0.07), rgb(255 255 255 / 0.07));
+  }
 }
+/* White icons, the cards' 7% lift over the fill, and no dark-sky dimmer: that
+   filter tamed a light disc's glare, and there is no light disc left. These
+   (0,7,0) come after the sky circle rule that clears background-image and the
+   Android glass rule that painted the old veil, both at the same weight. */
 :root[data-shell="mobile"][data-platform="android"] .app.sky-active :is(.app-header .header-icon-btn, .app-header .settings-btn) {
-  color: var(--md-on-surface-variant);
-}
-:root[data-card-glass="on"][data-shell="mobile"][data-platform="android"] .app.sky-active .app-header :is(.header-icon-btn, .settings-btn) {
-  background-image: linear-gradient(var(--md-glass-veil), var(--md-glass-veil));
+  color: rgba(255, 255, 255, 0.94);
+  background-image: linear-gradient(rgb(255 255 255 / 0.07), rgb(255 255 255 / 0.07));
+  filter: none;
 }
 
 /* ── Saved Cities (phone shells) ──

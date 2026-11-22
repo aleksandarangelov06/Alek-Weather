@@ -22,16 +22,6 @@ export function aqiDriver(airQuality) {
   return top && top.ratio >= 0 ? top : null
 }
 
-// A category name short enough for a narrow timeline column.
-export function shortAQILabel(aqi) {
-  if (aqi <= 50)  return 'Good'
-  if (aqi <= 100) return 'Moderate'
-  if (aqi <= 150) return 'Sensitive'
-  if (aqi <= 200) return 'Unhealthy'
-  if (aqi <= 300) return 'Very bad'
-  return 'Hazardous'
-}
-
 // Pollen (CAMS Europe; null everywhere else), in grains/m³. The bands are a
 // general guide across species, not a per-species index.
 export const POLLENS = [

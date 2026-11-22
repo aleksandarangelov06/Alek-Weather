@@ -64,9 +64,8 @@ function PreviewCard({ title, onOpen, openLabel, className, children }) {
 
 // The weather-overview card (insight / conditions / clothing / AQI) is off on
 // the desktop layout for now. WebLayout still spreads its props through, so
-// restoring it is a matter of pulling `airQuality`, `overviewParts`,
-// `showOverview` and `hasActiveAlert` back out of the props and rendering
-// <WeatherOverview> again.
+// restoring it is a matter of pulling `airQuality` and `hasActiveAlert` back
+// out of the props and rendering <WeatherOverview> again.
 export function TodayPage({
   weather, location, alerts, unit, units, radarClear, lastUpdated, loading,
   colorCoding, nowcastMode, airQuality,
