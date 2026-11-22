@@ -8,7 +8,7 @@ import { installPredictiveBack } from './utils/predictiveBack.js'
 import { IS_ANDROID_APP } from './utils/version.js'
 import { initialPlatformTheme } from './utils/platformTheme.js'
 import { loadWebShell } from './components/web/webShellChunk.js'
-import { keepBootStage } from './utils/bootStage.js'
+import { keepBootStage, rememberBootLook } from './utils/bootStage.js'
 
 // Opening in the Web style: that layout (and WebApp.css) is its own chunk, which
 // the phone styles never download (see webShellChunk). It is requested here,
@@ -88,6 +88,11 @@ if (IS_ANDROID_APP) {
     } catch { /* nothing to retire */ }
   }
   setTimeout(retire, 3000)
+
+  // The native launch screen opens on the look the page last handed it (see
+  // rememberBootLook). Handing it over again on the way out catches a new
+  // home city or Theme setting since App last kept a sky.
+  document.addEventListener('visibilitychange', () => { if (document.hidden) rememberBootLook() })
 } else {
   // With registerType 'autoUpdate', a new deploy activates the new service worker
   // and reloads the page automatically — no manual cache clearing required.

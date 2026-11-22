@@ -9,12 +9,14 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.ViewGroup
 import android.webkit.GeolocationPermissions
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
+import android.widget.FrameLayout
 import androidx.activity.BackEventCompat
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.AppCompatActivity
@@ -73,6 +75,13 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var insetBottomCss = 0f
     @Volatile private var insetLeftCss = 0f
     private var pageReady = false
+
+    /**
+     * The native launch screen ([BootOverlay]), from the first frame until the
+     * page lifts it; null from the moment it starts to fade. Read from a JS
+     * thread by [BootBridge.active], hence volatile.
+     */
+    @Volatile private var boot: BootOverlay? = null
 
     /**
      * Predictive back. Every in-app overlay (settings, search, saved cities, the
@@ -138,6 +147,12 @@ class MainActivity : AppCompatActivity() {
         const val REQ_LOCATION = 1
         const val REQ_NOTIF = 2
 
+        /**
+         * The page lifts the launch screen itself, by its own BOOT_MAX_MS (8s)
+         * at the latest. This is for a page that never gets that far.
+         */
+        const val BOOT_FALLBACK_MS = 10_000L
+
         /** Below this relative luminance a background needs light (white) icons. */
         const val LIGHT_ICON_THRESHOLD = 0.5
 
@@ -161,6 +176,11 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         applyEdgeToEdge()
+        // The launch screen's artwork renders on a thread of its own while the
+        // WebView below starts up, which is the slow part of a cold start.
+        val bootLook = BootLook.load(this)
+        val bootDark = bootLook.dark(this)
+        val bootArt = BootArt.renderAsync(resources.displayMetrics.density, bootDark)
         WeatherNotifier.ensureChannel(this)
         notifAsked = getSharedPreferences(NotifyStore.PREFS, MODE_PRIVATE).getBoolean("asked", false)
 
@@ -170,7 +190,18 @@ class MainActivity : AppCompatActivity() {
             .build()
 
         web = WebView(this)
-        setContentView(web)
+        val root = FrameLayout(this)
+        root.addView(web, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        // Over the WebView until the page lifts it. Should its artwork fail to
+        // render, there is no AndroidBoot bridge and the page shows its own
+        // boot screen (index.html) as it always did.
+        boot = try {
+            bootArt.get()?.let { BootOverlay(this, bootLook, bootDark, it) }
+        } catch (e: Exception) {
+            null
+        }
+        boot?.let { root.addView(it, ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)) }
+        setContentView(root)
 
         // The document scroller's bar is drawn by the Android View, not by
         // Chromium, so the ::-webkit-scrollbar rules the page carries for
@@ -199,6 +230,10 @@ class MainActivity : AppCompatActivity() {
         web.addJavascriptInterface(Updater(), "AndroidUpdate")
         web.addJavascriptInterface(NotifyBridge(), "AndroidNotify")
         web.addJavascriptInterface(ThemeBridge(), "AndroidTheme")
+        if (boot != null) {
+            web.addJavascriptInterface(BootBridge(), "AndroidBoot")
+            root.postDelayed({ liftBoot() }, BOOT_FALLBACK_MS)
+        }
 
         // The page paints under the bars, so it needs to know how much of the
         // top and bottom is covered. Insets can arrive before or after the page
@@ -294,6 +329,46 @@ class MainActivity : AppCompatActivity() {
         pageReady = true
         pushInsets()
         watchBarColors()
+    }
+
+    /** Fades the launch screen out and drops it once it has gone. Only the first call does anything. */
+    private fun liftBoot() {
+        val overlay = boot ?: return
+        boot = null
+        overlay.lift { (overlay.parent as? ViewGroup)?.removeView(overlay) }
+    }
+
+    /**
+     * The page's side of the native launch screen, bound as `window.AndroidBoot`
+     * (see public/boot-sky.js and utils/bootStage.js). Bound only when that
+     * screen is up at launch, so a page that finds no bridge shows its own.
+     */
+    inner class BootBridge {
+        /**
+         * Whether the launch screen is still up. A page loaded after it has
+         * started to go (a reload, say) gets false and shows its own boot screen.
+         */
+        @JavascriptInterface
+        fun active(): Boolean = boot != null
+
+        /**
+         * The look the launch screen should have: the page's Theme setting
+         * ("on", "off", or anything else for the system's) and the forecast sky
+         * as a CSS gradient ("" for none). Kept for the next launch's first
+         * frame, and applied now if the screen is still up.
+         */
+        @JavascriptInterface
+        fun look(theme: String, sky: String) {
+            val look = BootLook(theme, sky)
+            look.save(this@MainActivity)
+            runOnUiThread { boot?.setLook(look) }
+        }
+
+        /** The page is ready (App.jsx lifting #boot): fade the screen out. */
+        @JavascriptInterface
+        fun lift() {
+            runOnUiThread { liftBoot() }
+        }
     }
 
     /**

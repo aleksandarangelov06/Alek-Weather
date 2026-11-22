@@ -10,6 +10,7 @@ import { UNIT_GROUPS, UNIT_GROUP_KEYS } from '../utils/units'
 import { MAX_CARD_TRANSPARENCY } from '../utils/appearance'
 import { systemSeed, SYSTEM_SEED } from '../utils/materialTheme'
 import { WeatherIcon } from './WeatherIcon'
+import { armPageTransition } from '../utils/pageTransition'
 
 function SettingRow({ label, children }) {
   return (
@@ -1316,23 +1317,9 @@ export function SettingsPage({ onBack, onDismiss, inline, page, modal, closing, 
 
   const panelRef = useRef(null)
 
-  // Hold the open animation on its first keyframe for the mount frame. That
-  // frame lays out and paints the whole page, and an animation started on it
-  // loses its opening frames to that work — which is what made the slide look
-  // rough. Two rAFs, because the first still runs ahead of the paint; the
-  // second is the first frame with a painted layer ready to move. Added in a
-  // layout effect so it is on before the browser paints anything. See
-  // .pt-arming in App.css.
-  useLayoutEffect(() => {
-    const el = panelRef.current
-    if (!el) return
-    el.classList.add('pt-arming')
-    let r2
-    const r1 = requestAnimationFrame(() => {
-      r2 = requestAnimationFrame(() => el.classList.remove('pt-arming'))
-    })
-    return () => { cancelAnimationFrame(r1); cancelAnimationFrame(r2); el.classList.remove('pt-arming') }
-  }, [])
+  // Hold the open animation on its first keyframe for the mount frame, which
+  // lays out and paints the whole page (see utils/pageTransition.js).
+  useLayoutEffect(() => armPageTransition(panelRef.current), [])
 
   // Opening a dialog should hand it the keyboard, or the next Tab carries on
   // through the page behind the backdrop as if nothing had opened. Programmatic
@@ -1461,13 +1448,17 @@ export function SettingsPage({ onBack, onDismiss, inline, page, modal, closing, 
       tabIndex={modal ? -1 : undefined}
       className={`settings-page${modal ? ' settings-page--modal' : ''}${closing ? ' closing' : ''}${peeking ? ' peeking' : ''}${settled ? ' settled' : ''}`}
       onScroll={onScroll}
-      /* Guarded on the target: animations inside the page (a toggle, an info
-         panel opening) bubble their end events through here too, and any one
-         of them would otherwise report the slide as finished. */
-      /* pageBgIn is skipped too: on the phone shells the page runs two
-         animations, and the quick background fade ends while the content is
-         still fading in. The grow (pageGrowIn) is the one that means "landed". */
-      onAnimationEnd={(e) => { if (e.target === e.currentTarget && !closing && e.animationName !== 'pageBgIn') setSettled(true) }}
+      /* On the phone shells the page itself only fades its background in
+         (pageBgIn, which ends early); its contents rise in after it, and the
+         rise (pageRise, bubbling up from them) is what means "landed". The
+         modal's own entrance is on the page element, so any other animation
+         ending there counts too. Guarded on the target for that one: other
+         animations inside the page (a toggle, an info panel opening) bubble
+         their end events through here as well. */
+      onAnimationEnd={(e) => {
+        if (closing) return
+        if (e.animationName === 'pageRise' || (e.target === e.currentTarget && e.animationName !== 'pageBgIn')) setSettled(true)
+      }}
       /* Only the modal is a dialog. The phone shells are a page that replaces
          what was on screen, and announcing that as a dialog would promise a
          layer the user could dismiss to get back to it. */

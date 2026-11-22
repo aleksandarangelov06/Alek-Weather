@@ -146,6 +146,8 @@ import { DESKTOP_MQ, PLATFORM_THEME_KEY, initialPlatformTheme } from './utils/pl
 import { applyMaterialTokens, DEFAULT_SEED, isValidSeed, resolveSeed, systemSeed, SYSTEM_SEED } from './utils/materialTheme'
 import { useNotifications } from './hooks/useNotifications'
 import { syncNotificationSettings } from './utils/notifications'
+import { liftNativeBoot, rememberBootLook } from './utils/bootStage'
+import { armPageTransition } from './utils/pageTransition'
 import './App.css'
 // The few phone rules that used to live in WebApp.css, in the slot WebApp.css
 // had. WebApp.css itself now comes with the web layout's chunk, still after
@@ -173,23 +175,6 @@ function nextIsDesktop(current) {
   if (window.matchMedia(DESKTOP_MQ).matches) return true
   if (window.matchMedia(MOBILE_MQ).matches) return false
   return current
-}
-
-// Where the phone shells' pages zoom out of (and settle back toward): the centre
-// of the button that opened them, written to the root as --page-reveal-x/y and
-// used as the page's transform-origin by the pageGrowIn/pageShrinkOut keyframes in
-// App.css. With no element the page zooms from the middle of the screen.
-function setRevealOrigin(el) {
-  let x = window.innerWidth / 2
-  let y = window.innerHeight / 2
-  if (el?.getBoundingClientRect) {
-    const r = el.getBoundingClientRect()
-    x = r.left + r.width / 2
-    y = r.top + r.height / 2
-  }
-  const root = document.documentElement.style
-  root.setProperty('--page-reveal-x', `${x}px`)
-  root.setProperty('--page-reveal-y', `${y}px`)
 }
 
 // How much of the Card Transparency setting reaches the Android card fill. The
@@ -441,6 +426,11 @@ function App() {
   const webSplash = webLayout && splashPhase !== 'done'
   const headerRef = useRef(null)
   const searchAreaRef = useRef(null)
+  // The search page's two layers and the settings sky layer, held on their
+  // first frame while they mount (see the effects after closeSearch).
+  const searchOverlayRef = useRef(null)
+  const searchBackdropRef = useRef(null)
+  const settingsSkyRef = useRef(null)
   const searchHoldTimer = useRef(null)
   const searchLongPressed = useRef(false)
   const [searchHolding, setSearchHolding] = useState(false)
@@ -760,13 +750,18 @@ function App() {
     if (!bootReady && !bootTimedOut) return
     const root = document.documentElement
     const boot = document.getElementById('boot')
-    if (!boot) { delete root.dataset.boot; return }
+    // No #boot (main.jsx drops it for the Web style): nothing to stage, but
+    // the APK's native launch screen still goes now the app has rendered.
+    if (!boot) { delete root.dataset.boot; liftNativeBoot(); return }
     if (boot.classList.contains('boot--out')) return
     const ric = window.requestIdleCallback
     let t, idle
     const lift = () => {
       boot.classList.add('boot--out')
       root.dataset.boot = 'lifting'
+      // In the APK the native launch screen over #boot fades now, on the same
+      // timing, and #boot (blank under it) goes at once.
+      liftNativeBoot()
       setTimeout(() => {
         boot.remove()
         delete root.dataset.boot
@@ -1077,10 +1072,8 @@ function App() {
   const closeHelp = () => history.back()
 
   // Called straight from a click (the empty state, the location error's link),
-  // the page grows out of whatever was tapped. The magnifier sets its own origin
-  // and calls this with no event, after its sweep.
-  const openSearch = (e) => {
-    if (e?.currentTarget) setRevealOrigin(e.currentTarget)
+  // or by the magnifier through sweepThenOpenSearch.
+  const openSearch = () => {
     history.pushState({ overlay: 'search' }, '')
     setSearchOpen(true)
   }
@@ -1113,6 +1106,19 @@ function App() {
 
   const closeSearch = () => history.back()
 
+  // The phone pages' open transition waits out the frame they mount in, which
+  // lays out the whole page (see utils/pageTransition.js). SettingsPage holds
+  // its own; these hold what App renders: the search page with its dimmer, and
+  // the sky layer behind settings, so each moves as one with its page.
+  useLayoutEffect(() => {
+    if (!searchOpen) return
+    const release = [searchBackdropRef.current, searchOverlayRef.current].map(armPageTransition)
+    return () => release.forEach((undo) => undo())
+  }, [searchOpen])
+  useLayoutEffect(() => {
+    if (showSettings) return armPageTransition(settingsSkyRef.current)
+  }, [showSettings])
+
   // Press-and-hold the header location button to detect your location via GPS;
   // a normal tap still opens search. The fill animation under the icon
   // (App.css) signals progress toward the LONG_PRESS_MS threshold.
@@ -1133,10 +1139,9 @@ function App() {
     setSearchHolding(false)
   }
 
-  const handleSearchButton = (e) => {
+  const handleSearchButton = () => {
     // Swallow the click that trails a completed hold so it doesn't also open search.
     if (searchLongPressed.current) { searchLongPressed.current = false; return }
-    setRevealOrigin(e?.currentTarget)
     if (splashPhase !== 'done') {
       // On the web, the places you've been are already listed on Home.
       if (!webLayout) openSaved()
@@ -1529,6 +1534,9 @@ function App() {
           localStorage.setItem(BOOT_SKY_KEY, JSON.stringify({ bg: sky, at }))
         } else localStorage.removeItem(BOOT_SKY_KEY)
       } catch { /* not kept: the next boot screen is plain */ }
+      // The APK's native launch screen keeps its own copy, and takes this one
+      // now if it is still up.
+      rememberBootLook()
       if (!document.getElementById('boot')) return
       const root = document.documentElement
       if (sky) {
@@ -1920,7 +1928,7 @@ function App() {
           style={{ '--cog-spin-ms': `${SETTINGS_OPEN_MS}ms` }}
           onPointerDown={preloadSettings}
           // On the web, Settings is a page in the tab bar; the cog opens it there.
-          onClick={webLayout ? () => openNavPage('settings') : showSettings ? closeSettings : (e) => { setRevealOrigin(e.currentTarget); openSettings() }}
+          onClick={webLayout ? () => openNavPage('settings') : showSettings ? closeSettings : openSettings}
           aria-label="Settings"
         >
           {/* Gear on the phone styles; the web layout keeps the sliders. */}
@@ -2168,8 +2176,8 @@ function App() {
       {/* Search overlay — slides down from top */}
       {searchOpen && (
         <>
-          <div className={`search-backdrop${searchClosing ? ' closing' : ''}`} onClick={closeSearch} />
-          <div className={`search-overlay${searchClosing ? ' closing' : ''}${!webLayout ? ' search-overlay--sheet' : ''}`}>
+          <div ref={searchBackdropRef} className={`search-backdrop${searchClosing ? ' closing' : ''}`} onClick={closeSearch} />
+          <div ref={searchOverlayRef} className={`search-overlay${searchClosing ? ' closing' : ''}${!webLayout ? ' search-overlay--sheet' : ''}`}>
             {!webLayout ? (
               <SearchSheet
                 barRef={searchAreaRef}
@@ -2232,8 +2240,8 @@ function App() {
       )}
 
       {/* The saved locations page, opened from the home screen's corner button,
-          zooms out of it the way settings does: it is a .settings-page, so it
-          shares the phone page transition (pageGrowIn in App.css). */}
+          comes in the way settings does: it is a .settings-page, so it shares
+          the phone page transition (Page transition in App.css). */}
       {savedOpen && (
         <SavedCitiesPage
           cities={cities}
@@ -2254,7 +2262,7 @@ function App() {
           page shows only the sky, not the weather UI. Reuses the same gradient
           class as the main sky background. */}
       {showSettings && !webLayout && weather && weatherAnimations && (
-        <div className={`settings-sky ${skyC}${settingsClosing ? ' closing' : ''}`} aria-hidden="true" />
+        <div ref={settingsSkyRef} className={`settings-sky ${skyC}${settingsClosing ? ' closing' : ''}`} aria-hidden="true" />
       )}
       {/* The web app opens settings as a dialog over the page rather than as a
           full-screen page, so it gets a backdrop: it dims what the modal is

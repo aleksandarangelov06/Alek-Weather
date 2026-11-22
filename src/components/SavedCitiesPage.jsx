@@ -1,5 +1,7 @@
+import { useLayoutEffect, useRef } from 'react'
 import { ArrowLeft, Bookmark, Clock, House } from 'lucide-react'
 import { sameCity, placeRegion } from '../utils/location'
+import { armPageTransition } from '../utils/pageTransition'
 import { PlaceRow, PlaceSection } from './PlaceRows'
 
 // The phone shells' saved locations page, opened from the splash's corner
@@ -16,8 +18,12 @@ export function SavedCitiesPage({ cities, onSelect, onRemove, onBack, currentLoc
   const isCurrent = (c) => !!currentLocation && sameCity(currentLocation, c)
   const currentBadge = <span className="ss-badge">Current</span>
 
+  // The open transition waits out the mount frame, as settings' does.
+  const pageRef = useRef(null)
+  useLayoutEffect(() => armPageTransition(pageRef.current), [])
+
   return (
-    <div className={`settings-page saved-cities-page${closing ? ' closing' : ''}`}>
+    <div ref={pageRef} className={`settings-page saved-cities-page${closing ? ' closing' : ''}`}>
       <header className="settings-page-header">
         <button className="back-btn" onClick={onBack} aria-label="Back">
           <ArrowLeft size={18} />

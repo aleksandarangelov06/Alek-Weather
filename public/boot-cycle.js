@@ -87,5 +87,7 @@
   }
 
   window.alekBootCycle = start
-  start(document.querySelector('#boot .boot-stage'))
+  // In the APK the launch screen is native and #boot only a blank cover under
+  // it (data-native-boot, see boot-sky.js): nothing of its own to play.
+  if (!document.documentElement.hasAttribute('data-native-boot')) start(document.querySelector('#boot .boot-stage'))
 })()

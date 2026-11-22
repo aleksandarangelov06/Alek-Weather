@@ -27,7 +27,7 @@ const MAX_SHIFT = 24      // px the surface drifts away from the swiped edge
 const MAX_RADIUS = 28     // px corner radius at full progress (M3 extra-large)
 const SETTLE_MS = 250
 // On commit the surface keeps going the way the gesture was taking it: a little
-// smaller again while it fades, matching the pages' own close (pageShrinkOut).
+// smaller again while it fades.
 const EXIT_SCALE = 0.94
 const EXIT_MS = 200
 

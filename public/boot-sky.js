@@ -12,17 +12,50 @@
 // kilometre (readings are matched that loosely too); for any other, App fades
 // the right sky in once it has worked it out, rather than this showing a
 // different city's and then swapping.
+//
+// In the APK the launch screen is native (BootOverlay in MainActivity), drawn
+// over the WebView so its animation never waits on the page. While it is up
+// this marks the page with data-native-boot, which leaves #boot a blank cover
+// under it, and hands it the same look: the Theme setting and this sky.
+// window.alekBootLook hands it over again whenever App keeps a newer sky (see
+// rememberBootLook in utils/bootStage.js), so the next launch opens on it from
+// its first frame, before there is a page to ask.
 (function () {
-  try {
-    var store = window.localStorage
-    var city = JSON.parse(store.getItem('alek-weather-home') || 'null')
-    if (!city) city = (JSON.parse(store.getItem('alek-weather-saved') || 'null') || [])[0]
-    if (!city) return
-    var sky = JSON.parse(store.getItem('alek-weather-boot-sky') || 'null')
-    if (!sky || typeof sky.bg !== 'string' || sky.bg.indexOf('gradient(') < 0) return
-    if (!sky.at || Math.abs(sky.at[0] - city.latitude) > 0.01 || Math.abs(sky.at[1] - city.longitude) > 0.01) return
-    var root = document.documentElement
-    root.style.setProperty('--boot-sky', sky.bg)
+  var root = document.documentElement
+  var bridge = window.AndroidBoot
+  var native = false
+  try { native = !!(bridge && bridge.active()) } catch { /* an older APK */ }
+  if (native) root.setAttribute('data-native-boot', '')
+
+  // { theme, sky }: the Theme setting, and the kept sky when it is the city a
+  // launch opens on (else null).
+  function look() {
+    var now = { theme: '', sky: null }
+    try {
+      var store = window.localStorage
+      now.theme = store.getItem('alek-weather-theme') || ''
+      var city = JSON.parse(store.getItem('alek-weather-home') || 'null')
+      if (!city) city = (JSON.parse(store.getItem('alek-weather-saved') || 'null') || [])[0]
+      if (!city) return now
+      var sky = JSON.parse(store.getItem('alek-weather-boot-sky') || 'null')
+      if (!sky || typeof sky.bg !== 'string' || sky.bg.indexOf('gradient(') < 0) return now
+      if (!sky.at || Math.abs(sky.at[0] - city.latitude) > 0.01 || Math.abs(sky.at[1] - city.longitude) > 0.01) return now
+      now.sky = sky.bg
+    } catch { /* storage unavailable or unreadable: the plain background */ }
+    return now
+  }
+
+  // Hands the look to the native launch screen, which keeps it for the next
+  // launch and shows it now if it is still up. Outside the APK, only reads it.
+  window.alekBootLook = function () {
+    var now = look()
+    try { if (bridge) bridge.look(now.theme, now.sky || '') } catch { /* an older APK */ }
+    return now
+  }
+
+  var now = native ? window.alekBootLook() : look()
+  if (now.sky) {
+    root.style.setProperty('--boot-sky', now.sky)
     root.setAttribute('data-boot-sky', '')
-  } catch { /* storage unavailable or unreadable: the plain background */ }
+  }
 })()

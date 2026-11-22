@@ -16,6 +16,7 @@
 -keep class com.alekweather.app.MainActivity$BarsBridge { *; }
 -keep class com.alekweather.app.MainActivity$Updater { *; }
 -keep class com.alekweather.app.MainActivity$NotifyBridge { *; }
+-keep class com.alekweather.app.MainActivity$BootBridge { *; }
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;
 }

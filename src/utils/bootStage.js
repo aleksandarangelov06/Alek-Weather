@@ -36,6 +36,20 @@ export function startBootCycle(stage) {
   return window.alekBootCycle?.(stage) ?? false
 }
 
+// The APK's launch screen is native (BootOverlay in MainActivity, over the
+// WebView), with #boot left as a blank cover under it while it is up (see
+// public/boot-sky.js). Its two hooks: lifting it when App lifts #boot, and
+// handing it a newer look (the Theme setting and the sky, read the way
+// boot-sky.js reads them) for the next launch to open on. Both do nothing in a
+// browser or an older APK, and lifting a screen that has gone is harmless.
+export function liftNativeBoot() {
+  try { window.AndroidBoot?.lift() } catch { /* an older APK */ }
+}
+
+export function rememberBootLook() {
+  try { window.alekBootLook?.() } catch { /* boot-sky.js didn't load */ }
+}
+
 // A fresh copy of the stage, or null if there was no boot screen to keep one
 // from (index.html always has one; this is only so a missing one degrades to
 // an empty loading area rather than an error).

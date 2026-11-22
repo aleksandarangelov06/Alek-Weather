@@ -4775,9 +4775,6 @@ html.splash-lock .splash-mini {
   will-change: transform, opacity;
   backface-visibility: hidden;
 }
-:root[data-shell="mobile"] .settings-page.pt-arming {
-  animation-play-state: paused !important;
-}
 
 /* iOS: the navigation push — the page travels the full width on UIKit's
    long-tailed deceleration, with a soft shadow on its leading edge so it reads
@@ -4827,9 +4824,8 @@ html.splash-lock .splash-mini {
    carries on shrinking and fades out from where the finger left it.
 
    !important because the page transitions are set by more specific rules. The
-   origin and shadow are !important too: the phone pages zoom from their button
-   (pageGrowIn) and drop their shadow, but the gesture always shrinks toward the
-   centre and wants the lift. The settings sky layer is driven alongside the
+   origin and shadow are !important too: the phone pages drop their shadow,
+   but the gesture always shrinks toward the centre and wants the lift. The settings sky layer is driven alongside the
    page (see TARGETS in predictiveBack.js) so the two stay one surface; it sits
    under the page, so it skips the shadow. */
 [data-pb] {
@@ -10069,104 +10065,120 @@ html.splash-lock .splash-mini {
 }
 
 /* ── Page transition: search, settings and saved places on the phone shells ──
-   One simple motion for all three, in two layers:
+   One motion for all three, in two layers that take turns:
 
-     backdrop  the page's own background (and the iOS search glass, and the
-               settings sky layer) fades in quickly over the weather, so the
-               screen dissolves into the page colour rather than two busy
+     backdrop  the page's own background, and whatever stands in for it (the
+               settings sky layer, the iOS search glass, the dimmer under
+               search), dissolves in over the weather as one sheet, quickly, so
+               the screen turns into the page colour rather than two busy
                layouts crossfading through each other;
-     content   the page grows a little out of the button that opened it while
-               its contents fade in just behind the backdrop.
+     content   as that lands, the page's contents fade up and rise 12px into
+               place.
 
-   Deliberately no opacity on the page element itself. In Chromium an ancestor
-   at opacity < 1 becomes the backdrop root for everything inside it, so the iOS
-   search glass (a backdrop-filter on ::before) blurred nothing for the length
-   of the fade — the forecast showed through sharp, then the frost snapped on at
-   the end. So the background fades as a colour, the glass fades by its own
-   opacity (which doesn't cut it off from what is behind), and the opacity fade
-   is on the children. The page only scales, which doesn't affect the backdrop.
+   The page element itself never moves. It used to grow out of the button that
+   opened it, from 92%, while its background was still fading in, so the first
+   frames showed a half-clear panel sliding out of a top corner with forecast
+   down two of its edges, and the contents swept diagonally as they settled.
+   Now the background covers the whole screen from the first frame and only the
+   contents move: straight up, and only a little.
 
-   App.jsx (setRevealOrigin) writes the button's centre as --page-reveal-x/y,
-   which becomes the transform-origin; the fallbacks grow from mid-screen.
+   No opacity on the page element (or .settings-body) on the way in. In
+   Chromium an ancestor below opacity 1 is the backdrop root for everything
+   inside it, so glass inside it (the iOS search glass, the settings cards)
+   would blur nothing for the length of the fade and snap on at the end. So the
+   background fades as a colour, the glass by its own opacity, and the contents
+   each by theirs. A transform is no backdrop root, so the rise is safe.
 
-   It also meets predictive back (utils/predictiveBack.js) halfway: the gesture
-   shrinks the page toward 90%, and the close here goes the same way (content
-   fades, page eases smaller, backdrop dissolves), so a committed swipe carries
-   on rather than snapping back to full size first.
+   The close is the same in reverse: the contents go first, then the backdrop
+   dissolves, so the weather comes back in one clean fade instead of through a
+   page that is half gone. It ends by 210ms, under SEARCH_CLOSE_MS (220) and
+   SETTINGS_CLOSE_MS (260), which unmount the pages. Predictive back
+   (utils/predictiveBack.js) shrinks the page under the finger and carries on
+   from there on its own (see [data-pb]).
 
-   The grow (340ms, the last to finish) is what ends SettingsPage's .settled
+   The rise (pageRise, the last to finish) is what ends SettingsPage's .settled
    wait, and .settled is when the page's glass comes on and the weather stack
-   behind drops its blur — by then the sky layer is long opaque and the
-   content fully in, so neither change can be seen. Closes finish by 200ms, under SEARCH_CLOSE_MS (220) and
-   SETTINGS_CLOSE_MS (260), which unmount the pages.
+   behind drops its blur: by then the backdrop is long opaque, so neither change
+   can be seen.
+
+   Each page holds all of this on its first frame while it mounts (.pt-arming,
+   utils/pageTransition.js), so the motion starts on a frame with nothing else
+   to do rather than losing its opening frames to the mount.
 
    Openings fill backwards only, never forwards: a finished animation that holds
    its last frame outranks every ordinary rule on the element, and that held the
    settings sky layer at full opacity, so the Card Transparency peek (which fades
    the sky out to show the weather page) did nothing. */
-@keyframes pageGrowIn   { from { transform: scale(0.92); } to { transform: none; } }
-/* The way back out. It used to shrink to 94% toward the button that opened
-   the page, which is usually a top corner, so the still-solid background slid
-   off that corner and opened an L of forecast down the other two edges while
-   an empty panel drifted away. Now it recedes evenly toward the middle of the
-   screen, only to 96%, and the backdrop starts dissolving on the first frame
-   rather than 40ms in, so by the time the edges have moved at all there is
-   little left of them to see: one dissolve, settling back, rather than a sheet
-   being pulled into a corner. Centred is also where the predictive back
-   gesture shrinks it (see [data-pb]), so a button press and a swipe now leave
-   the same way. The open still grows out of its button. */
-@keyframes pageShrinkOut { from { transform: none; } to { transform: scale(0.96); } }
-/* `to`/`from` left out on purpose: they resolve to whatever background the
-   page's own rules give it, across every theme and sky. */
 @keyframes pageBgIn  { from { background-color: transparent; } }
 @keyframes pageBgOut { to   { background-color: transparent; } }
 @keyframes pageFadeIn  { from { opacity: 0; } to { opacity: 1; } }
 @keyframes pageFadeOut { from { opacity: 1; } to { opacity: 0; } }
+/* `to` left out: it resolves to whatever transform the element already has. */
+@keyframes pageRise { from { transform: translateY(12px); } }
+
+/* The two layers' timings, shared by everything in them. The opacity settles
+   on the standard curve; the rise on the emphasized one, which does most of
+   its travel early and then eases a long way in. */
+:root[data-shell="mobile"][data-platform] {
+  --page-backdrop-in: pageFadeIn 0.16s cubic-bezier(0, 0, 0.2, 1) backwards;
+  --page-backdrop-out: pageFadeOut 0.17s cubic-bezier(0.4, 0, 1, 1) 0.04s forwards;
+  --page-content-in:
+    pageFadeIn 0.2s cubic-bezier(0, 0, 0.2, 1) 0.07s backwards,
+    pageRise 0.3s cubic-bezier(0.05, 0.7, 0.1, 1) 0.07s backwards;
+  --page-content-out: pageFadeOut 0.1s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
 
 :root[data-shell="mobile"][data-platform] :is(.app .search-overlay, .settings-page:not(.settings-page--modal)) {
-  transform-origin: var(--page-reveal-x, 50%) var(--page-reveal-y, 50%);
-  animation:
-    pageGrowIn 0.34s cubic-bezier(0.2, 0, 0, 1) backwards,
-    pageBgIn 0.18s cubic-bezier(0, 0, 0.2, 1) backwards;
+  animation: pageBgIn 0.16s cubic-bezier(0, 0, 0.2, 1) backwards;
   box-shadow: none;
 }
 :root[data-shell="mobile"][data-platform] :is(.app .search-overlay, .settings-page:not(.settings-page--modal)).closing {
-  transform-origin: 50% 50%;
-  animation:
-    pageShrinkOut 0.2s cubic-bezier(0.3, 0, 0.8, 0.15) forwards,
-    pageBgOut 0.2s cubic-bezier(0.4, 0, 1, 1) forwards;
+  animation: pageBgOut 0.17s cubic-bezier(0.4, 0, 1, 1) 0.04s forwards;
 }
 :root[data-shell="mobile"][data-platform] :is(.app .search-overlay, .settings-page:not(.settings-page--modal)) > * {
-  animation: pageFadeIn 0.22s cubic-bezier(0, 0, 0.2, 1) 0.08s backwards;
+  animation: var(--page-content-in);
 }
 :root[data-shell="mobile"][data-platform] :is(.app .search-overlay, .settings-page:not(.settings-page--modal)).closing > * {
-  animation: pageFadeOut 0.14s cubic-bezier(0.4, 0, 1, 1) forwards;
+  animation: var(--page-content-out);
 }
-/* The settings list fades in one level down: the group labels and cards fade by
-   their own opacity, not through .settings-body's. The same backdrop-root rule
-   as above applies one level in: while .settings-body sat below opacity 1, every
-   glass card inside it lost its backdrop-filter (the saturate that colours it,
-   on both phone styles), so the cards came in dull and snapped brighter when the
-   fade ended. A card's own opacity doesn't cut its glass off, so it fades with
-   its colour already right. The main list's labels and cards are the body's
-   direct children. Only until .settled: after that the body's children are
-   swapped by sub-page navigation, which has never faded and shouldn't start. */
+/* The settings list comes in one level down: the group labels and cards fade
+   by their own opacity, not through .settings-body's. The same backdrop-root
+   rule as above applies one level in: while .settings-body sat below opacity
+   1, every glass card inside it lost its backdrop-filter (the saturate that
+   colours it, on both phone styles), so the cards came in dull and snapped
+   brighter when the fade ended. A card's own opacity doesn't cut its glass
+   off, so it fades with its colour already right. The main list's labels and
+   cards are the body's direct children. Only until .settled: after that the
+   body's children are swapped by sub-page navigation, which has never
+   animated and shouldn't start. */
 :root[data-shell="mobile"][data-platform] .settings-page:not(.settings-page--modal) > .settings-body {
   animation: none;
 }
 :root[data-shell="mobile"][data-platform] .settings-page:not(.settings-page--modal):not(.settled) > .settings-body > * {
-  animation: pageFadeIn 0.22s cubic-bezier(0, 0, 0.2, 1) 0.08s backwards;
+  animation: var(--page-content-in);
 }
 :root[data-shell="mobile"][data-platform] .settings-page:not(.settings-page--modal).closing > .settings-body > * {
-  animation: pageFadeOut 0.14s cubic-bezier(0.4, 0, 1, 1) forwards;
+  animation: var(--page-content-out);
 }
-:root[data-shell="mobile"][data-platform] .settings-sky,
+/* What stands in for the page's background moves with it, as one sheet: the
+   sky layer behind settings, the iOS search glass, and the dimmer under
+   search (which only shows through that glass). The dimmer used to keep its
+   own slower timing, so the weather came back dimmed and then lifted. */
+:root[data-shell="mobile"][data-platform] :is(.settings-sky, .search-backdrop),
 :root[data-shell="mobile"][data-platform] .app .search-overlay::before {
-  animation: pageFadeIn 0.18s cubic-bezier(0, 0, 0.2, 1) backwards;
+  animation: var(--page-backdrop-in);
 }
-:root[data-shell="mobile"][data-platform] .settings-sky.closing,
+:root[data-shell="mobile"][data-platform] :is(.settings-sky, .search-backdrop).closing,
 :root[data-shell="mobile"][data-platform] .app .search-overlay.closing::before {
-  animation: pageFadeOut 0.2s cubic-bezier(0.4, 0, 1, 1) forwards;
+  animation: var(--page-backdrop-out);
+}
+
+/* Held on the first frame for the mount frame (utils/pageTransition.js): the
+   page, everything animating inside it, and its stand-ins. */
+:root[data-shell="mobile"] .pt-arming,
+:root[data-shell="mobile"] .pt-arming *,
+:root[data-shell="mobile"] .pt-arming::before {
+  animation-play-state: paused !important;
 }
 
 /* Search fills the screen here rather than dropping a sheet from the top; its
@@ -10178,15 +10190,13 @@ html.splash-lock .splash-mini {
   overscroll-behavior: contain;
 }
 
+/* Reduced motion: the same fades with nothing moving, and a quick close (the
+   settings page's own background goes at once there; see the reduced motion
+   rule under Phone page transitions). */
 @media (prefers-reduced-motion: reduce) {
-  :root[data-shell="mobile"][data-platform] :is(.app .search-overlay, .settings-page:not(.settings-page--modal), .settings-sky),
-  :root[data-shell="mobile"][data-platform] .app .search-overlay::before,
-  :root[data-shell="mobile"][data-platform] :is(.app .search-overlay, .settings-page:not(.settings-page--modal)) > * {
-    animation: none;
-  }
-  /* The list's own fade (above) is more specific than this block's rules. */
-  :root[data-shell="mobile"][data-platform] .settings-page:not(.settings-page--modal) > .settings-body > * {
-    animation: none !important;
+  :root[data-shell="mobile"][data-platform] {
+    --page-content-in: pageFadeIn 0.2s cubic-bezier(0, 0, 0.2, 1) 0.07s backwards;
+    --page-content-out: pageFadeOut 0.05s linear forwards;
   }
 }
 

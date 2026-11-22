@@ -67,6 +67,14 @@
          then only blends finished layers. */
       #boot.boot--prep { opacity: 0.99; }
       #boot.boot--out { opacity: 0; visibility: hidden; pointer-events: none; }
+      /* The APK's launch screen is native (BootOverlay in MainActivity), drawn
+         over the WebView so its animation never waits on the page. While it is
+         up, boot-sky.js sets data-native-boot and #boot stays only as a plain
+         cover: it keeps the app's launch staging (App.jsx) and keeps the app
+         under it from being drawn before the prep step, but shows nothing of
+         its own, and goes at once when the native screen starts to fade. */
+      :root[data-native-boot] #boot > * { display: none; }
+      :root[data-native-boot] #boot { transition: none; }
 
       /* The stage: five slides stacked in one box (the logo, rain, storm,
          snow, sun), each popping in for a 0.7s turn and shrinking away as the
