@@ -118,6 +118,7 @@ import { DailyForecast } from './components/DailyForecast'
 import { WeatherDetails } from './components/WeatherDetails'
 import { WeatherRadar } from './components/WeatherRadarLazy'
 import { WeatherCanvas } from './components/WeatherCanvas'
+import { SkyStage } from './components/SkyStage'
 import { PrecipNowcast } from './components/PrecipNowcast'
 import { WeatherAlerts } from './components/WeatherAlerts'
 import { WeatherOverview } from './components/WeatherOverview'
@@ -144,6 +145,7 @@ import { rememberConditions } from './hooks/placeConditions'
 import { loadUnits, saveUnit } from './utils/units'
 import { APP_VERSION, IS_ANDROID_APP } from './utils/version'
 import { UpdateToast } from './components/UpdateToast'
+import { SourceNote } from './components/SourceNote'
 import { ApkPrompt } from './components/ApkPrompt'
 import { IS_PHONE, IS_DESKTOP } from './utils/device'
 import { DESKTOP_MQ, PLATFORM_THEME_KEY, initialPlatformTheme } from './utils/platformTheme'
@@ -162,6 +164,7 @@ import './PhoneShell.css'
 const THEME_KEY = 'alek-weather-theme'
 const MATERIAL_COLOR_KEY = 'alek-weather-material-color' // seed hex for the Material You palette
 const CARD_TRANSPARENCY_KEY = 'alek-weather-card-transparency' // 0–90, percent of card fill removed
+const CARD_LAYOUT_KEY = 'alek-weather-layout' // 'connected' (one sheet) | 'separate' (a card each)
 
 // The viewport width the desktop layout takes over at is DESKTOP_MQ
 // (utils/platformTheme, shared with the first-run default)...
@@ -206,6 +209,12 @@ const SETTINGS_OPEN_MS = 240
 // longer holds the page back.
 const SEARCH_OPEN_MS = 240
 const SEARCH_CLOSE_MS = 220
+// Going Home on the phone ('enter'): the forecast fades out under the splash
+// fading in, and is dropped once it has gone (.app--splash-enter, 0.22s). The
+// phase itself lasts a touch longer than the splash's fade (0.32s,
+// .splash-bg--enter), so that has finished when its classes come off.
+const SPLASH_ENTER_DROP_MS = 250
+const SPLASH_ENTER_MS = 340
 // The round icon buttons on the phone shells (header search and settings, the
 // current card's home and save) all dip under a press. :active alone can come
 // and go on a quick tap before the dip has painted, so the press is also held as a
@@ -268,8 +277,9 @@ const NOWCAST_MODE_KEY  = 'alek-weather-nowcast-mode'
 const COLOR_CODING_KEY  = 'alek-weather-color-coding'
 // The current-weather reading starts plain: it is the largest text on the
 // screen, and a coloured figure that size over a sky read as decoration more
-// than as information. The smaller readings keep their colour.
-const DEFAULT_COLOR_CODING = { current: false, hourly: true, daily: true, overview: true, details: true, glow: true, frost: true }
+// than as information. The details tiles start plain too. The other readings
+// keep their colour.
+const DEFAULT_COLOR_CODING = { current: false, hourly: true, daily: true, overview: true, details: false, glow: true, frost: true }
 const ICON_MOTION_KEY   = 'alek-weather-icon-motion'
 // How the radar timeline presents its two feeds.
 //   'combined'  one scrubber running observed → forecast, divided at now
@@ -355,6 +365,10 @@ function App() {
     const saved = Number(localStorage.getItem(CARD_TRANSPARENCY_KEY))
     return Number.isFinite(saved) ? Math.min(MAX_CARD_TRANSPARENCY, Math.max(0, saved)) : 0
   })
+  // The phone styles' Layout setting: the forecast as one connected sheet (the
+  // default) or a stack of separate cards. Only an explicit 'separate' keeps
+  // the cards.
+  const [cardLayout, setCardLayout] = useState(() => localStorage.getItem(CARD_LAYOUT_KEY) === 'separate' ? 'separate' : 'connected')
   // On by default: only an explicit 'false' hides the At a Glance card (stored
   // under its old Today card key).
   const [showToday, setShowToday] = useState(() => localStorage.getItem(SHOW_TODAY_KEY) !== 'false')
@@ -448,7 +462,9 @@ function App() {
   const [searchInitialQuery, setSearchInitialQuery] = useState('')
   const [savedOpen, setSavedOpen] = useState(false)
   const [savedClosing, setSavedClosing] = useState(false)
-  const [splashPhase, setSplashPhase] = useState(HAS_SAVED_CITY ? 'done' : 'visible') // 'visible' | 'exit' | 'done'
+  // 'visible' | 'exit' | 'done' | 'enter' ('enter': phone only, the splash
+  // fading in over a forecast on the way Home; see handleLogoClick).
+  const [splashPhase, setSplashPhase] = useState(HAS_SAVED_CITY ? 'done' : 'visible')
   // The web splash's saved-locations view, opened from the button at its foot.
   // It belongs to the splash, so leaving the splash (a place picked, a tab
   // chosen) puts it away: coming back Home lands on the recents again.
@@ -461,6 +477,13 @@ function App() {
   // Declared here rather than beside webLayout above: it reads splashPhase, so
   // it has to come after that state is initialised.
   const webSplash = webLayout && splashPhase !== 'done'
+  // Whether the header is dressed for the splash: its search button is the
+  // saved-places button there, and its circles take the splash sky's colours
+  // (.app--on-splash). On the phone that ends the moment the exit starts and
+  // begins the moment the way Home starts, so the header changes with the rest
+  // of the screen rather than once it has all settled. The web splash keeps it
+  // for as long as it is up.
+  const headerOnSplash = webLayout ? splashPhase !== 'done' : (splashPhase === 'visible' || splashPhase === 'enter')
   const headerRef = useRef(null)
   const searchAreaRef = useRef(null)
   // The search page's two layers and the settings sky layer, held on their
@@ -663,6 +686,16 @@ function App() {
     root.setAttribute('data-shell', webLayout ? 'desktop' : 'mobile')
     root.setAttribute('data-platform', platformTheme === 'ios' ? 'ios' : 'android')
   }, [platformTheme, webLayout])
+
+  // The Layout setting, published the same way so App.css can draw the phone
+  // forecast as one sheet (see "Connected layout" there). The web layout has
+  // its own page grid and never carries it. A layout effect for the same
+  // reason as the two above: the cards change in the frame the setting does.
+  useLayoutEffect(() => {
+    const root = document.documentElement
+    if (!webLayout && cardLayout === 'connected') root.setAttribute('data-layout', 'connected')
+    else root.removeAttribute('data-layout')
+  }, [cardLayout, webLayout])
 
 
   // Material You seed color (Android style only — it's the one style whose look
@@ -867,6 +900,20 @@ function App() {
     const t = setTimeout(() => setSplashPhase('done'), 700)
     return () => clearTimeout(t)
   }, [splashPhase])
+
+  // The way Home on the phone ('enter'): the splash fades in over the forecast
+  // while the forecast fades out. Once the forecast has gone it is dropped,
+  // still inside the phase, so what it held on to (the sky-dressed header,
+  // above all) changes while the splash is still coming in rather than after
+  // it has settled; then the phase settles on the splash. The exit effect
+  // above ignores this phase, so a refresh landing mid-fade can't bounce the
+  // splash straight back off.
+  useEffect(() => {
+    if (splashPhase !== 'enter') return
+    const drop = setTimeout(reset, SPLASH_ENTER_DROP_MS)
+    const settle = setTimeout(() => setSplashPhase('visible'), SPLASH_ENTER_MS)
+    return () => { clearTimeout(drop); clearTimeout(settle) }
+  }, [splashPhase, reset])
 
   // The phone splash is a fixed poster over the app, but the page under it can
   // still scroll. In a phone browser a swipe would scroll it, collapse the
@@ -1083,6 +1130,11 @@ function App() {
     localStorage.setItem(CARD_TRANSPARENCY_KEY, String(pct))
   }
 
+  const changeCardLayout = (layout) => {
+    setCardLayout(layout)
+    localStorage.setItem(CARD_LAYOUT_KEY, layout)
+  }
+
   const openSettings = () => {
     if (showSettings) return
     // The page opens on the tap itself. It used to wait for the cog to finish
@@ -1180,7 +1232,7 @@ function App() {
   // a normal tap still opens search. The fill animation under the icon
   // (App.css) signals progress toward the LONG_PRESS_MS threshold.
   const startSearchHold = () => {
-    if (splashPhase !== 'done') return
+    if (headerOnSplash) return
     searchLongPressed.current = false
     setSearchHolding(true)
     searchHoldTimer.current = setTimeout(() => {
@@ -1199,7 +1251,7 @@ function App() {
   const handleSearchButton = () => {
     // Swallow the click that trails a completed hold so it doesn't also open search.
     if (searchLongPressed.current) { searchLongPressed.current = false; return }
-    if (splashPhase !== 'done') {
+    if (headerOnSplash) {
       // On the web, the places you've been are already listed on Home.
       if (!webLayout) openSaved()
       return
@@ -1395,8 +1447,11 @@ function App() {
   }
 
   // The header's place line on the phone shells (see .app-place): the city
-  // and its region, and today's date in the forecast's own timezone.
-  const placeInHeader = !webLayout && splashPhase === 'done' && !!weather && !!location
+  // and its region, and today's date in the forecast's own timezone. Up for the
+  // splash's exit as well, so the headline flying into the header lands on the
+  // place rather than on the wordmark (which then gave way to the place a beat
+  // later), and through 'enter', where it fades as the splash comes back.
+  const placeInHeader = !webLayout && splashPhase !== 'visible' && !!weather && !!location
   // With a forecast up on the phone shells the header floats, so search and
   // settings stay on screen (.app-header--float in App.css). The place in the
   // middle would sit over the cards as plain text, so it fades out once the
@@ -1419,6 +1474,10 @@ function App() {
   // Also the way out of a failed fetch, which has no forecast to drop.
   const handleLogoClick = () => {
     if ((!weather && !error) || splashPhase !== 'done') return
+    // Phone, with a forecast up: the splash fades in over it first, and the
+    // forecast is only dropped once it is covered (the 'enter' effect).
+    // Dropping it here cut straight from the forecast to the splash.
+    if (!webLayout && weather) { setSplashPhase('enter'); return }
     reset()
     setSplashPhase('visible')
   }
@@ -1505,7 +1564,21 @@ function App() {
   // logo. Opening a place puts it first in recents, so going Home afterwards
   // shows that place's weather. The sky follows the Weather Effects setting like
   // the forecast's does; the icon is just an icon, so it shows either way.
-  const localCond   = useLocalConditions(splashPhase !== 'done', recents[0] ?? null)
+  const liveLocal   = useLocalConditions(splashPhase !== 'done', recents[0] ?? null)
+  // Picking a place on the phone splash puts it first in recents, which used to
+  // re-dress the splash the moment it was tapped: the sky, icon and headline
+  // jumped to that place (or back to the plain wordmark, until it was read) and
+  // the two cards swapped places, all while the forecast was still loading
+  // behind the spinner. The splash now holds as it was until it has gone, so
+  // everything changes once, in the exit. Snapshotted during render: the values
+  // from the last render before the hold are the ones on screen.
+  const holdSplash = !webLayout && (splashPhase === 'exit' || (splashPhase === 'visible' && (loading || !!weather)))
+  const [shownLocal, setShownLocal] = useState(liveLocal)
+  if (!holdSplash && shownLocal !== liveLocal) setShownLocal(liveLocal)
+  const [shownRecents, setShownRecents] = useState(recents)
+  if (!holdSplash && shownRecents !== recents) setShownRecents(recents)
+  const localCond     = holdSplash ? shownLocal : liveLocal
+  const splashRecents = holdSplash ? shownRecents : recents
   const splashSkyC  = localCond && weatherAnimations ? skyClass(localCond.code, localCond.isDay) : ''
   const splashIcon  = localCond ? getWeatherInfo(localCond.code, !localCond.isDay, localCond.severe) : null
 
@@ -1513,7 +1586,7 @@ function App() {
   // forecast, as the web one does. It can't live in .splash-bg with the
   // headline (that layer is inert and sits under the tap-catching overlay), so
   // it is drawn above both and hung from the headline's measured bottom edge.
-  const splashHere = !webLayout && splashPhase !== 'done' && splashIcon && !recents.length && localCond?.name
+  const splashHere = !webLayout && splashPhase !== 'done' && splashIcon && !splashRecents.length && localCond?.name
     ? locatedPlace()
     : null
   const hasSplashHere = !!splashHere
@@ -1552,14 +1625,31 @@ function App() {
     else delete root.dataset.splashSky
   }, [splashSkyTone])
 
+  // What the phone's one sky (SkyStage) shows: the splash's while the splash is
+  // up, the forecast's from the moment the exit starts. Through a pick (a
+  // forecast already in, the splash still holding) and on the way Home (the
+  // forecast still under the splash) it stays on whichever was there, so it
+  // only ever changes as the screen does. Going Home to the place on screen,
+  // or opening the place the splash shows, both are the same sky (the splash
+  // reads the forecast's own reading, see placeConditions), so it doesn't
+  // change at all.
+  const splashOwnsSky = !webLayout && !!splashSkyC && (splashPhase === 'visible' || !weather)
+  const stageSky = splashOwnsSky
+    ? { c: splashSkyC, code: localCond.code }
+    : weather && weatherAnimations ? { c: skyC, code: liveCode } : null
+
   // Keep the theme-color metas (status bar) and the body background (navigation
   // bar) matched to the sky, or to the flat app background when effects are
   // off, so both Android system bars stay consistent with what is behind them.
+  // On the phone that is the shared sky, splash or forecast, so the bars don't
+  // change as one screen hands over to the other (they used to stay flat on
+  // the splash and switch to the sky partway through opening a place).
+  const barSkyC = webLayout ? (weather && weatherAnimations ? skyC : '') : (stageSky?.c ?? '')
   useEffect(() => {
     const metas = document.querySelectorAll('meta[name="theme-color"]')
-    const skyActive = weather && weatherAnimations && skyC && SKY_THEME_COLOR[skyC]
+    const skyActive = barSkyC && SKY_THEME_COLOR[barSkyC]
     const apply = (dark) => {
-      const color = skyActive ? SKY_THEME_COLOR[skyC][dark ? 1 : 0] : (dark ? '#000000' : '#f0f2f5')
+      const color = skyActive ? SKY_THEME_COLOR[barSkyC][dark ? 1 : 0] : (dark ? '#000000' : '#f0f2f5')
       metas.forEach(m => { m.content = color })
       // The navigation bar only honors the page background when the document's
       // color-scheme matches the effective theme; set it on the root so it also
@@ -1568,7 +1658,7 @@ function App() {
       // Clearing the inline style hands body back to var(--bg), which already
       // tracks the theme. The sky layer covers the viewport, so this override
       // is invisible to everything except the system bar.
-      document.body.style.backgroundColor = skyActive ? SKY_NAV_COLOR[skyC][dark ? 1 : 0] : ''
+      document.body.style.backgroundColor = skyActive ? SKY_NAV_COLOR[barSkyC][dark ? 1 : 0] : ''
     }
     if (darkMode === 'on')  { apply(true);  return }
     if (darkMode === 'off') { apply(false); return }
@@ -1577,7 +1667,7 @@ function App() {
     const handler = (e) => apply(e.matches)
     mq.addEventListener('change', handler)
     return () => mq.removeEventListener('change', handler)
-  }, [darkMode, skyC, weather, weatherAnimations])
+  }, [darkMode, barSkyC])
 
   // The sky the next launch's boot screen opens on (public/boot-sky.js): the
   // gradient behind the forecast as actually drawn, so the theme's version of
@@ -1593,7 +1683,9 @@ function App() {
   const skyLat = location?.latitude
   const skyLon = location?.longitude
   useEffect(() => {
-    if (!hasWeather) return
+    // While the phone splash still owns the shared sky, the gradient on screen
+    // is the splash's, not this forecast's: wait for the exit to hand it over.
+    if (!hasWeather || splashOwnsSky) return
     const save = () => {
       const bg = skyBgRef.current ? getComputedStyle(skyBgRef.current).backgroundImage : ''
       const sky = bg.includes('gradient(') ? bg : null
@@ -1619,12 +1711,12 @@ function App() {
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
     mq.addEventListener('change', save)
     return () => mq.removeEventListener('change', save)
-  }, [darkMode, skyC, hasWeather, weatherAnimations, skyLat, skyLon])
+  }, [darkMode, skyC, hasWeather, weatherAnimations, skyLat, skyLon, splashOwnsSky])
 
   const blockComponents = weather && !loading ? {
     today:   <TodayCard hourly={weather.hourly} daily={weather.daily} current={weather.current} yesterday={weather.yesterday} timezone={weather.timezone} unit={unit} units={units} airQuality={airQuality} />,
     overview: <WeatherOverview hourly={weather.hourly} daily={weather.daily} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} timezone={weather.timezone} hasActiveAlert={hasActiveAlert} unit={unit} units={units} airQuality={airQuality} colorCode={colorCoding.overview} />,
-    hourly:  <HourlyForecast hourly={weather.hourly} timezone={weather.timezone} unit={unit} colorCoding={colorCoding.hourly} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
+    hourly:  <HourlyForecast hourly={weather.hourly} daily={weather.daily} timezone={weather.timezone} unit={unit} units={units} colorCoding={colorCoding.hourly} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
     daily:   <DailyForecast daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} units={units} colorCoding={colorCoding.daily} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} yesterday={weather.yesterday} airQuality={airQuality} />,
     details: <WeatherDetails latitude={weather.latitude} current={weather.current} daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} units={units} airQuality={airQuality} colorCoding={colorCoding.details} />,
     radar:   <WeatherRadar location={location} timezone={weather.timezone} mode={radarMode} source={radarSource} sky={weatherAnimations ? skyC : ''} rainFx={weatherAnimations} snow={isSnowing(weather.current)} />,
@@ -1790,6 +1882,8 @@ function App() {
     onMaterialColorChange: changeMaterialColor,
     cardTransparency,
     onCardTransparencyChange: changeCardTransparency,
+    cardLayout,
+    onCardLayoutChange: changeCardLayout,
     unit,
     onUnitChange: changeUnit,
     units,
@@ -1940,19 +2034,37 @@ function App() {
             ? <><Check size={18} aria-hidden="true" />Done</>
             : <><ArrowUpDown size={18} aria-hidden="true" />Reorder cards</>}
         </button>
+        {/* Where this forecast came from, at the foot of the page. */}
+        {!reordering && <SourceNote current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />}
       </div>
     </>
   ))
 
   return (
     <>
-      {weather && weatherAnimations && <div ref={skyBgRef} className={`sky-bg ${skyC}`} aria-hidden="true" />}
-      {/* Held while a forecast loads on the phone, so the loading animation
-          has the frames to itself (see `hold` in WeatherCanvas). Not on the
-          web, whose canvas also feeds the header's copy of the sky. */}
-      {weather && weatherAnimations && <WeatherCanvas code={liveCode} gyro={gyroscope} hold={loading && !webLayout} />}
+      {webLayout ? (
+        <>
+          {weather && weatherAnimations && <div ref={skyBgRef} className={`sky-bg ${skyC}`} aria-hidden="true" />}
+          {/* Not held while loading on the web, whose canvas also feeds the
+              header's copy of the sky. */}
+          {weather && weatherAnimations && <WeatherCanvas code={liveCode} gyro={gyroscope} />}
+        </>
+      ) : (
+        // The phone's one sky, for the splash and the forecast alike (see
+        // stageSky). Held while a forecast loads on the forecast screen, so the
+        // loading animation has the frames to itself (see `hold` in
+        // WeatherCanvas); not while one loads under the splash, whose sky
+        // carries on behind the card's spinner.
+        <SkyStage
+          sky={stageSky}
+          gyro={gyroscope}
+          hold={loading && splashPhase === 'done'}
+          animate={bootGone}
+          bgRef={skyBgRef}
+        />
+      )}
     <div
-      className={`app${weatherAnimations && levelC ? ` ${levelC}` : ''}${!weatherAnimations ? ' no-effects' : ''}${weather && weatherAnimations ? ' sky-active' : ''}${weather && weatherAnimations && skyToneLight ? ' sky-tone-light' : ''}${headerTabs ? ' app--web-tabs' : ''}${radarPageUp ? ' app--web-radar' : ''}${webSplash ? ' app--web-splash' : ''}${webSplash && splashPhase === 'exit' ? ' app--web-splash-exit' : ''}${webLayout && splashPhase !== 'visible' ? ' app--revealed' : ''}`}
+      className={`app${weatherAnimations && levelC ? ` ${levelC}` : ''}${!weatherAnimations ? ' no-effects' : ''}${weather && weatherAnimations ? ' sky-active' : ''}${weather && weatherAnimations && skyToneLight ? ' sky-tone-light' : ''}${headerTabs ? ' app--web-tabs' : ''}${radarPageUp ? ' app--web-radar' : ''}${webSplash ? ' app--web-splash' : ''}${webSplash && splashPhase === 'exit' ? ' app--web-splash-exit' : ''}${webLayout && splashPhase !== 'visible' ? ' app--revealed' : ''}${!webLayout && splashPhase === 'visible' ? ' app--splash-cover' : ''}${!webLayout && splashPhase === 'exit' ? ' app--splash-exit' : ''}${splashPhase === 'enter' ? ' app--splash-enter' : ''}${!webLayout && (splashPhase === 'exit' || splashPhase === 'enter' || (splashPhase === 'visible' && weather)) ? ' app--splash-handoff' : ''}${headerOnSplash ? ' app--on-splash' : ''}`}
       style={weather && weatherAnimations ? SKY_CARD_VARS[skyC] : undefined}
     >
       <header ref={headerRef} className={`app-header${!weather && !showNav ? ' app-header--no-city' : ''}${showNav ? ' app-header--tabs' : ''}${placeInHeader ? ' app-header--float' : ''}${placeInHeader && scrolledDown ? ' app-header--scrolled' : ''}`}>
@@ -1987,8 +2099,8 @@ function App() {
               const FindIcon = webLayout ? Search : SearchIcon
               return (
                 <>
-                  <LocIcon size={24} style={{ opacity: splashPhase !== 'done' ? 1 : 0, pointerEvents: splashPhase !== 'done' ? undefined : 'none' }} />
-                  <FindIcon size={24} style={{ opacity: splashPhase === 'done' ? 1 : 0, pointerEvents: splashPhase === 'done' ? undefined : 'none' }} />
+                  <LocIcon size={24} style={{ opacity: headerOnSplash ? 1 : 0, pointerEvents: headerOnSplash ? undefined : 'none' }} />
+                  <FindIcon size={24} style={{ opacity: headerOnSplash ? 0 : 1, pointerEvents: headerOnSplash ? 'none' : undefined }} />
                 </>
               )
             })()}
@@ -1999,7 +2111,7 @@ function App() {
               the splash logo flies into, so it has to exist and finish landing
               before the tab bar cross-fades over it. */}
           <span
-            className={`app-title${placeInHeader ? ' app-title--behind-place' : ''}${splashPhase === 'visible' ? ' app-title--splash' : ''}${splashPhase === 'exit' ? ' app-title--splash-exit' : ''}${splashPhase === 'done' && weather ? ' app-title--home' : ''}${showNav ? ' app-title--handed-off' : ''}`}
+            className={`app-title${placeInHeader ? ' app-title--behind-place' : ''}${splashPhase === 'visible' || splashPhase === 'enter' ? ' app-title--splash' : ''}${splashPhase === 'exit' ? ' app-title--splash-exit' : ''}${splashPhase === 'done' && weather ? ' app-title--home' : ''}${showNav ? ' app-title--handed-off' : ''}`}
             onClick={handleLogoClick}
             role={splashPhase === 'done' && weather ? 'button' : undefined}
             aria-label={splashPhase === 'done' && weather ? 'Go to home' : undefined}
@@ -2011,7 +2123,7 @@ function App() {
               does what tapping the wordmark did: back to the home screen. */}
           {placeInHeader && (
             <span
-              className="app-place"
+              className={`app-place${splashPhase === 'exit' ? ' app-place--handoff' : ''}${splashPhase === 'enter' ? ' app-place--leaving' : ''}`}
               onClick={handleLogoClick}
               role="button"
               tabIndex={0}
@@ -2141,10 +2253,12 @@ function App() {
               is one big "tap to search" target. The web splash puts a real
               search field and location cards on it, so it can't be hidden from
               assistive tech there — only the scenery inside it is. */}
-          <div className={`splash-bg${webSplash ? ' splash-bg--web' : ''}${splashSkyC ? ' splash-bg--sky' : ''}`} aria-hidden={webSplash ? undefined : true}>
+          <div className={`splash-bg${webSplash ? ' splash-bg--web' : ''}${splashSkyC ? ' splash-bg--sky' : ''}${!webLayout && splashPhase === 'exit' ? ' splash-bg--exit' : ''}${splashPhase === 'enter' ? ' splash-bg--enter' : ''}`} aria-hidden={webSplash ? undefined : true}>
             {/* First child so the scenery and content after it paint on top;
                 its z-index also keeps the canvas inside it under them. */}
-            {splashSkyC && (
+            {/* The web splash draws its own sky. The phone's is the shared one
+                behind the app (SkyStage), which shows through this layer. */}
+            {splashSkyC && webLayout && (
               <div className={`splash-sky ${splashSkyC}`} aria-hidden="true">
                 <WeatherCanvas code={localCond.code} gyro={gyroscope} />
               </div>
@@ -2243,9 +2357,11 @@ function App() {
             )}
             <p className="splash-version">Version {APP_VERSION}</p>
           </div>
-          {splashPhase === 'visible' && !webSplash && (
+          {(splashPhase === 'visible' || splashPhase === 'enter') && !webSplash && (
             // Inert: .splash-bg lets taps through, so this only keeps them from
             // reaching the app hidden underneath. Tapping the poster does nothing.
+            // Up while the splash fades in too, over a forecast that is still
+            // there for a moment and must not take taps.
             <div className="splash-overlay" aria-hidden="true" />
           )}
           {/* Names the place the sky and icon are showing, found from the
@@ -2270,17 +2386,27 @@ function App() {
               A sibling after the overlay takes its own taps. */}
           {!webSplash && (
             <SplashCities
-              recents={recents}
+              recents={splashRecents}
               savedCities={cities}
               unit={unit}
               exiting={splashPhase === 'exit'}
+              // Fading in on the way Home: inert until the forecast under it
+              // has been dropped, or a pick made now would be wiped with it.
+              entering={splashPhase === 'enter'}
               busy={loading}
               onSelect={handleSplashCitySelect}
               isHome={isHome}
+              // The hold menu on each card.
+              isSaved={isSaved}
+              onSave={save}
+              onUnsave={remove}
+              onSetHome={setHome}
+              onClearHome={() => setHome(null)}
+              onRemoveRecent={removeRecent}
               // Nothing saved means nothing opens on launch: give the poster
               // a way into search. Only while it is idle, so it can't open
               // over a place that is already loading.
-              onSearch={cities.length === 0 && !home && splashPhase === 'visible' ? openSearch : undefined}
+              onSearch={cities.length === 0 && !home && (splashPhase === 'visible' || splashPhase === 'enter') ? openSearch : undefined}
             />
           )}
         </>

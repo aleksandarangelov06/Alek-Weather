@@ -746,7 +746,7 @@ function radarViewProps(bodyProps) {
   }
 }
 
-function SettingsBody({ onHelpOpen, darkMode, onDarkModeChange, unit, onUnitChange, units, onUnitGroupChange, nowcastMode, onNowcastModeChange, onColorCodingOpen, onRadarOpen, onWeatherEffectsOpen, onIconsOpen, onThemeOpen, onNotificationsOpen, weatherAnimations, onWeatherAnimationsChange, installPrompt, onInstall }) {
+function SettingsBody({ onHelpOpen, darkMode, onDarkModeChange, platformTheme, cardLayout, onCardLayoutChange, unit, onUnitChange, units, onUnitGroupChange, nowcastMode, onNowcastModeChange, onColorCodingOpen, onRadarOpen, onWeatherEffectsOpen, onIconsOpen, onThemeOpen, onNotificationsOpen, weatherAnimations, onWeatherAnimationsChange, installPrompt, onInstall }) {
   return (
     <>
       <div className="settings-group-label">Appearance</div>
@@ -773,6 +773,20 @@ function SettingsBody({ onHelpOpen, darkMode, onDarkModeChange, unit, onUnitChan
             </button>
           </div>
         </div>
+        {/* The forecast as one connected sheet or as separate cards. Phone
+            styles only: the web layout has its own page grid. */}
+        {platformTheme !== 'web' && (
+          <SettingRow label="Layout">
+            <SegmentedControl
+              value={cardLayout}
+              onChange={onCardLayoutChange}
+              options={[
+                { value: 'separate',  label: 'Separate'  },
+                { value: 'connected', label: 'Connected' },
+              ]}
+            />
+          </SettingRow>
+        )}
         <button className="settings-row about-row" onClick={onColorCodingOpen}>
           <div className="settings-row-label">Color Coding</div>
           <ChevronRight size={16} className="about-chevron" />

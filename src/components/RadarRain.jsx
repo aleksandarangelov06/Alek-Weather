@@ -186,14 +186,28 @@ const SNOW_RADIUS = [1.1, 2.4]
 
 // `snow` is the fallback: the user's own location's verdict, used across the
 // whole map until the grid arrives, and wherever it can't be fetched at all.
-export function RadarRain({ map, getLayer, snow = false }) {
+//
+// `paused` stops everything (the drops and the mask's read-backs) while the
+// radar's window is opening or closing on the phone. Each mask rebuild reads
+// pixels back off the radar tiles, a GPU round trip that could land on any frame
+// of the animation, and the drops were drawn on every one of them; nobody needs
+// the rain until the window is open. Lifted, the loop starts again from a fresh
+// mask, and the drops fade in the way they do at an echo's edge.
+export function RadarRain({ map, getLayer, snow = false, paused = false }) {
   const ref = useRef(null)
   const fallback = useRef(snow)
+  const pausedRef = useRef(paused)
+  // Set by the main effect: restarts the loop once nothing is holding it.
+  const wakeRef = useRef(null)
   // Synced after render: writing a ref during render is unsafe under React's
   // concurrent rendering.
   useEffect(() => {
     fallback.current = snow
   })
+  useEffect(() => {
+    pausedRef.current = paused
+    if (!paused) wakeRef.current?.()
+  }, [paused])
 
   useEffect(() => {
     const canvas = ref.current
@@ -380,7 +394,7 @@ export function RadarRain({ map, getLayer, snow = false }) {
     // MASK_MS and animating every frame regardless. Off screen, the loop stops
     // and the timers skip their work; coming back rebuilds the mask at once.
     let onScreen = true
-    const active = () => onScreen && !document.hidden
+    const active = () => onScreen && !document.hidden && !pausedRef.current
 
     let lastFrame = 0
     const draw = (now) => {
@@ -506,6 +520,7 @@ export function RadarRain({ map, getLayer, snow = false }) {
       buildMask()
       raf = requestAnimationFrame(draw)
     }
+    wakeRef.current = wake
     const io = new IntersectionObserver(([entry]) => {
       onScreen = entry.isIntersecting
       wake()
@@ -524,6 +539,7 @@ export function RadarRain({ map, getLayer, snow = false }) {
     raf = requestAnimationFrame(draw)
     return () => {
       alive = false
+      wakeRef.current = null
       cancelAnimationFrame(raf)
       clearInterval(timer)
       clearInterval(refreshTimer)

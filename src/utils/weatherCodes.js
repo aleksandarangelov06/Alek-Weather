@@ -274,6 +274,22 @@ export function liveWeatherCode(current, minutely, radarClear = null) {
   return code
 }
 
+// Which source decided the condition liveWeatherCode returns, for the source
+// note under the forecast: 'radar' when the radar check overturned the code
+// (cleared a precipitation code, or found an echo under a dry one); 'nowcast'
+// when the minutely rate changed it; otherwise whoever set `current`'s code
+// ('station', 'warning', 'forecast'), or 'model' for Open-Meteo's own.
+export function liveWeatherSource(current, minutely, radarClear = null) {
+  const code = current?.weather_code
+  if (code == null) return null
+  const decided = current.weather_code_confirmed ? (current.weather_code_source ?? 'model') : 'model'
+  if (radarClear != null && !NO_RATE_OVERRIDE.has(code) && current.weather_code_source !== 'warning') {
+    const precip = precipTier(code) > 0
+    if ((radarClear === true && precip) || (radarClear === false && !precip)) return 'radar'
+  }
+  return liveWeatherCode(current, minutely, radarClear) !== code ? 'nowcast' : decided
+}
+
 export function getWindDirection(degrees) {
   const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
   return dirs[Math.round(degrees / 45) % 8]

@@ -3,6 +3,6 @@
 import { version } from '../../package.json'
 
 export const APP_VERSION = version
-export const ANDROID_VERSION = '1.9'
+export const ANDROID_VERSION = '2.0'
 export const IS_ANDROID_APP =
   typeof location !== 'undefined' && location.hostname === 'appassets.androidplatform.net'

@@ -192,6 +192,175 @@ function sourceTile(key, url) {
   return p
 }
 
+// ── Drawing off the critical path ──
+// Drawing a tile is several milliseconds of main-thread work (the blur, then a
+// sample per pixel), and a forecast step is a dozen or more tiles. Run as they
+// came in, a step's tiles went back to back in one long task the moment their
+// sources were in (at once, when cached), and scrubbing the timeline set that
+// off for every step the finger crossed plus the steps prefetched around it:
+// the scrubber stalled while frames nobody was looking at any more were drawn.
+//
+// So the drawing is queued and done a slice at a time, yielding between slices
+// so input and the scrubber keep moving. The step on screen (focusHrrrLayer)
+// goes first; a tile that has left the map by its turn (its step was scrubbed
+// past, or the view moved on) is skipped rather than drawn for nothing.
+const SLICE_MS = 6
+const jobs = []
+let pumping = false
+let channel = null
+let focus = null
+
+// The step the radar is showing (any layer; only HRRR ones queue tiles), whose
+// tiles are drawn ahead of the rest.
+export function focusHrrrLayer(layer) {
+  focus = layer
+}
+
+function pump() {
+  const end = performance.now() + SLICE_MS
+  do {
+    let i = focus ? jobs.findIndex((j) => j.layer === focus) : -1
+    if (i < 0) i = 0
+    jobs.splice(i, 1)[0].run()
+  } while (jobs.length && performance.now() < end)
+  if (jobs.length) channel.port2.postMessage(null)
+  else pumping = false
+}
+
+// Runs `work` synchronously in a later slice and resolves with its result. A
+// MessageChannel rather than setTimeout, which browsers clamp to 4 ms when it
+// is scheduled from inside itself.
+function inSlice(layer, work) {
+  return new Promise((resolve, reject) => {
+    jobs.push({ layer, run: () => { try { resolve(work()) } catch (err) { reject(err) } } })
+    if (pumping) return
+    if (!channel) {
+      channel = new MessageChannel()
+      channel.port1.onmessage = pump
+    }
+    pumping = true
+    channel.port2.postMessage(null)
+  })
+}
+
+// ── Finished tiles, kept ──
+// A forecast step belongs to one model run and never changes, so once a tile
+// has been drawn there is no reason to draw it again: not when the timeline is
+// scrubbed back over it, not when its step's layer is re-attached after being
+// dropped from the map's window (see WeatherRadar), and not the next time the
+// app opens on the same run.
+//
+// What is kept is the drawn tile as ramp indices, one byte a pixel, rather than
+// its colours: a quarter of the size, and good for either palette (a tile
+// comes back through the palette in a fraction of a millisecond, see paint).
+// Only the rows with anything in them are kept, and a tile with nothing at all
+// is kept as null. Keyed by run, step and tile; the palette isn't in the key.
+//
+//   held    in memory, most-recently-used last, up to HELD_BYTES. Enough for
+//           every step of a run across a full-screen view several times over,
+//           so a scrub across the whole forecast never evicts its own start.
+//   stored  on the device (IndexedDB), for the next launch: opening the radar
+//           again within the same run shows the forecast without fetching or
+//           drawing anything. Runs older than STORE_KEEP_SEC are cleared out
+//           when the database opens; HRRR runs hourly and only the latest is
+//           shown, so that keeps a few runs at most.
+const HELD_BYTES = 32 * 1024 * 1024
+const HELD_MAX = 4000 // entries, so clear tiles (null, no bytes) are bounded too
+const held = new Map()
+let heldBytes = 0
+const recBytes = (rec) => (rec ? rec.data.byteLength : 0)
+
+function heldGet(key) {
+  const rec = held.get(key)
+  if (rec !== undefined) {
+    held.delete(key)
+    held.set(key, rec)
+  }
+  return rec
+}
+function heldSet(key, rec) {
+  const prev = held.get(key)
+  if (prev !== undefined) {
+    heldBytes -= recBytes(prev)
+    held.delete(key)
+  }
+  held.set(key, rec)
+  heldBytes += recBytes(rec)
+  while (held.size > 1 && (heldBytes > HELD_BYTES || held.size > HELD_MAX)) {
+    const oldest = held.keys().next().value
+    heldBytes -= recBytes(held.get(oldest))
+    held.delete(oldest)
+  }
+}
+
+const STORE_DB = 'alek-weather-hrrr'
+const STORE = 'tiles'
+const STORE_KEEP_SEC = 4 * 3600
+let dbPromise = null
+
+// The database, or null wherever IndexedDB isn't available (a private window,
+// storage blocked): the layer then just draws, as it would on a first visit.
+function openStore() {
+  if (dbPromise) return dbPromise
+  dbPromise = new Promise((resolve) => {
+    let req
+    try { req = indexedDB.open(STORE_DB, 1) } catch { resolve(null); return }
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore(STORE).createIndex('run', 'run')
+    }
+    req.onsuccess = () => {
+      const db = req.result
+      // Clear out runs too old to be shown again. Best effort: a failure here
+      // only leaves them for the next launch to try.
+      try {
+        const cutoff = Date.now() / 1000 - STORE_KEEP_SEC
+        const tx = db.transaction(STORE, 'readwrite')
+        tx.objectStore(STORE).index('run').openCursor(IDBKeyRange.upperBound(cutoff)).onsuccess = (e) => {
+          const cursor = e.target.result
+          if (cursor) { cursor.delete(); cursor.continue() }
+        }
+      } catch { /* left for next time */ }
+      resolve(db)
+    }
+    req.onerror = () => resolve(null)
+    req.onblocked = () => resolve(null)
+  })
+  return dbPromise
+}
+
+// The stored tile for `key`: its record (null for a clear tile), or undefined
+// when there isn't one.
+async function storedTile(key) {
+  const db = await openStore()
+  if (!db) return undefined
+  return new Promise((resolve) => {
+    try {
+      const req = db.transaction(STORE).objectStore(STORE).get(key)
+      req.onsuccess = () => resolve(req.result ? req.result.rec : undefined)
+      req.onerror = () => resolve(undefined)
+    } catch { resolve(undefined) }
+  })
+}
+
+// Fire and forget: a tile that fails to store is only drawn again next time.
+async function storeTile(key, run, rec) {
+  const db = await openStore()
+  if (!db) return
+  try { db.transaction(STORE, 'readwrite').objectStore(STORE).put({ run, rec }, key) } catch { /* not kept */ }
+}
+
+// Colours a kept tile into its canvas with the layer's palette.
+function paint(tile, rec, palette) {
+  if (!rec) return
+  const ctx = tile.getContext('2d')
+  const img = ctx.createImageData(tile.width, rec.rows)
+  const out = new Uint32Array(img.data.buffer)
+  const lut = LUTS[palette] ?? LUTS.nws
+  const data = rec.data
+  for (let i = 0; i < data.length; i++) out[i] = lut[data[i]]
+  ctx.putImageData(img, 0, rec.y0)
+}
+
 function gaussian(sigma) {
   const r = Math.max(1, Math.ceil(sigma * 2.5))
   const k = new Float32Array(2 * r + 1)
@@ -233,10 +402,13 @@ function blur(f, w, h, k) {
 // template for the step; options.palette picks the ramp ('rv' or 'nws') and
 // options.run is the model run's init time, for the cache key.
 //
-// Tiles are canvases, drawn at the screen's pixel density (capped at 2x) and
-// at every zoom the map goes to, since the smoothing is what makes zooming in
-// worth it. RadarRain and the card's still both read canvas tiles as well as
-// image ones.
+// Tiles are canvases, drawn at every zoom the map goes to, since the smoothing
+// is what makes zooming in worth it. They are drawn at CSS resolution, not the
+// screen's density: the field is a 3 km grid blurred over several kilometres,
+// so the extra pixels of a 2x canvas held nothing a 1x one scaled up doesn't,
+// at four times the work per tile. The observed layers' tiles are 256 px
+// images shown the same way. RadarRain and the card's still both read canvas
+// tiles as well as image ones.
 export const HrrrLayer = L.GridLayer.extend({
   options: { palette: 'nws', run: '' },
 
@@ -248,14 +420,34 @@ export const HrrrLayer = L.GridLayer.extend({
   createTile(coords, done) {
     const tile = L.DomUtil.create('canvas', 'leaflet-tile')
     const size = this.getTileSize()
-    const dpr = Math.min(window.devicePixelRatio || 1, 2)
-    tile.width = Math.round(size.x * dpr)
-    tile.height = Math.round(size.y * dpr)
-    this._draw(tile, coords).then(() => done(null, tile), (err) => done(err, tile))
+    tile.width = size.x
+    tile.height = size.y
+    // Everything the tile's ramp indices depend on (see "Finished tiles, kept").
+    const key = `${this.options.run}|${this._url}|${coords.z}/${coords.x}/${coords.y}|${tile.width}`
+    const rec = heldGet(key)
+    if (rec !== undefined) {
+      paint(tile, rec, this.options.palette)
+      // Leaflet only counts done() once createTile has returned.
+      Promise.resolve().then(() => done(null, tile))
+      return tile
+    }
+    this._load(tile, coords, key).then(() => done(null, tile), (err) => done(err, tile))
     return tile
   },
 
-  async _draw(tile, { x, y, z }) {
+  // Not in memory: from the device if this run's tile was stored on an earlier
+  // visit, otherwise drawn.
+  async _load(tile, coords, key) {
+    const rec = await storedTile(key)
+    if (rec !== undefined) {
+      heldSet(key, rec)
+      if (tile.isConnected) paint(tile, rec, this.options.palette)
+      return
+    }
+    await this._draw(tile, coords, key)
+  },
+
+  async _draw(tile, { x, y, z }, key) {
     // Everything below is in source pixels at zoom sz: the global pixel grid
     // that zoom's tiles tile.
     const sz = Math.min(z, SRC_MAX_ZOOM)
@@ -295,6 +487,27 @@ export const HrrrLayer = L.GridLayer.extend({
     // margin, which is better drawn as clear than not drawn at all.
     if (got.every((g) => g.status === 'rejected')) throw new Error('HRRR tiles unavailable')
 
+    // The drawing itself waits its turn (see inSlice). Gone from the map by
+    // then, the tile is skipped, and not cached, since nothing was drawn. One
+    // drawn short of a neighbour isn't cached either, so the next time it is
+    // wanted it gets another go at the whole thing.
+    const geom = { gx, gy, span, bx, by, bw, bh, kernel, want, got }
+    const complete = got.every((g) => g.status === 'fulfilled')
+    const run = this.options.run
+    return inSlice(this, () => {
+      if (!tile.isConnected) return
+      const rec = this._render(geom, tile.width, tile.height)
+      paint(tile, rec, this.options.palette)
+      if (!complete) return
+      heldSet(key, rec)
+      // Only with a real run time, which is what clears it out later.
+      if (Number.isFinite(run)) storeTile(key, run, rec)
+    })
+  },
+
+  // The tile's field, as ramp indices for the rows that have anything in them:
+  // { y0, rows, data }, or null when nothing is falling anywhere near.
+  _render({ gx, gy, span, bx, by, bw, bh, kernel, want, got }, W, H) {
     const field = new Float32Array(bw * bh).fill(NODATA_DBZ)
     let hit = false
     got.forEach((g, i) => {
@@ -313,18 +526,16 @@ export const HrrrLayer = L.GridLayer.extend({
         }
       }
     })
-    if (!hit) return // nothing falling anywhere near: the tile stays clear
+    if (!hit) return null // nothing falling anywhere near: the tile stays clear
 
     blur(field, bw, bh, kernel)
 
-    // Bilinear samples of the blurred field at each screen pixel's centre.
-    // Positions are in field-array units, where element k sits at k + 0.5.
-    const W = tile.width
-    const H = tile.height
-    const ctx = tile.getContext('2d')
-    const img = ctx.createImageData(W, H)
-    const out = new Uint32Array(img.data.buffer)
-    const lut = LUTS[this.options.palette] ?? LUTS.nws
+    // Bilinear samples of the blurred field at each screen pixel's centre, as
+    // ramp indices (0 for clear). Positions are in field-array units, where
+    // element k sits at k + 0.5.
+    const out = new Uint8Array(W * H)
+    let first = -1
+    let last = -1
 
     const sx = span / W
     const sy = span / H
@@ -341,6 +552,7 @@ export const HrrrLayer = L.GridLayer.extend({
       const fy = v - y0
       const r0 = y0 * bw
       const o = j * W
+      let any = false
       for (let i = 0; i < W; i++) {
         const k = r0 + xi[i]
         const fx = xf[i]
@@ -350,9 +562,17 @@ export const HrrrLayer = L.GridLayer.extend({
         if (val < MIN_DBZ) continue
         // Back to the nearest 0.5 dBZ index: round((val + 32) * 2) + 1.
         const idx = ((val + 32) * 2 + 1.5) | 0
-        out[o + i] = lut[idx > 255 ? 255 : idx]
+        out[o + i] = idx > 255 ? 255 : idx
+        any = true
+      }
+      if (any) {
+        if (first < 0) first = j
+        last = j
       }
     }
-    ctx.putImageData(img, 0, 0)
+    if (first < 0) return null
+    // Just the rows with something in them; slice copies them out, so the
+    // full-size buffer can go.
+    return { y0: first, rows: last - first + 1, data: out.slice(first * W, (last + 1) * W) }
   },
 })

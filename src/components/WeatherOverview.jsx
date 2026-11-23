@@ -1798,7 +1798,7 @@ export const WeatherOverview = memo(function WeatherOverview({ hourly, daily, cu
   const isDay = current?.is_day !== 0
 
   return (
-    <div className="card">
+    <div className="card card--insight">
       {showInsight && <div className="section-label">WEATHER INSIGHT</div>}
       {showInsight && <div className="overview-list">
         {visible.map((item, i) => {

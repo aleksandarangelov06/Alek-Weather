@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef } from 'react'
 import { LOW_END } from '../utils/device'
+import { sceneFor } from '../utils/weatherScene'
 
 // Speeds in CFG are px per frame at this frame length: 74 Hz, the screen the
 // radar's rain (RadarRain) was tuned on, so the two rain layers on the web Radar
@@ -16,18 +17,6 @@ const MAX_STEP = 3
 // gets half (see LOW_END).
 const TARGET_FPS = LOW_END ? 30 : 60
 
-function sceneFor(code) {
-  if (code == null) return null
-  if (code === 95 || code === 96 || code === 99) return 'storm'
-  if (code === 65 || code === 82) return 'downpour'
-  if ((code >= 51 && code <= 63) || code === 80 || code === 81) return 'rain'
-  if ((code >= 71 && code <= 77) || code === 85 || code === 86) return 'snow'
-  if (code === 45 || code === 48) return 'fog'
-  if (code === 3) return 'overcast'
-  if (code === 2) return 'partly'
-  return null
-}
-
 const isCloudScene = (scene) => scene === 'overcast' || scene === 'partly'
 
 const CFG = {
@@ -40,7 +29,25 @@ const CFG = {
   downpour: { count: 340, color: [80, 120, 185],  alpha: 0.65, speed: [14, 22], angle: 6,  len: [16, 30] },
   storm:    { count: 325, color: [70, 110, 175],  alpha: 0.70, speed: [15, 24], angle: 12, len: [16, 32] },
   snow:  { count: 70,  color: [180, 210, 240], alpha: 0.75, speed: [0.5, 1.6] },
-  fog:   { count: 16,  color: [140, 160, 180], alpha: 0.18, speed: 0.4, size: [70, 140] },
+  // Fog: long, low banks of mist at three depths, drifting slowly sideways and
+  // thickening and thinning as they go. Drawn the way the clouds are (soft
+  // sprites built once, then moved) so the two read as the same sky, but
+  // flatter, wider and greyer, and weighted toward the ground, where fog sits:
+  // the far banks are thin and high, the near ones thick and low. `y` is where
+  // a bank's middle can sit, as a fraction of the height; `width` is a
+  // multiple of the screen's, capped at `maxWidth`; `breathe` is how long
+  // (ms) one thicken-and-thin takes.
+  fog: {
+    color: [232, 236, 240],
+    layers: [
+      { count: 4, y: [0.18, 0.55], height: [70, 120],  alpha: [0.10, 0.16], speed: [0.05, 0.11] },
+      { count: 4, y: [0.42, 0.82], height: [110, 170], alpha: [0.14, 0.22], speed: [0.09, 0.18] },
+      { count: 3, y: [0.68, 1.02], height: [150, 240], alpha: [0.18, 0.28], speed: [0.16, 0.30] },
+    ],
+    width: [1.0, 1.9],
+    maxWidth: 1600,
+    breathe: [14000, 26000],
+  },
   // Cloudy skies: a few soft white clouds drifting slowly across, kept faint so
   // they read as depth in the sky rather than as objects on it. Overcast gets a
   // few more and a touch more presence than partly cloudy.
@@ -109,6 +116,74 @@ function makeCloudSprite(width, rand, alpha) {
     d[i + 3] = Math.floor(a * alpha + Math.random())
   }
   g.putImageData(img, 0, 0)
+  return c
+}
+
+// Fog banks are built at this fraction of their size and drawn scaled back up.
+// They are nothing but soft falloff, so the lost detail doesn't show, and it
+// quarters the pixels the dither pass below has to walk when the scene starts.
+const FOG_SCALE = 2
+
+// One fog bank, drawn once into its own canvas: soft elliptical puffs strung
+// along a line, each two or three times wider than it is tall, so the bank is
+// long and flat rather than heaped like a cloud. Thickest in the middle and
+// thinning toward both ends, which trail off into nothing instead of stopping.
+// Puffs overlap four or five deep, so the body is an even veil with a little
+// lumpiness, not a row of blobs.
+function makeFogSprite(width, height, rand, alpha, [r, g, b]) {
+  const n = Math.max(6, Math.round(width / (height * 0.45)))
+  const puffs = []
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1)
+    const body = Math.pow(Math.sin(t * Math.PI), 0.6) // 0 at the ends, 1 mid-bank
+    const ry = height * (0.28 + 0.24 * body) * rand(0.8, 1.2)
+    puffs.push({
+      x: width * t + rand(-0.02, 0.02) * width,
+      y: rand(-0.1, 0.1) * height,
+      rx: ry * rand(1.8, 2.6),
+      ry,
+      weight: 0.35 + 0.65 * body,
+    })
+  }
+  const pad = 2
+  const minX = Math.min(...puffs.map(p => p.x - p.rx)) - pad
+  const maxX = Math.max(...puffs.map(p => p.x + p.rx)) + pad
+  const minY = Math.min(...puffs.map(p => p.y - p.ry)) - pad
+  const maxY = Math.max(...puffs.map(p => p.y + p.ry)) + pad
+
+  const c = document.createElement('canvas')
+  c.width = Math.ceil(maxX - minX)
+  c.height = Math.ceil(maxY - minY)
+  const ctx = c.getContext('2d')
+  for (const { x, y, rx, ry, weight } of puffs) {
+    // A round gradient squashed flat: drawn in a space scaled down vertically,
+    // so its circle lands as an ellipse rx wide and ry tall.
+    ctx.save()
+    ctx.translate(x - minX, y - minY)
+    ctx.scale(1, ry / rx)
+    const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, rx)
+    grad.addColorStop(0, `rgba(255,255,255,${0.3 * weight})`)
+    grad.addColorStop(0.45, `rgba(255,255,255,${0.18 * weight})`)
+    grad.addColorStop(0.75, `rgba(255,255,255,${0.06 * weight})`)
+    grad.addColorStop(1, 'rgba(255,255,255,0)')
+    ctx.fillStyle = grad
+    ctx.fillRect(-rx, -rx, rx * 2, rx * 2)
+    ctx.restore()
+  }
+
+  // The same dithered bake as the clouds (see makeCloudSprite): the bank's
+  // faintness goes into the pixels with each one rounded up or down at random,
+  // so the long fade at these low opacities comes out as fine grain rather
+  // than bands. Recoloured to the fog's grey on the way.
+  const img = ctx.getImageData(0, 0, c.width, c.height)
+  const d = img.data
+  for (let i = 0; i < d.length; i += 4) {
+    const a = d[i + 3]
+    if (a === 0) continue
+    d[i] = r; d[i + 1] = g; d[i + 2] = b
+    d[i + 3] = Math.floor(a * alpha + Math.random())
+  }
+  ctx.putImageData(img, 0, 0)
   return c
 }
 
@@ -186,6 +261,9 @@ export const WeatherCanvas = memo(function WeatherCanvas({ code, gyro = true, ho
     const ctx = canvas.getContext('2d')
     const cfg = CFG[scene]
     let raf, flash = 0
+    // Drawn time (ms) for the fog's breathing; advances with the frames drawn,
+    // so it pauses with them.
+    let fogClock = 0
     // Frames until the header's position is read again (see mirrorToHeader).
     let measureIn = 0
 
@@ -245,12 +323,31 @@ export const WeatherCanvas = memo(function WeatherCanvas({ code, gyro = true, ho
         alpha: quantFactor(rand(0.4, 1)) * cfg.alpha,
       }))
     } else {
-      particles = Array.from({ length: cfg.count }, () => ({
-        x: rand(0, W()), y: rand(0, H()),
-        r: rand(cfg.size[0], cfg.size[1]),
-        vx: rand(-1, 1) * cfg.speed, vy: rand(-0.3, 0.3) * cfg.speed,
-        alpha: quantFactor(rand(0.4, 1)) * cfg.alpha,
-      }))
+      // Fog. Built far to near, so nearer banks are drawn over the far ones,
+      // and spread across the width so the screen starts covered rather than
+      // waiting for banks to drift in. Low-end hardware gets a bank fewer per
+      // depth.
+      particles = []
+      cfg.layers.forEach((layer) => {
+        const count = Math.max(2, layer.count - (LOW_END ? 1 : 0))
+        for (let i = 0; i < count; i++) {
+          const w = Math.min(cfg.maxWidth, W() * rand(cfg.width[0], cfg.width[1]))
+          const h = rand(layer.height[0], layer.height[1])
+          const sprite = makeFogSprite(w / FOG_SCALE, h / FOG_SCALE, rand, rand(layer.alpha[0], layer.alpha[1]), cfg.color)
+          const dw = sprite.width * FOG_SCALE
+          const dh = sprite.height * FOG_SCALE
+          particles.push({
+            sprite, dw, dh, layer,
+            x: ((i + rand(0, 0.8)) / count) * (W() + dw) - dw,
+            cy: rand(layer.y[0], layer.y[1]),
+            spd: still ? 0 : rand(layer.speed[0], layer.speed[1]),
+            // Each bank thickens and thins on its own slow cycle, out of step
+            // with the others, so the fog shifts without anything pulsing.
+            phase: rand(0, Math.PI * 2),
+            period: rand(cfg.breathe[0], cfg.breathe[1]),
+          })
+        }
+      })
     }
 
     const [r, g, b] = cfg.color ?? [255, 255, 255]
@@ -274,12 +371,22 @@ export const WeatherCanvas = memo(function WeatherCanvas({ code, gyro = true, ho
     // clears the page to show the sky), or the radar once it has finished going
     // full-screen. Drawing under those was pure cost — and worse than its own
     // draw calls, because every frame of moving sky also made the browser redo
-    // each glass card's backdrop blur. Checked a few times a second rather than
-    // per frame; the loop keeps ticking so it resumes on its own.
+    // each glass card's backdrop blur. Checked every few frames rather than per
+    // frame; the loop keeps ticking so it resumes on its own.
+    //
+    // Also held while the radar's window is opening or closing (.radar-iris--on,
+    // from the tap through to the window landing, and again on the way out).
+    // The sky is only seen around the window then, under a scrim fading in, so
+    // holding it still for those few hundred ms doesn't show; drawing it made
+    // every glass card behind the window re-blur on each frame of exactly the
+    // animation that has to be smooth. The check runs every few frames so the
+    // hold lands while the tap is still being armed (see ARM_TILE_WAIT_MS in
+    // WeatherRadar), before the window starts to move.
     let covered = false, coverCheckIn = 0
     const COVER_SEL =
       ':root[data-shell="mobile"] .settings-page.settled:not(.peeking):not(.settings-page--modal),' +
-      ' .radar-iris:not(.radar-iris--on) > .radar-iris-circle .radar-expanded'
+      ' .radar-iris:not(.radar-iris--on) > .radar-iris-circle .radar-expanded,' +
+      ' .radar-iris--on'
 
     // Frame pacing (see TARGET_FPS): the display's frame length is measured off
     // the callbacks themselves, smoothed, and a frame drawn every `stride` of
@@ -299,7 +406,7 @@ export const WeatherCanvas = memo(function WeatherCanvas({ code, gyro = true, ho
       if (++ticks % stride) return
 
       if (coverCheckIn-- <= 0) {
-        coverCheckIn = 10
+        coverCheckIn = 4
         covered = !!document.querySelector(COVER_SEL)
       }
       // Also held while the launch boot screen is up or fading out (data-boot,
@@ -392,20 +499,23 @@ export const WeatherCanvas = memo(function WeatherCanvas({ code, gyro = true, ho
           ctx.fill()
         }
       } else {
-        for (const { style, ps } of buckets) {
-          ctx.beginPath()
-          for (const p of ps) {
-            p.x += (p.vx + windX * 0.6) * k; p.y += p.vy * k
-            if (p.x < -p.r) p.x = W() + p.r
-            if (p.x > W() + p.r) p.x = -p.r
-            if (p.y < -p.r) p.y = H() + p.r
-            if (p.y > H() + p.r) p.y = -p.r
-            ctx.moveTo(p.x + p.r, p.y)
-            ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2)
-          }
-          ctx.fillStyle = style
-          ctx.fill()
+        // Fog: the banks drift left to right like the clouds, the tilt nudging
+        // them gently, and one that has fully left the right edge comes back
+        // in from the left at a new height within its depth. The breathing is
+        // a narrow swing of the bank's own baked opacity (72–100%), so the
+        // dither grain in it survives.
+        fogClock += k * REF_FRAME_MS
+        for (const p of particles) {
+          p.x += (p.spd + (still ? 0 : windX * 0.3)) * k
+          if (p.x > W() + 20) {
+            p.x = -p.dw - rand(0, 160)
+            p.cy = rand(p.layer.y[0], p.layer.y[1])
+          } else if (p.x < -p.dw - 180) p.x = W()
+          ctx.globalAlpha = still ? 1 : 0.72 + 0.28 * Math.sin(p.phase + fogClock * 2 * Math.PI / p.period)
+          // Whole pixels, as for the clouds.
+          ctx.drawImage(p.sprite, Math.round(p.x), Math.round(p.cy * H() - p.dh / 2), p.dw, p.dh)
         }
+        ctx.globalAlpha = 1
       }
 
       mirrorToHeader()

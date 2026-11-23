@@ -2339,6 +2339,181 @@ body {
   color: var(--text-secondary);
 }
 
+/* ── Hourly timeline (HourlyForecast) ──
+   The next 24 hours top to bottom. The bar down the left paints each hour's
+   conditions; a row every two hours carries the time, the condition where it
+   changes, and the chosen reading in a pill whose place along the row follows
+   its value. The .hourly-* strip rules above are the 7-day cover's now.
+
+   Everything reads the card's own tokens, so it follows every surface the card
+   can sit on (the glass over each sky, the pale light-sky glass, the solid
+   card with effects off, the bare sky of the connected layout). The cloud tones are steps of
+   the text colour for the same reason: grey on a white card and on dark glass
+   alike. Precipitation keeps fixed hues, mid-tones that hold on both. */
+.hourly-tl {
+  --hrl-clear:      color-mix(in srgb, var(--text-primary) 9%, transparent);
+  --hrl-mainly:     color-mix(in srgb, var(--text-primary) 16%, transparent);
+  --hrl-partly:     color-mix(in srgb, var(--text-primary) 26%, transparent);
+  --hrl-overcast:   color-mix(in srgb, var(--text-primary) 42%, transparent);
+  --hrl-fog:        color-mix(in srgb, var(--text-primary) 32%, transparent);
+  --hrl-rain-light: #93c5fd;
+  --hrl-rain:       #4f9cf7;
+  --hrl-rain-heavy: #2563eb;
+  --hrl-ice:        #67d3e6;
+  --hrl-snow-light: #c4c8fb;
+  --hrl-snow:       #a3a8f6;
+  --hrl-snow-heavy: #7c83ec;
+  --hrl-storm:      #8b5cf6;
+  position: relative;
+  margin-top: 2px;
+}
+.hourly-tl-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 14px;
+  border-radius: 7px;
+}
+.hourly-tl-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 0 24px;
+}
+.hourly-tl-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 40px;
+  margin: 0;
+}
+.hourly-tl-time {
+  flex: none;
+  width: 50px;
+  text-align: right;
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+/* The pill's place: the lead in front of it is --p (0 to 1 along the reading's
+   scale, see METRICS in HourlyForecast) of the room the widest pill leaves. A
+   condition too long for that room pushes its pill along rather than
+   overlapping it. */
+.hourly-tl-track {
+  /* The widest pill: a wind reading with its unit ("19 km/h"). */
+  --hrl-pill-room: 72px;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+.hourly-tl-lead {
+  flex: none;
+  display: flex;
+  align-items: center;
+  width: calc(var(--p, 0.5) * (100% - var(--hrl-pill-room)));
+  min-width: max-content;
+  transition: width 0.4s cubic-bezier(0.2, 0, 0, 1);
+}
+.hourly-tl-cond {
+  max-width: 150px;
+  margin-right: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--text-secondary);
+}
+.hourly-tl-line {
+  flex: 1;
+  min-width: 10px;
+  height: 1px;
+  margin-right: 8px;
+  background: color-mix(in srgb, var(--text-primary) 16%, transparent);
+}
+.hourly-tl-pill {
+  flex: none;
+  box-sizing: border-box;
+  min-width: 46px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  text-align: center;
+  white-space: nowrap;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--text-primary) 9%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 8%, transparent);
+}
+/* Wind's unit, small after the number, so its pills stay close to the width
+   of the rest. */
+.hourly-tl-pill-unit {
+  margin-left: 2px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+/* The reading picker: one row of chips fitted to the card's width, neither
+   scrolling past it nor wrapping. Each chip grows to share the row edge to
+   edge, and the type, padding and gaps step down with the screen (the vw
+   terms) so all six labels still fit on the narrowest phones. Should one ever
+   not fit, it is clipped with an ellipsis rather than pushing the row wider.
+   The chosen one is filled with a wash of the accent, which reads on every
+   surface the accent itself does. */
+.hourly-tl-metrics {
+  display: flex;
+  gap: clamp(3px, 1vw, 6px);
+  margin-top: 14px;
+}
+.hourly-tl-chip {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+  padding: 6px clamp(4px, 1.4vw, 12px);
+  border: 1px solid color-mix(in srgb, var(--text-primary) 18%, transparent);
+  border-radius: 999px;
+  background: transparent;
+  font: inherit;
+  font-size: clamp(10.5px, 3.1vw, 13px);
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+.hourly-tl-chip.is-on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
+}
+.hourly-tl-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.hourly-tl-summary {
+  margin-top: 14px;
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+.hourly-tl-summary p { margin: 0; }
+
+@media (prefers-reduced-motion: reduce) {
+  .hourly-tl-lead { transition: none; }
+}
+
 /* ── Daily forecast ── */
 .daily-list {
   display: flex;
@@ -3628,7 +3803,7 @@ body {
    Precip reading, which frees the summary's second line for the comparison. */
 
 /* Under the condition label, one line per neighbouring day. Arrow colours are
-   the At a Glance card's (see .glance-delta--*). */
+   the At a Glance card's (see .glance-item-change--*). */
 .day-compare {
   list-style: none;
   margin: 0;
@@ -4130,6 +4305,27 @@ body {
   pointer-events: none;
 }
 
+/* The phone's sky (SkyStage): each layer is a gradient and its weather canvas,
+   stacked under the app. A layer being replaced rises above the new one and
+   fades off it, still drawing, so a change of sky is a dissolve and not a cut.
+   Opacity only on the wrapper: a transform would make it the containing block
+   for the fixed children and pin them to it. */
+.sky-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.sky-layer--leaving {
+  z-index: 1;
+  animation: sky-layer-out 0.7s ease both;
+}
+
+@keyframes sky-layer-out {
+  to { opacity: 0; }
+}
+
 /* Backdrop for the full-screen radar (WeatherRadar renders it as the card's
    sibling while expanded), sitting just under the card at z 400 and above the
    app content at z 2 — so a card thinned by the transparency slider shows the
@@ -4279,8 +4475,20 @@ body {
      its particles fall behind the wordmark and search field, not over them. */
   z-index: 0;
 }
-.splash-bg--sky .splash-clouds,
-.splash-bg--sky .splash-stars { display: none; }
+/* Doubled class: the system-dark rule that turns the stars on above is
+   :root:not([data-theme="light"]) .splash-stars (0,3,0), which beat a single
+   .splash-bg--sky (0,2,0), so stars twinkled over fog and rain skies whenever
+   the theme followed a dark OS. */
+.splash-bg.splash-bg--sky .splash-clouds,
+.splash-bg.splash-bg--sky .splash-stars { display: none; }
+
+/* On the phone that sky is the shared one behind the app (SkyStage), so the
+   splash layer itself goes clear over it. The forecast underneath is hidden
+   while the splash is up instead (.app--splash-cover .app-grid). Specific
+   enough to beat the dark-theme backgrounds above. */
+.splash-bg.splash-bg--sky:not(.splash-bg--web) {
+  background: transparent;
+}
 
 /* Any sky can sit behind this text in either theme — a pale fog in light mode,
    a rain sky that is dark in both — so it goes white with the same soft lift
@@ -4329,6 +4537,9 @@ body {
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: opacity 0.15s ease, background 0.15s ease, transform 0.15s ease;
+  /* Fades in rather than popping up once the headline has been measured, and
+     with the splash on the way Home. `backwards` so --exit's fade still runs. */
+  animation: splash-scenery-in 0.32s ease backwards;
 }
 .splash-place:active { transform: translateX(-50%) scale(0.97); }
 .splash-place:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
@@ -4448,7 +4659,8 @@ html.splash-lock body {
   overscroll-behavior: none;
 }
 html.splash-lock .splash-overlay,
-html.splash-lock .splash-mini {
+html.splash-lock .splash-mini,
+html.splash-lock .splash-mini-scrim {
   touch-action: none;
 }
 
@@ -4549,6 +4761,55 @@ html.splash-lock .splash-mini {
   white-space: nowrap;
 }
 
+/* ── Phone splash to forecast and back ──
+   Leaving (.splash-bg--exit, for the length of the exit phase): the poster's
+   sky clears off the forecast instead of the whole layer vanishing when it
+   unmounts, which cut from one sky to the other in a frame. Only the scenery
+   and the backdrop fade, not the layer, so the headline keeps flying into the
+   header at full strength (its own fade is on .splash-logo--exit). The forecast
+   columns rise in underneath at the same moment (.app--splash-exit).
+
+   Coming back (.splash-bg--enter, the 'enter' phase): the reverse, laid over
+   the forecast, which App drops only once this has covered it. The headline
+   has its own entrance (splashIn) and the icon and wordmark fade in with the
+   sky. */
+.splash-bg--exit {
+  animation: splash-bg-clear 0.4s ease 0.08s both;
+}
+
+.splash-bg--exit :is(.splash-sky, .splash-clouds, .splash-stars) {
+  animation: splash-scenery-out 0.4s ease 0.08s both;
+}
+
+.splash-bg--exit .splash-version {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.splash-bg--enter {
+  animation: splash-bg-fill 0.32s ease both;
+}
+
+.splash-bg--enter :is(.splash-sky, .splash-clouds, .splash-stars, .splash-version, .splash-logo-img, .splash-wordmark) {
+  animation: splash-scenery-in 0.32s ease both;
+}
+
+@keyframes splash-bg-clear {
+  to { background-color: transparent; }
+}
+
+@keyframes splash-bg-fill {
+  from { background-color: transparent; }
+}
+
+@keyframes splash-scenery-out {
+  to { opacity: 0; }
+}
+
+@keyframes splash-scenery-in {
+  from { opacity: 0; }
+}
+
 /* ── Splash recents (phone) ──────────────────────────────────────────────────
    The desktop splash is a home screen — a search field over a grid of the
    places you've been (see .splash-home in WebApp.css). The phone splash stays
@@ -4620,6 +4881,14 @@ html.splash-lock .splash-mini {
   transition: opacity 0.2s ease;
 }
 
+/* Fading back in with the splash on the way Home, and inert until the
+   forecast under it is gone (see `entering` in SplashCities). `backwards`, so
+   nothing is held once it has played and the exit's transition still works. */
+.splash-mini--enter {
+  pointer-events: none;
+  animation: splash-scenery-in 0.32s ease backwards;
+}
+
 /* A city is being fetched: the splash still covers the loading skeleton, so it
    goes inert and the card that was tapped keeps its spinner lit. */
 .splash-mini--busy {
@@ -4647,7 +4916,12 @@ html.splash-lock .splash-mini {
   text-align: left;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition: transform 0.12s ease, opacity 0.2s ease;
+  /* Holding a card opens its menu (SplashCities): keep iOS from selecting the
+     name or raising its own callout under the same finger. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: transform 0.12s ease, opacity 0.2s ease, box-shadow 0.18s ease;
 }
 
 .splash-mini-card:active {
@@ -4723,6 +4997,166 @@ html.splash-lock .splash-mini {
 
 @media (prefers-reduced-motion: reduce) {
   .splash-mini-card:active {
+    transform: none;
+  }
+}
+
+/* ── Hold menu on the splash cards ──
+   Holding a card lifts it and pops a short menu above it (home, save,
+   remove). Each card sits in a slot so the menu can be positioned from it
+   without nesting buttons. A scrim dims the rest of the poster and takes the
+   next tap anywhere else, which only closes the menu; the strip rises above
+   the scrim while the menu is up, with the other card dimmed and inert so a
+   tap on it falls through to the scrim too. Both stay under the search sheet
+   (299). */
+.splash-mini-slot {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+}
+
+.splash-mini-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: rgba(0, 0, 0, 0.22);
+  -webkit-tap-highlight-color: transparent;
+  animation: splash-menu-fade 0.18s ease both;
+}
+
+.splash-mini--menu {
+  z-index: 21;
+}
+
+.splash-mini--menu .splash-mini-slot:not(.splash-mini-slot--open),
+.splash-mini--menu .splash-mini-search {
+  opacity: 0.4;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+
+.splash-mini-card--held,
+.splash-mini-card--held:active {
+  transform: scale(1.03);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.splash-menu {
+  --splash-menu-bg: rgba(250, 250, 252, 0.94);
+  --splash-menu-text: #1a1a2e;
+  --splash-menu-icon: #64748b;
+  --splash-menu-rule: rgba(0, 0, 0, 0.08);
+  --splash-menu-press: rgba(0, 0, 0, 0.06);
+  --splash-menu-danger: #dc2626;
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  z-index: 1;
+  width: max-content;
+  min-width: 200px;
+  max-width: calc(100vw - 32px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--splash-menu-bg);
+  -webkit-backdrop-filter: blur(24px) saturate(1.6);
+  backdrop-filter: blur(24px) saturate(1.6);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.22), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+  transform-origin: bottom left;
+  animation: splash-menu-in 0.2s cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
+}
+
+/* The right-hand card's menu hangs from its right edge so it stays on screen. */
+.splash-menu--end {
+  left: auto;
+  right: 0;
+  transform-origin: bottom right;
+}
+
+[data-theme="dark"] .splash-menu {
+  --splash-menu-bg: rgba(38, 40, 48, 0.92);
+  --splash-menu-text: #f1f3f7;
+  --splash-menu-icon: rgba(255, 255, 255, 0.7);
+  --splash-menu-rule: rgba(255, 255, 255, 0.08);
+  --splash-menu-press: rgba(255, 255, 255, 0.08);
+  --splash-menu-danger: #f87171;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .splash-menu {
+    --splash-menu-bg: rgba(38, 40, 48, 0.92);
+    --splash-menu-text: #f1f3f7;
+    --splash-menu-icon: rgba(255, 255, 255, 0.7);
+    --splash-menu-rule: rgba(255, 255, 255, 0.08);
+    --splash-menu-press: rgba(255, 255, 255, 0.08);
+    --splash-menu-danger: #f87171;
+  }
+}
+
+.splash-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+  padding: 0 16px;
+  border: none;
+  background: none;
+  font-family: var(--font);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--splash-menu-text);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.12s ease;
+}
+
+.splash-menu-item + .splash-menu-item {
+  border-top: 1px solid var(--splash-menu-rule);
+}
+
+.splash-menu-item svg {
+  flex-shrink: 0;
+  color: var(--splash-menu-icon);
+}
+
+.splash-menu-item:active {
+  background: var(--splash-menu-press);
+}
+
+@media (hover: hover) {
+  .splash-menu-item:hover {
+    background: var(--splash-menu-press);
+  }
+}
+
+.splash-menu-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.splash-menu-item--danger,
+.splash-menu-item--danger svg {
+  color: var(--splash-menu-danger);
+}
+
+@keyframes splash-menu-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.88); }
+}
+
+@keyframes splash-menu-fade {
+  from { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash-menu {
+    animation-name: splash-menu-fade;
+  }
+  .splash-mini-card--held,
+  .splash-mini-card--held:active {
     transform: none;
   }
 }
@@ -6535,91 +6969,162 @@ button.reorder-row-action:focus-visible {
   color: var(--text-tertiary);
 }
 .glance-tile-label svg { flex-shrink: 0; }
+/* ── The two tiles' shared shape ──
+   Each tile: its label, a head block (the temperature's change, or the
+   Conditions score ring) given the same height in both so their rows start
+   level, then three two-line rows pinned to the foot. Every row is a name and
+   value over a short note, so the two tiles come out the same height and
+   neither is left with a gap. */
+.glance-head-block {
+  margin-top: 10px;
+  min-height: 54px;
+}
+
+/* The temperature's change: an arrow and the number in the direction's
+   colour ("Same" in plain text, since no change is neither good nor bad),
+   over the rest of the sentence. */
 .glance-big {
   display: flex;
   align-items: center;
-  gap: 3px;
-  margin-top: 10px;
+  gap: 2px;
   font-family: var(--font-display);
-  font-size: 36px;
+  font-size: 30px;
+  font-weight: 500;
   line-height: 1;
   color: var(--text-primary);
 }
 .glance-big-icon { flex-shrink: 0; margin-left: -3px; }
-.glance-big--warmer .glance-big-icon { color: var(--cond-orange); }
-.glance-big--colder .glance-big-icon { color: var(--cond-info); }
-.glance-big--same   .glance-big-icon { color: var(--cond-green); }
-.glance-big-of {
-  align-self: flex-end;
-  margin-bottom: 3px;
-  font-size: 16px;
-  color: var(--text-tertiary);
-}
-.glance-tile-sub {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 6px;
-  font-size: 13px;
-  font-weight: 600;
+.glance-big--warmer { color: var(--cond-orange); }
+.glance-big--colder { color: var(--cond-info); }
+.glance-sub {
+  margin-top: 5px;
+  font-size: 12px;
   line-height: 1.3;
   color: var(--text-secondary);
 }
 
-/* Reading rows, pinned to the tile's foot so both tiles' rows line up even
-   when one subtitle wraps. */
+/* The rows, pinned to the tile's foot. */
 .glance-rows {
   display: flex;
   flex-direction: column;
-  gap: 7px;
+  gap: 9px;
   margin-top: auto;
   padding-top: 12px;
 }
-.glance-row {
-  display: flex;
+.glance-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "name value"
+    "note note";
+  column-gap: 6px;
+  row-gap: 1px;
   align-items: center;
-  gap: 6px;
-  min-height: 18px;
-  font-size: 12.5px;
+  font-size: 13px;
 }
-.glance-row-icon { flex-shrink: 0; color: var(--text-tertiary); }
-.glance-row-name {
-  flex: 1;
+.glance-item--icon {
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  grid-template-areas:
+    "icon name value"
+    ".    note note";
+}
+.glance-item-icon { grid-area: icon; color: var(--text-tertiary); }
+.glance-item-name {
+  grid-area: name;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--text-secondary);
+  font-weight: 600;
+  color: var(--text-primary);
 }
-.glance-row-val {
+.glance-item-value {
+  grid-area: value;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+/* An activity's score: its number on a wash of its colour, the colour the
+   ring uses for the overall. */
+.glance-item-score {
+  min-width: 22px;
+  padding: 1px 6px;
+  box-sizing: border-box;
+  border-radius: 7px;
+  text-align: center;
+  background: color-mix(in srgb, var(--score-c) 26%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--score-c) 45%, transparent);
+}
+.glance-item-note {
+  grid-area: note;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--text-tertiary);
+}
+.glance-item-change { font-weight: 700; }
+.glance-item-change--warmer { color: var(--cond-orange); }
+.glance-item-change--colder { color: var(--cond-info); }
+
+/* The overall score: a ring that fills to it (out of 10) in its colour, the
+   number inside, and beside it the word for it over the stretch of the day it
+   covers ("Rest of today", "Daytime"). */
+.glance-score {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.glance-ring {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  font-family: var(--font-display);
+  font-size: 19px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
 }
-.glance-row-score { min-width: 14px; text-align: right; }
-.glance-row-bar {
-  flex: 0 0 30px;
-  height: 4px;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
-  overflow: hidden;
-}
-.glance-row-bar i {
-  display: block;
+.glance-ring svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
   height: 100%;
-  border-radius: 2px;
-  transition: width 0.4s ease;
+  transform: rotate(-90deg);
 }
-.glance-delta {
-  min-width: 32px;
-  text-align: right;
+.glance-ring circle {
+  fill: none;
+  stroke-width: 4.5;
+}
+.glance-ring-track { stroke: color-mix(in srgb, var(--text-primary) 12%, transparent); }
+.glance-ring-fill {
+  stroke: var(--score-c);
+  stroke-linecap: round;
+  transition: stroke-dasharray 0.4s ease;
+}
+.glance-score-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.glance-score-word {
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--text-primary);
+}
+.glance-score-when {
   font-size: 12px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  color: var(--text-tertiary);
 }
-.glance-delta--warmer { color: var(--cond-orange); }
-.glance-delta--colder { color: var(--cond-info); }
-.glance-delta--same   { color: var(--text-tertiary); }
+
 
 /* What to expect: one banner each, tinted in its level's colour. The icon
    tile carries the stronger tint, so pale yellows and greens still read on
@@ -6678,14 +7183,14 @@ button.reorder-row-action:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .glance-nav, .glance-row-bar i { transition: none; }
+  .glance-nav, .glance-ring-fill { transition: none; }
   .glance-days-label--next, .glance-days-label--prev { animation: none; }
 }
 
 /* ── At a Glance motion ──
    Entrance: the tiles, then each banner, rise into place in turn (--i is each
-   one's place in that order, set in TodayCard). Inside them the activity bars
-   fill from the left row by row (--r), the arrow slides in the way it points,
+   one's place in that order, set in TodayCard). Inside them the score ring
+   fills round to its score, the arrow slides in the way it points,
    and the big numbers count up (CountUp, in TodayCard, on the same clock). All
    of it waits, paused on its first frame, until the card scrolls into view
    (.glance-card--shown), and replays as a sideways slide on a day switch.
@@ -6700,10 +7205,9 @@ button.reorder-row-action:focus-visible {
     animation: glance-rise 0.55s cubic-bezier(0.2, 0.7, 0.3, 1) both;
     animation-delay: calc(var(--i, 0) * 70ms);
   }
-  .glance-row-bar i {
-    transform-origin: left center;
-    animation: glance-bar 0.7s cubic-bezier(0.3, 0.8, 0.3, 1) both;
-    animation-delay: calc(var(--i, 0) * 70ms + 220ms + var(--r, 0) * 80ms);
+  .glance-ring-fill {
+    animation: glance-ring 0.9s cubic-bezier(0.3, 0.8, 0.3, 1) both;
+    animation-delay: calc(var(--i, 0) * 70ms + 200ms);
   }
   .glance-big-icon {
     animation: 0.6s cubic-bezier(0.3, 1.5, 0.5, 1) 0s both;
@@ -6714,7 +7218,7 @@ button.reorder-row-action:focus-visible {
   .glance-big--same   .glance-big-icon { animation-name: glance-pop; }
 
   /* Held on the first frame until the card is on screen. */
-  .glance-card:not(.glance-card--shown) :is(.glance-anim, .glance-row-bar i, .glance-big-icon) {
+  .glance-card:not(.glance-card--shown) :is(.glance-anim, .glance-ring-fill, .glance-big-icon) {
     animation-play-state: paused;
   }
 
@@ -6725,8 +7229,8 @@ button.reorder-row-action:focus-visible {
     animation-duration: 0.4s;
     animation-delay: calc(var(--i, 0) * 45ms);
   }
-  :is(.glance-pane--next, .glance-pane--prev) .glance-row-bar i {
-    animation-delay: calc(var(--i, 0) * 45ms + 120ms + var(--r, 0) * 60ms);
+  :is(.glance-pane--next, .glance-pane--prev) .glance-ring-fill {
+    animation-delay: calc(var(--i, 0) * 45ms + 120ms);
   }
   :is(.glance-pane--next, .glance-pane--prev) .glance-big-icon {
     animation-delay: calc(var(--i, 0) * 45ms + 120ms);
@@ -6787,9 +7291,10 @@ button.reorder-row-action:focus-visible {
   from { opacity: 0; transform: translateY(10px) scale(0.985); }
   to   { opacity: 1; transform: none; }
 }
-@keyframes glance-bar {
-  from { transform: scaleX(0); }
-  to   { transform: none; }
+/* From empty to the dash the element carries (no `to`: it ends on the
+   inline stroke-dasharray, whatever the score). */
+@keyframes glance-ring {
+  from { stroke-dasharray: 0 100; }
 }
 @keyframes glance-arrow-up {
   from { opacity: 0; transform: translateY(8px); }
@@ -8025,6 +8530,46 @@ button.reorder-row-action:focus-visible {
 :root[data-shell="mobile"][data-platform="android"] .splash-mini-temp {
   font-weight: 400;
   letter-spacing: 0;
+}
+
+/* The held card takes the pressed state layer rather than a lift, and its menu
+   is a Material menu: a solid container at level-2 elevation, 48px rows with
+   no rules between them, the error tone on Remove. */
+:root[data-shell="mobile"][data-platform="android"] .splash-mini-card--held {
+  transform: none;
+  background: color-mix(in srgb, var(--md-on-surface) 12%, var(--splash-mini-surface));
+}
+
+:root[data-shell="mobile"][data-platform="android"] .splash-menu {
+  --splash-menu-bg: var(--md-surface-container);
+  --splash-menu-text: var(--md-on-surface);
+  --splash-menu-icon: var(--md-on-surface-variant);
+  --splash-menu-press: color-mix(in srgb, var(--md-on-surface) 10%, transparent);
+  --splash-menu-danger: #b3261e;
+  padding: 8px 0;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: 0 2px 6px 2px rgba(0, 0, 0, 0.15), 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+:root[data-theme="dark"][data-shell="mobile"][data-platform="android"] .splash-menu {
+  --splash-menu-danger: #f2b8b5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-shell="mobile"][data-platform="android"]:not([data-theme="light"]) .splash-menu {
+    --splash-menu-danger: #f2b8b5;
+  }
+}
+
+:root[data-shell="mobile"][data-platform="android"] .splash-menu-item {
+  min-height: 48px;
+  padding: 0 16px 0 12px;
+  font-size: 14px;
+}
+
+:root[data-shell="mobile"][data-platform="android"] .splash-menu-item + .splash-menu-item {
+  border-top: none;
 }
 
 /* ── Platform style: iOS 26 (Liquid Glass) ──
@@ -10251,6 +10796,33 @@ button.reorder-row-action:focus-visible {
   .weather-left, .weather-right { animation: none; }
 }
 
+/* Phone splash: the splash is clear over the shared sky, so the page under it
+   (a loading skeleton, then the forecast as soon as it lands) is hidden while
+   it is up, as the web splash hides its own. The forecast's entrance is held
+   off meanwhile (the same trick as the boot screen's data-boot="cover" below)
+   and starts fresh when the exit begins: the cards rise in over the same sky
+   as the splash's headline flies off and its icon and cards fade, a beat
+   behind them so the two don't sit on top of each other, and done inside the
+   exit's 0.7s. The layers are made ahead, under cover. */
+.app--splash-cover .app-grid {
+  visibility: hidden;
+}
+.app--splash-cover :is(.weather-left, .weather-right) {
+  animation: none;
+  will-change: transform, opacity;
+}
+.app--splash-exit :is(.weather-left, .weather-right) {
+  animation-delay: 0.12s;
+}
+
+/* On the way Home the forecast fades out under the splash fading in, rather
+   than being there one frame and gone the next. Held at nothing until App
+   drops it (SPLASH_ENTER_DROP_MS, just after this ends). */
+.app--splash-enter .app-grid {
+  animation: splash-scenery-out 0.22s ease both;
+  pointer-events: none;
+}
+
 /* While the launch boot screen covers the app (data-boot="cover", see main.jsx),
    the entrances under it are held off: they used to play out unseen, mostly
    finished by the time the screen lifted. With the animation off the content
@@ -10332,18 +10904,18 @@ button.reorder-row-action:focus-visible {
 /* Not Android: its circles are Material containers on every screen (the
    Android rule below), and these are more specific than that one, so left
    unscoped they would win on the home screen and put the glass back there. */
-:root[data-splash-sky][data-shell="mobile"]:not([data-platform="android"]) .app {
+:root[data-splash-sky][data-shell="mobile"]:not([data-platform="android"]) .app.app--on-splash {
   --icon-circle-bg: rgba(255, 255, 255, 0.55);
   --icon-circle-press: rgba(255, 255, 255, 0.75);
   --icon-circle-ring: rgba(255, 255, 255, 0.6);
 }
-:root[data-theme="dark"][data-splash-sky][data-shell="mobile"]:not([data-platform="android"]) .app {
+:root[data-theme="dark"][data-splash-sky][data-shell="mobile"]:not([data-platform="android"]) .app.app--on-splash {
   --icon-circle-bg: var(--ios-frost, rgba(255, 255, 255, 0.08));
   --icon-circle-press: var(--ios-frost-press, rgba(255, 255, 255, 0.16));
   --icon-circle-ring: rgba(255, 255, 255, 0.12);
 }
 @media (prefers-color-scheme: dark) {
-  :root[data-splash-sky][data-shell="mobile"]:not([data-theme="light"]):not([data-platform="android"]) .app {
+  :root[data-splash-sky][data-shell="mobile"]:not([data-theme="light"]):not([data-platform="android"]) .app.app--on-splash {
     --icon-circle-bg: var(--ios-frost, rgba(255, 255, 255, 0.08));
     --icon-circle-press: var(--ios-frost-press, rgba(255, 255, 255, 0.16));
     --icon-circle-ring: rgba(255, 255, 255, 0.12);
@@ -10380,15 +10952,15 @@ button.reorder-row-action:focus-visible {
    cards and buttons are the brightest things on the screen by a long way. Take
    them down a step. Dark mode's surfaces are already dim, so it is left alone. */
 :root[data-splash-sky="dark"]:not([data-theme="dark"]) :is(
-  .app .app-header .header-icon-btn,
-  .app .app-header .settings-btn
+  .app.app--on-splash .app-header .header-icon-btn,
+  .app.app--on-splash .app-header .settings-btn
 ) {
   filter: brightness(0.8);
 }
 @media (prefers-color-scheme: dark) {
   :root[data-splash-sky="dark"]:not([data-theme="light"]) :is(
-    .app .app-header .header-icon-btn,
-    .app .app-header .settings-btn
+    .app.app--on-splash .app-header .header-icon-btn,
+    .app.app--on-splash .app-header .settings-btn
   ) {
     filter: none;
   }
@@ -10416,16 +10988,22 @@ button.reorder-row-action:focus-visible {
    above (pale glass, dimmed, grey icons) they sat as dull grey discs over the
    dark-glass cards at the bottom of the same screen. Same fill and ring as the
    card, white icons, and no dimmer, since there is no glare left to tame.
-   Specific enough to beat the splash-sky circle rules above (0,6,0 against
-   their 0,5,0 / 0,6,0, and later). */
-:root[data-splash-sky="dark"]:not([data-theme="dark"])[data-shell="mobile"]:not([data-platform="android"]) .app {
+   Specific enough to beat the splash-sky circle rules above (0,7,0 against
+   their 0,6,0 / 0,7,0, and later).
+
+   All of these splash rules for the header are scoped to .app--on-splash
+   (App.jsx), not just to data-splash-sky: the attribute stays up until the
+   splash has gone, for the cards and icon fading out on it, but the header is
+   the forecast's from the moment the exit starts. Scoped to the attribute
+   alone, the circles changed over once everything else had settled. */
+:root[data-splash-sky="dark"]:not([data-theme="dark"])[data-shell="mobile"]:not([data-platform="android"]) .app.app--on-splash {
   --icon-circle-bg: var(--ios-frost, rgba(255, 255, 255, 0.1));
   --icon-circle-press: var(--ios-frost-press, rgba(255, 255, 255, 0.17));
   --icon-circle-ring: rgba(255, 255, 255, 0.16);
 }
 :root[data-splash-sky="dark"]:not([data-theme="dark"])[data-shell="mobile"]:not([data-platform="android"]) :is(
-  .app .app-header .header-icon-btn,
-  .app .app-header .settings-btn
+  .app.app--on-splash .app-header .header-icon-btn,
+  .app.app--on-splash .app-header .settings-btn
 ) {
   color: rgba(255, 255, 255, 0.94);
   filter: none;
@@ -10458,6 +11036,15 @@ button.reorder-row-action:focus-visible {
      past the button box. Unclipped over a filled circle they read as a blob
      spilling onto the sky; clipped they fill the circle itself. */
   overflow: hidden;
+}
+
+/* Between the splash and the forecast (either way) the header circles change
+   from the splash's dress to the forecast's. They take the length of the move
+   to do it, ring and dimmer included, rather than a press's quick 0.15s. */
+:root[data-shell="mobile"] .app.app--splash-handoff .app-header :is(.header-icon-btn, .settings-btn) {
+  transition: color 0.45s ease, background 0.45s ease, border-color 0.45s ease,
+              box-shadow 0.45s ease, filter 0.45s ease,
+              transform 0.4s cubic-bezier(0.34, 1.5, 0.64, 1);
 }
 
 :root[data-shell="mobile"] .app .app-header :is(.header-icon-btn, .settings-btn):is(:active, [data-pressed]),
@@ -11746,6 +12333,22 @@ button.reorder-row-action:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   :root[data-shell="mobile"] .app-place { animation: none; }
 }
+/* Leaving the splash, the place is in the header from the start, waiting for
+   the headline flying up from the splash to land on it: it fades in as that
+   headline fades out (.splash-logo--exit, 0.38s on), and is done before the
+   exit phase ends (0.36s + 0.32s inside its 0.7s), so the delay coming off
+   then changes nothing. */
+:root[data-shell="mobile"] .app-place.app-place--handoff {
+  animation-delay: 0.36s;
+}
+/* On the way Home it gives way to the splash's wordmark fading in over it. */
+:root[data-shell="mobile"] .app-place.app-place--leaving {
+  animation: appPlaceOut 0.2s ease both;
+  pointer-events: none;
+}
+@keyframes appPlaceOut {
+  to { opacity: 0; }
+}
 
 /* ── Search sheet: "Showing now" ──
    The place on screen, with Home and Save as two toggle chips. Off they are a
@@ -12172,4 +12775,135 @@ a.apk-download-btn {
   background: var(--card-bg);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Connected layout (phone shells, Settings > Appearance > Layout: Connected)
+
+   The forecast as one continuous run instead of a stack of cards: the cards
+   lose their surfaces and stand straight on the sky, parted only by their own
+   padding, with nothing laid behind them. The hero and the cards share the
+   open sky the home screen shows, so the two screens have the same background.
+   (There was once a frosted sheet behind the whole forecast here; it tinted
+   and blurred that sky, and is gone.)
+
+   The cards keep every token their own rules give them (text, accent, tile
+   tints, the light-sky palette), so nothing drawn inside a card changes; only
+   the card's own surface comes off.
+
+   data-layout is only ever set alongside data-shell="mobile" (App.jsx), so the
+   web layout never sees any of this.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── The cards ──
+   Clear, unblurred, and butted together. !important on the surface for the
+   same reason as the flat-card block above: the fills come from a dozen rules
+   at specificities up to (0,13,0), every one of them a card surface this
+   layout exists to remove. The full-screen radar keeps its own. The radar
+   card sits inside its iris wrappers (display: contents until the morph
+   runs), so it is named on its own rather than as a direct child. */
+:root[data-shell="mobile"][data-layout="connected"] .weather-content :is(.weather-left > .card, .sortable-block > .card, .sortable-block .radar-card):not(.current-card):not(.radar-expanded):not(.radar-fill) {
+  background: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  margin-bottom: 0;
+}
+/* The hero has no card surface on a phone, but turns into an opaque card at
+   1100px and up; here it stays bare at every width. */
+:root[data-shell="mobile"][data-layout="connected"] .weather-content .current-card {
+  background: transparent;
+  box-shadow: none;
+  margin-bottom: 0;
+}
+
+/* Sides: the cards no longer need a gutter of sky around them, so the column
+   widens and the cards' own 20px padding becomes the margin. Keyed on the
+   forecast's hero column, which only the phone forecast has, so the loading
+   and error screens keep their usual gutter. */
+@media (max-width: 767px) {
+  :root[data-shell="mobile"][data-layout="connected"] .app-grid:has(.weather-left) {
+    padding-left: max(4px, var(--sa-left));
+    padding-right: max(4px, var(--sa-right));
+  }
+}
+
+/* The radar card is a full-bleed card (no padding; its header and map inset
+   themselves 12-18px). Here they line up with the rest of the text. */
+:root[data-shell="mobile"][data-layout="connected"] .sortable-block .radar-card:not(.radar-expanded):not(.radar-fill) .radar-header {
+  padding: 20px 20px 10px;
+}
+:root[data-shell="mobile"][data-layout="connected"] .sortable-block .radar-card:not(.radar-expanded):not(.radar-fill) .radar-map-wrap {
+  margin: 0 20px 20px;
+}
+
+
+/* ── The hero ──
+   Over the sky its white stands as it is everywhere else. At 1100px and up the
+   hero reads the text tokens instead (it is a card there in the other layout),
+   which outside a card are the page's, dark in light mode, so over a sky they
+   are pointed at white. */
+@media (min-width: 1100px) {
+  :root[data-shell="mobile"][data-layout="connected"] .app.sky-active .current-card {
+    --text-primary: #fff;
+    --text-secondary: rgba(255, 255, 255, 0.85);
+    --text-tertiary: rgba(255, 255, 255, 0.74);
+  }
+}
+
+/* ── Reorder mode and the button under the stack ──
+   These stay separate pieces, since they are things you pick up and tap, but
+   as flat tiles rather than glass of their own: the tint the nested
+   tiles inside a card use (Details, the 7-day covers), unblurred, inset to the
+   text. Read from each tile's own tokens, so they follow every sky the cards'
+   tiles do. */
+:root[data-shell="mobile"][data-layout="connected"] .weather-right > .card:is(.reorder-row, .reorder-removed, .reorder-btn) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  margin-left: 20px;
+  margin-right: 20px;
+}
+:root[data-shell="mobile"][data-layout="connected"] .weather-right > .card.reorder-btn {
+  width: calc(100% - 40px);
+  margin-top: 4px;
+}
+:root[data-shell="mobile"][data-layout="connected"][data-platform="ios"] .weather-right > .card:is(.reorder-row, .reorder-removed, .reorder-btn) {
+  background: color-mix(in srgb, var(--ios-tile-tint) var(--ios-tile-alpha), transparent) !important;
+}
+:root[data-shell="mobile"][data-layout="connected"][data-platform="android"] .weather-right > .card:is(.reorder-row, .reorder-removed, .reorder-btn) {
+  background: var(--md-surface-container-high) !important;
+}
+
+/* ── Weather Insight as a tile ──
+   Here it is a rounded tile, in the nested tiles' tint and the cards'
+   18px corner, inset to the text like the radar map. The 20px above and below
+   keep the 40px the other sections leave between them (their 20px padding
+   either side). */
+:root[data-shell="mobile"][data-layout="connected"] .app .weather-content :is(.weather-left, .sortable-block) > .card.card--insight:not(.current-card) {
+  margin: 20px;
+  padding: 16px;
+}
+:root[data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app .weather-content :is(.weather-left, .sortable-block) > .card.card--insight:not(.current-card) {
+  background: color-mix(in srgb, var(--ios-tile-tint) var(--ios-tile-alpha), transparent) !important;
+}
+:root[data-shell="mobile"][data-layout="connected"][data-platform="android"] .app .weather-content :is(.weather-left, .sortable-block) > .card.card--insight:not(.current-card) {
+  background: var(--md-surface-container-high) !important;
+}
+
+/* ── Source note (SourceNote.jsx) ──
+   The forecast's providers and the source behind the current condition, at
+   the foot of the phone forecast under the Reorder button. It sits outside any
+   card, so it is coloured for what is actually behind it: the page's quiet
+   text with no sky, and white like the header's place name over a sky. */
+.source-note {
+  margin-top: 18px;
+  padding: 0 20px;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--text-tertiary);
+}
+.source-note p { margin: 0; }
+:root[data-shell="mobile"] .app.sky-active .source-note {
+  color: rgba(255, 255, 255, 0.72);
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.18);
 }

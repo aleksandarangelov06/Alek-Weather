@@ -1074,6 +1074,9 @@ export async function loadForecast(loc, { lite = false } = {}) {
       // runs after every hourly merge above.
       if (data.daily && gridMaps) deriveDailyFromNWS(data.daily, data.hourly, gridMaps)
 
+      // Credited in the source note under the phone forecast (SourceNote).
+      if (data.current && (nwsHourlyMerged || nwsDailyMerged || gridMaps)) data.current.nws_forecast = true
+
       // A station actually observing precipitation overrides the model's
       // current condition outright — measured beats predicted.
       const { obs, dry } = await nws.obs
@@ -1082,6 +1085,10 @@ export async function loadForecast(loc, { lite = false } = {}) {
         data.current.weather_code = obsCode
         data.current.weather_code_confirmed = true
         data.current.weather_code_source = 'station'
+        // Which station, for the source note. Older API responses carry only
+        // the station's URL, whose last segment is its identifier.
+        data.current.station_id = obs.stationId ?? obs.station?.split('/').pop() ?? null
+        data.current.station_name = obs.stationName ?? null
       }
 
       // Nothing measured this hour — fall back to NWS's own forecast for it

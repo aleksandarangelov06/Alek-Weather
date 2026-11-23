@@ -3,7 +3,7 @@ import { Minimize2, Play, Pause, Navigation, ZoomIn, ZoomOut } from 'lucide-reac
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { MRMS_BASE, inMrmsDomain, usViewBounds } from '../utils/mrms'
-import { HrrrLayer } from '../utils/hrrrLayer'
+import { HrrrLayer, focusHrrrLayer } from '../utils/hrrrLayer'
 import { addBasemap } from '../utils/basemap'
 import { RadarRain } from './RadarRain'
 import { fetchWithin } from '../utils/fetchTimeout'
@@ -243,6 +243,9 @@ const MAP_MAX_ZOOM     = 12
 const RADAR_NATIVE_MAX = 7 // RainViewer's 512px radar tiles cap here; higher returns "zoom level not supported"
 const RADAR_OPACITY     = 0.65
 const RADAR_WINDOW      = 2 // frames either side of current kept attached to the map
+// How long the finger has to rest on a frame mid-scrub before a frame that
+// isn't loaded yet is fetched and drawn (see the layer effect).
+const SCRUB_SETTLE_MS   = 90
 
 // The last frame list fetched for each place and feed, so a radar that mounts
 // again — the web Radar tab is built fresh on every visit — opens on a timeline
@@ -597,6 +600,9 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
   // A finger (or mouse) is on the rail scrubber — see .radar-scrub. The knob
   // follows it 1:1 and grows while it is held.
   const [scrubbing, setScrubbing] = useState(false)
+  // Either scrubber is under a finger (or mouse): the rail one sets
+  // `scrubbing`, the filmstrip one `drag`.
+  const dragging = scrubbing || drag != null
   // What the controls were showing when the radar started closing — the frame
   // and the play state. The close stops playback and returns to the frame the
   // still shows (see the back handler), and both would otherwise land in the
@@ -660,6 +666,9 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
   //   'in'   iris opening
   //   'out'  iris closing, with the card still full-screen behind it
   const [phase, setPhase] = useState(null)
+  // The phone's window is opening, landing or closing: from the tap until the
+  // controls have faded in, and through the close. See the layer effect.
+  const windowMoving = phase !== null
   // True from the moment a closed card rejoins the stack until its map is ready
   // to be seen; the still is held over it meanwhile. See SETTLE_MAX_MS.
   const [settling, setSettling] = useState(false)
@@ -977,9 +986,21 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
     // During playback widen the window by one frame: prefetch lead time is
     // what prevents load-aware playback from pausing, and nobody is panning
     // mid-playback so the extra attached grid costs nothing noticeable.
-    const win = playing ? RADAR_WINDOW + 1 : RADAR_WINDOW
+    //
+    // While the phone's window is opening or closing it narrows to the frame on
+    // screen. Going full-screen resizes the map, and every attached layer then
+    // fetches (and, for the forecast, draws) a screenful of new tiles, which
+    // used to be five grids landing on the frames of the animation. Only the
+    // frame being shown needs them; the neighbours come back, and are fetched
+    // at the new size, once the window has settled. On the way out the map flies
+    // home under the shrinking window, and fewer grids to move keeps that
+    // smooth too.
+    const win = windowMoving ? 0 : playing ? RADAR_WINDOW + 1 : RADAR_WINDOW
 
     // Detach layers outside the window so the map isn't dragging 13 tile grids.
+    // Still-loading ones go too: a frame scrubbed past has nobody waiting for
+    // it, and leaving it attached kept its tiles downloading and (for the HRRR
+    // forecast, drawn here) being drawn, ahead of the frame actually wanted.
     const inWindow = new Set()
     for (let d = -win; d <= win; d++) {
       inWindow.add(layerKey(frames[((idx + d) % frames.length + frames.length) % frames.length], hd))
@@ -987,7 +1008,7 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
     layerCache.current.forEach((layer, key) => {
       // Never detach the active layer — it's the fallback display until the next frame loads.
       // Detaching it before a replacement shows causes a blank map.
-      if (!inWindow.has(key) && map.hasLayer(layer) && layer._radarLoaded && key !== activeKey.current) {
+      if (!inWindow.has(key) && map.hasLayer(layer) && key !== activeKey.current) {
         layer.setOpacity(0)
         layer._radarLoaded = false // tiles get unloaded on detach; wait for reload next time
         map.removeLayer(layer)
@@ -998,7 +1019,9 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
     if (!frame) return
     const key = layerKey(frame, hd)
     wantedKey.current = key
-    const layer = getLayer(frame, true)
+    const layer = getLayer(frame, false)
+    // The forecast's tiles for this frame are drawn ahead of any other's.
+    focusHrrrLayer(layer)
 
     const show = () => {
       if (wantedKey.current !== key) return // user moved on before this loaded
@@ -1013,14 +1036,30 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
 
     // Show immediately if tiles are already cached; otherwise keep the old frame
     // up until this one loads, then swap.
-    if (layer._radarLoaded) show()
-    else layer.once('load', show)
+    const attachAndShow = () => {
+      if (!map.hasLayer(layer)) layer.addTo(map)
+      if (layer._radarLoaded) show()
+      else layer.once('load', show)
+    }
+
+    // Mid-scrub, a frame that is already up shows at once, but one that isn't
+    // waits for the finger to rest on it before anything is fetched or drawn.
+    // A drag across the forecast used to start every frame it crossed — each a
+    // grid of tiles to download and, for HRRR, draw — and the frames nobody
+    // stopped on competed with the scrubber and with the one they did. The
+    // prefetch ahead waits for the drag to end for the same reason.
+    if (dragging && !layer._radarLoaded) {
+      const settle = setTimeout(attachAndShow, SCRUB_SETTLE_MS)
+      return () => clearTimeout(settle)
+    }
+    attachAndShow()
+    if (dragging || windowMoving) return
 
     // Prefetch the full forward window so playback never waits on cold layers.
     for (let d = 1; d <= win; d++) {
       getLayer(frames[(idx + d) % frames.length], true)
     }
-  }, [mapReady, frames, idx, playing, hd])
+  }, [mapReady, frames, idx, playing, hd, dragging, windowMoving])
 
   // Animation playback. Load-aware: if the next frame's tiles aren't in yet,
   // hold the current frame for another tick instead of advancing past it —
@@ -1717,7 +1756,7 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
             too, so the map that grows into the full-screen view is already the
             one with weather falling on it. */}
         {rainFx && rainMap && (
-          <RadarRain map={rainMap} getLayer={getActiveLayer} snow={snow} />
+          <RadarRain map={rainMap} getLayer={getActiveLayer} snow={snow} paused={irisOn} />
         )}
         {/* The full-screen overlay floats its zoom and collapse tools on the
             map, and is the only mode that offers a way out of itself. Its

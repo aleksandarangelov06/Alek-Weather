@@ -1,250 +1,261 @@
-import { memo, useRef, useEffect, useState, useLayoutEffect, useId } from 'react'
-import { getWeatherInfo, formatHour, liveWeatherCode, nowcastHourlyCode, toTemp, tempStyle, tempInk } from '../utils/weatherCodes'
-import { WeatherIcon } from './WeatherIcon'
+import { memo, useState, useSyncExternalStore } from 'react'
+import { getWeatherInfo, formatHour, liveWeatherCode, nowcastHourlyCode, toTemp, tempStyle } from '../utils/weatherCodes'
+import { unitText, unitSuffix, formatPrecip } from '../utils/units'
+import { isoMinutes, formatMinutes } from '../utils/sunTimes'
 
-const GRAPH_HEIGHT = 60
-const GRAPH_PAD = 12
-// Icons drawn on first render: enough to fill the widest card without a blank
-// column. The rest are drawn as they scroll near (see DRAW_AHEAD).
-const INITIAL_DRAWN = 8
-// How many columns past the last one on screen get their icon drawn ahead of
-// time, so a quick swipe doesn't land on blanks.
-const DRAW_AHEAD = 3
+// The next 24 hours as a timeline, top to bottom: a bar down the left paints
+// every hour's conditions, and a row every STEP hours gives the time, the
+// condition where it changes, and the chosen reading in a pill set along the
+// row by its value (warmer, windier, wetter sits further right), so the column
+// of pills draws the day's curve. The chips under it pick the reading.
 
-// Smooth cubic-bezier path through the points (Catmull-Rom → Bézier).
-function smoothPath(pts) {
-  if (pts.length < 2) return ''
-  let d = `M ${pts[0][0]} ${pts[0][1]}`
-  for (let i = 0; i < pts.length - 1; i++) {
-    const p0 = pts[i - 1] || pts[i]
-    const p1 = pts[i]
-    const p2 = pts[i + 1]
-    const p3 = pts[i + 2] || p2
-    const c1x = p1[0] + (p2[0] - p0[0]) / 6
-    const c1y = p1[1] + (p2[1] - p0[1]) / 6
-    const c2x = p2[0] - (p3[0] - p1[0]) / 6
-    const c2y = p2[1] - (p3[1] - p1[1]) / 6
-    d += ` C ${c1x} ${c1y} ${c2x} ${c2y} ${p2[0]} ${p2[1]}`
+const HOURS = 24
+const STEP = 2
+const METRIC_KEY = 'alek-weather-hourly-metric'
+
+// What each code paints on the bar. Coarser than the labels: cloud cover in
+// four steps of grey, precipitation by kind and weight.
+const BAR_TONE = {
+  0: 'clear', 1: 'mainly', 2: 'partly', 3: 'overcast',
+  45: 'fog', 48: 'fog',
+  51: 'rain-light', 53: 'rain-light', 55: 'rain',
+  56: 'ice', 57: 'ice', 66: 'ice', 67: 'ice',
+  61: 'rain-light', 63: 'rain', 65: 'rain-heavy',
+  80: 'rain-light', 81: 'rain', 82: 'rain-heavy',
+  71: 'snow-light', 73: 'snow', 75: 'snow-heavy', 77: 'snow-light',
+  85: 'snow-light', 86: 'snow-heavy',
+  95: 'storm', 96: 'storm', 99: 'storm',
+}
+
+// The readings the pills can show. `key` is the hourly array; `temp` marks the
+// two that take the temperature colour coding.
+//
+// `scale` is the span a pill's place along the row is measured against, given
+// the day's peak, on phone-width screens (SMALL_MQ). The temperatures have
+// none: they stretch from the day's lowest to its highest, because the shape
+// of the day is what they are for. The rest are fixed there, so the place
+// means the same thing on every day: a 0-5% chance of rain sits at the left
+// rather than swinging edge to edge, and so does a UV index that never leaves
+// 1. Wind runs from calm to 25 mph, or to the day's peak if it blows harder,
+// so a breezy day still has room to show. Wider screens stretch every reading
+// from the day's lowest to its highest, as the temperatures do.
+const METRICS = [
+  { id: 'temp',     key: 'temperature_2m',            temp: true },
+  { id: 'feels',    key: 'apparent_temperature',      temp: true },
+  { id: 'precip',   key: 'precipitation_probability', scale: () => [0, 100] },
+  { id: 'wind',     key: 'wind_speed_10m',            scale: (peak) => [0, Math.max(peak, 25)] },
+  { id: 'humidity', key: 'relative_humidity_2m',      scale: () => [0, 100] },
+  { id: 'uv',       key: 'uv_index',                  scale: () => [0, 11] },
+]
+
+// Phone width, where the fixed scales apply: the tablet step App.css lays out
+// at. Read live, so a resize or a rotation rescales the pills.
+const SMALL_MQ = '(max-width: 767px)'
+function subscribeSmall(onChange) {
+  const mq = window.matchMedia(SMALL_MQ)
+  mq.addEventListener('change', onChange)
+  return () => mq.removeEventListener('change', onChange)
+}
+const isSmall = () => window.matchMedia(SMALL_MQ).matches
+
+// The chips' labels, short enough for all six to sit on one row across a
+// phone. The units are on the values instead (°, %, and wind's own suffix in
+// its pills), and the full name goes to screen readers.
+const METRIC_CHIP = { temp: 'Temp', feels: 'Feels', precip: 'Precip', wind: 'Wind', humidity: 'Humidity', uv: 'UV' }
+
+function metricName(id, unit, units) {
+  switch (id) {
+    case 'temp':     return `Temperature (°${unit})`
+    case 'feels':    return `Feels like (°${unit})`
+    case 'precip':   return 'Chance of precipitation (%)'
+    case 'wind':     return `Wind (${unitSuffix('wind', units)})`
+    case 'humidity': return 'Humidity (%)'
+    default:         return 'UV index'
   }
-  return d
+}
+
+function metricText(id, v, unit, units) {
+  if (v == null || !Number.isFinite(v)) return '-'
+  switch (id) {
+    case 'temp':
+    case 'feels':    return `${toTemp(v, unit)}°`
+    case 'wind':     return unitText('wind', v, units)
+    case 'uv':       return String(Math.round(v))
+    default:         return `${Math.round(v)}%`
+  }
+}
+
+// Minutes since the epoch for a naive local "YYYY-MM-DDTHH:MM", read as UTC.
+// Only ever differenced against another one read the same way.
+const naiveMinutes = (iso) => Date.UTC(
+  +iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10), +iso.slice(11, 13), +iso.slice(14, 16),
+) / 60000
+
+// "45 min", "1 hour", "10¼ hours".
+function untilText(mins) {
+  if (mins < 53) return `${Math.max(1, Math.round(mins))} min`
+  const quarters = Math.round(mins / 15)
+  const whole = Math.floor(quarters / 4)
+  const frac = ['', '¼', '½', '¾'][quarters % 4]
+  return `${whole}${frac} ${quarters === 4 ? 'hour' : 'hours'}`
+}
+
+// The forecast location's wall clock right now, as "YYYY-MM-DDTHH:MM".
+function localNow(now, timezone) {
+  const parts = {}
+  for (const p of new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(now)) parts[p.type] = p.value
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`
 }
 
 // Memoised: App re-renders for every overlay, toggle and keystroke, and the
 // props here are the reading and the settings, which those leave alone.
-export const HourlyForecast = memo(function HourlyForecast({ hourly, timezone, unit, colorCoding = true, glow = true, frost = true, current, minutely, radarClear = null }) {
-  const scrollRef = useRef(null)
-  const rowRef = useRef(null)
-  const gradId = useId()
-  const [centers, setCenters] = useState([])
-
-  useEffect(() => {
-    const el = scrollRef.current
-    if (!el) return
-    const onWheel = (e) => {
-      e.preventDefault()
-      el.scrollLeft += e.deltaY + e.deltaX
-    }
-    el.addEventListener('wheel', onWheel, { passive: false })
-    return () => el.removeEventListener('wheel', onWheel)
-  }, [])
-
-  // Only the hours on screen animate, and icons aren't drawn at all until they
-  // scroll near. An IntersectionObserver against the viewport (root: null)
-  // covers both ways an hour can be hidden: scrolled sideways out of the strip,
-  // which clips it, or the whole card being off screen. On screen, the column
-  // gets data-live, which is what the icon animations in App.css key off.
-  // It's written straight onto the node instead of held in state, so scrolling
-  // never re-renders the strip; React doesn't manage that attribute and leaves
-  // it alone. drawnUpTo only ever grows, so it re-renders a few times at most.
-  const [drawnUpTo, setDrawnUpTo] = useState(INITIAL_DRAWN - 1)
-  const hourCount = Math.min(25, hourly.time.length)
-  useEffect(() => {
-    const row = rowRef.current
-    if (!row || typeof IntersectionObserver === 'undefined') return
-    const io = new IntersectionObserver((entries) => {
-      let furthest = -1
-      for (const e of entries) {
-        if (e.isIntersecting) {
-          e.target.setAttribute('data-live', '')
-          furthest = Math.max(furthest, Number(e.target.dataset.idx))
-        } else {
-          e.target.removeAttribute('data-live')
-        }
-      }
-      if (furthest >= 0) setDrawnUpTo((d) => Math.max(d, furthest + DRAW_AHEAD))
-    })
-    for (const el of row.children) io.observe(el)
-    return () => io.disconnect()
-  }, [hourCount])
-
-  const scroll = (dir) => {
-    if (!scrollRef.current) return
-    scrollRef.current.scrollBy({ left: dir * 200, behavior: 'smooth' })
+export const HourlyForecast = memo(function HourlyForecast({ hourly, daily, timezone, unit, units, colorCoding = true, glow = true, frost = true, current, minutely, radarClear = null }) {
+  const small = useSyncExternalStore(subscribeSmall, isSmall, () => false)
+  const [picked, setPicked] = useState(() => {
+    try { return localStorage.getItem(METRIC_KEY) ?? 'temp' } catch { return 'temp' }
+  })
+  const pick = (id) => {
+    setPicked(id)
+    try { localStorage.setItem(METRIC_KEY, id) } catch { /* kept for this visit only */ }
   }
+
   const now = new Date()
   const currentHourStr = now.toLocaleString('en-CA', {
     hour: '2-digit', hour12: false, timeZone: timezone,
   })
-
   const todayStr = now.toLocaleDateString('en-CA', { timeZone: timezone })
   const startIdx = hourly.time.findIndex((t) => t.startsWith(`${todayStr}T${currentHourStr}`))
   const start = startIdx === -1 ? 0 : startIdx
-  const slice = (arr) => arr.slice(start, start + 25)
+  const slice = (arr) => (arr ?? []).slice(start, start + HOURS)
 
   const hours = slice(hourly.time)
-  const temps = slice(hourly.temperature_2m)
   const codes = slice(hourly.weather_code)
-  const precip = slice(hourly.precipitation_probability)
-  const isDay = slice(hourly.is_day ?? [])
+  const isDay = slice(hourly.is_day)
 
-  // The first hour of tomorrow (local midnight in the forecast's timezone), or
-  // -1 if the strip never reaches it. Slot 0 is "Now", so it never counts.
-  const midnightIdx = hours.findIndex((t, i) => i > 0 && !t.startsWith(todayStr))
-  // Left edge of that column, where the "Tomorrow" marker under the row starts.
-  const [newDayX, setNewDayX] = useState(null)
-  // Short weekdays ("Mon", "Tue"), read off the hour strings themselves so they
-  // are the forecast location's dates, not the device's.
-  const weekdayOf = (time) => {
-    const [y, m, d] = time.slice(0, 10).split('-').map(Number)
-    return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short' })
-  }
-  const todayName = hours.length ? weekdayOf(hours[0]) : ''
-  const newDayName = midnightIdx > 0 ? weekdayOf(hours[midnightIdx]) : ''
+  // Each hour's condition. Hour 0 ("Now") takes the live rate-corrected code
+  // so it matches the current conditions; later hours get the minutely_15
+  // nowcast check, which downgrades a precipitation code to a sky condition
+  // when nothing is forecast to fall in that hour's window.
+  const infos = hours.map((time, i) => {
+    const code = i === 0 && current
+      ? (liveWeatherCode(current, minutely, radarClear) ?? codes[i])
+      : nowcastHourlyCode(codes[i], minutely, time, current)
+    return { code, ...getWeatherInfo(code, isDay[i] === 0) }
+  })
 
-  // Measure the horizontal center of every hour column so the graph points
-  // line up exactly with the items, even as widths change with the unit.
-  useLayoutEffect(() => {
-    const row = rowRef.current
-    if (!row) return
-    const measure = () => {
-      setCenters(Array.from(row.children).map((el) => el.offsetLeft + el.offsetWidth / 2))
-      setNewDayX(midnightIdx > 0 ? (row.children[midnightIdx]?.offsetLeft ?? null) : null)
+  // The bar: consecutive hours of the same tone merged into one run, laid out
+  // as hard stops in a single gradient (no seams, one element).
+  const runs = []
+  infos.forEach(({ code }, i) => {
+    const tone = BAR_TONE[code] ?? 'clear'
+    const last = runs[runs.length - 1]
+    if (last && last.tone === tone) last.end = i + 1
+    else runs.push({ tone, start: i, end: i + 1 })
+  })
+  const n = hours.length
+  const barBg = runs.length === 1
+    ? `var(--hrl-${runs[0].tone})`
+    : `linear-gradient(to bottom, ${runs.map(r =>
+      `var(--hrl-${r.tone}) ${(r.start / n) * 100}% ${(r.end / n) * 100}%`).join(', ')})`
+
+  // The readings on offer: only those this forecast carries.
+  const rowIdx = []
+  for (let i = 0; i < n; i += STEP) rowIdx.push(i)
+  const available = METRICS.filter(m => m.id === 'temp' || rowIdx.some(i => Number.isFinite(hourly[m.key]?.[start + i])))
+  const metric = available.find(m => m.id === picked) ?? available[0]
+  const values = rowIdx.map(i => hourly[metric.key]?.[start + i])
+  const finite = values.filter(Number.isFinite)
+  const [lo, hi] = (small && metric.scale?.(Math.max(...finite))) || [Math.min(...finite), Math.max(...finite)]
+  // A relative scale with nothing to spread (a flat day) centres its pills; a
+  // fixed one clamps, so UV 12 sits at the right edge with UV 11.
+  const posOf = (v) => !Number.isFinite(v) || hi === lo ? 0.5 : Math.min(1, Math.max(0, (v - lo) / (hi - lo)))
+
+  // Under the chips: today's precipitation total, and the next sunrise or sunset.
+  const di = daily?.time?.indexOf(todayStr) ?? -1
+  const precipToday = di >= 0 ? daily.precipitation_sum?.[di] : null
+  const snowToday = di >= 0 ? daily.snowfall_sum?.[di] : null
+  const precipLine = precipToday >= 0.01
+    ? `${snowToday > 0 ? 'Precipitation' : 'Rain'} today: ${formatPrecip(precipToday, units)}`
+    : null
+  const sunLine = (() => {
+    if (!daily?.time) return null
+    const nowIso = localNow(now, timezone)
+    for (let d = Math.max(0, di); d < daily.time.length; d++) {
+      for (const [kind, iso] of [['Sunrise', daily.sunrise?.[d]], ['Sunset', daily.sunset?.[d]]]) {
+        if (iso && iso > nowIso) {
+          return `${kind} in ${untilText(naiveMinutes(iso) - naiveMinutes(nowIso))} (${formatMinutes(isoMinutes(iso))})`
+        }
+      }
     }
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(row)
-    return () => ro.disconnect()
-  }, [hours.length, unit, midnightIdx])
-
-  // Build the temperature line graph once columns have been measured.
-  const tMin = Math.min(...temps)
-  const tMax = Math.max(...temps)
-  const tRange = tMax - tMin || 1
-  const yFor = (t) => GRAPH_PAD + (1 - (t - tMin) / tRange) * (GRAPH_HEIGHT - 2 * GRAPH_PAD)
-  const points = centers.length === temps.length
-    ? centers.map((x, i) => [x, yFor(temps[i])])
-    : []
-  const linePath = smoothPath(points)
-  const areaPath = points.length
-    ? `${linePath} L ${points[points.length - 1][0]} ${GRAPH_HEIGHT} L ${points[0][0]} ${GRAPH_HEIGHT} Z`
-    : ''
-  const xMin = points.length ? points[0][0] : 0
-  const xMax = points.length ? points[points.length - 1][0] : 1
-  const lineGradId = `hourly-line-${gradId}`
-  const areaGradId = `hourly-area-${gradId}`
-  // Colour-coding off: a single neutral line. --graph-line is the accent on a
-  // plain card but white on a sky background, where accent-blue would vanish.
-  const monoLine = 'var(--graph-line)'
-  const stroke = colorCoding ? `url(#${lineGradId})` : monoLine
+    return null
+  })()
 
   return (
     <div className="card">
       <div className="section-label">HOURLY FORECAST</div>
-      <div className="hourly-scroll-wrapper">
-        <button className="hourly-nav hourly-nav-left" onClick={() => scroll(-1)} aria-label="Scroll left">‹</button>
-        <div className="hourly-scroll" ref={scrollRef}>
-        <div className="hourly-track">
-        <div className="hourly-row" ref={rowRef}>
-        {hours.map((time, i) => {
-          const label = i === 0 ? 'Now' : formatHour(time, timezone)
-          // Slot 0 ("Now"): use the live rate-corrected code so it matches the
-          // current conditions card. All other slots: run the minutely_15 nowcast
-          // check — if nothing is forecast to fall during that hour's window, the
-          // NWS code is premature and gets downgraded to a sky condition.
-          const displayCode = i === 0 && current
-            ? (liveWeatherCode(current, minutely, radarClear) ?? codes[i])
-            : nowcastHourlyCode(codes[i], minutely, hours[i], current)
-          const info = getWeatherInfo(displayCode, !isDay[i])
-          // The hour's own forecast probability, shown as published. The icon and
-          // this number answer different questions — "what will it be doing" and
-          // "how likely is precipitation" — so an overcast icon beside 30% is not
-          // a contradiction to be suppressed, it is the forecast. Zeroing it
-          // whenever the corrected code came back non-precip is what put a flat 0%
-          // on hours NWS was publishing at 14%, and on the current hour every time
-          // the live nowcast downgraded its code.
-          const p = precip[i] ?? 0
-          return (
-            <div key={i} className={`hourly-item${i === midnightIdx ? ' hourly-item--new-day' : ''}`} data-idx={i}>
-              <span className="hourly-time">{label}</span>
-              <span className="hourly-icon">
-                {i <= drawnUpTo
-                  ? <WeatherIcon id={info.icon} alt={info.label} />
-                  : <span className="hourly-icon-placeholder" role="img" aria-label={info.label} />}
-              </span>
-              <span className="hourly-temp" style={tempStyle(temps[i], colorCoding, 0.4, glow, frost)}>{toTemp(temps[i], unit)}°</span>
-              <span className="hourly-precip">{p}%</span>
-            </div>
-          )
-        })}
-        </div>
-        {/* Day pills, on their own line between the hours and the graph. Each
-            day gets a span over its own columns, and its pill is sticky inside
-            that span: Today holds the strip's left edge until midnight arrives
-            and shoves it out, then Tomorrow takes over the spot. Scrolling
-            back plays it in reverse. */}
-        <div className="hourly-day-strip">
-          <div
-            className="hourly-day-span"
-            style={midnightIdx > 0 && newDayX != null ? { flex: 'none', width: newDayX } : undefined}
-          >
-            {/* At 11 PM today is a single column, too narrow for a pill that
-                would only overlap Tomorrow's, so there is none. */}
-            {midnightIdx !== 1 && (
-              <span className="hourly-day-marker">
-                Today<span className="hourly-day-name">{todayName}</span>
-              </span>
-            )}
-          </div>
-          {midnightIdx > 0 && newDayX != null && (
-            <div className="hourly-day-span">
-              <span className="hourly-day-marker">
-                Tomorrow<span className="hourly-day-name">{newDayName}</span>
-              </span>
-            </div>
-          )}
-        </div>
-        {points.length > 0 && (
-          <svg
-            className="hourly-graph"
-            height={GRAPH_HEIGHT}
-            aria-hidden="true"
-          >
-            <defs>
-              <linearGradient id={lineGradId} gradientUnits="userSpaceOnUse" x1={xMin} y1="0" x2={xMax} y2="0">
-                {temps.map((t, i) => (
-                  <stop
-                    key={i}
-                    offset={`${((points[i][0] - xMin) / (xMax - xMin || 1)) * 100}%`}
-                    style={{ stopColor: tempInk(t) }}
-                  />
-                ))}
-              </linearGradient>
-              <linearGradient id={areaGradId} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" style={{ stopColor: colorCoding ? tempInk(tMax) : monoLine }} stopOpacity="0.22" />
-                <stop offset="100%" style={{ stopColor: colorCoding ? tempInk(tMin) : monoLine }} stopOpacity="0" />
-              </linearGradient>
-            </defs>
-            <path d={areaPath} fill={`url(#${areaGradId})`} stroke="none" />
-            <path d={linePath} fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-            {points.map(([x, y], i) => (
-              <circle key={i} cx={x} cy={y} r="2.5" style={{ fill: colorCoding ? tempInk(temps[i]) : monoLine }} />
-            ))}
-          </svg>
-        )}
-        </div>
-        </div>
-        <button className="hourly-nav hourly-nav-right" onClick={() => scroll(1)} aria-label="Scroll right">›</button>
+      <div className="hourly-tl">
+        <span
+          className="hourly-tl-bar"
+          style={{ background: barBg, height: `${(n / (rowIdx.length * STEP)) * 100}%` }}
+          aria-hidden="true"
+        />
+        <ol className="hourly-tl-rows">
+          {rowIdx.map((i, r) => {
+            const label = i === 0 ? 'Now' : formatHour(hours[i], timezone)
+            const { label: cond } = infos[i]
+            // The condition is written where it changes, so a run of rain reads
+            // as one "Rain" at its first row rather than a column of repeats.
+            const changed = r === 0 || cond !== infos[rowIdx[r - 1]].label
+            const v = values[r]
+            const text = metricText(metric.id, v, unit, units)
+            // Wind is the one reading whose number doesn't carry its unit.
+            const suffix = metric.id === 'wind' && Number.isFinite(v) ? unitSuffix('wind', units) : null
+            return (
+              <li key={hours[i]} className="hourly-tl-row" aria-label={`${label}, ${cond}, ${text}${suffix ? ` ${suffix}` : ''}`}>
+                <span className="hourly-tl-time" aria-hidden="true">{label}</span>
+                <span className="hourly-tl-track" aria-hidden="true">
+                  <span className="hourly-tl-lead" style={{ '--p': posOf(v) }}>
+                    {changed && <span className="hourly-tl-cond">{cond}</span>}
+                    <span className="hourly-tl-line" />
+                  </span>
+                  <span
+                    className="hourly-tl-pill"
+                    style={metric.temp && Number.isFinite(v) ? tempStyle(v, colorCoding, 0.4, glow, frost) : undefined}
+                  >
+                    {text}
+                    {suffix && <span className="hourly-tl-pill-unit">{suffix}</span>}
+                  </span>
+                </span>
+              </li>
+            )
+          })}
+        </ol>
       </div>
+      {available.length > 1 && (
+        <div className="hourly-tl-metrics" role="group" aria-label="Reading shown">
+          {available.map(m => (
+            <button
+              key={m.id}
+              type="button"
+              className={`hourly-tl-chip${m.id === metric.id ? ' is-on' : ''}`}
+              aria-pressed={m.id === metric.id}
+              aria-label={metricName(m.id, unit, units)}
+              onClick={() => pick(m.id)}
+            >
+              {METRIC_CHIP[m.id]}
+            </button>
+          ))}
+        </div>
+      )}
+      {(precipLine || sunLine) && (
+        <div className="hourly-tl-summary">
+          {precipLine && <p>{precipLine}</p>}
+          {sunLine && <p>{sunLine}</p>}
+        </div>
+      )}
     </div>
   )
 })
