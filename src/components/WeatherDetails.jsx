@@ -8,7 +8,8 @@ import {
   getUVNote, getVisibilityInfo, getVisibilityNote, getWindInfo, getWindNote,
 } from '../utils/conditions'
 import { formatPrecip, formatUnitDelta, unitSuffix, unitText, unitValue } from '../utils/units'
-import { coverFrom, markCoverSettled, useCoverHistory } from '../utils/detailCover'
+import { coverFrom, useCoverHistory } from '../utils/detailCover'
+import { DetailCover, coverAsPage } from './DetailCover'
 import { POLLENS, POLLUTANTS, aqiDriver, pollenLevel } from '../utils/airQuality'
 import { STORM_KIND_NAME, stormHours, stormNote, stormPeak } from '../utils/stormRisk'
 import { Sparkline } from './web/Sparkline'
@@ -282,6 +283,9 @@ export const WeatherDetails = memo(function WeatherDetails({ latitude, current, 
   const [closing, setClosing] = useState(false)
   // The tapped tile's box, which the cover grows out of (see coverFrom).
   const [from, setFrom] = useState(() => coverFrom(null))
+  // Opened as a full-screen page rather than over the card (connected layout;
+  // see coverAsPage).
+  const [asPage, setAsPage] = useState(false)
   const cardRef = useRef(null)
   const closeTimer = useRef(null)
 
@@ -299,6 +303,7 @@ export const WeatherDetails = memo(function WeatherDetails({ latitude, current, 
   const openDetail = (key, e) => {
     if (expanded === key) { dismissDetail(); return }
     setFrom(coverFrom(e?.currentTarget, '.card--details'))
+    setAsPage(coverAsPage())
     clearTimeout(closeTimer.current)
     setClosing(false)
     setExpanded(key)
@@ -1045,36 +1050,30 @@ export const WeatherDetails = memo(function WeatherDetails({ latitude, current, 
               key={key}
               {...cardDefs[key]}
               onClick={(e) => openDetail(key, e)}
-              isExpanded={expanded === key}
+              // Marked open only under the cover over the card. As a page
+              // (connected layout) the tile isn't the open thing, and its open
+              // look (an accent wash in place of the tile's own surface) showed
+              // through for a moment as the page closed.
+              isExpanded={expanded === key && !asPage}
             />
           ))
         }
       </div>
 
       {expanded && (
-        <div
-          className={`detail-cover${closing ? ' detail-cover--closing' : ''}`}
-          style={from}
-          role="dialog"
-          aria-label={openDef?.label}
-          onAnimationEnd={markCoverSettled}
+        <DetailCover
+          page={asPage}
+          variant="details"
+          closing={closing}
+          from={from}
+          title={openDef?.label ?? 'Details'}
+          icon={openDef?.icon}
+          iconStyle={openDef?.color ? { color: openDef.color } : undefined}
+          onClose={dismissDetail}
+          bodyClass={`detail-cover-body--${expanded}`}
         >
-          <div className="detail-cover-fill" />
-          {/* The header is the close control: tap the title to fold the tile
-              back, the way it was tapped open. */}
-          <button className="detail-cover-head" onClick={dismissDetail} aria-label={`Close ${openDef?.label ?? 'details'}`}>
-            <span className="detail-cover-title">
-              <span className="detail-cover-icon" style={openDef?.color ? { color: openDef.color } : undefined}>
-                {openDef?.icon}
-              </span>
-              {openDef?.label}
-            </span>
-            <ChevronUp size={20} className="detail-cover-chevron" aria-hidden="true" />
-          </button>
-          <div className={`detail-cover-body detail-cover-body--${expanded}`}>
-            {detailBody(expanded)}
-          </div>
-        </div>
+          {detailBody(expanded)}
+        </DetailCover>
       )}
     </div>
   )

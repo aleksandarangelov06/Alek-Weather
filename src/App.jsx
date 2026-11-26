@@ -95,7 +95,7 @@ const STARS = Array.from({ length: 40 }, () => ({
   delay: `${-(Math.random() * 4).toFixed(1)}s`,
 }))
 import {
-  Search, MapPin, MapPinOff, AlertCircle, HelpCircle, ArrowLeft, Building2, X, Navigation, House, Bookmark,
+  Search, MapPin, MapPinOff, AlertCircle, HelpCircle, ArrowLeft, Building2, X, Navigation, Bookmark,
   ArrowUpDown, CalendarDays, Check, Clock, Eye, GripVertical, LayoutGrid, Minus, Plus, Radar as RadarIcon, Sparkles, Umbrella,
 } from 'lucide-react'
 import { DndContext, closestCenter, KeyboardSensor, MouseSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
@@ -143,7 +143,7 @@ import { useIconSet, setIconSet } from './utils/iconSet'
 import { useLocalConditions, locatedPlace, localConditionsFailed } from './hooks/useLocalConditions'
 import { rememberConditions } from './hooks/placeConditions'
 import { loadUnits, saveUnit } from './utils/units'
-import { APP_VERSION, IS_ANDROID_APP } from './utils/version'
+import { APP_VERSION_LABEL, IS_ANDROID_APP } from './utils/version'
 import { UpdateToast } from './components/UpdateToast'
 import { SourceNote } from './components/SourceNote'
 import { ApkPrompt } from './components/ApkPrompt'
@@ -396,12 +396,14 @@ function App() {
     if (saved === 'combined' || saved === 'both') return 'combined'
     return 'split'
   })
-  // Which observed radar feed the map draws. RainViewer by default, everywhere;
-  // in the US the NOAA feeds are there to opt into (see WeatherRadar). A saved
-  // choice is kept, so anyone who already picked one stays on it.
+  // Which observed radar feed the map draws. 'auto' (shown as Default) unless
+  // one was picked: in the US that is NOAA from end to end, MRMS zoomed out and
+  // the nearest NEXRAD zoomed in, ahead of the NOAA HRRR forecast; elsewhere it
+  // is RainViewer, the only feed there is (see WeatherRadar). A saved choice is
+  // kept, so anyone who already picked one stays on it.
   const [radarSource, setRadarSource] = useState(() => {
     const saved = localStorage.getItem(RADAR_SOURCE_KEY)
-    return RADAR_SOURCES.includes(saved) ? saved : 'rainviewer'
+    return RADAR_SOURCES.includes(saved) ? saved : 'auto'
   })
   const [colorCoding, setColorCoding] = useState(() => {
     const saved = loadJSON(COLOR_CODING_KEY)
@@ -991,6 +993,13 @@ function App() {
       localStorage.setItem(COLOR_CODING_KEY, JSON.stringify(next))
       return next
     })
+  }
+
+  // Back to the first-run choices. The saved copy is dropped rather than
+  // overwritten, so the user follows DEFAULT_COLOR_CODING if it ever changes.
+  const resetColorCoding = () => {
+    setColorCoding(DEFAULT_COLOR_CODING)
+    localStorage.removeItem(COLOR_CODING_KEY)
   }
 
   const changeWeatherAnimations = (val) => {
@@ -1870,10 +1879,6 @@ function App() {
   // shells' settings page and the web app's Settings tab.
   const settingsProps = {
     onHelpOpen: () => openHelp(),
-    // The desktop layout doesn't render the overview tile (see TodayPage), so
-    // its settings come out with it rather than sitting there as controls for
-    // something that isn't on the page.
-    webShell: webLayout,
     darkMode,
     onDarkModeChange: changeDarkMode,
     platformTheme,
@@ -1892,6 +1897,7 @@ function App() {
     onNowcastModeChange: changeNowcastMode,
     colorCoding,
     onColorCodingToggle: toggleColorCoding,
+    onColorCodingReset: resetColorCoding,
     weatherAnimations,
     onWeatherAnimationsChange: changeWeatherAnimations,
     iconMotion,
@@ -2141,7 +2147,7 @@ function App() {
                 // Back to the splash — the logo-tap the phone shells use, which
                 // the web app can't offer because the tab bar has taken the
                 // logo's place. On the splash itself it is the selected page.
-                home={{ label: 'Home', icon: <House size={17} aria-hidden="true" />, onSelect: handleNavHome }}
+                home={{ label: 'Search', icon: <Search size={17} aria-hidden="true" />, onSelect: handleNavHome }}
                 pages={navPages}
               />
               {headerTabs && weather && <web.WebAlertPill alerts={alerts} tab={navPageUp ? webPage : webTab} location={location} />}
@@ -2186,8 +2192,8 @@ function App() {
                 <span className="web-brand-last">Weather</span>
               </span>
             </span>
-            <span className="web-version" aria-label={`Version ${APP_VERSION}`}>
-              v{APP_VERSION}
+            <span className="web-version" aria-label={`Version ${APP_VERSION_LABEL}`}>
+              v{APP_VERSION_LABEL}
             </span>
           </>
         )}
@@ -2222,7 +2228,7 @@ function App() {
                 <p className="location-error-msg">{error.replace(/^quota:/, '')}</p>
                 <div className="location-error-actions">
                   <button className="location-error-search" onClick={retry}>Try again</button>
-                  <button className="location-error-search" onClick={handleNavHome}>Home</button>
+                  <button className="location-error-search" onClick={handleNavHome}>{webLayout ? 'Search' : 'Home'}</button>
                   {error.startsWith('quota:') && (
                     <button className="location-error-search location-error-help" onClick={() => openHelp('request-limits')}>
                       <HelpCircle size={15} aria-hidden="true" />
@@ -2355,7 +2361,7 @@ function App() {
             ) : splashIcon && (
               <span className={`splash-wordmark${splashPhase === 'exit' ? ' splash-wordmark--exit' : ''}`}>Alek Weather</span>
             )}
-            <p className="splash-version">Version {APP_VERSION}</p>
+            <p className="splash-version">Version {APP_VERSION_LABEL}</p>
           </div>
           {(splashPhase === 'visible' || splashPhase === 'enter') && !webSplash && (
             // Inert: .splash-bg lets taps through, so this only keeps them from

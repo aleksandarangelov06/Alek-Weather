@@ -1,326 +1,557 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ArrowRight, CloudRain, Droplets, Eye, Sun, Sunrise, Sunset, Thermometer, Wind } from 'lucide-react'
-import { DragHandle, DragLayer, ResetLayout } from './DragLayer'
-import { useCardDrag } from './cardDrag'
+import { useEffect, useRef, useState } from 'react'
 import {
-  applyDrop, HOURS_BY_SLOT, keyMove, PAIR_MQ, resolveToday, spans, useMediaQuery, useTodayLayout,
-} from './todayLayout'
-import { CurrentWeather } from '../CurrentWeather'
+  ArrowRight, Bookmark, ChevronLeft, ChevronRight, CloudRain, Droplets, Eye, House, Leaf,
+  RefreshCw, Sun, Sunrise, Sunset, Wind,
+} from 'lucide-react'
+import { HouseFilled, UpdatedText } from '../CurrentWeather'
 import { TodayCard } from '../TodayCard'
+import { WeatherOverview } from '../WeatherOverview'
 import { PrecipNowcast } from '../PrecipNowcast'
 import { WeatherAlerts } from '../WeatherAlerts'
 import { WeatherIcon } from '../WeatherIcon'
+import { SourceNote } from '../SourceNote'
+import { WeatherRadar } from '../WeatherRadarLazy'
+import { isSnowing } from '../../utils/conditions'
 import {
-  formatHour, formatTime, getUVLabel, SUN_ORANGE, getWeatherInfo, getWindDirection,
-  liveWeatherCode, nowcastHourlyCode, tempStyle, toTemp,
+  getUVLabel, getWeatherInfo, getWindDirection, liveWeatherCode, nowcastHourlyCode,
+  SUN_ORANGE, tempInk, tempStyle, toTemp,
 } from '../../utils/weatherCodes'
-import { currentHourIndex, METERS_PER_MILE, sliceHourly, weekdayLabel } from './webData'
-import { getHumidityInfo, getPrecipInfo, getVisibilityInfo, getWindInfo } from '../../utils/conditions'
-import { formatPrecip, formatVisibility, formatWind } from '../../utils/units'
+import { getAQIInfo, getHumidityInfo, getPrecipInfo, getVisibilityInfo, getWindInfo } from '../../utils/conditions'
+import { formatPrecip, formatVisibility, formatWind, unitSuffix, unitText } from '../../utils/units'
+import { formatMinutes, isoMinutes } from '../../utils/sunTimes'
+import { currentHourIndex, daylightLength, METERS_PER_MILE, weekdayLabel } from './webData'
 
-// The layout itself (rows of one or two cards) lives in todayLayout.js.
-const WIDGET_NAMES = {
-  current: 'Current weather',
-  glance: 'At a glance',
-  nowcast: 'Precipitation',
-  hourly: 'Next hours',
-  week: 'Week ahead',
+// The web Today page.
+//
+//   ┌──────────────────────────────┐ ┌──────────────┐
+//   │ Now: place, reading, stats   │ │ At a glance  │
+//   ├──────────────────────────────┤ │ (TodayCard)  │
+//   │ Next-hour precipitation*     │ ├──────────────┤
+//   ├──────────────────────────────┤ │ Insight      │
+//   │ Next 24 hours                │ │ (Overview)   │
+//   ├──────────────────────────────┤ ├──────────────┤
+//   │ Next 7 days                  │ │ Radar → tab  │
+//   └──────────────────────────────┘ └──────────────┘
+//                                       * only when rain is near
+//
+// The sidebar holds the phone's own At a glance and Weather insight cards, so
+// the web page carries everything the phone stack does (hazards, the activity
+// reasons, the Today/Tomorrow pager, clothing) without a second copy of that
+// logic. It is about a phone's width, which is what those cards are drawn for.
+// Below 1100px the two columns fold into one, in reading order (see WebApp.css).
+//
+// The forecast's timestamps are naive local wall-clock strings ("2026-11-26T14:00"
+// at the forecast location). They're read as text here, never through new Date(),
+// which would put them in the browser's time zone and shift every label for a
+// city in another zone.
+
+const HOURS = 24
+// Shared with the phone's hourly card, so the reading picked on one is the one
+// shown on the other.
+const METRIC_KEY = 'alek-weather-hourly-metric'
+
+const METRICS = [
+  { id: 'temp',     label: 'Temp',     key: 'temperature_2m',            now: 'temperature_2m' },
+  { id: 'feels',    label: 'Feels',    key: 'apparent_temperature',      now: 'apparent_temperature' },
+  { id: 'precip',   label: 'Precip',   key: 'precipitation_probability' },
+  { id: 'wind',     label: 'Wind',     key: 'wind_speed_10m',            now: 'wind_speed_10m' },
+  { id: 'humidity', label: 'Humidity', key: 'relative_humidity_2m',      now: 'relative_humidity_2m' },
+  { id: 'uv',       label: 'UV',       key: 'uv_index',                  now: 'uv_index' },
+]
+
+function metricName(id, unit, units) {
+  switch (id) {
+    case 'temp':     return `Temperature (°${unit})`
+    case 'feels':    return `Feels like (°${unit})`
+    case 'precip':   return 'Chance of precipitation (%)'
+    case 'wind':     return `Wind (${unitSuffix('wind', units)})`
+    case 'humidity': return 'Humidity (%)'
+    default:         return 'UV index'
+  }
 }
 
-function GlanceTile({ icon: Icon, label, value, sub, color }) {
+// "3 PM" from a naive local timestamp.
+function hourLabel(iso) {
+  const h = +iso.slice(11, 13)
+  return `${h % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`
+}
+
+// The forecast location's wall clock right now, as "YYYY-MM-DDTHH:MM".
+function localNow(timezone) {
+  const parts = {}
+  for (const p of new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date())) parts[p.type] = p.value
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`
+}
+
+// Minutes since the epoch for a naive timestamp, read as UTC. Only ever
+// differenced against another one read the same way.
+const naiveMinutes = (iso) => Date.UTC(
+  +iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10), +iso.slice(11, 13), +iso.slice(14, 16),
+) / 60000
+
+// "45 min", "1 hour", "2½ hours".
+function untilText(mins) {
+  if (mins < 53) return `${Math.max(1, Math.round(mins))} min`
+  const quarters = Math.round(mins / 15)
+  const whole = Math.floor(quarters / 4)
+  const frac = ['', '¼', '½', '¾'][quarters % 4]
+  return `${whole}${frac} ${quarters === 4 ? 'hour' : 'hours'}`
+}
+
+// Every sunrise and sunset in the forecast, in order.
+function sunEvents(daily) {
+  const out = []
+  daily.time.forEach((_, d) => {
+    if (daily.sunrise?.[d]) out.push({ kind: 'rise', iso: daily.sunrise[d] })
+    if (daily.sunset?.[d]) out.push({ kind: 'set', iso: daily.sunset[d] })
+  })
+  return out
+}
+
+const reducedMotion = () => !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+
+// Whether a horizontal scroller has more to show on either side.
+function useScrollEdges(ref) {
+  const [edges, setEdges] = useState({ start: true, end: true })
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const update = () => {
+      const start = el.scrollLeft <= 2
+      const end = el.scrollLeft + el.clientWidth >= el.scrollWidth - 2
+      setEdges((e) => (e.start === start && e.end === end ? e : { start, end }))
+    }
+    update()
+    el.addEventListener('scroll', update, { passive: true })
+    // Also catches the panel coming back from display: none on a tab switch.
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => { el.removeEventListener('scroll', update); ro.disconnect() }
+  }, [ref])
+  return edges
+}
+
+// ── Now ──────────────────────────────────────────────────────────────────────
+
+function Stat({ icon: Icon, label, value, sub, color }) {
   return (
-    <div className="web-glance-tile">
-      <Icon size={17} className="web-glance-icon" style={color ? { color } : undefined} aria-hidden="true" />
-      <div className="web-glance-label">{label}</div>
-      <div className="web-glance-value" style={color ? { color } : undefined}>{value}</div>
-      {sub && <div className="web-glance-sub">{sub}</div>}
+    <div className="wt-stat">
+      <div className="wt-stat-label">
+        <Icon size={14} aria-hidden="true" style={color ? { color } : undefined} />
+        {label}
+      </div>
+      <div className="wt-stat-value" style={color ? { color } : undefined}>{value}</div>
+      {sub && <div className="wt-stat-sub" title={typeof sub === 'string' ? sub : undefined}>{sub}</div>}
     </div>
   )
 }
 
-// The two preview cards at the bottom of the page are deliberately read-only
-// summaries: they say enough to answer "do I need to open that tab", and hand
-// off to the real page rather than duplicating it.
-// The open link is optional. The hours strip has nowhere to go now that the
-// Hourly page is retired — it is the whole of the hourly forecast rather than a
-// preview of a fuller one — so it renders as a plain titled card, and the head
-// keeps its row so both cards' titles still sit on the same line.
-function PreviewCard({ title, onOpen, openLabel, className, children }) {
+function NowCard({
+  weather, location, unit, units, radarClear, airQuality, colorCoding, nowIso, nextSun,
+  lastUpdated, loading, onRefresh, saved, onSave, onRemove, isHome, onSetHome, onUnsetHome,
+}) {
+  const { current, daily, timezone } = weather
+  const info = getWeatherInfo(liveWeatherCode(current, weather.minutely_15, radarClear), !current.is_day, current.severe_storm)
+  const place = [location.name, location.admin1 && location.admin1 !== location.name ? location.admin1 : null]
+    .filter(Boolean).join(', ')
+  const dateStr = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: timezone })
+
+  const hi = daily.temperature_2m_max?.[0]
+  const lo = daily.temperature_2m_min?.[0]
+  const cc = colorCoding.details
+  const tint = (c) => (cc ? c : undefined)
+  const dayTemp = (f) => (
+    <b style={tempStyle(f, colorCoding.current, 0.3, colorCoding.glow, colorCoding.frost)}>{toTemp(f, unit)}°</b>
+  )
+
+  // The readings worth knowing before you step out. Everything else lives on
+  // the Details page.
+  const rain = daily.precipitation_probability_max?.[0]
+  const rainSum = daily.precipitation_sum?.[0]
+  const wind = current.wind_speed_10m
+  const gust = current.wind_gusts_10m
+  const uv = getUVLabel(current.uv_index ?? 0)
+  const aqi = airQuality?.us_aqi
+  const visMi = current.visibility != null ? current.visibility / METERS_PER_MILE : null
+  const daylight = daily.sunrise?.[0] && daily.sunset?.[0] ? daylightLength(daily.sunrise[0], daily.sunset[0]) : null
+
   return (
-    <div className={`card web-preview${className ? ` ${className}` : ''}`}>
-      <div className="web-preview-head">
-        <span className="section-label">{title}</span>
-        {onOpen && (
-          <button className="web-link-btn" onClick={onOpen}>
-            {openLabel}
-            <ArrowRight size={14} />
+    <section className="card wt-now" aria-label="Current conditions">
+      <header className="wt-now-head">
+        <div className="wt-now-where">
+          <h1 className="wt-place">{place}</h1>
+          <p className="wt-meta">
+            <span>{dateStr}</span>
+            <span className="wt-meta-dot" aria-hidden="true">·</span>
+            <UpdatedText date={lastUpdated} />
+            <button
+              type="button"
+              className={`wt-icon-btn wt-refresh${loading ? ' is-spinning' : ''}`}
+              onClick={onRefresh}
+              disabled={loading}
+              aria-label="Refresh weather"
+              title="Refresh"
+            >
+              <RefreshCw size={13} />
+            </button>
+          </p>
+        </div>
+        <div className="wt-actions">
+          <button
+            type="button"
+            className={`wt-action${isHome ? ' is-on' : ''}`}
+            onClick={isHome ? onUnsetHome : onSetHome}
+            aria-pressed={isHome}
+            title={isHome ? 'This is your home location. Click to unset it.' : 'Make this your home location'}
+          >
+            {isHome ? <HouseFilled size={15} /> : <House size={15} />}
+            <span>{isHome ? 'Home' : 'Set as home'}</span>
           </button>
+          <button
+            type="button"
+            className={`wt-action${saved ? ' is-on' : ''}`}
+            onClick={saved ? onRemove : onSave}
+            aria-pressed={saved}
+            title={saved ? 'Remove from saved places' : 'Save this place'}
+          >
+            <Bookmark size={15} fill={saved ? 'currentColor' : 'none'} />
+            <span>{saved ? 'Saved' : 'Save'}</span>
+          </button>
+        </div>
+      </header>
+
+      <div className="wt-reading">
+        <span className="wt-reading-icon"><WeatherIcon id={info.icon} alt={info.label} /></span>
+        <span
+          className="wt-reading-temp"
+          style={tempStyle(current.temperature_2m, colorCoding.current, 1, colorCoding.glow, colorCoding.frost)}
+        >
+          {toTemp(current.temperature_2m, unit)}<span className="wt-reading-unit">°{unit}</span>
+        </span>
+        <div className="wt-reading-text">
+          <div className="wt-reading-cond">{info.label}</div>
+          <div className="wt-reading-sub">
+            <span>Feels like {dayTemp(current.apparent_temperature)}</span>
+            {hi != null && lo != null && (
+              <span>High {dayTemp(hi)} <span className="wt-sep">/</span> Low {dayTemp(lo)}</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="wt-stats">
+        <Stat
+          icon={CloudRain}
+          label="Precipitation"
+          value={rain != null ? `${rain}%` : '-'}
+          sub={rainSum >= 0.01 ? `${formatPrecip(rainSum, units)} expected` : 'Chance today'}
+          color={tint(rain != null ? getPrecipInfo(rain).color : null)}
+        />
+        <Stat
+          icon={Wind}
+          label="Wind"
+          value={formatWind(wind, units)}
+          sub={[
+            current.wind_direction_10m != null && `From ${getWindDirection(current.wind_direction_10m)}`,
+            gust != null && `gusts ${formatWind(gust, units)}`,
+          ].filter(Boolean).join(', ') || null}
+          color={tint(wind != null ? getWindInfo(wind).color : null)}
+        />
+        <Stat
+          icon={Droplets}
+          label="Humidity"
+          value={current.relative_humidity_2m != null ? `${Math.round(current.relative_humidity_2m)}%` : '-'}
+          sub={current.dew_point_2m != null ? `Dew point ${toTemp(current.dew_point_2m, unit)}°` : null}
+          color={tint(current.relative_humidity_2m != null ? getHumidityInfo(current.relative_humidity_2m).color : null)}
+        />
+        <Stat icon={Sun} label="UV index" value={Math.round(current.uv_index ?? 0)} sub={uv.label} color={tint(uv.color)} />
+        {aqi != null ? (
+          <Stat icon={Leaf} label="Air quality" value={Math.round(aqi)} sub={getAQIInfo(aqi).label} color={tint(getAQIInfo(aqi).color)} />
+        ) : (
+          <Stat
+            icon={Eye}
+            label="Visibility"
+            value={formatVisibility(current.visibility, units)}
+            sub={visMi != null ? getVisibilityInfo(visMi).label : null}
+            color={tint(visMi != null ? getVisibilityInfo(visMi).color : null)}
+          />
+        )}
+        {nextSun ? (
+          <Stat
+            icon={nextSun.kind === 'rise' ? Sunrise : Sunset}
+            label={nextSun.kind === 'rise' ? 'Sunrise' : 'Sunset'}
+            value={formatMinutes(isoMinutes(nextSun.iso))}
+            sub={`in ${untilText(naiveMinutes(nextSun.iso) - naiveMinutes(nowIso))}`}
+            color={tint(SUN_ORANGE)}
+          />
+        ) : (
+          <Stat icon={Sun} label="Daylight" value={daylight ?? '-'} sub="Today" color={tint(SUN_ORANGE)} />
         )}
       </div>
-      {children}
-    </div>
+    </section>
   )
 }
 
-// The weather-overview card (insight / conditions / clothing / AQI) is off on
-// the desktop layout for now. WebLayout still spreads its props through, so
-// restoring it is a matter of pulling `airQuality` and `hasActiveAlert` back
-// out of the props and rendering <WeatherOverview> again.
-export function TodayPage({
-  weather, location, alerts, unit, units, radarClear, lastUpdated, loading,
-  colorCoding, nowcastMode, airQuality,
-  saved, onSave, onRemove, isHome, hasHome, onGoHome, onSetHome, onUnsetHome, onRefresh,
-  onNavigate,
-}) {
-  const { current, hourly, daily, timezone } = weather
-  const paired = useMediaQuery(PAIR_MQ)
-  const { rows, setRows, reset, isCustom } = useTodayLayout()
-  const gridRef = useRef(null)
+// ── Next 24 hours ────────────────────────────────────────────────────────────
 
-  // The precipitation chart draws nothing when there's no rain in the next
-  // hour. It's still rendered (hidden) so it can be noticed the moment it has
-  // something to show, but its row is left out until then, so the card it
-  // shares a row with gets the whole width instead of half of an empty row.
-  const [nowcastShown, setNowcastShown] = useState(false)
-  // Checked after every render, since what the chart decides depends on props
-  // it reads itself; the state only changes when the answer does, so it settles.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useLayoutEffect(() => {
-    const has = !!gridRef.current?.querySelector('[data-widget="nowcast"] .nowcast-card')
-    if (has !== nowcastShown) setNowcastShown(has)
+function HoursCard({ weather, unit, units, radarClear, colorCoding, nowIso, events }) {
+  const { hourly, daily, current, timezone } = weather
+  const minutely = weather.minutely_15
+  const scrollRef = useRef(null)
+  const edges = useScrollEdges(scrollRef)
+
+  const [picked, setPicked] = useState(() => {
+    try { return localStorage.getItem(METRIC_KEY) ?? 'temp' } catch { return 'temp' }
   })
-  const visRows = rows
-    .map(row => row.filter(id => id !== 'nowcast' || nowcastShown))
-    .filter(row => row.length)
-
-  const { drag, start, markMoved } = useCardDrag({
-    containerRef: gridRef,
-    resolve: (id, x, y, cards) => resolveToday(rows, visRows, paired, id, x, y, cards),
-    onDrop: (id, target) => setRows(applyDrop(rows, id, target)),
-  })
-
-  // Arrow keys on a grip move the card; focus follows it to its new place.
-  const refocus = useRef(null)
-  const onKeyMove = (id, dir) => {
-    const next = keyMove(rows, visRows, id, dir)
-    if (next === rows) return
-    markMoved()
-    refocus.current = id
-    setRows(next)
+  const pick = (id) => {
+    setPicked(id)
+    try { localStorage.setItem(METRIC_KEY, id) } catch { /* kept for this visit only */ }
   }
-  useEffect(() => {
-    if (!refocus.current) return
-    gridRef.current?.querySelector(`[data-handle-for="${refocus.current}"]`)?.focus()
-    refocus.current = null
-  })
 
-  const uv = getUVLabel(current.uv_index ?? 0)
-  const windDir = getWindDirection(current.wind_direction_10m)
-  const rainToday = daily.precipitation_probability_max?.[0]
+  const start = currentHourIndex(hourly, timezone)
+  const count = Math.max(0, Math.min(HOURS, hourly.time.length - start))
+  const available = METRICS.filter((m) => m.id === 'temp'
+    || hourly[m.key]?.slice(start, start + count).some(Number.isFinite))
+  const metric = available.find((m) => m.id === picked) ?? available[0]
 
-  // The glance tiles use the Details page's colour scales (and its toggle), so
-  // a reading wears the same colour on both pages.
-  const cc = colorCoding.details
-  const visMi = current.visibility != null ? current.visibility / METERS_PER_MILE : null
-  const glanceColor = {
-    precip: rainToday != null ? getPrecipInfo(rainToday).color : undefined,
-    wind: getWindInfo(current.wind_speed_10m).color,
-    humidity: getHumidityInfo(current.relative_humidity_2m).color,
-    visibility: visMi != null ? getVisibilityInfo(visMi).color : undefined,
-    sun: SUN_ORANGE,
+  // The hour tiles, with the sunrises and sunsets that fall among them slotted
+  // in after their hour. An event earlier in the current hour has already
+  // happened, so it's left out.
+  const items = []
+  for (let k = 0; k < count; k++) {
+    const i = start + k
+    const time = hourly.time[i]
+    items.push({ kind: 'hour', i, k, time })
+    const prefix = time.slice(0, 13)
+    for (const ev of events) {
+      if (ev.iso.slice(0, 13) === prefix && (k > 0 || ev.iso > nowIso)) items.push({ kind: 'sun', rise: ev.kind === 'rise', iso: ev.iso })
+    }
   }
-  const tone = (key) => (cc ? glanceColor[key] : undefined)
 
-  const renderWidget = (id, slot) => {
-    switch (id) {
-      case 'current':
-        return (
-          <CurrentWeather
-            current={current}
-            minutely={weather.minutely_15}
-            radarClear={radarClear}
-            location={location}
-            timezone={timezone}
-            unit={unit}
-            saved={saved}
-            onSave={onSave}
-            onRemove={onRemove}
-            isHome={isHome}
-            hasHome={hasHome}
-            onGoHome={onGoHome}
-            onSetHome={onSetHome}
-            onUnsetHome={onUnsetHome}
-            lastUpdated={lastUpdated}
-            onRefresh={onRefresh}
-            loading={loading}
-            colorCoding={colorCoding.current}
-            glow={colorCoding.glow}
-            frost={colorCoding.frost}
-          >
-            {/* The phone's Today card (vs yesterday, and how good the rest of
-                the day is for being out, driving and exercise), folded into the
-                current card under the readings. */}
-            <TodayCard
-              embedded
-              hourly={hourly}
-              daily={daily}
-              current={current}
-              yesterday={weather.yesterday}
-              timezone={timezone}
-              unit={unit}
-              airQuality={airQuality}
-            />
-          </CurrentWeather>
-        )
+  const valueOf = (i, k) => {
+    // "Now" reads the live values, so the first tile agrees with the card above.
+    if (k === 0 && metric.now && Number.isFinite(current[metric.now])) return current[metric.now]
+    return hourly[metric.key]?.[i]
+  }
+  const text = (v) => {
+    if (v == null || !Number.isFinite(v)) return '-'
+    switch (metric.id) {
+      case 'temp':
+      case 'feels': return `${toTemp(v, unit)}°`
+      case 'wind':  return unitText('wind', v, units)
+      case 'uv':    return String(Math.round(v))
+      default:      return `${Math.round(v)}%`
+    }
+  }
+  const style = (v) => {
+    if (!Number.isFinite(v)) return undefined
+    if (metric.id === 'temp' || metric.id === 'feels') {
+      return tempStyle(v, colorCoding.hourly, 0.35, colorCoding.glow, colorCoding.frost)
+    }
+    if (metric.id === 'precip' && v > 0) return { color: 'var(--web-precip)' }
+    return undefined
+  }
 
-      case 'glance':
-        return (
-          <div className="card web-glance">
-            <div className="section-label">AT A GLANCE</div>
-            <div className="web-glance-grid">
-              <GlanceTile
-                icon={Thermometer}
-                label="High / Low"
-                value={
-                  <>
-                    <span style={tempStyle(daily.temperature_2m_max[0], colorCoding.daily, 0.3, colorCoding.glow, colorCoding.frost)}>
-                      {toTemp(daily.temperature_2m_max[0], unit)}°
-                    </span>
-                    <span className="web-glance-sep"> / </span>
-                    <span style={tempStyle(daily.temperature_2m_min[0], colorCoding.daily, 0.3, colorCoding.glow, colorCoding.frost)}>
-                      {toTemp(daily.temperature_2m_min[0], unit)}°
-                    </span>
-                  </>
-                }
-                sub="Today"
-              />
-              <GlanceTile
-                icon={CloudRain}
-                label="Precipitation"
-                color={tone('precip')}
-                value={rainToday != null ? `${rainToday}%` : '-'}
-                sub={daily.precipitation_sum?.[0] != null ? `${formatPrecip(daily.precipitation_sum[0], units)} expected` : 'Chance today'}
-              />
-              <GlanceTile
-                icon={Wind}
-                label="Wind"
-                color={tone('wind')}
-                value={formatWind(current.wind_speed_10m, units)}
-                sub={`${windDir}${current.wind_gusts_10m != null ? ` · gusts ${Math.round(current.wind_gusts_10m)}` : ''}`}
-              />
-              <GlanceTile
-                icon={Droplets}
-                label="Humidity"
-                color={tone('humidity')}
-                value={`${Math.round(current.relative_humidity_2m)}%`}
-                sub={current.dew_point_2m != null ? `Dew point ${toTemp(current.dew_point_2m, unit)}°` : null}
-              />
-              <GlanceTile
-                icon={Sunrise}
-                label="Sunrise"
-                color={tone('sun')}
-                value={formatTime(daily.sunrise[0], timezone)}
-                sub="Local time"
-              />
-              <GlanceTile
-                icon={Sunset}
-                label="Sunset"
-                color={tone('sun')}
-                value={formatTime(daily.sunset[0], timezone)}
-                sub="Local time"
-              />
-              <GlanceTile
-                icon={Eye}
-                label="Visibility"
-                color={tone('visibility')}
-                value={formatVisibility(current.visibility, units)}
-                sub="Ground level"
-              />
-              <GlanceTile
-                icon={Sun}
-                label="UV index"
-                value={Math.round(current.uv_index ?? 0)}
-                sub={uv.label}
-                color={cc ? uv.color : undefined}
-              />
-            </div>
+  // Under the strip: today's precipitation total, when there is any.
+  const di = daily.time.indexOf(nowIso.slice(0, 10))
+  const total = di >= 0 ? daily.precipitation_sum?.[di] : null
+  const snow = di >= 0 ? daily.snowfall_sum?.[di] : null
+  const notes = []
+  if (total >= 0.01) notes.push(`${snow > 0 ? 'Precipitation' : 'Rain'} today: ${formatPrecip(total, units)}`)
+
+  const scrollBy = (dir) => {
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollBy({ left: dir * el.clientWidth * 0.8, behavior: reducedMotion() ? 'auto' : 'smooth' })
+  }
+
+  return (
+    <section className="card wt-hours" aria-labelledby="wt-hours-title">
+      <div className="wt-card-head">
+        <h2 id="wt-hours-title" className="section-label wt-title">NEXT 24 HOURS</h2>
+        {available.length > 1 && (
+          <div className="web-seg wt-seg" role="group" aria-label="Reading shown">
+            {available.map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                className={`web-seg-btn${m.id === metric.id ? ' web-seg-btn--active' : ''}`}
+                aria-pressed={m.id === metric.id}
+                aria-label={metricName(m.id, unit, units)}
+                onClick={() => pick(m.id)}
+              >
+                {m.label}
+              </button>
+            ))}
           </div>
-        )
+        )}
+      </div>
 
-      case 'hourly': {
-        const count = HOURS_BY_SLOT[slot] ?? HOURS_BY_SLOT.full
-        const start = currentHourIndex(hourly, timezone)
-        const next = sliceHourly(hourly, start, count)
-        return (
-          <PreviewCard title={`NEXT ${count - 1} HOURS`} className="web-strip">
-            <div className="web-mini-hours">
-              {next.time.map((time, i) => {
-                const code = i === 0
-                  ? (liveWeatherCode(current, weather.minutely_15, radarClear) ?? next.code[i])
-                  : nowcastHourlyCode(next.code[i], weather.minutely_15, time, current)
-                const info = getWeatherInfo(code, !next.isDay[i])
-                const chance = next.precip[i] ?? 0
-                return (
-                  <div key={time} className={`web-mini-hour${i === 0 ? ' web-mini-hour--now' : ''}`}>
-                    <span className="web-mini-time">{i === 0 ? 'Now' : formatHour(time, timezone)}</span>
-                    <span className="web-mini-icon"><WeatherIcon id={info.icon} alt={info.label} /></span>
-                    <span
-                      className="web-mini-temp"
-                      style={tempStyle(next.temp[i], colorCoding.hourly, 0.35, colorCoding.glow, colorCoding.frost)}
-                    >
-                      {toTemp(next.temp[i], unit)}°
-                    </span>
-                    <span className={`web-mini-precip${chance >= 30 ? ' web-mini-precip--high' : chance > 0 ? '' : ' web-mini-precip--zero'}`}>
-                      {chance}%
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          </PreviewCard>
-        )
-      }
+      <div className={`wt-strip${edges.start ? '' : ' wt-strip--from'}${edges.end ? '' : ' wt-strip--more'}`}>
+        <button
+          type="button"
+          className="wt-strip-nav wt-strip-nav--prev"
+          onClick={() => scrollBy(-1)}
+          hidden={edges.start}
+          aria-label="Earlier hours"
+          tabIndex={-1}
+        >
+          <ChevronLeft size={18} />
+        </button>
+        <ol className="wt-strip-list" ref={scrollRef} tabIndex={0} aria-label="Hourly forecast">
+          {items.map((it) => {
+            if (it.kind === 'sun') {
+              const Icon = it.rise ? Sunrise : Sunset
+              const time = formatMinutes(isoMinutes(it.iso))
+              return (
+                <li key={`sun-${it.iso}`} className="wt-hour wt-hour--sun" aria-label={`${it.rise ? 'Sunrise' : 'Sunset'} at ${time}`}>
+                  <span className="wt-hour-time" aria-hidden="true">{time.replace(' ', ' ')}</span>
+                  <span className="wt-hour-glyph"><Icon size={26} aria-hidden="true" /></span>
+                  <span className="wt-hour-value" aria-hidden="true">{it.rise ? 'Sunrise' : 'Sunset'}</span>
+                  <span className="wt-hour-chance" aria-hidden="true">&nbsp;</span>
+                </li>
+              )
+            }
+            const { i, k, time } = it
+            const code = k === 0
+              ? (liveWeatherCode(current, minutely, radarClear) ?? hourly.weather_code[i])
+              : nowcastHourlyCode(hourly.weather_code[i], minutely, time, current)
+            const info = getWeatherInfo(code, hourly.is_day?.[i] === 0)
+            const v = valueOf(i, k)
+            const chance = hourly.precipitation_probability?.[i] ?? 0
+            const label = k === 0 ? 'Now' : hourLabel(time)
+            const suffix = metric.id === 'wind' && Number.isFinite(v) ? unitSuffix('wind', units) : null
+            // The chance of rain rides under every reading but its own.
+            const showChance = metric.id !== 'precip' && chance >= 10
+            return (
+              <li
+                key={time}
+                className={`wt-hour${k === 0 ? ' wt-hour--now' : ''}`}
+                aria-label={`${label}, ${info.label}, ${text(v)}${suffix ? ` ${suffix}` : ''}${showChance ? `, ${chance}% chance of precipitation` : ''}`}
+              >
+                <span className="wt-hour-time" aria-hidden="true">{label}</span>
+                <span className="wt-hour-icon" aria-hidden="true"><WeatherIcon id={info.icon} alt="" /></span>
+                <span className="wt-hour-value" style={style(v)} aria-hidden="true">
+                  {text(v)}
+                  {suffix && <small>{suffix}</small>}
+                </span>
+                <span className="wt-hour-chance" aria-hidden="true">
+                  {showChance ? <><Droplets size={11} />{chance}%</> : ' '}
+                </span>
+              </li>
+            )
+          })}
+        </ol>
+        <button
+          type="button"
+          className="wt-strip-nav wt-strip-nav--next"
+          onClick={() => scrollBy(1)}
+          hidden={edges.end}
+          aria-label="Later hours"
+          tabIndex={-1}
+        >
+          <ChevronRight size={18} />
+        </button>
+      </div>
 
-      case 'week':
-        return (
-          <PreviewCard title="WEEK AHEAD" onOpen={() => onNavigate('daily')} openLabel="This week" className="web-week">
-            <div className="web-week-days">
-              {daily.time.map((date, i) => {
-                const info = getWeatherInfo(daily.weather_code[i], false)
-                const chance = daily.precipitation_probability_max?.[i] ?? 0
-                return (
-                  <div key={date} className={`web-week-day${i === 0 ? ' web-week-day--today' : ''}`}>
-                    <span className="web-week-dayname">{i === 0 ? 'Today' : weekdayLabel(date, timezone)}</span>
-                    <span className="web-week-icon"><WeatherIcon id={info.icon} alt={info.label} /></span>
-                    <span className="web-week-cond">{info.label}</span>
-                    <span className="web-week-temps">
-                      <span
-                        className="web-week-high"
-                        style={tempStyle(daily.temperature_2m_max[i], colorCoding.daily, 0.35, colorCoding.glow, colorCoding.frost)}
-                      >
-                        {toTemp(daily.temperature_2m_max[i], unit)}°
-                      </span>
-                      <span
-                        className="web-week-low"
-                        style={tempStyle(daily.temperature_2m_min[i], colorCoding.daily, 0.35, colorCoding.glow, colorCoding.frost)}
-                      >
-                        {toTemp(daily.temperature_2m_min[i], unit)}°
-                      </span>
-                    </span>
-                    <span className={`web-week-precip${chance >= 30 ? ' web-mini-precip--high' : chance > 0 ? '' : ' web-mini-precip--zero'}`}>
-                      {chance}%
-                    </span>
-                  </div>
-                )
-              })}
-            </div>
-          </PreviewCard>
-        )
+      {notes.length > 0 && <p className="wt-foot">{notes.join(' · ')}</p>}
+    </section>
+  )
+}
 
-      case 'nowcast':
-        // `wide` draws the chart in real pixels at a fixed height, so it fills
-        // whatever width its slot has without its height chasing it.
-        return (
+// ── Next 7 days ──────────────────────────────────────────────────────────────
+
+function WeekCard({ weather, unit, colorCoding, onNavigate }) {
+  const { daily, current, timezone } = weather
+  const highs = daily.temperature_2m_max
+  const lows = daily.temperature_2m_min
+  const weekMin = Math.min(...lows)
+  const weekMax = Math.max(...highs)
+  const span = weekMax - weekMin || 1
+  const pos = (f) => Math.min(100, Math.max(0, ((f - weekMin) / span) * 100))
+  const cc = colorCoding.daily
+  const temp = (f, cls) => (
+    <span className={cls} style={tempStyle(f, cc, 0.35, colorCoding.glow, colorCoding.frost)}>{toTemp(f, unit)}°</span>
+  )
+
+  return (
+    <section className="card wt-week" aria-labelledby="wt-week-title">
+      <div className="wt-card-head">
+        <h2 id="wt-week-title" className="section-label wt-title">NEXT 7 DAYS</h2>
+        <button type="button" className="web-link-btn" onClick={() => onNavigate('daily')}>
+          Full week
+          <ArrowRight size={14} />
+        </button>
+      </div>
+      <ul className="wt-days">
+        {daily.time.map((date, i) => {
+          const info = getWeatherInfo(daily.weather_code[i], false)
+          const chance = daily.precipitation_probability_max?.[i] ?? 0
+          const lo = lows[i], hi = highs[i]
+          const left = pos(lo)
+          const width = Math.max(pos(hi) - left, 3)
+          const name = i === 0 ? 'Today' : weekdayLabel(date, timezone)
+          return (
+            <li
+              key={date}
+              className={`wt-day${i === 0 ? ' wt-day--today' : ''}`}
+              aria-label={`${name}: ${info.label}, high ${toTemp(hi, unit)}°, low ${toTemp(lo, unit)}°${chance >= 10 ? `, ${chance}% chance of precipitation` : ''}`}
+            >
+              <span className="wt-day-name" aria-hidden="true">{name}</span>
+              <span className="wt-day-icon" aria-hidden="true"><WeatherIcon id={info.icon} alt="" /></span>
+              <span className="wt-day-cond" aria-hidden="true">{info.label}</span>
+              <span className="wt-day-chance" aria-hidden="true">
+                {chance >= 10 && <><Droplets size={11} />{chance}%</>}
+              </span>
+              {temp(lo, 'wt-day-lo')}
+              <span className="wt-day-track" aria-hidden="true">
+                <span
+                  className="wt-day-bar"
+                  style={{
+                    left: `${left}%`,
+                    width: `${width}%`,
+                    background: cc ? `linear-gradient(90deg, ${tempInk(lo)}, ${tempInk(hi)})` : 'var(--graph-line)',
+                  }}
+                />
+                {i === 0 && current.temperature_2m != null && (
+                  <span className="wt-day-now" style={{ left: `${pos(current.temperature_2m)}%` }} title="Now" />
+                )}
+              </span>
+              {temp(hi, 'wt-day-hi')}
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
+}
+
+// ── Page ─────────────────────────────────────────────────────────────────────
+
+export function TodayPage(props) {
+  const {
+    weather, location, alerts, unit, units, radarClear, airQuality, colorCoding, nowcastMode,
+    hasActiveAlert, onNavigate, radarMode, radarSource, weatherAnimations,
+  } = props
+  const { current, hourly, daily, timezone } = weather
+
+  const nowIso = localNow(timezone)
+  const events = sunEvents(daily)
+  const nextSun = events.find((e) => e.iso > nowIso) ?? null
+
+  return (
+    <div className="web-page wt">
+      <WeatherAlerts alerts={alerts} location={location} />
+
+      <div className="wt-grid">
+        <div className="wt-main">
+          <NowCard {...props} nowIso={nowIso} nextSun={nextSun} />
+
+          {/* Draws nothing unless it's raining or about to be (or the setting
+              says always), so it costs no space on a dry day. */}
           <PrecipNowcast
             minutely={weather.minutely_15}
             currentTime={current.time}
@@ -329,51 +560,61 @@ export function TodayPage({
             radarClear={radarClear}
             wide
           />
-        )
 
-      default:
-        return null
-    }
-  }
+          <HoursCard
+            weather={weather}
+            unit={unit}
+            units={units}
+            radarClear={radarClear}
+            colorCoding={colorCoding}
+            nowIso={nowIso}
+            events={events}
+          />
 
-  // One flat child list rather than a wrapper per row: the cards keep their
-  // keys at the top level, so a drop moves the DOM node instead of unmounting it
-  // out of one row and remounting it in the next. Each row's widths add up to
-  // the grid's 12 columns, so the rows line up without any wrapper.
-  const widget = (id, slot, span, hidden) => (
-    <div
-      key={id}
-      data-widget={id}
-      data-card-id={hidden ? undefined : id}
-      className={[
-        'web-widget',
-        slot === 'full' && 'web-widget--full',
-        `web-widget--${slot}`,
-        hidden && 'web-widget--absent',
-        drag?.id === id && 'web-widget--lifted',
-      ].filter(Boolean).join(' ')}
-      style={{ gridColumn: paired ? `span ${span}` : '1 / -1' }}
-    >
-      <DragHandle id={id} name={WIDGET_NAMES[id]} onStart={start} onKeyMove={onKeyMove} />
-      {renderWidget(id, paired ? slot : 'full')}
-    </div>
-  )
+          <WeekCard weather={weather} unit={unit} colorCoding={colorCoding} onNavigate={onNavigate} />
+        </div>
 
-  const items = []
-  for (const row of visRows) {
-    const s = spans(row)
-    for (const id of row) items.push(widget(id, paired ? s[id].slot : 'full', s[id].span, false))
-  }
-  if (!nowcastShown) items.push(widget('nowcast', 'full', 12, true))
+        <aside className="wt-side" aria-label="Today's outlook">
+          <TodayCard
+            hourly={hourly}
+            daily={daily}
+            current={current}
+            yesterday={weather.yesterday}
+            timezone={timezone}
+            unit={unit}
+            units={units}
+            airQuality={airQuality}
+          />
+          <WeatherOverview
+            hourly={hourly}
+            daily={daily}
+            current={current}
+            minutely={weather.minutely_15}
+            radarClear={radarClear}
+            timezone={timezone}
+            hasActiveAlert={hasActiveAlert}
+            unit={unit}
+            units={units}
+            airQuality={airQuality}
+            colorCode={colorCoding.overview}
+          />
+          {/* The phone's compact radar card, playable in place; a click on the
+              map opens the Radar tab rather than growing the card full-screen. */}
+          <div className="wt-radar">
+            <WeatherRadar
+              location={location}
+              timezone={timezone}
+              mode={radarMode}
+              source={radarSource}
+              rainFx={weatherAnimations}
+              snow={isSnowing(current)}
+              onOpen={() => onNavigate('radar')}
+            />
+          </div>
+        </aside>
+      </div>
 
-  return (
-    <div className="web-page">
-      <WeatherAlerts alerts={alerts} location={location} />
-
-      <div className="web-today-grid" ref={gridRef}>{items}</div>
-      <DragLayer drag={drag} names={WIDGET_NAMES} />
-
-      <ResetLayout visible={isCustom} onReset={reset} />
+      <SourceNote current={current} minutely={weather.minutely_15} radarClear={radarClear} />
     </div>
   )
 }

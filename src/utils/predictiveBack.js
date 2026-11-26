@@ -61,6 +61,11 @@ const TARGETS = {
   saved:    { sel: ['.saved-cities-page'], commit: 'exit' },
   search:   { sel: ['.search-overlay'], commit: 'exit' },
   radar:    { sel: ['.radar-iris--framed', '.radar-card.radar-expanded'], commit: 'release', keep: false },
+  // A day or detail opened as a page (connected layout; components/DetailCover).
+  // The same history entry backs the cover over the card in the separate
+  // layout, which has no .detail-page: there nothing matches, and back closes
+  // it with its own fold as before.
+  detailCover: { sel: ['.detail-page'], commit: 'exit' },
 }
 
 // The gesture in progress: { els, cfg, p, edge }.

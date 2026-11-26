@@ -121,6 +121,41 @@ function nearestIdx(c) {
   return best
 }
 
+// Roughly how strong an echo is, in dBZ, from the colour a radar tile paints
+// it: for the rain drawn over the map (RadarRain), which falls thinner where
+// the radar is light. `ramp` is the tile's: 'rv' for RainViewer's, anything
+// else for the NWS-style ones (IEM's here, which NOAA's MRMS rendering tracks
+// to within a step). The nearest ramp colour wins, so a pixel the browser has
+// blended between two steps still lands on one of them. Answers are cached per
+// colour, at 5 bits a channel, so a mask rebuild is mostly map lookups.
+const RAMP_DBZ = {
+  nws: IEM_RGB.flatMap((c, i) => (i > 0 && idxToDbz(i) >= MIN_DBZ ? [[c, idxToDbz(i)]] : [])),
+  rv: Array.from({ length: RV_RAMP.length / 8 }, (_, k) => [
+    (byte(RV_RAMP, k * 8) << 16) | (byte(RV_RAMP, k * 8 + 2) << 8) | byte(RV_RAMP, k * 8 + 4),
+    RV_MIN + k,
+  ]),
+}
+const dbzCache = { nws: new Map(), rv: new Map() }
+
+export function colorDbz(r, g, b, ramp) {
+  const key = ramp === 'rv' ? 'rv' : 'nws'
+  const q = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3)
+  const cache = dbzCache[key]
+  const hit = cache.get(q)
+  if (hit !== undefined) return hit
+  let best = 0
+  let bestD = Infinity
+  for (const [c, dbz] of RAMP_DBZ[key]) {
+    const dr = (c >> 16) - r
+    const dg = ((c >> 8) & 255) - g
+    const db = (c & 255) - b
+    const d = dr * dr + dg * dg + db * db
+    if (d < bestD) { bestD = d; best = dbz }
+  }
+  cache.set(q, best)
+  return best
+}
+
 let scratchCtx = null
 function scratch() {
   if (!scratchCtx) {
@@ -182,7 +217,7 @@ function sourceTile(key, url) {
     img.onload = () => {
       try { resolve(decode(img)) } catch (err) { reject(err) }
     }
-    img.onerror = () => reject(new Error('HRRR source tile failed to load'))
+    img.onerror = () => reject(new Error('Radar source tile failed to load'))
     img.src = url
   })
   // A failure isn't remembered: the next screen tile to want it tries again.
@@ -409,12 +444,24 @@ function blur(f, w, h, k) {
 // at four times the work per tile. The observed layers' tiles are 256 px
 // images shown the same way. RadarRain and the card's still both read canvas
 // tiles as well as image ones.
+//
+// Not only HRRR's: any feed painted in IEM's ramp can be drawn this way. NOAA's
+// MRMS mosaic is (its renders match the ramp, give or take the server's
+// resampling, which the nearest-colour decode absorbs), so the radar's
+// MrmsLayer extends this one, overriding _sourceUrl and setting its own
+// srcMaxZoom and blurKm for its finer grid.
 export const HrrrLayer = L.GridLayer.extend({
-  options: { palette: 'nws', run: '' },
+  options: { palette: 'nws', run: '', srcMaxZoom: SRC_MAX_ZOOM, blurKm: BLUR_KM },
 
   initialize(url, options) {
     this._url = url
     L.GridLayer.prototype.initialize.call(this, options)
+  },
+
+  // The source tile at zoom z, column x, row y (already wrapped): IEM's XYZ
+  // template here.
+  _sourceUrl(z, x, y) {
+    return L.Util.template(this._url, { z, x, y })
   },
 
   createTile(coords, done) {
@@ -450,7 +497,7 @@ export const HrrrLayer = L.GridLayer.extend({
   async _draw(tile, { x, y, z }, key) {
     // Everything below is in source pixels at zoom sz: the global pixel grid
     // that zoom's tiles tile.
-    const sz = Math.min(z, SRC_MAX_ZOOM)
+    const sz = Math.min(z, this.options.srcMaxZoom)
     const n = 2 ** sz
     const span = T / 2 ** (z - sz) // this screen tile's width
     const gx = x * span
@@ -459,7 +506,7 @@ export const HrrrLayer = L.GridLayer.extend({
     // The blur is set in km, so it needs the size of a source pixel here.
     const lat = Math.atan(Math.sinh(Math.PI * (1 - (2 * (gy + span / 2)) / (T * n))))
     const pxKm = (40075.017 * Math.cos(lat)) / (T * n)
-    const kernel = gaussian(Math.max(MIN_BLUR_PX, BLUR_KM / pxKm))
+    const kernel = gaussian(Math.max(MIN_BLUR_PX, this.options.blurKm / pxKm))
 
     // The patch of field this tile needs: its own footprint plus a margin wide
     // enough for the blur to read real neighbours, plus a pixel each side for
@@ -478,14 +525,14 @@ export const HrrrLayer = L.GridLayer.extend({
           want.push({ tx, ty, p: Promise.resolve(null) })
           continue
         }
-        const url = L.Util.template(this._url, { z: sz, x: ((tx % n) + n) % n, y: ty })
+        const url = this._sourceUrl(sz, ((tx % n) + n) % n, ty)
         want.push({ tx, ty, p: sourceTile(`${this.options.run}|${url}`, url) })
       }
     }
     const got = await Promise.allSettled(want.map((w) => w.p))
     // Only a total loss is an error. A missing neighbour costs a sliver of
     // margin, which is better drawn as clear than not drawn at all.
-    if (got.every((g) => g.status === 'rejected')) throw new Error('HRRR tiles unavailable')
+    if (got.every((g) => g.status === 'rejected')) throw new Error('Radar source tiles unavailable')
 
     // The drawing itself waits its turn (see inSlice). Gone from the map by
     // then, the tile is skipped, and not cached, since nothing was drawn. One

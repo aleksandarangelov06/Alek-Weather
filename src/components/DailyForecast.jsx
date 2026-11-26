@@ -1,9 +1,10 @@
 import { memo, useState, useRef, useCallback, useEffect } from 'react'
-import { Droplet, ChevronUp, ArrowUp, ArrowDown, Equal, TreePine, Car, Footprints } from 'lucide-react'
+import { Droplet, ArrowUp, ArrowDown, Equal, TreePine, Car, Footprints } from 'lucide-react'
 import { getWeatherInfo, formatDay, formatHour, liveWeatherCode, nowcastHourlyCode, toTemp, tempInk, tempStyle } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
 import { formatPrecip, formatWind } from '../utils/units'
-import { coverFrom, markCoverSettled, useCoverHistory } from '../utils/detailCover'
+import { coverFrom, useCoverHistory } from '../utils/detailCover'
+import { DetailCover, coverAsPage } from './DetailCover'
 import { dayWindow, direction, rateActivities, scoreColor, scoreLabel } from '../utils/todayOutlook'
 
 // The Today tab's three ratings, in its order and with its icons.
@@ -14,6 +15,9 @@ const ACTIVITIES = [
 ]
 
 const COMPARE_ICON = { warmer: ArrowUp, colder: ArrowDown, same: Equal }
+
+// The day's weather icon beside its title, sized to the title.
+const DAY_ICON_STYLE = { fontSize: 22 }
 
 // The cover's two lengths. Keep in step with App.css: COVER_IN_MS is
 // --cover-in (the rectangle growing out of the row — the strip waits for it),
@@ -65,6 +69,9 @@ export const DailyForecast = memo(function DailyForecast({ daily, hourly, timezo
   const [closing, setClosing] = useState(false)
   // The tapped row's box, which the cover grows out of (see coverFrom).
   const [from, setFrom] = useState(() => coverFrom(null))
+  // Opened as a full-screen page rather than over the card (connected layout;
+  // see coverAsPage). Fixed for as long as the day stays open.
+  const [asPage, setAsPage] = useState(false)
   // The day cover's hourly strip is ~24 icon items; building it synchronously on
   // tap blocks the reveal's first frames and makes the open stutter. Hold it back
   // until the reveal has finished, then fade it in — nothing competes with the
@@ -102,7 +109,10 @@ export const DailyForecast = memo(function DailyForecast({ daily, hourly, timezo
     if (expanded === date) { dismissDay(); return }
     // Switching days keeps the open cover, which is already full; only a fresh
     // open reads this.
-    if (expanded === null) setFrom(coverFrom(e?.currentTarget, '.card--daily'))
+    if (expanded === null) {
+      setFrom(coverFrom(e?.currentTarget, '.card--daily'))
+      setAsPage(coverAsPage())
+    }
     clearTimeout(closeTimer.current)
     setClosing(false)
     const wasOpen = expanded !== null
@@ -321,7 +331,10 @@ export const DailyForecast = memo(function DailyForecast({ daily, hourly, timezo
           const pillRight = pillLeft + pillWidth
 
           const p = precip ?? 0
-          const isExpanded = expanded === date
+          // Marked open only under the cover over the card; as a page
+          // (connected layout) the row's open highlight would only show
+          // through for a moment as the page closed.
+          const isExpanded = expanded === date && !asPage
           return (
             <div
               key={date}
@@ -365,27 +378,18 @@ export const DailyForecast = memo(function DailyForecast({ daily, hourly, timezo
       </div>
 
       {expanded && di !== -1 && (
-        <div
-          ref={armCover}
-          className={`detail-cover${closing ? ' detail-cover--closing' : ''}`}
-          style={from}
-          role="dialog"
-          aria-label={coverTitle(expanded)}
-          onAnimationEnd={markCoverSettled}
+        <DetailCover
+          page={asPage}
+          variant="daily"
+          coverRef={armCover}
+          closing={closing}
+          from={from}
+          title={coverTitle(expanded)}
+          icon={<WeatherIcon id={openInfo.icon} alt="" />}
+          iconStyle={DAY_ICON_STYLE}
+          onClose={dismissDay}
+          bodyClass="day-cover-body"
         >
-          <div className="detail-cover-fill" />
-          {/* The header is the close control: tap the day's title to fold it
-              back, the way its row was tapped open. */}
-          <button className="detail-cover-head" onClick={dismissDay} aria-label={`Close ${coverTitle(expanded)}`}>
-            <span className="detail-cover-title">
-              <span className="detail-cover-icon" style={{ fontSize: 22 }}>
-                <WeatherIcon id={openInfo.icon} alt="" />
-              </span>
-              {coverTitle(expanded)}
-            </span>
-            <ChevronUp size={20} className="detail-cover-chevron" aria-hidden="true" />
-          </button>
-          <div className="detail-cover-body day-cover-body">
             {/* The day at a glance: high / low, the sky, and how the high sits
                 against the days either side. The chance of rain that used to
                 be the line here is in the Precip stat below. */}
@@ -504,8 +508,7 @@ export const DailyForecast = memo(function DailyForecast({ daily, hourly, timezo
                 <button className="hourly-nav hourly-nav-right" onClick={() => scroll(1)} aria-label="Scroll right">›</button>
               </div>
             )}
-          </div>
-        </div>
+        </DetailCover>
       )}
     </div>
   )

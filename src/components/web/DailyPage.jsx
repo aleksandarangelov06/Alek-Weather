@@ -8,7 +8,7 @@ import {
 import { niceBounds, smoothPath, useMeasure } from './chartUtils'
 import { formatPrecip, formatWind } from '../../utils/units'
 import { averageAt, daylightLength, hourIndexesForDate, shortDate, weekdayLabel } from './webData'
-import { useMediaQuery } from './todayLayout'
+import { useMediaQuery } from './useMediaQuery'
 
 // The width where the This week page switches from the stacked accordion to the
 // week board. Matches the 1099px fold in WebApp.css.

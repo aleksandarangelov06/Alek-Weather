@@ -1039,14 +1039,12 @@
 /* Positional by layout slot — the page's rows and the cells of its grids and
    columns — which reads as the layout filling in left to right and top to
    bottom. Set on the slot and inherited, because a card is often not the slot
-   itself: on Today each one sits in a .web-widget behind its drag handle, where
-   counting the card would make every one of them "second". Capped so a long
-   page's last cards aren't left waiting: past the fifth they share the last
-   step. */
-:is(.web-page, .web-today-grid, .web-cols, .web-col-stack, .web-detail-grid) > :nth-child(2) { --web-card-delay: 35ms; }
-:is(.web-page, .web-today-grid, .web-cols, .web-col-stack, .web-detail-grid) > :nth-child(3) { --web-card-delay: 70ms; }
-:is(.web-page, .web-today-grid, .web-cols, .web-col-stack, .web-detail-grid) > :nth-child(4) { --web-card-delay: 105ms; }
-:is(.web-page, .web-today-grid, .web-cols, .web-col-stack, .web-detail-grid) > :nth-child(n + 5) { --web-card-delay: 140ms; }
+   itself. Capped so a long page's last cards aren't left waiting: past the
+   fifth they share the last step. */
+:is(.web-page, .wt-main, .wt-side, .web-detail-grid) > :nth-child(2) { --web-card-delay: 35ms; }
+:is(.web-page, .wt-main, .wt-side, .web-detail-grid) > :nth-child(3) { --web-card-delay: 70ms; }
+:is(.web-page, .wt-main, .wt-side, .web-detail-grid) > :nth-child(4) { --web-card-delay: 105ms; }
+:is(.web-page, .wt-main, .wt-side, .web-detail-grid) > :nth-child(n + 5) { --web-card-delay: 140ms; }
 
 /* Coming in from the splash. The forecast has already been built (and its
    entrance played) under the splash by the time the splash leaves, so the
@@ -1074,10 +1072,6 @@
 
 /* The page's own cards manage their spacing through the flex gap. */
 .web-page > .card,
-.web-page .web-today-grid > .card,
-.web-page .web-widget > .card,
-.web-page .web-cols > .card,
-.web-page .web-col-stack > .card,
 .web-page .web-detail-grid > .card {
   margin-bottom: 0;
 }
@@ -1209,895 +1203,714 @@
 
 /* ── Today ───────────────────────────────────────────────────────────────── */
 
-/* Today is a 12-column grid laid out in rows of one or two cards (see
-   todayLayout.js). TodayPage gives each card its span inline: a card alone
-   spans all 12; the current card beside another takes 3 and its partner 9;
-   any other two split 6 and 6. Every row adds up to 12, so the rows line up
-   with no wrapper. The widgets size their contents off .web-widget--full and
-   the slot classes further down. */
-.web-today-grid {
+/* Two columns: the day in the main one (the reading, the hours, the week), and
+   beside it a sidebar about a phone's width holding the phone's own At a
+   glance and Weather insight cards, which are drawn for that width. Below
+   1100px the two fold into one column, interleaved in reading order (see the
+   max-width block at the end of this section).
+
+   Every surface here is a plain .card, so the theme, the sky tint and the card
+   transparency setting all reach it the same way at every width. (The old page
+   borrowed .current-card, whose phone styling switched to a transparent,
+   dark-ink card below 1100px and left its text unreadable over the sky.) */
+.wt-grid {
   display: grid;
-  grid-template-columns: repeat(12, minmax(0, 1fr));
-  gap: 16px;
-  align-items: stretch;
-}
-
-/* The precipitation chart while it has nothing to show: kept in the page so
-   it's noticed as soon as rain is on the way, but taking no space. */
-.web-widget--absent {
-  display: none;
-}
-
-
-
-.web-widget {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.web-widget--full {
-  grid-column: 1 / -1;
-}
-
-/* The card fills its slot, so two widgets sharing a row are the same height. */
-.web-widget > .card {
-  flex: 1;
-}
-
-/* ── Rearranging cards (SortableBoard.jsx) ──────────────────────────────────
-   The grip tab on a card's top edge is the only thing that picks a card up.
-   It sits in the grid gap, since these cards already use every corner. It
-   fades in while the card is hovered, so the page stays clean, and is always
-   shown with keyboard focus. The tab is big enough to hit comfortably and
-   turns accent-coloured under the pointer, so it's clear it's grabbable. */
-.web-widget-handle {
-  position: absolute;
-  top: -13px;
-  left: 50%;
-  translate: -50% 3px;
-  z-index: 20;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 52px;
-  height: 22px;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--card-bg);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), 0 3px 10px rgba(0, 0, 0, 0.14);
-  color: var(--text-tertiary);
-  cursor: grab;
-  opacity: 0;
-  transition: opacity 0.18s ease, translate 0.18s ease, color 0.15s, background 0.15s, scale 0.15s;
-  touch-action: none;
-}
-
-.web-widget:hover .web-widget-handle,
-.web-widget-handle:focus-visible {
-  opacity: 1;
-  translate: -50% 0;
-}
-
-.web-widget-handle:hover,
-.web-widget-handle:focus-visible {
-  color: var(--accent);
-  scale: 1.08;
-}
-
-.web-widget-handle:active {
-  cursor: grabbing;
-}
-
-/* Touch screens have no hover, so the tab stays visible there. */
-@media (hover: none) {
-  .web-widget-handle { opacity: 0.8; translate: -50% 0; }
-}
-
-/* While a drag is on, the closed hand holds everywhere, nothing selects, and
-   the other cards' tabs stay out of the way. */
-body.web-dragging,
-body.web-dragging * {
-  cursor: grabbing !important;
-  user-select: none;
-  -webkit-user-select: none;
-}
-body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
-  opacity: 0;
-}
-
-/* The card being moved stays where it is, faded behind a dashed outline, so
-   you can see what you picked up and where it came from. */
-/* filter rather than opacity: the cards' entrance animation holds opacity at
-   its end value, which would override a plain opacity here. */
-.web-widget--lifted > .card {
-  filter: opacity(0.4) saturate(0.6);
-  transition: filter 0.15s;
-}
-.web-widget--lifted::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  border-radius: var(--radius, 20px);
-  outline: 2px dashed color-mix(in srgb, var(--accent) 60%, transparent);
-  outline-offset: -2px;
-  pointer-events: none;
-}
-.web-widget--lifted .web-widget-handle {
-  opacity: 1;
-  translate: -50% 0;
-  color: var(--accent);
-}
-
-
-/* The drop indicators (DragLayer.jsx). Fixed-position on top of the page, so
-   nothing in the grid moves while you aim. */
-.web-drag-layer {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-  pointer-events: none;
-}
-
-/* "Own row here": a bar in the gap where the new row will open. */
-.web-drop-line {
-  position: fixed;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--accent);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  animation: web-drop-in 0.12s ease-out;
-}
-
-/* "Place beside" and "Swap": the area that will be taken, tinted and ringed. */
-.web-drop-zone {
-  position: fixed;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius, 20px);
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  box-shadow: inset 0 0 0 2.5px var(--accent);
-  animation: web-drop-in 0.12s ease-out;
-  transition: left 0.12s ease, width 0.12s ease;
-}
-
-.web-drop-pill {
-  padding: 7px 15px;
-  border-radius: 999px;
-  background: var(--accent);
-  color: #fff;
-  font-family: var(--font);
-  font-size: 13.5px;
-  font-weight: 600;
-  white-space: nowrap;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
-}
-
-@keyframes web-drop-in {
-  from { opacity: 0; }
-}
-
-/* Beside the pointer: a small chip naming the card being moved. */
-.web-drag-chip {
-  position: fixed;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 7px 14px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--card-bg);
-  color: var(--text-primary);
-  font-family: var(--font);
-  font-size: 13.5px;
-  font-weight: 600;
-  white-space: nowrap;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.12), 0 10px 26px rgba(0, 0, 0, 0.28);
-  animation: web-chip-in 0.16s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-.web-drag-chip svg {
-  color: var(--accent);
-}
-@keyframes web-chip-in {
-  from { opacity: 0; scale: 0.85; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .web-widget-handle,
-  .web-drop-line,
-  .web-drop-zone,
-  .web-drag-chip { transition: none; animation: none; }
-  .web-widget-handle:hover { scale: none; }
-}
-
-/* Under "Reset layout": a quiet link, shown only once the order has changed. */
-.web-layout-reset {
-  display: flex;
-  justify-content: center;
-}
-.web-layout-reset-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
-  border: none;
-  border-radius: 999px;
-  background: none;
-  color: var(--text-tertiary);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-.web-layout-reset-btn:hover {
-  background: var(--hover-medium);
-  color: var(--text-primary);
-}
-.web-layout-reset-btn:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-.sky-lvl-slight .web-layout-reset-btn,
-.sky-lvl-medium .web-layout-reset-btn,
-.sky-lvl-dark .web-layout-reset-btn,
-.sky-lvl-darkest .web-layout-reset-btn {
-  color: rgba(255, 255, 255, 0.75);
-}
-.sky-lvl-slight .web-layout-reset-btn:hover,
-.sky-lvl-medium .web-layout-reset-btn:hover,
-.sky-lvl-dark .web-layout-reset-btn:hover,
-.sky-lvl-darkest .web-layout-reset-btn:hover {
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
-}
-
-.web-widget > .current-card {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-
-
-/* Over a sky the handle sits on the sky itself for the current card, which is a
-   transparent surface — the card fill it borrows above is the wrong tone there. */
-.sky-lvl-slight .web-widget-handle,
-.sky-lvl-medium .web-widget-handle,
-.sky-lvl-dark .web-widget-handle,
-.sky-lvl-darkest .web-widget-handle {
-  background: rgba(255, 255, 255, 0.26);
-  color: #fff;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .web-widget-handle { transition: none; }
-}
-
-/* The mobile current card is sized for a phone hero, where it is the whole
-   screen and the air around it is the design. Here it is one column of a band,
-   so the same air is just an empty card. Everything below trims spacing only —
-   no type is resized, so the readings keep the weight they had.
-   Fluid rather than stepped: stepping the padding at a breakpoint is exactly
-   where a layout looks broken just before it snaps. */
-.web-today-grid .current-card {
-  padding: clamp(12px, 1.6vw, 18px) clamp(16px, 2.2vw, 24px);
-  gap: 2px;
-}
-
-/* Only the space above. The gap under the glyph is an em of its own font-size
-   (see .current-icon in App.css), so it has already scaled itself down for this
-   column — a shorthand here would reset it and put a second number in play. */
-.web-today-grid .current-icon {
-  margin-top: 6px;
-  /* The phone hero tightened its gap to sit the icon on the reading; this
-     column keeps the looser one it was laid out with. */
-  margin-bottom: 0.16em;
-}
-
-.web-today-grid .current-condition {
-  margin-top: 6px;
-  font-size: 18px;
-  font-weight: 400;
-}
-
-.web-today-grid .current-feels {
-  margin-top: 6px;
-}
-
-/* Sized against its own column rather than the viewport: the reading only has
-   to dominate this card, and at 78px it was setting the height of the whole
-   band. */
-.web-today-grid .current-temp {
-  font-size: clamp(46px, 5.4vw, 62px);
-  line-height: 1.02;
-}
-
-/* WeatherIcon draws itself at 1em with the size as an inline style, so it is
-   sized by the font-size of whatever holds it — a width on the img or svg is
-   an author rule losing to an inline one, and does nothing. */
-.web-today-grid .current-icon {
-  font-size: clamp(54px, 6.2vw, 74px);
-}
-
-/* ── Current card (web Today) ──
-   A compact layout sized to sit level with At a glance beside it, so neither
-   card is stretched around empty space:
-     place / date ............ [home] [save]
-          [icon] 39°F  Mainly Clear          (centred)
-                       Feels like 35°
-     ↑ 4° warmer than yesterday
-     [ Outdoors 8 | Driving 9 | Exercise 8 ]   one panel, three columns
-     Updated 1 min ago ⟳             9/10 Great
-   The Today pieces (.today-embed and its top line) are display: contents, so
-   each is placed on this grid directly; that is what puts the score on the
-   Updated line, aligned with it. The two outer 1fr columns centre the
-   reading. Only this card changes; the phone hero keeps its own layout. */
-.web-today-grid .current-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto minmax(0, 1fr);
-  grid-template-areas:
-    "head head head  head  head"
-    ".    icon temp  cond  ."
-    ".    icon temp  feels ."
-    "cmp  cmp  cmp   cmp   cmp"
-    "acts acts acts  acts  acts"
-    "foot foot foot  foot  foot";
-  align-content: center;
-  align-items: center;
-  column-gap: 12px;
-  row-gap: 0;
-  text-align: left;
-  padding: clamp(16px, 1.6vw, 22px);
-}
-
-.web-today-grid .current-card :is(.today-embed, .te-top) {
-  display: contents;
-}
-
-/* Header: place and date on the left, the two buttons in a row on the right. */
-.web-today-grid .current-card > .current-header {
-  grid-area: head;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
-  column-gap: 2px;
-  margin: 0 0 14px;
-  padding: 0;
-}
-
-.web-today-grid .current-header .current-location {
-  grid-column: 1;
-  grid-row: 1;
-  justify-content: flex-start;
-  font-size: 16px;
-  line-height: 1.25;
-}
-
-.web-today-grid .current-header .current-date {
-  grid-column: 1;
-  grid-row: 2;
-  margin-top: 1px;
-  font-size: 12.5px;
-}
-
-.web-today-grid .current-header .current-fav-group,
-.web-today-grid .current-header .save-btn {
-  position: static;
-  grid-row: 1 / span 2;
-  border-radius: 10px;
-}
-
-.web-today-grid .current-header .current-fav-group { grid-column: 2; }
-.web-today-grid .current-header .save-btn { grid-column: 3; }
-
-.web-today-grid .current-header :is(.fav-btn, .save-btn):hover {
-  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
-}
-
-/* The reading: icon, temperature, and the words beside them. */
-.web-today-grid .current-card > .current-icon {
-  grid-area: icon;
-  align-self: center;
-  margin: 0;
-  font-size: clamp(42px, 3.8vw, 58px);
-}
-
-.web-today-grid .current-card > .current-temp {
-  grid-area: temp;
-  align-self: center;
-  margin: 0;
-  font-size: clamp(42px, 3.9vw, 58px);
-  line-height: 1;
-  letter-spacing: -1.5px;
-}
-
-.web-today-grid .current-card > .current-condition {
-  grid-area: cond;
-  align-self: end;
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 1.25;
-  color: var(--text-primary);
-}
-
-.web-today-grid .current-card > .current-feels {
-  grid-area: feels;
-  align-self: start;
-  margin: 2px 0 0;
-  font-size: 13px;
-  text-align: left;
-}
-
-.web-today-grid .current-card > .current-updated {
-  grid-area: foot;
-  justify-self: start;
-  justify-content: flex-start;
-  margin: 12px 0 0;
-  font-size: 12px;
-}
-
-/* ── Today ── */
-.te-compare {
-  grid-area: cmp;
-  justify-self: start;
-  margin-top: 16px;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-width: 0;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.te-compare svg { flex-shrink: 0; }
-/* Thermometer after the text, marking the line as the temperature
-   comparison next to the activity scores. */
-/* Colour comes inline from the temperature scale. */
-.te-compare--colder svg { color: var(--cond-info); }
-.te-compare--warmer svg { color: var(--cond-orange); }
-.te-compare--same   svg { color: var(--cond-green); }
-
-/* Overall score: a pill tinted with its colour, bottom right on the Updated
-   line. */
-.te-overall {
-  grid-area: foot;
-  justify-self: end;
-  margin-top: 12px;
-  display: inline-flex;
-  align-items: baseline;
-  padding: 3px 10px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--te-c) 16%, transparent);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--te-c) 40%, transparent);
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--text-primary);
-  white-space: nowrap;
-}
-
-.te-overall b {
-  font-size: 14px;
-  font-variant-numeric: tabular-nums;
-}
-
-.te-overall small {
-  margin-right: 5px; /* "9/10 Great": tight to the score, a space before the word */
-  font-size: 11px;
-  color: var(--text-tertiary);
-}
-
-/* The three activities: one panel, three columns, hairlines between. */
-.te-grid {
-  grid-area: acts;
-  margin-top: 10px;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  border-radius: 14px;
-  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
-  overflow: hidden;
-}
-
-.te-cell {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-areas:
-    "icon  score"
-    "name  name"
-    "bar   bar";
-  align-items: center;
-  row-gap: 4px;
-  min-width: 0;
-  padding: 10px 10px 9px;
-}
-
-.te-cell + .te-cell {
-  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--text-primary) 10%, transparent);
-}
-
-.te-cell > svg {
-  grid-area: icon;
-  color: var(--text-secondary);
-}
-
-.te-cell-score {
-  grid-area: score;
-  font-family: var(--font-display), var(--font);
-  font-size: 18px;
-  font-weight: 600;
-  line-height: 1;
-  color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
-}
-
-.te-cell-name {
-  grid-area: name;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-size: 11.5px;
-  font-weight: 500;
-  color: var(--text-tertiary);
-}
-
-.te-cell-bar {
-  grid-area: bar;
-  height: 3px;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
-  overflow: hidden;
-}
-
-.te-cell-bar > i {
-  display: block;
-  height: 100%;
-  border-radius: 2px;
-  background: var(--te-c);
-}
-
-.web-glance {
-  display: flex;
-  flex-direction: column;
-}
-
-.web-glance-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  flex: 1;
-}
-
-.web-glance-tile {
-  background: var(--web-sunken);
-  border-radius: 14px;
-  padding: 14px 14px 12px;
-  display: flex;
-  flex-direction: column;
-  /* If the row is taller than the tiles need, their content sits in the
-     middle instead of leaving a band of empty tile under it. */
-  justify-content: center;
-  gap: 2px;
-  min-width: 0;
-}
-
-.web-glance-icon {
-  color: var(--text-tertiary);
-  margin-bottom: 4px;
-}
-
-.web-glance-label {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.4px;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-}
-
-.web-glance-value {
-  font-size: clamp(17px, 2.2vw, 22px);
-  font-weight: 600;
-  color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.web-glance-sep {
-  color: var(--text-tertiary);
-  font-weight: 400;
-}
-
-.web-glance-sub {
-  font-size: 12px;
-  color: var(--text-secondary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Unused while the overview card is off on Today: nothing else pairs two
-   cards in a row right now. Kept for when it comes back. */
-.web-cols {
-  display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) clamp(340px, 28vw, 420px);
   gap: 16px;
   align-items: start;
 }
 
-/* With the overview card off the previews take the width. */
-.web-cols > .web-col-stack:only-child {
-  grid-column: 1 / -1;
-}
-
-.web-col-stack {
+.wt-main,
+.wt-side {
   display: flex;
   flex-direction: column;
   gap: 16px;
   min-width: 0;
 }
 
-/* No width cap on the nowcast, and no height rule either: the web pages pass
-   `wide` to PrecipNowcast, which drops the scaled viewBox for a real-pixel
-   drawing at a fixed height. Capping the width here would shrink the chart and
-   centre it in a card that stayed just as tall; a scaled viewBox, which is what
-   `wide` used to select, grew the whole drawing — type included — with the
-   window. The height belongs to the component now. */
-
-/* 20px all round is the phone card's padding, where the nowcast is one of a
-   stack you scroll past. Here it sits in a column beside the hourly and weekly
-   previews, and the extra air only pushes those further down the page. */
-.web-page .nowcast-card {
-  padding: 14px 16px 12px;
+.wt-main > .card,
+.wt-side > .card {
+  margin-bottom: 0;
 }
 
-.web-preview-head {
+/* A card's heading row: its label, and a control or link at the far end. */
+.wt-card-head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.wt-title {
+  margin: 0;
+  line-height: 1.3;
+}
+
+/* The hourly reading switch: on a phone-width window its six options can be
+   wider than the card, so it scrolls rather than spilling out. */
+.wt-seg {
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.wt-seg .web-seg-btn {
+  flex-shrink: 0;
+}
+
+/* ── Now ── */
+
+.wt-now {
+  container-type: inline-size;
+  padding: clamp(18px, 2vw, 26px);
+}
+
+.wt-now-head {
+  display: flex;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
 
-.web-preview-head .section-label {
+.wt-now-where {
+  min-width: 0;
+}
+
+.wt-place {
+  margin: 0;
+  font-family: var(--font-display), var(--font);
+  font-size: clamp(20px, 2.1vw, 26px);
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.wt-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px 6px;
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  color: var(--text-secondary);
+}
+
+.wt-meta .updated-text {
+  font-size: inherit;
+  color: inherit;
+}
+
+.wt-meta-dot {
+  color: var(--text-tertiary);
+}
+
+.wt-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.wt-icon-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text-primary) 9%, transparent);
+  color: var(--text-primary);
+}
+
+.wt-icon-btn:focus-visible,
+.wt-action:focus-visible,
+.wt-strip-nav:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.wt-refresh.is-spinning svg {
+  animation: wt-spin 0.9s linear infinite;
+}
+
+@keyframes wt-spin {
+  to { rotate: 360deg; }
+}
+
+/* Home and Save, as labelled pills so what they do is plain without hovering. */
+.wt-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.wt-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px 0 12px;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.wt-action:hover {
+  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
+  color: var(--text-primary);
+}
+
+.wt-action.is-on {
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
+
+/* The accent is a mid-tone, and so is a sky-tinted card: on those it goes white. */
+.sky-lvl-slight .wt-action.is-on,
+.sky-lvl-medium .wt-action.is-on,
+.sky-lvl-dark .wt-action.is-on,
+.sky-lvl-darkest .wt-action.is-on {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+/* The reading: icon, temperature, and what it means beside them. */
+.wt-reading {
+  display: flex;
+  align-items: center;
+  gap: clamp(10px, 1.8vw, 20px);
+  margin: clamp(14px, 2vw, 22px) 0;
+}
+
+.wt-reading-icon {
+  display: flex;
+  flex-shrink: 0;
+  font-size: clamp(64px, 6.6vw, 92px);
+  line-height: 1;
+}
+
+.wt-reading-temp {
+  display: flex;
+  align-items: flex-start;
+  flex-shrink: 0;
+  font-family: var(--font-display), var(--font);
+  font-size: clamp(56px, 6.2vw, 86px);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.wt-reading-unit {
+  margin: 0.14em 0 0 0.06em;
+  font-size: 0.34em;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--text-secondary);
+}
+
+.wt-reading-text {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding-left: clamp(4px, 1vw, 12px);
+}
+
+.wt-reading-cond {
+  font-size: clamp(18px, 1.7vw, 22px);
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--text-primary);
+}
+
+.wt-reading-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 14px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.wt-reading-sub b {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.wt-sep {
+  margin: 0 2px;
+  color: var(--text-tertiary);
+}
+
+/* The readings worth knowing before you go out: six wells, one row on a wide
+   card, two rows of three on a medium one, three of two on a narrow one. Sized
+   off the card rather than the window, since the card's width depends on
+   whether the sidebar is beside it. */
+.wt-stats {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.wt-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  padding: 12px 12px 11px;
+  border-radius: 14px;
+  background: var(--web-sunken);
+}
+
+.wt-stat-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-tertiary);
+}
+
+.wt-stat-label svg {
+  flex-shrink: 0;
+}
+
+.wt-stat-value,
+.wt-stat-sub {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.wt-stat-value {
+  margin-top: 2px;
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.wt-stat-sub {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+@container (max-width: 780px) {
+  .wt-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@container (max-width: 540px) {
+  /* The pills keep their icons and lose their words. The labels are still the
+     buttons' accessible names, and their tooltips. */
+  .wt-action {
+    justify-content: center;
+    width: 34px;
+    padding: 0;
+  }
+  .wt-action span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+@container (max-width: 460px) {
+  .wt-reading { flex-wrap: wrap; }
+  .wt-reading-text { flex-basis: 100%; padding-left: 0; }
+  .wt-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ── Next-hour precipitation ── */
+
+.wt-main > .nowcast-card {
+  padding: 16px 18px 12px;
+}
+
+/* ── Radar preview ── */
+
+/* The phone's compact radar card at the foot of the sidebar. Its map opens the
+   Radar tab, so on hover it says so. */
+.wt-radar > .radar-card {
   margin-bottom: 0;
 }
 
-/* Both strips run the full page width, so their cells are tiles at the same
-   scale rather than a squeezed row of thirteen tick marks. */
-.web-mini-hours {
-  display: grid;
-  grid-template-columns: repeat(13, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 14px;
-}
-
-.web-mini-hour {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 14px 4px 12px;
-  border-radius: 14px;
-  background: var(--web-sunken);
-  min-width: 0;
-}
-
-/* The current hour and today share one highlight: a lifted tile and a pill
-   behind the "Now"/"Today" label. Both are mixed from the text colour rather
-   than the accent, so the highlight is neutral and follows light mode, dark
-   mode and the sky-tinted cards (which swap --text-primary to white) alike. */
-.web-mini-hour--now,
-.web-week-day--today {
-  background: color-mix(in srgb, var(--text-primary) 13%, var(--web-sunken));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 22%, transparent);
-}
-
-.web-mini-hour--now .web-mini-time,
-.web-week-day--today .web-week-dayname {
-  padding: 2px 10px;
+.wt-radar .radar-map-tap::after {
+  content: 'Open radar';
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 5px 11px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--text-primary) 18%, transparent);
-  color: var(--text-primary);
-  font-weight: 700;
-}
-
-.web-mini-time {
-  font-size: 15px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 12.5px;
   font-weight: 600;
-  color: var(--text-secondary);
-  white-space: nowrap;
+  opacity: 0;
+  translate: 0 -3px;
+  transition: opacity 0.15s, translate 0.15s;
+  pointer-events: none;
 }
 
-.web-mini-icon {
-  font-size: 52px;
-  line-height: 1;
+.wt-radar .radar-map-tap:hover::after,
+.wt-radar .radar-map-tap:focus-visible::after {
+  opacity: 1;
+  translate: 0 0;
+}
+
+.wt-radar .radar-map-tap:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+@media (hover: none) {
+  .wt-radar .radar-map-tap::after { opacity: 1; translate: 0 0; }
+}
+
+/* ── Next 24 hours ── */
+
+/* One row of hours that scrolls sideways, with the sunrise and sunset slotted
+   in where they fall. On a wide card the tiles stretch to fill it; on a narrow
+   one they keep their size and the row scrolls, fading at whichever edge has
+   more, with arrow buttons on hover for a mouse. */
+.wt-strip {
+  position: relative;
+  margin: 0 -6px;
+}
+
+.wt-strip-list {
   display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 2px 6px 10px;
+  list-style: none;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--web-scroll-thumb) transparent;
 }
 
-.web-mini-temp {
-  font-size: 26px;
-  font-weight: 600;
-  color: var(--text-primary);
-  font-variant-numeric: tabular-nums;
+.wt-strip-list::-webkit-scrollbar { height: 10px; }
+.wt-strip-list::-webkit-scrollbar-track { background: transparent; }
+.wt-strip-list::-webkit-scrollbar-thumb {
+  background: var(--web-scroll-thumb);
+  background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: 999px;
 }
 
-.web-mini-precip {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--web-precip);
-  font-variant-numeric: tabular-nums;
+.wt-strip-list:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 16px;
 }
 
-.web-mini-precip--high { font-weight: 700; }
-.web-mini-precip--zero { color: var(--text-tertiary); opacity: 0.5; }
-
-/* Week ahead: a full-width row of seven tiles. Each one is wide enough to be
-   read at a glance rather than squinted at, so the type sits at the same scale
-   as the glance tiles above it instead of the strip type it used to share with
-   the hourly preview. */
-.web-week-days {
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 14px;
+.wt-strip--more .wt-strip-list {
+  mask-image: linear-gradient(to right, #000 calc(100% - 56px), transparent);
 }
 
-.web-week-day {
+.wt-strip--from .wt-strip-list {
+  mask-image: linear-gradient(to left, #000 calc(100% - 56px), transparent);
+}
+
+.wt-strip--from.wt-strip--more .wt-strip-list {
+  mask-image: linear-gradient(to right, transparent, #000 56px, #000 calc(100% - 56px), transparent);
+}
+
+.wt-hour {
   display: flex;
+  flex: 1 0 64px;
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  padding: 14px 8px 12px;
+  min-width: 64px;
+  padding: 12px 4px 10px;
   border-radius: 14px;
+  scroll-snap-align: start;
+}
+
+.wt-hour--now {
   background: var(--web-sunken);
-  min-width: 0;
-  text-align: center;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 14%, transparent);
 }
 
-.web-week-dayname {
-  font-size: 15px;
+.wt-hour-time {
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.2px;
-  color: var(--text-secondary);
   white-space: nowrap;
-}
-
-.web-week-icon {
-  font-size: 64px;
-  line-height: 1;
-  display: flex;
-}
-
-.web-week-cond {
-  font-size: 14px;
   color: var(--text-secondary);
-  line-height: 1.3;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
-.web-week-temps {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-variant-numeric: tabular-nums;
-}
-
-.web-week-high {
-  font-size: 26px;
-  font-weight: 600;
+.wt-hour--now .wt-hour-time {
   color: var(--text-primary);
 }
 
-.web-week-low {
-  font-size: 18px;
+.wt-hour-icon {
+  display: flex;
+  font-size: 40px;
+  line-height: 1;
+}
+
+.wt-hour-glyph {
+  display: grid;
+  place-items: center;
+  height: 40px;
+  color: #f97316;
+}
+
+.wt-hour-value {
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 22px;
+  white-space: nowrap;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.wt-hour-value small {
+  margin-left: 2px;
+  font-size: 11px;
   font-weight: 500;
+  color: var(--text-tertiary);
+}
+
+.wt-hour--sun .wt-hour-value {
+  font-size: 12.5px;
   color: var(--text-secondary);
 }
 
-.web-week-precip {
-  font-size: 14px;
-  font-weight: 500;
+.wt-hour-chance {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 14px;
   color: var(--web-precip);
   font-variant-numeric: tabular-nums;
 }
 
-/* ── Today: how a widget sizes itself for the slot it was dropped in ──────── */
+.wt-strip-nav {
+  position: absolute;
+  top: 50%;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+  opacity: 0;
+  translate: 0 -60%;
+  transition: opacity 0.15s;
+}
 
-/* Everything here is keyed off .web-widget--full, which TodayPage puts on any
-   widget holding a whole row. Scoped to the two-track width on purpose: below
-   1280px the grid is one column and every widget is full, so these rules would
-   fire on a layout that has no wide slot to spend. The narrow tiers below keep
-   their own counts. */
-@media (min-width: 1280px) {
-  /* Sharing the row with the current card. Both strips were drawn for the whole
-     page width; here they have roughly two thirds of it, so the tiles come down
-     a size rather than the row spilling to a second line. Column flow rather
-     than a fixed count — the hourly strip drops to nine tiles when it lands
-     here (TodayPage), and this way the grid doesn't have to be told. */
-  .web-widget:not(.web-widget--full) .web-mini-hours,
-  .web-widget:not(.web-widget--full) .web-week-days {
-    grid-template-columns: none;
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(0, 1fr);
-    gap: 6px;
+.wt-strip-nav[hidden] { display: none; }
+.wt-strip-nav--prev { left: 0; }
+.wt-strip-nav--next { right: 0; }
+.wt-strip:hover .wt-strip-nav { opacity: 1; }
+
+.sky-lvl-slight .wt-strip-nav,
+.sky-lvl-medium .wt-strip-nav,
+.sky-lvl-dark .wt-strip-nav,
+.sky-lvl-darkest .wt-strip-nav {
+  background: var(--sky-card-deep, #2b3a4e);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+
+/* Touch scrolls the row directly, and there is no hover to reveal these. */
+@media (hover: none) {
+  .wt-strip-nav { display: none; }
+}
+
+.wt-foot {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* ── Next 7 days ── */
+
+/* One row a day: name, sky, chance of rain, and the low-to-high span as a bar
+   on a scale shared by the whole week, so warmer and cooler days read at a
+   glance. Today's bar carries a dot at the temperature right now. */
+.wt-week {
+  container-type: inline-size;
+}
+
+.wt-days {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.wt-day {
+  display: grid;
+  grid-template-columns: 3.4em 36px minmax(0, 1fr) 3.4em 2.4em minmax(80px, 1.3fr) 2.4em;
+  align-items: center;
+  column-gap: 12px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  font-size: 14.5px;
+}
+
+.wt-day--today {
+  background: var(--web-sunken);
+}
+
+.wt-day-name {
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.wt-day-icon {
+  display: flex;
+  justify-content: center;
+  font-size: 34px;
+  line-height: 1;
+}
+
+.wt-day-cond {
+  overflow: hidden;
+  font-size: 13.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-secondary);
+}
+
+.wt-day-chance {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--web-precip);
+  font-variant-numeric: tabular-nums;
+}
+
+.wt-day-lo,
+.wt-day-hi {
+  font-variant-numeric: tabular-nums;
+}
+
+.wt-day-lo {
+  text-align: right;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.wt-day-hi {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.wt-day-track {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+}
+
+.wt-day-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 999px;
+}
+
+.wt-day-now {
+  position: absolute;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.35);
+  translate: -50% -50%;
+}
+
+@container (max-width: 560px) {
+  .wt-day {
+    grid-template-columns: 3.2em 32px 3.2em 2.2em minmax(0, 1fr) 2.2em;
+    column-gap: 10px;
+    padding-inline: 8px;
   }
+  .wt-day-cond { display: none; }
+  .wt-day-icon { font-size: 30px; }
+}
 
-  /* Both cards in a shared row are the height of the taller one, and the
-     current card centres itself in whatever it gets. A preview card has to fill
-     the same height the way the glance grid already does, or a short strip
-     leaves the row ending in a band of empty card. */
-  .web-widget:not(.web-widget--full) > .web-preview {
+/* ── Foot ── */
+
+.wt > .source-note {
+  margin-top: 4px;
+}
+
+.sky-active .wt > .source-note {
+  color: rgba(255, 255, 255, 0.75);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.25);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wt-refresh.is-spinning svg { animation: none; }
+  .wt-strip-nav { transition: none; }
+}
+
+/* ── Today, one column ──
+   The two columns become one list, in reading order: the reading, rain in the
+   next hour, the day's outlook, the hours, the insight, the week, then the
+   radar. The
+   column wrappers step out of the layout (display: contents) so their cards
+   can be ordered as siblings. */
+@media (max-width: 1099px) {
+  .wt-grid {
     display: flex;
     flex-direction: column;
   }
 
-  .web-widget:not(.web-widget--full) .web-mini-hours,
-  .web-widget:not(.web-widget--full) .web-week-days {
-    flex: 1;
+  .wt-main,
+  .wt-side {
+    display: contents;
   }
 
-  .web-widget:not(.web-widget--full) .web-mini-hour,
-  .web-widget:not(.web-widget--full) .web-week-day {
-    justify-content: center;
-  }
-
-  .web-widget:not(.web-widget--full) .web-mini-hour {
-    padding: 12px 2px 10px;
-    gap: 8px;
-  }
-
-  .web-widget:not(.web-widget--full) .web-mini-icon { font-size: 46px; }
-  .web-widget:not(.web-widget--full) .web-mini-temp { font-size: 24px; }
-  .web-widget:not(.web-widget--full) .web-mini-time { font-size: 14px; }
-  .web-widget:not(.web-widget--full) .web-mini-precip { font-size: 13.5px; }
-
-  .web-widget:not(.web-widget--full) .web-week-day {
-    padding: 12px 6px 10px;
-    gap: 5px;
-  }
-
-  .web-widget:not(.web-widget--full) .web-week-icon { font-size: 54px; }
-  .web-widget:not(.web-widget--full) .web-week-high { font-size: 24px; }
-  .web-widget:not(.web-widget--full) .web-week-low  { font-size: 17px; }
-  .web-widget:not(.web-widget--full) .web-week-cond { font-size: 13px; }
-  .web-widget:not(.web-widget--full) .web-week-dayname { font-size: 14px; }
-  .web-widget:not(.web-widget--full) .web-week-precip { font-size: 13.5px; }
-
-  /* On a row of its own the glance grid has four times the width it needs for
-     four columns, and stacking two rows of tiles there just makes the card tall
-     and empty. Eight across is one tile per reading. The values are the only
-     thing that doesn't ellipsize — they carry two temperatures at their widest
-     — so they come down a step to survive a 100°/88° day in a narrower tile. */
-  .web-widget--full .web-glance-grid {
-    grid-template-columns: repeat(8, minmax(0, 1fr));
-  }
-
-  .web-widget--full .web-glance-value {
-    font-size: clamp(15px, 1.4vw, 19px);
-  }
-
-  /* And the current card, when it is the one holding the row: it was sized down
-     to share a band, so give the reading back the room. */
-  .web-widget--full .current-card {
-    padding: clamp(16px, 2vw, 26px) clamp(16px, 2.2vw, 24px);
-  }
-
-  .web-widget--full .current-temp {
-    font-size: clamp(56px, 6.4vw, 84px);
-  }
-
-  .web-widget--full .current-icon {
-    font-size: clamp(64px, 7.2vw, 94px);
-  }
+  .wt-grid .wt-now                { order: 1; }
+  .wt-grid .nowcast-card          { order: 2; }
+  .wt-grid .glance-card,
+  .wt-grid .skeleton-web-side--tall { order: 3; }
+  .wt-grid .wt-hours              { order: 4; }
+  .wt-grid .card--insight,
+  .wt-grid .skeleton-web-side:not(.skeleton-web-side--tall) { order: 5; }
+  .wt-grid .wt-week               { order: 6; }
+  .wt-grid .wt-radar              { order: 7; }
 }
 
 /* ── Charts ──────────────────────────────────────────────────────────────── */
@@ -4368,25 +4181,6 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
 /* ── Narrower desktops ───────────────────────────────────────────────────── */
 
 @media (max-width: 1279px) {
-  /* One track: nothing sits beside anything down here, so every widget is on a
-     row of its own. TodayPage watches the same 1280px line and stops pairing —
-     the widget-size rules that go with a shared row all live in the min-width
-     block below this one, so they simply don't apply here. */
-  .web-today-grid,
-  .web-cols {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .web-glance-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  /* Thirteen tiles stop fitting well before the page does; wrapping to two
-     rows of seven keeps the tile size rather than the row count. */
-  .web-mini-hours {
-    grid-template-columns: repeat(7, minmax(0, 1fr));
-  }
-
   .web-day-row {
     grid-template-columns: 84px 60px minmax(90px, 1fr) 48px minmax(170px, 1.6fr) 20px;
     gap: 10px;
@@ -4409,20 +4203,6 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
      column with a wide gutter; a single explicit column is tidier. */
   .web-detail-grid {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .web-glance-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  /* Seven tiles across a tablet width would put the condition line back to one
-     word and an ellipsis; four wrap onto two rows and stay readable. */
-  .web-week-days {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-
-  .web-mini-hours {
-    grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
   .web-day-row {
@@ -4448,20 +4228,6 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
   }
 
   .web-day-icon { font-size: 44px; }
-
-  .web-glance-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .web-week-days {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-  }
-
-  .web-mini-hours {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
-  }
 
   .web-day-stats {
     grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -5688,22 +5454,18 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
 .skeleton-web-lg { width: 84%; height: 18px; }
 .skeleton-web-icon { width: 30px; height: 30px; }
 
-.web-glance-tile > .skeleton-line,
-.web-mini-hour > .skeleton-line,
-.web-week-day > .skeleton-line {
-  align-self: center;
-}
-
-/* The current card is transparent in the real layout too, so the skeleton must
-   not draw a card behind it where the page has none. */
-.skeleton-web-current {
-  background: transparent;
-  box-shadow: none;
-  align-items: center;
-  justify-content: center;
-  display: flex;
-  flex-direction: column;
-}
+/* Today: the reading card's place line, date line, icon and temperature; the
+   stat wells and hour tiles come from the real classes. The sidebar cards are
+   plain blocks at about the height the real ones land at. */
+.skeleton-web-place { width: min(240px, 60%); height: 24px; border-radius: 8px; }
+.skeleton-web-meta { width: min(280px, 75%); height: 13px; margin-top: 10px; }
+.skeleton-web-now-icon { width: 76px; height: 76px; }
+.skeleton-web-now-temp { width: 130px; height: 64px; border-radius: 14px; }
+.wt-stat > .skeleton-line + .skeleton-line { margin-top: 8px; }
+.wt-hour > .skeleton-line { align-self: center; }
+.skeleton-web-week-row { width: 100%; height: 34px; border-radius: 10px; margin: 5px 0; }
+.skeleton-web-side { min-height: 260px; }
+.skeleton-web-side--tall { min-height: 400px; }
 
 /* Page heading (This week, Conditions in detail, Air quality) — sized to the
    h2 it replaces rather than to the longest of those words. */
@@ -5940,8 +5702,10 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
 :is(.sky-lvl-slight, .sky-lvl-medium, .sky-lvl-dark, .sky-lvl-darkest) .web-settings-page .settings-card {
   background: var(--sky-card, #4d6078);
   --text-primary: #fff; --temp-light: 0;
-  --text-secondary: rgba(255, 255, 255, 0.8);
-  --text-tertiary: rgba(255, 255, 255, 0.58);
+  --text-secondary: rgba(255, 255, 255, 0.85);
+  /* 0.74, as on the app's other sky cards (see App.css): at 0.58 the group
+     titles and small captions were hard to make out on the lighter skies. */
+  --text-tertiary: rgba(255, 255, 255, 0.74);
   --border: rgba(255, 255, 255, 0.14);
   --hover-medium: rgba(255, 255, 255, 0.12);
 }
@@ -5970,6 +5734,32 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
 }
 :is(.sky-lvl-slight, .sky-lvl-medium, .sky-lvl-dark, .sky-lvl-darkest) .web-settings-page .ws-nav-item--active svg {
   color: #fff;
+}
+
+/* Colours that stay mid-tone whatever the theme, and so sink into a mid-tone
+   sky card: the delete button's red, and the accent-blue help button. Each
+   takes a light version of itself there, which reads just as well on the dark
+   card the dark theme uses over a sky. */
+:is(.sky-lvl-slight, .sky-lvl-medium, .sky-lvl-dark, .sky-lvl-darkest) .web-settings-page .ws-btn--danger:not(:hover):not(.confirming) {
+  color: #fecaca;
+  border-color: rgba(254, 202, 202, 0.5);
+  background: rgba(239, 68, 68, 0.16);
+}
+:is(.sky-lvl-slight, .sky-lvl-medium, .sky-lvl-dark, .sky-lvl-darkest) .web-settings-page .about-help-btn {
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.6);
+}
+:is(.sky-lvl-slight, .sky-lvl-medium, .sky-lvl-dark, .sky-lvl-darkest) .web-settings-page .about-help-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* The phone views reused here (notifications, app updates) put their captions
+   between cards, straight on the page. Over a sky that is the sky itself, dark
+   in every theme, where the light theme's grey caption all but vanished. */
+:is(.sky-lvl-slight, .sky-lvl-medium, .sky-lvl-dark, .sky-lvl-darkest) .web-settings-page .ws-legacy > :is(.color-coding-desc, .settings-group-label),
+:is(.sky-lvl-slight, .sky-lvl-medium, .sky-lvl-dark, .sky-lvl-darkest) .web-settings-page .ws-legacy > * > :is(.color-coding-desc, .settings-group-label) {
+  color: rgba(255, 255, 255, 0.8);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .ws-group-title {
@@ -6024,14 +5814,19 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
   padding: 7px 14px;
 }
 
+/* Mixed out of the text colour rather than painted with the page's --bg: the
+   cards swap --text-primary to white over a sky, and a --bg fill stayed light
+   there, which left these buttons as white text on a near-white pill. A wash
+   of the text colour is a light grey on a white card, a lift on a dark one and
+   a translucent white on a sky-tinted one, readable on each. */
 .ws-btn {
   display: inline-flex;
   align-items: center;
   gap: 7px;
   padding: 8px 16px;
-  border: 1px solid var(--border);
+  border: 1px solid color-mix(in srgb, var(--text-primary) 20%, transparent);
   border-radius: 10px;
-  background: var(--bg);
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
   font-family: var(--font);
   font-size: 13.5px;
   font-weight: 600;
@@ -6041,7 +5836,7 @@ body.web-dragging .web-widget:not(.web-widget--lifted) .web-widget-handle {
 }
 
 .ws-btn:hover:not(:disabled) {
-  background: var(--hover-medium);
+  background: color-mix(in srgb, var(--text-primary) 15%, transparent);
 }
 
 .ws-btn:disabled {

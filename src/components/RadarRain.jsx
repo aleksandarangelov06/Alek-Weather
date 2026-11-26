@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { assertOpenMeteoQuota, noteOpenMeteo429 } from '../utils/openMeteoQuota'
+import { colorDbz } from '../utils/hrrrLayer'
 
 // Rain and snow falling on the radar map — only where the radar has echoes, and
 // as whichever one is actually falling there.
@@ -53,16 +54,18 @@ const STREAK_SEGMENTS = [[0, 0.3, 1], [0.3, 0.62, 0.5], [0.62, 1, 0.18]]
 const FADE_IN = 0.14
 const FADE_OUT = 0.2
 
-// Every echo is drawn at this one strength, whatever colour the radar paints
-// it: the effect only marks where something is falling, not how hard. 0 to 1,
-// on the scale density() and the draw loop below read.
-const RAIN_STRENGTH = 0.5
 const ECHO_MIN_ALPHA = 24 // tile pixels fainter than this are blank map
 
-// How much of the field shows at a strength: a drizzle is a scatter, a
-// downpour every drop there is. With twice the old drop count, light rain lands
-// about where it always did and heavy rain fills in around it.
-const density = (I) => 0.12 + 0.88 * Math.pow(I, 1.2)
+// How hard it is falling, 0 to 1, from the echo's reflectivity (read off its
+// colour, see colorDbz). Haze and the faintest drizzle (10 dBZ and under) sit
+// at the floor, light rain (20) about a quarter, moderate (30) a little under
+// half, heavy (50) most of the way. Capped short of 1 so the strongest cores
+// stay rain rather than a white sheet.
+const strengthOf = (dbz) => Math.max(0.02, Math.min(0.95, (dbz - 8) / 50))
+
+// How much of the field shows at a strength: a drizzle is a sparse scatter, a
+// downpour nearly every drop there is.
+const density = (I) => 0.05 + 0.95 * Math.pow(I, 1.2)
 
 // ── Rain or snow, per place ─────────────────────────────────────────────────
 //
@@ -305,7 +308,12 @@ export function RadarRain({ map, getLayer, snow = false, paused = false }) {
       if (tainted) return
       const layer = getLayer()
       const tiles = layer?._tiles
+      const ramp = layer?.options?.rainRamp
       mctx.clearRect(0, 0, mw, mh)
+      // Nearest-pixel sampling, so each cell reads one of the ramp's own colours
+      // rather than a blend of neighbouring steps. Set every time: resizing the
+      // canvas resets it.
+      mctx.imageSmoothingEnabled = false
       if (tiles && layer.options.opacity > 0) {
         const base = canvas.getBoundingClientRect()
         for (const key in tiles) {
@@ -332,8 +340,10 @@ export function RadarRain({ map, getLayer, snow = false, paused = false }) {
       }
       const next = new Float32Array(mw * mh)
       let echo = false
-      for (let i = 0, j = 3; i < next.length; i++, j += 4) {
-        if (px[j] >= ECHO_MIN_ALPHA) { next[i] = RAIN_STRENGTH; echo = true }
+      for (let i = 0, j = 0; i < next.length; i++, j += 4) {
+        if (px[j + 3] < ECHO_MIN_ALPHA) continue
+        next[i] = strengthOf(colorDbz(px[j], px[j + 1], px[j + 2], ramp))
+        echo = true
       }
       hasEcho = echo
       // Precipitation has just come on screen with no grid to place it by:
@@ -452,8 +462,8 @@ export function RadarRain({ map, getLayer, snow = false, paused = false }) {
         d.vis += ((show ? 1 : 0) - d.vis) * (1 - Math.pow(1 - (show ? FADE_IN : FADE_OUT), step))
         if (d.vis < 0.02) continue
 
-        // Near drops bright, far ones faint; heavier echoes a little brighter.
-        const a = d.vis * (0.28 + 0.72 * d.z) * (0.75 + 0.5 * I)
+        // Near drops bright, far ones faint; light echoes faint, heavy ones bright.
+        const a = d.vis * (0.28 + 0.72 * d.z) * (0.5 + 1.0 * I)
         if (isSnow) {
           const lvl = bucketOf(a)
           if (lvl < 0) continue

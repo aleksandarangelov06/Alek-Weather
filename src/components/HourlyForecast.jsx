@@ -156,8 +156,11 @@ export const HourlyForecast = memo(function HourlyForecast({ hourly, daily, time
     else runs.push({ tone, start: i, end: i + 1 })
   })
   const n = hours.length
+  // Always an image, a single run included, so it goes on as backgroundImage
+  // and leaves the bar's background-colour free for the backing the connected
+  // layout lays under it (see .hourly-tl-bar in App.css).
   const barBg = runs.length === 1
-    ? `var(--hrl-${runs[0].tone})`
+    ? `linear-gradient(var(--hrl-${runs[0].tone}), var(--hrl-${runs[0].tone}))`
     : `linear-gradient(to bottom, ${runs.map(r =>
       `var(--hrl-${r.tone}) ${(r.start / n) * 100}% ${(r.end / n) * 100}%`).join(', ')})`
 
@@ -199,7 +202,7 @@ export const HourlyForecast = memo(function HourlyForecast({ hourly, daily, time
       <div className="hourly-tl">
         <span
           className="hourly-tl-bar"
-          style={{ background: barBg, height: `${(n / (rowIdx.length * STEP)) * 100}%` }}
+          style={{ backgroundImage: barBg, height: `${(n / (rowIdx.length * STEP)) * 100}%` }}
           aria-hidden="true"
         />
         <ol className="hourly-tl-rows">

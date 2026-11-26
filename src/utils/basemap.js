@@ -90,6 +90,12 @@ export function addBasemap(L, map, onLayer) {
       // The basemap is static and the radar repaints over it every frame of
       // playback — skip the GL fade-ins so labels don't flicker on a swap.
       fadeDuration: 0,
+      // Rendered at no more than 2x. Phones are often 2.6-3x, and the GL canvas
+      // is a screenful (plus padding) once the radar is full-screen: at 2.6x
+      // that is about 70% more pixels to draw than at 2x, for roads and labels
+      // that look the same either way. The radar over it is what people study,
+      // and it is unaffected.
+      pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
     }).addTo(map)
     const gl = layer.getMaplibreMap()
     layer.isLoading = () => !gl.loaded()

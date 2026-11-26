@@ -18,8 +18,8 @@ const FRAMES_URL = 'https://api.rainviewer.com/public/weather-maps.json'
 // served straight from NWS rather than through a third party. No key, CORS open,
 // ~5-minute sweeps with a four-hour rolling window — against RainViewer's free
 // tier that is finer, fresher, twice the history, and free of the zoom ceiling
-// below. It is opt-in, though (Settings › Radar source): RainViewer is the
-// default everywhere, and the only option outside the US.
+// below. The default source ('auto', shown as Default in Settings › Radar
+// source) draws it zoomed out; RainViewer is the only option outside the US.
 //
 // It is an ArcGIS ImageServer, not an XYZ cache, so there are no tiles to ask
 // for: each one is an exportImage render of that tile's bbox. See MrmsLayer.
@@ -41,34 +41,37 @@ const MRMS_FRAMES = 15
 // under a minute; the gap between sweeps is ~5, so there is a wide margin either way.
 const MRMS_CLUSTER_MS = 150000
 
-// Where MRMS tiles stop being fetched and start being upscaled by the browser.
-//
-// Unlike a tile cache, every request here is a render the server performs, so the
-// grid getting four times denser per zoom level is four times the work asked of a
-// free public service — and past the data's own resolution it buys nothing, because
-// the extra pixels are the server's resampling rather than detail. MRMS is ~1 km,
-// which is roughly zoom 8, so 10 is already oversampled enough to stay crisp on a
-// retina screen and everything beyond it scales a tile that was going to be smooth
-// regardless. Still well past RADAR_NATIVE_MAX, which is the ceiling this replaces.
-const MRMS_NATIVE_MAX = 10
+// The zoom MRMS source renders are fetched at, at most. Every request here is a
+// render the server performs, so each zoom level deeper is four times the work
+// asked of a free public service, and past the data's own resolution it buys
+// nothing. MRMS pixels are ~565 m, which is zoom 8 (~610 m a pixel); deeper
+// views are drawn from those sources, smoothed (see MrmsLayer).
+const MRMS_SRC_MAX_ZOOM = 8
+// How much MRMS is softened, as a Gaussian sigma in km: about two of its ~565 m
+// pixels, the same proportion of a cell HRRR's 2 km is of its 3 km grid. Enough
+// to melt the pixel steps into smooth contours, little enough that a single
+// storm cell keeps its shape.
+const MRMS_BLUR_KM = 1.2
 
 // Web Mercator half-circumference: the edge of the XYZ grid in projected metres.
 const MERC_R = 20037508.342789244
 
-// A tile layer over an ImageServer. Leaflet asks for {z}/{x}/{y}; exportImage wants
-// a bbox, a size and a time — so the URL is built per tile rather than templated.
-// The maths is the standard XYZ scheme and needs no map instance: at zoom z the grid
-// is 2^z tiles across the full projected width, so tile x starts at -MERC_R + x*span
-// and tile y counts down from +MERC_R.
+// MRMS, drawn the way the HRRR forecast is: each pixel of the server's render is
+// read back to its reflectivity (MRMS paints with the same IEM ramp), the field
+// blurred and resampled smoothly at screen resolution, and coloured again, so the
+// observed radar is as clean as the forecast it hands over to instead of a grid
+// of blocky pixels. See HrrrLayer for the drawing; this only says where a source
+// tile comes from.
 //
-// Rendering is server-side, which is the other half of losing the zoom cap: past the
-// data's own resolution it resamples rather than refusing, so deep zooms come back
-// soft instead of coming back as "zoom level not supported".
-const MrmsLayer = L.TileLayer.extend({
-  getTileUrl(coords) {
-    const span = (2 * MERC_R) / 2 ** coords.z
-    const minX = -MERC_R + coords.x * span
-    const maxY = MERC_R - coords.y * span
+// The source is an ImageServer: exportImage wants a bbox, a size and a time, so
+// the URL is built per tile rather than templated. The maths is the standard XYZ
+// scheme: at zoom z the grid is 2^z tiles across the full projected width, so tile
+// x starts at -MERC_R + x*span and tile y counts down from +MERC_R.
+const MrmsLayer = HrrrLayer.extend({
+  _sourceUrl(z, x, y) {
+    const span = (2 * MERC_R) / 2 ** z
+    const minX = -MERC_R + x * span
+    const maxY = MERC_R - y * span
     const q = new URLSearchParams({
       bbox: `${minX},${maxY - span},${minX + span},${maxY}`,
       bboxSR: '3857',
@@ -131,11 +134,10 @@ async function fetchMrmsFrames() {
 }
 
 // Single-site NEXRAD: the nearest WSR-88D's super-resolution base reflectivity
-// (Level III N0B — 0.25 km gates, against MRMS's ~1 km grid), as XYZ tiles from
-// the Iowa Environmental Mesonet's RIDGE cache. CORS open, no key, the NWS ramp.
-// Sharp up close but one radar's reach, ~230 km, with the usual blind cone over
-// the site itself — so Auto only uses it zoomed in (see AUTO_HD_ZOOM) and MRMS's
-// seamless mosaic carries the wide view.
+// (Level III N0B), as XYZ tiles from the Iowa Environmental Mesonet's RIDGE
+// cache. CORS open, no key, painted in IEM's ramp. One radar's reach, ~230 km,
+// with the usual blind cone over the site itself — so Auto only uses it zoomed
+// in (see AUTO_HD_ZOOM) and MRMS's seamless mosaic carries the wide view.
 const IEM_RADAR_API = 'https://mesonet.agron.iastate.edu/json/radar.py'
 const NEXRAD_TILE_URL = (site, stamp) =>
   `https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/ridge::${site}-N0B-${stamp}/{z}/{x}/{y}.png`
@@ -143,9 +145,14 @@ const NEXRAD_TILE_URL = (site, stamp) =>
 // covers, keeping the two timelines comparable when Auto switches between them.
 const NEXRAD_FRAMES = 20
 const NEXRAD_WINDOW_MS = 2 * 60 * 60 * 1000
-// Past 0.25 km gates there is nothing finer to fetch; 11 already oversamples them
-// for a retina screen, and IEM is a university service worth being gentle with.
-const NEXRAD_NATIVE_MAX = 11
+// The zoom NEXRAD sources are fetched at, at most. The radar's gates are 0.25 km
+// but RIDGE renders its tiles on a ~1 km grid whatever the zoom (measured: flat
+// blocks of ~1 km at zooms 7 to 11), so deeper tiles were only the same squares
+// drawn bigger. Zoom 8 is two pixels a block; deeper views are drawn from it,
+// smoothed, and IEM, a university service, gets asked for far fewer tiles.
+const NEXRAD_SRC_MAX_ZOOM = 8
+// Softening for NEXRAD, in km: the same as MRMS, whose grid is the same ~1 km.
+const NEXRAD_BLUR_KM = 1.2
 // Where Auto hands over from the MRMS mosaic to the single site. At zoom 8 the
 // card spans ~250 km, about one radar's reach, so the site's coverage edge stays
 // off screen; any wider and the map would show where the radar runs out.
@@ -397,7 +404,13 @@ const WINDOW_OUT_EASE = 'cubic-bezier(0.2, 0, 0, 1)'
 // in it, unchanged, the way it did before the tap. The cap is what keeps a slow
 // network from turning that into a tap that does nothing — past it the iris opens
 // over whatever has arrived, which is the behaviour this had all along.
-const ARM_TILE_WAIT_MS = 180
+//
+// 400 rather than the 180 it was: measured on an emulated mid-range phone, the
+// basemap routinely needed longer than 180ms, so the window opened while
+// MapLibre was still drawing its new tiles, and those draws (60-130ms each at a
+// 4x slowed CPU) were the dropped frames of the opening. A fast phone or a
+// cached map still opens as soon as the base is in.
+const ARM_TILE_WAIT_MS = 400
 
 // The closing twin of that wait, and longer, because what it covers is worse.
 //
@@ -422,18 +435,26 @@ const SETTLE_MAX_MS = 700
 // transform, filter or backdrop-filter above the card is enough to make it
 // something else.
 //
-// The shift keeps the full-screen map's centre (where Leaflet keeps the
-// location, see invalidateSize) under the window's centre. It never uncovers
-// the map's edge: at every point of the run the window's edges are inside the
-// shifted map's, because both move in straight lines on the same eased clock
-// and both ends satisfy it.
-function windowFrames(win, box, radius) {
+// The shift lines the location up: `align.still` is where it sits in the
+// compact map (and so in the still), relative to `win`; `align.full` is where
+// it sits in the full-screen map at that end of the run, relative to the
+// frame's box. Both are measured, not assumed to be the maps' centres: Leaflet
+// rounds a map's origin to whole pixels, so on a card of fractional width the
+// location sits up to a pixel off centre, differently in each map, and the
+// window landed that far from the still and then jumped when the still took
+// over. Without them it falls back to the centres. It never uncovers the map's
+// edge: at every point of the run the window's edges are inside the shifted
+// map's, because both move in straight lines on the same eased clock and both
+// ends satisfy it.
+function windowFrames(win, box, radius, align) {
   const l = win.left - box.left
   const t = win.top - box.top
   const r = box.width - l - win.width
   const b = box.height - t - win.height
-  const dx = l + win.width / 2 - box.width / 2
-  const dy = t + win.height / 2 - box.height / 2
+  const still = align?.still ?? { x: win.width / 2, y: win.height / 2 }
+  const full  = align?.full  ?? { x: box.width / 2, y: box.height / 2 }
+  const dx = l + still.x - full.x
+  const dy = t + still.y - full.y
   return {
     clip: [
       { clipPath: `inset(${t}px ${r}px ${b}px ${l}px round ${radius}px)` },
@@ -444,6 +465,15 @@ function windowFrames(win, box, radius) {
       { transform: 'translate(0px, 0px)' },
     ],
   }
+}
+
+// Whether the full-screen map is already on the card's view (the location, at
+// the compact zoom), give or take a stray pixel, so closing needn't glide it
+// home. Shared by the glide and by the window's alignment, which has to know
+// which of the two the map will end the close on.
+function homeAlready(map, home) {
+  const off = map.latLngToContainerPoint(home).distanceTo(map.getSize().divideBy(2))
+  return map.getZoom() === 10 && off < 2
 }
 
 // An element's box as it lays out, with its own transform taken back out —
@@ -556,11 +586,13 @@ const revealAnimates = () =>
 // block in a stack. The map then gets its controls and its pan/zoom straight
 // away instead of hiding them behind tap-to-expand, which only makes sense for
 // a map small enough that a tap can't be a drag.
-// `source` is the observed feed the user picked in Settings: 'rainviewer' (the
-// default), 'auto' (MRMS wide, the nearest NEXRAD site zoomed in), 'mrms' or
-// 'nexrad'. Outside NOAA coverage every choice ends up on RainViewer, the only
-// feed there is.
-export function WeatherRadar({ location, timezone, mode = 'split', source = 'rainviewer', fill = false, sky = '', rainFx = true, snow = false }) {
+// `source` is the observed feed the user picked in Settings: 'auto' (the
+// default, shown as Default: MRMS wide, the nearest NEXRAD site zoomed in),
+// 'rainviewer', 'mrms' or 'nexrad'. Outside NOAA coverage every choice ends up
+// on RainViewer, the only feed there is.
+// `onOpen`: on the compact card, a tap on the map calls this instead of growing
+// the card full-screen (the web Today page sends it to the Radar tab).
+export function WeatherRadar({ location, timezone, mode = 'split', source = 'auto', fill = false, sky = '', rainFx = true, snow = false, onOpen = null }) {
   const combined = mode === 'combined'
   const mapRef      = useRef(null)
   const mapInst     = useRef(null)
@@ -643,6 +675,16 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
   // When the radar opened: the time of the frame the still shows (see the back
   // handler). framesRef, beside the frame list below, is where it is looked up.
   const snapFrameTime = useRef(null)
+  // The location's point on the compact map when the still was taken (expand).
+  const stillPoint = useRef(null)
+  // The closing window's keyframes, measured in the back handler while the
+  // layout is still clean (see the window's layout effect), and the function
+  // that measures them, kept current for that handler.
+  const closeWindow = useRef(null)
+  const measureWindowRef = useRef(null)
+  // The compact card's border widths, read at expand for the still laid over it
+  // on the way back (see attachSettle).
+  const cardBorders = useRef(null)
   // The compact card's box, measured on the way out of the stack. Going
   // full-screen means going position:fixed, which takes the card out of the flow
   // and lets the block around it collapse onto the drag handle — the page then
@@ -735,7 +777,7 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
       const nexradPast = nexradRes.status === 'fulfilled' ? nexradRes.value : []
       // The setting picks the feed; each choice falls back down the same chain
       // (NEXRAD -> MRMS -> RainViewer) so a feed being down never empties the card.
-      // RainViewer, the default, falls back the other way: to MRMS, which is
+      // RainViewer falls back the other way: to MRMS, which is
       // fetched in the US for exactly that.
       const nexradPick = source === 'auto' ? pairAutoFrames(nexradPast, mrmsPast) : nexradPast
       const past = source === 'rainviewer'
@@ -964,18 +1006,33 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
       const key = layerKey(frame, hd)
       let layer = layerCache.current.get(key)
       if (!layer) {
-        const opts = { opacity: 0, zIndex: 200, maxZoom: MAP_MAX_ZOOM, crossOrigin: true, className: 'radar-tiles' }
-        // MRMS builds each tile's URL from its coords (see MrmsLayer) and takes no
-        // template. Its cap is its own — see MRMS_NATIVE_MAX — because it is there
-        // to bound how much rendering the request asks for, not because the server
-        // would refuse the way RainViewer's does past RADAR_NATIVE_MAX. HRRR draws
-        // its own tiles at every zoom and fetches at a level of its choosing.
         const src = drawnSrc(frame, hd)
-        layer = src === 'mrms'
-          ? new MrmsLayer('', { ...opts, timeRange: frame.range, maxNativeZoom: MRMS_NATIVE_MAX })
-          : src === 'hrrr'
-            ? new HrrrLayer(frame.url, { ...opts, palette: frame.pal, run: frame.run })
-            : L.tileLayer(frame.url, { ...opts, maxNativeZoom: src === 'nexrad' ? NEXRAD_NATIVE_MAX : RADAR_NATIVE_MAX })
+        // `rainRamp` is the colour ramp the tiles are painted in, so RadarRain can
+        // read how heavy each echo is back off its colour.
+        const opts = {
+          opacity: 0, zIndex: 200, maxZoom: MAP_MAX_ZOOM, crossOrigin: true, className: 'radar-tiles',
+          rainRamp: src === 'hrrr' ? frame.pal : src === 'rv' ? 'rv' : 'nws',
+        }
+        // MRMS, NEXRAD and the HRRR forecast are all painted in IEM's ramp, so all
+        // three are drawn smoothed (see HrrrLayer): read back to reflectivity,
+        // blurred, and coloured again at every zoom. Each fetches its sources at
+        // a zoom of its own choosing. `run` is the time the data is for, which
+        // keys the drawn-tile cache. Only RainViewer, in a ramp of its own, is
+        // shown as the server draws it.
+        if (src === 'mrms') {
+          layer = new MrmsLayer('', {
+            ...opts, timeRange: frame.range, run: Number(frame.range.split(',')[1]) / 1000,
+            srcMaxZoom: MRMS_SRC_MAX_ZOOM, blurKm: MRMS_BLUR_KM,
+          })
+        } else if (src === 'nexrad') {
+          layer = new HrrrLayer(frame.url, {
+            ...opts, run: frame.time, srcMaxZoom: NEXRAD_SRC_MAX_ZOOM, blurKm: NEXRAD_BLUR_KM,
+          })
+        } else if (src === 'hrrr') {
+          layer = new HrrrLayer(frame.url, { ...opts, palette: frame.pal, run: frame.run })
+        } else {
+          layer = L.tileLayer(frame.url, { ...opts, maxNativeZoom: RADAR_NATIVE_MAX })
+        }
         layer.on('load', () => { layer._radarLoaded = true })
         layerCache.current.set(key, layer)
       }
@@ -1055,10 +1112,23 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
     attachAndShow()
     if (dragging || windowMoving) return
 
-    // Prefetch the full forward window so playback never waits on cold layers.
-    for (let d = 1; d <= win; d++) {
+    // Prefetch the full forward window so playback never waits on cold layers:
+    // the next frame at once, since playback reaches it first, and the rest one
+    // per idle slot. Attaching a layer has Leaflet build and lay out its tile
+    // grid, and attaching them all in one go was a single long task (~160ms at
+    // a 4x slowed CPU) right as the phone's window settled, which is exactly
+    // when the next tap lands. The timeout keeps a busy page from starving them.
+    getLayer(frames[(idx + 1) % frames.length], true)
+    const idle = window.requestIdleCallback ?? ((cb) => setTimeout(cb, 16))
+    const cancelIdle = window.cancelIdleCallback ?? clearTimeout
+    let d = 2
+    let handle = 0
+    const next = () => {
       getLayer(frames[(idx + d) % frames.length], true)
+      if (++d <= win) handle = idle(next, { timeout: 300 })
     }
+    if (d <= win) handle = idle(next, { timeout: 300 })
+    return () => cancelIdle(handle)
   }, [mapReady, frames, idx, playing, hd, dragging, windowMoving])
 
   // Animation playback. Load-aware: if the next frame's tiles aren't in yet,
@@ -1091,6 +1161,11 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
     // can't leave this a few pixels out.
     const el = cardRef.current
     const cs = el && getComputedStyle(el)
+    // Kept for the still that covers the card when it comes back: read here, on
+    // a tap with nothing in flight, instead of in the middle of the teardown.
+    cardBorders.current = cs
+      ? [cs.borderTopWidth, cs.borderRightWidth, cs.borderBottomWidth, cs.borderLeftWidth]
+      : null
     setHold(el
       ? {
           // getBoundingClientRect, not offsetHeight: the card's height is
@@ -1113,6 +1188,10 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
     // The frame the still shows, so the close can land on it (see the back
     // handler below).
     snapFrameTime.current = frames[idx]?.time ?? null
+    // Where the location sits on the compact map, which is where it sits in the
+    // still. The window lines the full-screen map up by this point rather than
+    // by the map's centre (see windowFrames).
+    stillPoint.current = mapInst.current?.latLngToContainerPoint([location.latitude, location.longitude]) ?? null
     history.pushState({ overlay: 'radar' }, '')
     if (!revealAnimates()) { setExpanded(true); return }
     // Provisional geometry, against the viewport, so the armed frame has
@@ -1137,6 +1216,10 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
     if (!expanded) return
     if (phase === 'out') return
     const handler = () => {
+      // The closing window's geometry, read first: nothing has changed yet, so
+      // the layout is clean and these reads cost nothing (see the window's
+      // layout effect). Still where it is now, as it always was.
+      closeWindow.current = revealStyle ? measureWindowRef.current?.(false) ?? null : null
       setPlaying(false)
       // Go back to the radar frame the card was showing when it opened. The
       // still in the slot is a picture of the card at that moment, and the
@@ -1169,16 +1252,20 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
     if (phase !== 'arm') return
     let inner, cap, unhook
     const outer = requestAnimationFrame(() => {
-      // Also done by the 80ms timeout further down, but that one would land in the
-      // middle of the iris. Leaflet bails early on a size it has already seen, so
-      // the later call stays cheap.
-      mapInst.current?.invalidateSize()
       // The card is full-screen now, so this is the first moment its real box can
       // be read — and the last before the circle moves. Whatever `inset: 0` turned
       // out to resolve against, every offset is measured inside that same box from
       // here on (see irisGeometry). The extra render is spent on the armed frame,
       // behind a circle that has not started growing.
+      //
+      // Read before the resize below, not after: the resize moves the map's panes,
+      // which dirties the layout, so reading second made the browser lay the whole
+      // full-screen card out twice in this one task.
       const box = cardRef.current?.getBoundingClientRect()
+      // Also done by the 80ms timeout further down, but that one would land in the
+      // middle of the iris. Leaflet bails early on a size it has already seen, so
+      // the later call stays cheap. Its own size read finds the layout clean.
+      mapInst.current?.invalidateSize()
       if (box) setRevealStyle(irisGeometry(box))
       // Then let the tiles the resize just asked for land before the circle
       // moves — see ARM_TILE_WAIT_MS. isLoading() is true from the moment
@@ -1208,12 +1295,62 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
   // fully open and then snap back to the card. The same frame in reverse on the
   // way out.
   //
-  // Measured here, not stored: on the way out the page may have been rotated or
-  // the slot moved since the open, and the window has to land where it is now.
+  // Measured at the start of each run, not stored from the open: on the way out
+  // the page may have been rotated or the slot moved since, and the window has
+  // to land where it is now. (The close is measured in the back handler, a beat
+  // before this runs; see below.)
   //
   // The settled state is the layers gone entirely: at rest the card is plain
   // position:fixed again, rather than a clipped screen-sized layer pinned under
   // it for as long as the radar is up.
+  // Where the location is in each map at the window's closed end, for
+  // windowFrames. The still's point was taken when it was (expand). The full
+  // map's is read now on the way in; on the way out it is where the map will be
+  // once the glide home below finishes, worked out the way Leaflet will place
+  // it: flyTo ends on _move, which rounds the new pixel origin against the map
+  // pane's current offset. Null (centres) when anything is missing.
+  const alignPoints = (opening, frame) => {
+    const map = mapInst.current
+    const el = mapRef.current
+    if (!map || !el || !stillPoint.current) return null
+    const home = [location.latitude, location.longitude]
+    let pt
+    if (opening || homeAlready(map, home)) {
+      pt = map.latLngToContainerPoint(home)
+    } else {
+      const p = map.project(home, 10)
+      const pos = map._getMapPanePos?.() ?? L.point(0, 0)
+      const origin = p.subtract(map.getSize().divideBy(2)).add(pos).round()
+      pt = p.subtract(origin).add(pos)
+    }
+    // The map's own place in the frame, in the frame's untransformed units (a
+    // predictive back swipe may still be easing the frame back to full size).
+    const fr = frame.getBoundingClientRect()
+    const mr = el.getBoundingClientRect()
+    const scale = frame.offsetWidth ? fr.width / frame.offsetWidth : 1
+    return {
+      still: { x: stillPoint.current.x, y: stillPoint.current.y },
+      full: { x: (mr.left - fr.left) / scale + pt.x, y: (mr.top - fr.top) / scale + pt.y },
+    }
+  }
+
+  // The window's keyframes for a run, or null when its layers aren't there.
+  //
+  // The frame's own box, untransformed. After a predictive back swipe it is
+  // still easing back to full size from where the finger left it
+  // (utils/predictiveBack.js), so the window is measured against where the
+  // frame is going, not where it is mid-ease.
+  const measureWindow = (opening) => {
+    const frame = irisFrameRef.current
+    const win   = placeholderRef.current?.querySelector('.radar-map-wrap')
+    if (!frame || !win) return null
+    const box = untransformedBox(frame)
+    const radius = parseFloat(getComputedStyle(win).borderTopLeftRadius) || 0
+    return windowFrames(win.getBoundingClientRect(), box, radius, alignPoints(opening, frame))
+  }
+  // The latest of it, for the back handler, which is set up once per open.
+  useLayoutEffect(() => { measureWindowRef.current = measureWindow })
+
   useLayoutEffect(() => {
     if (phase !== 'in' && phase !== 'out') return
     const frame  = irisFrameRef.current
@@ -1231,13 +1368,14 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
       const t = setTimeout(() => setPhase('chrome'), WINDOW_IN_MS)
       return () => clearTimeout(t)
     }
-    // The frame's own box, untransformed. After a predictive back swipe it is
-    // still easing back to full size from where the finger left it
-    // (utils/predictiveBack.js), so the window is measured against where the
-    // frame is going, not where it is mid-ease.
-    const box = untransformedBox(frame)
-    const radius = parseFloat(getComputedStyle(win).borderTopLeftRadius) || 0
-    const f = windowFrames(win.getBoundingClientRect(), box, radius)
+    // Closing uses what the back handler measured, before it changed anything:
+    // measured here, after this commit has switched the frame and started the
+    // controls' fade, every read forced a full layout of the dirty page, and
+    // that stall (~90ms at a 4x slowed CPU) was the hitch at the start of every
+    // close. Opening measures here, as it always has.
+    const f = (!opening && closeWindow.current) || measureWindow(opening)
+    closeWindow.current = null
+    if (!f) return
     const order = (frames) => (opening ? frames : [...frames].reverse())
     const timing = opening
       ? { duration: WINDOW_IN_MS, easing: WINDOW_IN_EASE, fill: 'both' }
@@ -1267,8 +1405,7 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
     const map = mapInst.current
     if (!map) return
     const home = [location.latitude, location.longitude]
-    const off = map.latLngToContainerPoint(home).distanceTo(map.getSize().divideBy(2))
-    if (map.getZoom() === 10 && off < 2) return
+    if (homeAlready(map, home)) return
     map.flyTo(home, 10, { duration: IRIS_OUT_MS / 1000, easeLinearity: 0.5 })
     return () => map.stop()
   }, [phase, location.latitude, location.longitude])
@@ -1586,15 +1723,20 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
   // The still laid over the card just after it closes (see .radar-settle). It
   // has to cover the card's border box exactly, and absolute positioning is
   // measured from inside the border, so it is pushed out by the card's own
-  // border widths — read here because they differ by theme (a hairline on the
-  // glass styles, none on others).
+  // border widths, which differ by theme (a hairline on the glass styles, none on
+  // others). They were read at expand, while the card was the same compact card:
+  // read here they forced a style and layout pass in the middle of the teardown,
+  // the moment the card rejoins the stack. Read live only if they're missing.
   const attachSettle = useCallback((node) => {
     if (!node) return
     const card = node.parentElement
     if (card) {
-      const cs = getComputedStyle(card)
-      node.style.inset = [cs.borderTopWidth, cs.borderRightWidth, cs.borderBottomWidth, cs.borderLeftWidth]
-        .map(w => `-${parseFloat(w) || 0}px`).join(' ')
+      let widths = cardBorders.current
+      if (!widths) {
+        const cs = getComputedStyle(card)
+        widths = [cs.borderTopWidth, cs.borderRightWidth, cs.borderBottomWidth, cs.borderLeftWidth]
+      }
+      node.style.inset = widths.map(w => `-${parseFloat(w) || 0}px`).join(' ')
     }
     attachSnapshot(node)
   }, [attachSnapshot])
@@ -1798,9 +1940,12 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'rai
         {!expanded && !fill && !phase && (
           <div
             className="radar-map-tap"
-            onClick={expand}
+            onClick={onOpen ?? expand}
+            onKeyDown={onOpen ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() } } : undefined}
+            tabIndex={onOpen ? 0 : undefined}
             role="button"
-            aria-label="Expand radar"
+            aria-label={onOpen ? 'Open the radar page' : 'Expand radar'}
+            title={onOpen ? 'Open radar' : undefined}
           />
         )}
       </div>

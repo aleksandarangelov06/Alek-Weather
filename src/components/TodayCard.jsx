@@ -1,13 +1,13 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import {
-  ArrowDown, ArrowUp, Check, Thermometer, TreePine, Car, Footprints,
+  ArrowDown, ArrowUp, Thermometer, TreePine, Car, Footprints,
   CloudLightning, CloudHail, CloudSnow, CloudRain, CloudDrizzle, Wind, ThermometerSun,
   ThermometerSnowflake, CloudFog, Sun, Moon, CloudSun, Cloud, Haze, Gauge, ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import { toTemp, tempInk } from '../utils/weatherCodes'
 import { formatWind } from '../utils/units'
 import {
-  outlookWindow, todayWindow, tomorrowWindow, showsTomorrow, compareWithYesterday,
+  todayWindow, tomorrowWindow, showsTomorrow, compareWithYesterday,
   compareTomorrowWithToday, rateActivities, dayHazards, scoreLabel, scoreColor, direction,
 } from '../utils/todayOutlook'
 
@@ -75,11 +75,9 @@ function CountUp({ value, suffix = '', play, delay = 0, duration = 650 }) {
   return <span ref={ref}>{`${value}${suffix}`}</span>
 }
 
-// `embedded`: drawn inside another card (the web current-weather card) rather
-// than as a card of its own, so it drops the card surface.
 // Memoised: App re-renders for every overlay, toggle and keystroke, and the
 // props here are the reading and the settings, which those leave alone.
-export const TodayCard = memo(function TodayCard({ hourly, daily, current, yesterday, timezone, unit, units, airQuality, embedded = false }) {
+export const TodayCard = memo(function TodayCard({ hourly, daily, current, yesterday, timezone, unit, units, airQuality }) {
   // Which day the At a Glance card shows: null follows the clock (tomorrow from
   // 9pm), a tap pins it. `slide` is the direction the last tap moved, so the
   // pane slides in from that side; the first render doesn't animate.
@@ -109,39 +107,6 @@ export const TodayCard = memo(function TodayCard({ hourly, daily, current, yeste
   // A difference in the display unit: °C steps are bigger, so the same day can
   // be "4° colder" in °F and "2° colder" in °C.
   const delta = (diffF) => Math.round(Math.abs(unit === 'C' ? diffF * 5 / 9 : diffF))
-
-  // The temperature comparison: today against yesterday, or tomorrow against today.
-  const comparison = (tomorrow) => {
-    const cmp = tomorrow
-      ? compareTomorrowWithToday(daily)
-      : compareWithYesterday({ hourly, daily, yesterday, current, todayStr, hourStr })
-    if (!cmp) return { headline: null, thermoColor: undefined, detailRows: [] }
-    const d = delta(cmp.diffF)
-    const same = cmp.direction === 'same' || d === 0
-    const word = cmp.direction === 'colder' ? 'colder' : 'warmer'
-    let text
-    if (tomorrow) text = same ? 'About the same as today' : `${d}° ${word} tomorrow`
-    else {
-      const when = cmp.basis === 'now' ? 'this time yesterday' : 'yesterday'
-      text = same ? `About the same as ${when}` : `${d}° ${word} than ${when}`
-    }
-    const headline = same
-      ? { text, Icon: Check, cls: 'same' }
-      : { text, Icon: cmp.direction === 'colder' ? ArrowDown : ArrowUp, cls: cmp.direction }
-    // The thermometer takes the colour of the temperature the headline is
-    // about: now, or the day's high when it compares highs.
-    const leadF = tomorrow ? cmp.high.tomorrow : (cmp.now ?? cmp.high).today
-    const detailRows = tomorrow
-      ? [
-          ['High', cmp.high.tomorrow, `${fmtTemp(cmp.high.today)} today`],
-          cmp.low && ['Low', cmp.low.tomorrow, `${fmtTemp(cmp.low.today)} today`],
-        ].filter(Boolean)
-      : [
-          cmp.now && ['Now', cmp.now.today, `${fmtTemp(cmp.now.yesterday)} this time yesterday`],
-          cmp.high && ['High', cmp.high.today, `${fmtTemp(cmp.high.yesterday)} yesterday`],
-        ].filter(Boolean)
-    return { headline, thermoColor: leadF != null ? tempInk(leadF) : undefined, detailRows }
-  }
 
   // A reading's second line: how far it moved and from what ("↑3° from
   // 18°"), or "Same as yesterday" inside the 2°F the headline also calls the
@@ -204,62 +169,7 @@ export const TodayCard = memo(function TodayCard({ hourly, daily, current, yeste
     }
   }
 
-  if (embedded) {
-    const win = outlookWindow(hourly, todayStr, hourStr)
-    const ratings = rateActivities(hourly, win, airQuality?.hourly)
-    const { headline, thermoColor, detailRows } = comparison(!!win?.tomorrow)
-    if (!headline && !ratings) return null
-    // The web current card's version: the comparison and the overall score on
-    // one line, then the three activities as columns of one panel. The longer
-    // wording (now/high, each reason) is in the tooltips.
-    const compareDetail = detailRows.map(([label, f, then]) => `${label} ${fmtTemp(f)} · ${then}`).join('\n')
-    return (
-      <div className="today-embed">
-        <div className="te-top">
-          {headline && (
-            <span className={`te-compare te-compare--${headline.cls}`} title={compareDetail || undefined}>
-              <headline.Icon size={14} aria-hidden="true" />
-              <span>{headline.text}</span>
-              <Thermometer size={16} className="te-compare-thermo" style={{ color: thermoColor }} aria-label="Temperature" />
-            </span>
-          )}
-          {ratings && (
-            <span
-              className="te-overall"
-              style={{ '--te-c': scoreColor(ratings.overall) }}
-              title={`${scoreLabel(ratings.overall)} conditions · ${win.label}`}
-            >
-              <b>{ratings.overall}</b><small>/10</small>{scoreLabel(ratings.overall)}
-            </span>
-          )}
-        </div>
-        {ratings && (
-          <div className="te-grid">
-            {ACTIVITIES.map(({ id, label, Icon }) => {
-              const r = ratings[id]
-              return (
-                <div
-                  key={id}
-                  className="te-cell"
-                  style={{ '--te-c': scoreColor(r.score) }}
-                  title={`${label}: ${r.reason}`}
-                  role="meter" aria-valuemin={1} aria-valuemax={10} aria-valuenow={r.score}
-                  aria-label={`${label}: ${r.score} out of 10, ${r.reason}`}
-                >
-                  <Icon size={15} aria-hidden="true" />
-                  <span className="te-cell-score">{r.score}</span>
-                  <span className="te-cell-name">{label}</span>
-                  <span className="te-cell-bar"><i style={{ width: `${r.score * 10}%` }} /></span>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  // ── At a Glance (the phone's block) ──
+  // ── At a Glance ──
   const tomorrowWin = tomorrowWindow(hourly, todayStr)
   const autoDay = showsTomorrow(hourStr) && tomorrowWin ? 'tomorrow' : 'today'
   const day = picked === 'tomorrow' && !tomorrowWin ? 'today' : picked ?? autoDay

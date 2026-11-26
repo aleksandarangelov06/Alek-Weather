@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Bookmark, House, Navigation, Search, Trash2 } from 'lucide-react'
+import { Bookmark, CircleCheck, House, Search, Trash2 } from 'lucide-react'
 import { WeatherIcon } from './WeatherIcon'
 import { useCityConditions, conditionKey } from '../hooks/useCityConditions'
 import { getWeatherInfo, toTemp } from '../utils/weatherCodes'
@@ -198,11 +198,15 @@ export function SplashCities({
           const home = isHome?.(city)
           const opening = busy && pending === key
           const menuOpen = menuCity != null && menuKey === key
+          // The most recent place is the one the splash's sky, icon and headline
+          // are showing (see useLocalConditions): its card carries the check.
+          const current = fromRecents && i === 0
           return (
             <div className={`splash-mini-slot${menuOpen ? ' splash-mini-slot--open' : ''}`} key={key}>
               {menuOpen && renderMenu(city, cities.length > 1 && i === cities.length - 1)}
               <button
                 className={`splash-mini-card${opening ? ' splash-mini-card--opening' : ''}${menuOpen ? ' splash-mini-card--held' : ''}`}
+                aria-current={current || undefined}
                 onClick={() => handleClick(city, key)}
                 onPointerDown={(e) => startHold(e, key)}
                 onPointerMove={moveHold}
@@ -215,11 +219,8 @@ export function SplashCities({
                 <span className="splash-mini-name">
                   {home && <House size={13} className="splash-mini-home" aria-label="Home" />}
                   <span className="splash-mini-name-text">{city.name}</span>
-                  {/* The most recent place is the one the splash's sky, icon and
-                      headline are showing (see useLocalConditions) — the same mark
-                      the desktop splash puts on its card. */}
-                  {fromRecents && i === 0 && (
-                    <Navigation size={13} className="splash-mini-here" aria-label="Showing this weather" />
+                  {current && (
+                    <CircleCheck size={16} className="splash-mini-check" aria-label="Showing this weather" />
                   )}
                 </span>
                 {/* Cities stored from a search keep the country code on `country`,

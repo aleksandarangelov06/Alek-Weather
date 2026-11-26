@@ -471,7 +471,7 @@ body {
 /* No hover recolour here either — the rule set nothing else, so it is gone
    rather than emptied. The base colour on the line above is what these keep. */
 
-.sky-active .search-overlay { background: var(--sky-card-deep, #2d3f55); }
+.sky-active :is(.search-overlay, .detail-page) { background: var(--sky-card-deep, #2d3f55); }
 .sky-active .search-overlay .search-bar { background: var(--sky-card, #3a5068); border-color: transparent; --text-primary: #fff; --temp-light: 0; --text-secondary: rgba(255,255,255,0.80); --text-tertiary: rgba(255,255,255,0.55); color: #fff; }
 /* Pill and dropdown use the lighter --sky-card so they read above the darker
    --sky-card-deep overlay panel behind them. */
@@ -1629,8 +1629,13 @@ body {
 
      light  deeper tones, for light surfaces with dark text
      dark   lighter tones, for dark mode and for every surface with white text
-            on it whatever the theme: the glass cards and the hero over the
-            sky (phone shells) and the glass splash location cards
+            on it whatever the theme: the cards and the hero over the sky
+            (phone shells, both styles) and the glass splash location cards
+
+   Android's cards are on the dark list too: over a sky they are the deep sky
+   panel with white text in light mode as well (see "Android: the search
+   page's panels too"), and leaving them out gave the 7-day list a slate cloud
+   and navy rain beside white day names.
 
    The palette is a set of custom properties, so a surface switches all of
    them at once by redefining them, and the icon rules below never change. */
@@ -1645,7 +1650,7 @@ body {
   --li-therm: #e0583a;
 }
 [data-theme="dark"],
-:root[data-shell="mobile"]:not([data-platform="android"]) .app.sky-active .card:not(.settings-card):not(.settings-inline):not(.settings-pill),
+:root[data-shell="mobile"] .app.sky-active .card:not(.settings-card):not(.settings-inline):not(.settings-pill),
 :root[data-shell="mobile"] .app.sky-active .current-card,
 :root[data-splash-sky="dark"]:not([data-platform="android"]) .splash-mini-card {
   --li-sun: #ffbd4a;
@@ -2776,6 +2781,59 @@ body {
   }
 }
 
+/* ── Phone: the 7-day list in the hourly list's style ──
+   The low and high are the hourly timeline's temperature pills (.hourly-tl-pill:
+   the display face, a soft fill and hairline ring, colour coding inside), a
+   little narrower so two fit around the bar; the day names are its time
+   labels (bold, uppercase, the full text colour). The bar's gutters widen to
+   hold a pill. In the connected layout the pills also take every treatment the
+   hourly pills do (the tile tint, the iOS glass, the pale glass over a light
+   sky), named beside .hourly-tl-pill in those rules. The sky levels' lift on
+   the bare numbers (.sky-lvl-* at the top of this file) would drop-shadow the
+   whole pill, so it comes off. */
+:root[data-shell="mobile"] .daily-day,
+:root[data-shell="mobile"] .daily-row:first-child .daily-day {
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+  color: var(--text-primary);
+}
+:root[data-shell="mobile"] .daily-range-inner {
+  left: 46px;
+  right: 46px;
+}
+:root[data-shell="mobile"] :is(.daily-low, .daily-high) {
+  box-sizing: border-box;
+  min-width: 40px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--text-primary) 9%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text-primary) 8%, transparent);
+  text-shadow: none;
+  filter: none;
+}
+@media (max-width: 400px) {
+  :root[data-shell="mobile"] .daily-day,
+  :root[data-shell="mobile"] .daily-row:first-child .daily-day { font-size: 12.5px; }
+  :root[data-shell="mobile"] .daily-range-inner { left: 42px; right: 42px; }
+  :root[data-shell="mobile"] :is(.daily-low, .daily-high) {
+    min-width: 36px;
+    padding: 3px 6px;
+    font-size: 13px;
+  }
+}
+@media (max-width: 320px) {
+  :root[data-shell="mobile"] :is(.daily-low, .daily-high) { font-size: 12px; }
+}
+
 /* ── Detail cards ── */
 .details-grid {
   display: grid;
@@ -3209,6 +3267,157 @@ body {
 }
 @keyframes detailContentIn  { from { opacity: 0; translate: 0 6px; } to { opacity: 1; translate: none; } }
 @keyframes detailContentOut { to { opacity: 0; } }
+
+/* ── Detail page (connected layout) ──
+   In the connected layout a day or detail opens as a page of its own instead
+   of a cover over its card (DetailCover, coverAsPage): the cards there have no
+   surface for a cover to fill. The page is drawn into .app, fixed to the
+   screen, and wears the search page's surface on every platform: it is added
+   to the search's own background rules rather than copying them (the sky
+   tints near the top of this file and under "Search overlay container", the
+   iOS glass with its blur, and the white text over a sky), so the two always
+   match. The forecast stays where it is underneath, as it does under search:
+   frosted through the iOS glass, and what Android's predictive back shows
+   around the page as it shrinks (TARGETS in utils/predictiveBack.js).
+
+   It opens and closes with the search page's transition too (it is named in
+   the "Phone page transitions" rules beside .search-overlay): the background
+   fades in under content that fades and rises. Never an opacity animation on
+   the page itself: an element below full opacity, or one holding an opacity
+   animation, becomes the backdrop root for its children, so the iOS glass on
+   its ::before had nothing behind it to frost and the forecast showed through
+   sharp. The close finishes inside COVER_OUT_MS (DailyForecast,
+   WeatherDetails), which is how long the page stays mounted after a close.
+   It closes with a plain .closing, which those rules and predictive back's
+   [data-pb-done] rule both look for. */
+.detail-page {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  background: var(--card-bg);
+  color: var(--text-primary);
+}
+.detail-page--closing {
+  pointer-events: none;
+}
+
+/* Only the sky shows behind the page, not the forecast. Everything else in
+   .app (the header and the forecast) fades out as the page comes in and back
+   as it closes; the sky is its own layer outside .app (SkyStage), so the
+   page's glass frosts that alone. Fading these is safe for the glass: they are
+   the page's siblings, not its ancestors, so they can't become its backdrop
+   root.
+
+   During an Android predictive back swipe the forecast comes back at once,
+   since showing what is underneath around the shrinking page is the point of
+   the gesture. */
+.app:has(> .detail-page:not(.closing)) > :not(.detail-page) {
+  animation: detailPageUnder 0.16s cubic-bezier(0, 0, 0.2, 1) forwards;
+}
+.app:has(> .detail-page.closing) > :not(.detail-page) {
+  animation: detailPageUnderOut 0.2s cubic-bezier(0, 0, 0.2, 1) backwards;
+}
+.app:has(> .detail-page[data-pb]) > :not(.detail-page) {
+  animation: none;
+}
+@keyframes detailPageUnder    { to   { opacity: 0; visibility: hidden; } }
+@keyframes detailPageUnderOut { from { opacity: 0; } }
+
+/* The page scrolls on its own; the forecast behind it shouldn't. */
+html:has(.detail-page) {
+  overflow: hidden;
+}
+
+.detail-page-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: calc(var(--sa-top) + 10px) 16px 6px;
+}
+
+.detail-page-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px 20px calc(var(--sa-bottom, 0px) + 32px);
+}
+
+.detail-page-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 20px;
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.detail-page-title .detail-cover-icon { font-size: 28px; }
+.detail-page-title .detail-cover-icon svg { width: 28px; height: 28px; }
+
+/* The body is the page's content, not a clipped window inside a card: it
+   neither scrolls on its own (the page does) nor clips, and it comes in with
+   the page rather than after a fill it no longer has. */
+.detail-page .detail-cover-body {
+  overflow: visible;
+  gap: 20px;
+  animation: none;
+}
+
+/* A Details page's headline is plain text: the reading, its label ("Unlikely",
+   "High risk", "Good") and the title's icon are drawn in the page's text
+   colour rather than their severity colour, which on the sky behind the page
+   (a sunny one above all) read as a green or orange smear. The storm page's
+   badge and the air quality page's number and status are the same headline in
+   their own markup. The colour coding stays in the tiles, charts and scales
+   below. !important over the inline colours WeatherDetails and DetailCover set. */
+.detail-page--details .detail-page-title .detail-cover-icon,
+.detail-page--details .detail-summary :is(.detail-summary-val, .detail-summary-label, .storm-badge),
+.detail-page--details :is(.aqi-number, .aqi-status, .aqi-mask-icon) {
+  color: var(--text-primary) !important;
+}
+
+/* A Details page's displays (the chart, the AQI scale, and each labelled
+   section: pollutants, the AQI outlook, UV, the sun's dial, the storm page's
+   own) sit on a panel instead of straight on the page, so a chart or a gauge
+   reads as a thing in its own right. The panel is the page's tile fill (the
+   rule below; pale glass with dark text over a light sky on iOS, in the
+   light-sky tile rule). A section that is already a set of tiles (the hour
+   grid, the storm week) is left bare, so no tile sits in a panel. Nothing is
+   boxed twice: a chart or scale inside a panelled section takes no panel of
+   its own, and the stat tiles in one (Sun & UV's first light, golden hour,
+   last light, peak UV) drop their fill to plain label-and-value pairs; the
+   light-sky tile rule leaves them out the same way. Sections are parted by the
+   gap between panels, so the hairline between two of them goes. */
+.detail-page--details :is(:is(.detail-chart, .aqi-scale):not(.detail-section *), .detail-section:not(.hour-section):not(:has(.storm-week))) {
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: var(--hover-subtle);
+}
+.detail-page--details .detail-section:not(.hour-section):not(:has(.storm-week)) .detail-stat {
+  padding: 0;
+  background: none;
+}
+.detail-page--details .detail-section + .detail-section {
+  border-top: none;
+}
+
+/* The tiles in it are the search page's panels: a tint of the text colour, so
+   they read on the sky tint, the dark theme and the iOS glass alike. */
+.detail-page {
+  --hover-subtle: color-mix(in srgb, var(--text-primary) 7%, transparent);
+}
+
+/* The day page's hour strip: the chevrons sit just inside the strip, and the
+   first hour isn't "now" (the strip starts at the day's first hour), so it has
+   no highlight. As in the day cover. */
+.detail-page--daily .hourly-scroll-wrapper { padding-inline: 14px; }
+.detail-page--daily .hourly-nav-left  { left: 0; }
+.detail-page--daily .hourly-nav-right { right: 0; }
+.detail-page--daily .hourly-item:first-child { background: transparent; }
 
 /* The day cover's hourly strip is mounted after the reveal finishes (see
    DailyForecast), so it fades in on its own rather than popping. */
@@ -4937,8 +5146,11 @@ html.splash-lock .splash-mini-scrim {
   color: var(--text-primary);
 }
 
-.splash-mini-here {
+/* The check on the card whose weather the splash is showing, pushed to the
+   right end of the name line. */
+.splash-mini-check {
   flex-shrink: 0;
+  margin-left: auto;
   color: var(--accent);
 }
 
@@ -5425,6 +5637,12 @@ html.splash-lock .splash-mini-scrim {
   color: var(--text-tertiary);
   margin: 4px 4px 16px;
   line-height: 1.45;
+}
+
+/* A caption that follows a card. Settings cards sit with no gap below them on
+   Android, which left the text almost touching the card above. */
+.settings-card + .color-coding-desc {
+  margin-top: 16px;
 }
 
 /* Options that depend on a switch that is off (Gyroscope Tilt with the effects
@@ -9214,6 +9432,36 @@ button.reorder-row-action:focus-visible {
   }
 }
 
+/* The map's own background, under the basemap, in the basemap's colours. The
+   basemap is a MapLibre canvas sized from its container's clientWidth, a whole
+   number rounded down, so on a phone, where the card's width is rarely whole,
+   it can stop up to a pixel short of the map's right edge. That sliver showed
+   the light page colour (--bg, .leaflet-container above) as a white line down
+   the right of the compact radar whenever the map was dark: night and storm
+   skies in light mode, and dark mode. These are the same conditions as the
+   basemap's own scheme and dim just above, so the sliver is the map's colour
+   and can't be seen. */
+[data-theme="dark"] .leaflet-container,
+[data-theme="light"] :is(.sky-lvl-dark, .sky-lvl-darkest) .leaflet-container {
+  background: #0e1014;
+}
+[data-theme="light"] :is(.sky-lvl-slight, .sky-lvl-medium) .leaflet-container {
+  background: color-mix(in srgb, var(--bg) 85%, #000);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .leaflet-container {
+    background: #0e1014;
+  }
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) :is(.sky-lvl-dark, .sky-lvl-darkest) .leaflet-container {
+    background: #0e1014;
+  }
+  :root:not([data-theme="dark"]) :is(.sky-lvl-slight, .sky-lvl-medium) .leaflet-container {
+    background: color-mix(in srgb, var(--bg) 85%, #000);
+  }
+}
+
 .radar-controls {
   padding: 10px 18px 14px;
   flex-shrink: 0;
@@ -9319,6 +9567,22 @@ button.reorder-row-action:focus-visible {
   background: rgba(255, 255, 255, 0.22);
   border-color: rgba(255, 255, 255, 0.35);
   color: #fff;
+}
+/* On the phone, over a sky, the play button is the header's search and settings
+   circle (see "giving those circles a body"), from the same tokens: the frost
+   fill, the ring, the lift, the same blur, and the same press fill, so it
+   reads as one more of those buttons. The full-screen radar keeps its solid
+   white disc (see the full-screen radar block): that rule weighs the same and
+   comes earlier, so it is left out here by name. */
+:root[data-shell="mobile"][data-platform="ios"] .app.sky-active .radar-play-circle:not(.radar-expanded *) {
+  background: var(--icon-circle-bg);
+  border: 1px solid var(--icon-circle-ring);
+  box-shadow: var(--icon-circle-shadow);
+  -webkit-backdrop-filter: blur(12px) saturate(1.3);
+  backdrop-filter: blur(12px) saturate(1.3);
+}
+:root[data-shell="mobile"][data-platform="ios"] .app.sky-active .radar-play-circle:not(.radar-expanded *):is(:hover, :active) {
+  background: var(--icon-circle-press);
 }
 
 /* Android: an M3 FAB, the way Android's own apps draw one now rather than a
@@ -10285,19 +10549,19 @@ button.reorder-row-action:focus-visible {
 /* Search overlay container follows sky-level card styling. Uses the deeper
    --sky-card-deep so the --sky-card pill/dropdown inside read a shade lighter
    against it (the same figure/ground relationship as detail subcards on a card). */
-.sky-lvl-slight .search-overlay  { background: var(--sky-card-deep, #445468); }
-.sky-lvl-medium .search-overlay  { background: var(--sky-card-deep, #38495c); }
-.sky-lvl-dark .search-overlay    { background: var(--sky-card-deep, #2b3a4e); }
-.sky-lvl-darkest .search-overlay { background: var(--sky-card-deep, #1f2c3e); }
-[data-theme="dark"] .sky-lvl-slight .search-overlay,
-[data-theme="dark"] .sky-lvl-medium .search-overlay,
-[data-theme="dark"] .sky-lvl-dark .search-overlay,
-[data-theme="dark"] .sky-lvl-darkest .search-overlay { background: var(--card-bg); }
+.sky-lvl-slight :is(.search-overlay, .detail-page)  { background: var(--sky-card-deep, #445468); }
+.sky-lvl-medium :is(.search-overlay, .detail-page)  { background: var(--sky-card-deep, #38495c); }
+.sky-lvl-dark :is(.search-overlay, .detail-page)    { background: var(--sky-card-deep, #2b3a4e); }
+.sky-lvl-darkest :is(.search-overlay, .detail-page) { background: var(--sky-card-deep, #1f2c3e); }
+[data-theme="dark"] .sky-lvl-slight :is(.search-overlay, .detail-page),
+[data-theme="dark"] .sky-lvl-medium :is(.search-overlay, .detail-page),
+[data-theme="dark"] .sky-lvl-dark :is(.search-overlay, .detail-page),
+[data-theme="dark"] .sky-lvl-darkest :is(.search-overlay, .detail-page) { background: var(--card-bg); }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .sky-lvl-slight .search-overlay,
-  :root:not([data-theme="light"]) .sky-lvl-medium .search-overlay,
-  :root:not([data-theme="light"]) .sky-lvl-dark .search-overlay,
-  :root:not([data-theme="light"]) .sky-lvl-darkest .search-overlay { background: var(--card-bg); }
+  :root:not([data-theme="light"]) .sky-lvl-slight :is(.search-overlay, .detail-page),
+  :root:not([data-theme="light"]) .sky-lvl-medium :is(.search-overlay, .detail-page),
+  :root:not([data-theme="light"]) .sky-lvl-dark :is(.search-overlay, .detail-page),
+  :root:not([data-theme="light"]) .sky-lvl-darkest :is(.search-overlay, .detail-page) { background: var(--card-bg); }
 }
 
 /* Radar floating buttons + search follow sky-level card styling */
@@ -11162,10 +11426,10 @@ button.reorder-row-action:focus-visible {
    so its own blur saw only the empty panel and the forecast text came through
    it sharp. On a ::before, the panel's glass is a sibling of the list instead
    of its ancestor, and both blur the real page. */
-:root[data-platform="ios"] .app .search-overlay {
+:root[data-platform="ios"] .app :is(.search-overlay, .detail-page) {
   background: transparent;
 }
-:root[data-platform="ios"] .app .search-overlay::before {
+:root[data-platform="ios"] .app :is(.search-overlay, .detail-page)::before {
   content: '';
   position: absolute;
   inset: 0;
@@ -11260,17 +11524,17 @@ button.reorder-row-action:focus-visible {
   --page-content-out: pageFadeOut 0.1s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
-:root[data-shell="mobile"][data-platform] :is(.app .search-overlay, .settings-page:not(.settings-page--modal)) {
+:root[data-shell="mobile"][data-platform] :is(.app .search-overlay, .app .detail-page, .settings-page:not(.settings-page--modal)) {
   animation: pageBgIn 0.16s cubic-bezier(0, 0, 0.2, 1) backwards;
   box-shadow: none;
 }
-:root[data-shell="mobile"][data-platform] :is(.app .search-overlay, .settings-page:not(.settings-page--modal)).closing {
+:root[data-shell="mobile"][data-platform] :is(.app .search-overlay, .app .detail-page, .settings-page:not(.settings-page--modal)).closing {
   animation: pageBgOut 0.17s cubic-bezier(0.4, 0, 1, 1) 0.04s forwards;
 }
-:root[data-shell="mobile"][data-platform] :is(.app .search-overlay, .settings-page:not(.settings-page--modal)) > * {
+:root[data-shell="mobile"][data-platform] :is(.app .search-overlay, .app .detail-page, .settings-page:not(.settings-page--modal)) > * {
   animation: var(--page-content-in);
 }
-:root[data-shell="mobile"][data-platform] :is(.app .search-overlay, .settings-page:not(.settings-page--modal)).closing > * {
+:root[data-shell="mobile"][data-platform] :is(.app .search-overlay, .app .detail-page, .settings-page:not(.settings-page--modal)).closing > * {
   animation: var(--page-content-out);
 }
 /* The settings list comes in one level down: the group labels and cards fade
@@ -11297,11 +11561,11 @@ button.reorder-row-action:focus-visible {
    search (which only shows through that glass). The dimmer used to keep its
    own slower timing, so the weather came back dimmed and then lifted. */
 :root[data-shell="mobile"][data-platform] :is(.settings-sky, .search-backdrop),
-:root[data-shell="mobile"][data-platform] .app .search-overlay::before {
+:root[data-shell="mobile"][data-platform] .app :is(.search-overlay, .detail-page)::before {
   animation: var(--page-backdrop-in);
 }
 :root[data-shell="mobile"][data-platform] :is(.settings-sky, .search-backdrop).closing,
-:root[data-shell="mobile"][data-platform] .app .search-overlay.closing::before {
+:root[data-shell="mobile"][data-platform] .app :is(.search-overlay, .detail-page).closing::before {
   animation: var(--page-backdrop-out);
 }
 
@@ -11349,7 +11613,7 @@ button.reorder-row-action:focus-visible {
 
 /* Over a sky the panel behind is the deep sky tint, so the text goes white —
    as the old dropdown's did. */
-.sky-active .search-overlay--sheet {
+.sky-active :is(.search-overlay--sheet, .detail-page) {
   --text-primary: #fff; --temp-light: 0;
   --text-secondary: rgba(255, 255, 255, 0.78);
   --text-tertiary: rgba(255, 255, 255, 0.55);
@@ -11739,6 +12003,13 @@ button.reorder-row-action:focus-visible {
 :root[data-shell="mobile"][data-platform="android"] :is(.settings-page, .settings-inline, .settings-pill) .settings-card {
   border-radius: 28px;
   margin-bottom: 4px;
+}
+
+/* Two cards in a row with no label between them (Color Coding's reset card
+   under the extremes, say): the 4px above is meant to sit under a label, and
+   between two cards it left them all but touching. */
+:root[data-shell="mobile"][data-platform="android"] :is(.settings-page, .settings-inline, .settings-pill) .settings-card + .settings-card {
+  margin-top: 16px;
 }
 
 :root[data-shell="mobile"][data-platform="android"] :is(.settings-page, .settings-inline, .settings-pill) .settings-row {
@@ -12556,11 +12827,12 @@ button.reorder-row-action:focus-visible {
 }
 :root[data-theme="light"][data-shell="mobile"][data-platform="ios"] .app.sky-active.sky-tone-light :is(
   .app-header .header-icon-btn, .app-header .settings-btn,
-  .current-card .fav-btn, .current-card .save-btn
+  .current-card .fav-btn, .current-card .save-btn,
+  .radar-play-circle:not(.radar-expanded *)
 ) {
   color: #64748b;
 }
-:root[data-theme="light"][data-shell="mobile"][data-platform="ios"] .app.sky-active.sky-tone-light .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) {
+:root[data-theme="light"][data-shell="mobile"][data-platform="ios"]:not([data-layout="connected"]) .app.sky-active.sky-tone-light .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) {
   --card-glass-fill: var(--ios-light-glass);
   --glass-tint: 0;
   --glass-rim: rgba(255, 255, 255, 0.6);
@@ -12585,7 +12857,7 @@ button.reorder-row-action:focus-visible {
   --li-storm: #6d4ae8;
   --li-therm: #e0583a;
 }
-:root[data-theme="light"][data-shell="mobile"][data-platform="ios"] .app.sky-active.sky-tone-light .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) .section-label {
+:root[data-theme="light"][data-shell="mobile"][data-platform="ios"]:not([data-layout="connected"]) .app.sky-active.sky-tone-light .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) .section-label {
   color: var(--text-secondary);
 }
 @media (prefers-color-scheme: light) {
@@ -12598,11 +12870,12 @@ button.reorder-row-action:focus-visible {
   }
   :root:not([data-theme])[data-shell="mobile"][data-platform="ios"] .app.sky-active.sky-tone-light :is(
     .app-header .header-icon-btn, .app-header .settings-btn,
-    .current-card .fav-btn, .current-card .save-btn
+    .current-card .fav-btn, .current-card .save-btn,
+    .radar-play-circle:not(.radar-expanded *)
   ) {
     color: #64748b;
   }
-  :root:not([data-theme])[data-shell="mobile"][data-platform="ios"] .app.sky-active.sky-tone-light .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) {
+  :root:not([data-theme])[data-shell="mobile"][data-platform="ios"]:not([data-layout="connected"]) .app.sky-active.sky-tone-light .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) {
     --card-glass-fill: var(--ios-light-glass);
     --glass-tint: 0;
     --glass-rim: rgba(255, 255, 255, 0.6);
@@ -12625,7 +12898,7 @@ button.reorder-row-action:focus-visible {
     --li-storm: #6d4ae8;
     --li-therm: #e0583a;
   }
-  :root:not([data-theme])[data-shell="mobile"][data-platform="ios"] .app.sky-active.sky-tone-light .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) .section-label {
+  :root:not([data-theme])[data-shell="mobile"][data-platform="ios"]:not([data-layout="connected"]) .app.sky-active.sky-tone-light .card:not(.current-card):not(.settings-card):not(.settings-inline):not(.settings-pill):not(.radar-expanded) .section-label {
     color: var(--text-secondary);
   }
 }
@@ -12814,6 +13087,298 @@ a.apk-download-btn {
   background: transparent;
   box-shadow: none;
   margin-bottom: 0;
+}
+
+/* ── The tiles over the sky, and Card Transparency ──
+   With the card surfaces gone, what reads as the cards in this layout are the
+   tiles: Weather Insight, the At a Glance stats, the Details tiles, the AQI
+   pollutants and the Reorder rows. They used to be a faint white wash, which
+   left white text on a bright sky with nothing under it to read against, and
+   left Card Transparency nothing to do.
+
+   Over a sky they now take the separate cards' panel instead: the deep sky
+   tint lifted by 7% white, the colour the Android cards are over the same sky.
+   Card Transparency thins it from 90% at zero to 50% at the clamp
+   (--card-glass-t, 0–1, written by App.jsx only while the slider is off zero
+   and the sky is there).
+
+   Text left standing on the sky (the section titles, the hourly strip, the
+   7-day rows) gets a soft shadow under it, the way the header's place name
+   does, so it holds up over the bright end of a day sky.
+
+   The coloured values need more than that: a yellow or green temperature, or
+   the accent's rain chance, has almost no contrast with a light blue sky, and
+   a soft lift doesn't change that. Lists stay on the sky (a tile behind the
+   whole 7-day list was tried and taken out), so the help goes on the values:
+     · the 7-day temperatures and rain chances get a tight dark edge under the
+       glyphs plus a wider halo (--connected-value-shadow), which is what keeps
+       subtitle-style coloured text legible over any background
+     · the rain chance is drawn mostly in the text colour, the accent kept as
+       a tint, since the accent is a pale lavender or pink over a sky
+     · the 7-day icons get the hero icon's drop shadow
+     · the hourly pills, which already are small surfaces, take the tile fill,
+       so their coloured numbers sit on the deep tint instead of a white wash
+     · the chosen hourly reading chip is solid white with dark text, as the
+       search sheet's chips are over a sky, instead of an accent wash */
+:root[data-shell="mobile"][data-layout="connected"] .app.sky-active .weather-content {
+  --connected-tile: color-mix(in srgb,
+    color-mix(in srgb, var(--sky-card-deep, #2d3f55) 93%, #fff)
+    calc(90% - 40% * var(--card-glass-t, 0)), transparent);
+  --connected-text-shadow: 0 1px 3px rgb(0 0 0 / 0.2), 0 1px 12px rgb(0 0 0 / 0.16);
+  --connected-value-shadow: 0 1px 1.5px rgb(0 0 0 / 0.55), 0 0 3px rgb(0 0 0 / 0.25), 0 1px 12px rgb(0 0 0 / 0.3);
+  --connected-icon-lift: drop-shadow(0 1px 3px rgb(0 0 0 / 0.35));
+}
+
+:root[data-shell="mobile"][data-layout="connected"] .app.sky-active .weather-content :is(.glance-tile, .detail-card:not(.detail-expand-tile--active), .aqi-pollutant) {
+  background: var(--connected-tile);
+}
+:root[data-shell="mobile"][data-layout="connected"][data-platform] .app.sky-active .weather-content :is(.weather-left, .sortable-block) > .card.card--insight:not(.current-card),
+:root[data-shell="mobile"][data-layout="connected"][data-platform] .app.sky-active .weather-right > .card:is(.reorder-row, .reorder-removed, .reorder-btn) {
+  background: var(--connected-tile) !important;
+}
+
+/* iOS: every tile standing on the sky is the same frosted glass as the
+   header's search and settings circles (see "giving those circles a body"),
+   from the same tokens, so they all stay matched as the sky and theme change
+   them: the frost fill, the hairline ring, the soft lift and the blur of the
+   sky behind. That is Weather Insight, the At a Glance stats, the Details
+   tiles, the AQI pollutants, the hourly pills and the Reorder rows. An open
+   Details tile keeps its accent. The background is !important to get past the
+   insight and reorder rule above, and the blur to get past the connected
+   cards' own "no blur" (Weather Insight is one of those cards). Not on
+   Android, whose header circles are flat Material discs with no glass. */
+:root[data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active .weather-content :is(.glance-tile, .detail-card:not(.detail-expand-tile--active), .aqi-pollutant, .hourly-tl-pill, .card--daily .daily-low, .card--daily .daily-high),
+:root[data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active .weather-content :is(.weather-left, .sortable-block) > .card.card--insight:not(.current-card),
+:root[data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active .weather-right > .card:is(.reorder-row, .reorder-removed, .reorder-btn) {
+  background: var(--icon-circle-bg) !important;
+  border: 1px solid var(--icon-circle-ring);
+  box-shadow: var(--icon-circle-shadow);
+  -webkit-backdrop-filter: blur(12px) saturate(1.3) !important;
+  backdrop-filter: blur(12px) saturate(1.3) !important;
+}
+/* ── Connected, light mode, light sky (iOS): tiles are the header's pale glass ──
+   Over a light sky in light mode the header's search and settings circles turn
+   to pale glass with dark icons (see "Light mode over a light sky"), and they
+   are the clearest things on the screen. The tiles follow them: the same pale
+   glass (they already take its tokens, above), and inside it the pale-card
+   palette the separate layout's cards use (dark text, the deeper light-surface
+   temperature and icon colours, the blue accent), so a green or lavender value
+   is drawn for a pale tile rather than for the sky. Text that stands on the sky
+   itself (section titles, the 7-day list, the hero) stays white with its
+   shadow. The rule, in both layouts: text follows what is directly behind it.
+
+   The tiles are the forecast's (Insight, At a Glance's stats and alert rows,
+   Details, the AQI pollutants, the hourly pills, the Reorder rows) and the
+   detail page's (the conditions, the stats, the hour grid, the storm week).
+   At a Glance's alert rows keep their colour's tint, laid over the glass. */
+:root[data-theme="light"][data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active.sky-tone-light :is(
+  .weather-content :is(.glance-tile, .glance-alert, .alert-row, .detail-card:not(.detail-expand-tile--active), .aqi-pollutant, .hourly-tl-pill, .card--daily .daily-low, .card--daily .daily-high),
+  .weather-content :is(.weather-left, .sortable-block) > .card.card--insight:not(.current-card),
+  .weather-right > .card:is(.reorder-row, .reorder-removed, .reorder-btn),
+  .detail-page :is(.day-cond-cell, .day-stat, .detail-stat:not(.detail-section *), .hour-grid .uv-timeline-item, .storm-week-row),
+  .detail-page--details :is(:is(.detail-chart, .aqi-scale):not(.detail-section *), .detail-section:not(.hour-section):not(:has(.storm-week)))
+) {
+  --text-primary: #1a1a2e; --temp-light: 1;
+  --text-secondary: #64748b;
+  --text-tertiary: #7b8798;
+  --accent: #3b82f6;
+  --accent-light: rgba(59, 130, 246, 0.1);
+  --border: rgba(0, 0, 0, 0.06);
+  --hover-subtle: rgba(0, 0, 0, 0.03);
+  --hover-medium: rgba(0, 0, 0, 0.05);
+  --bar-track-bg: rgba(0, 0, 0, 0.08);
+  --li-sun: #e58a00;
+  --li-moon: #d9a514;
+  --li-cloud: #64748b;
+  --li-fog: #6b7785;
+  --li-rain: #2563eb;
+  --li-snow: #1f8fcf;
+  --li-storm: #6d4ae8;
+  --li-therm: #e0583a;
+  --connected-text-shadow: none; --connected-value-shadow: none; --connected-icon-lift: none;
+  color: var(--text-primary);
+  background: var(--icon-circle-bg) !important;
+  border: 1px solid var(--icon-circle-ring);
+  box-shadow: var(--icon-circle-shadow);
+  text-shadow: none;
+  -webkit-backdrop-filter: blur(12px) saturate(1.3) !important;
+  backdrop-filter: blur(12px) saturate(1.3) !important;
+}
+:root[data-theme="light"][data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active.sky-tone-light .weather-content .glance-alert {
+  background:
+    linear-gradient(color-mix(in srgb, var(--glance-c) 14%, transparent), color-mix(in srgb, var(--glance-c) 14%, transparent)),
+    var(--icon-circle-bg) !important;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme])[data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active.sky-tone-light :is(
+    .weather-content :is(.glance-tile, .glance-alert, .alert-row, .detail-card:not(.detail-expand-tile--active), .aqi-pollutant, .hourly-tl-pill, .card--daily .daily-low, .card--daily .daily-high),
+    .weather-content :is(.weather-left, .sortable-block) > .card.card--insight:not(.current-card),
+    .weather-right > .card:is(.reorder-row, .reorder-removed, .reorder-btn),
+    .detail-page :is(.day-cond-cell, .day-stat, .detail-stat:not(.detail-section *), .hour-grid .uv-timeline-item, .storm-week-row),
+    .detail-page--details :is(:is(.detail-chart, .aqi-scale):not(.detail-section *), .detail-section:not(.hour-section):not(:has(.storm-week)))
+  ) {
+    --text-primary: #1a1a2e; --temp-light: 1;
+    --text-secondary: #64748b;
+    --text-tertiary: #7b8798;
+    --accent: #3b82f6;
+    --accent-light: rgba(59, 130, 246, 0.1);
+    --border: rgba(0, 0, 0, 0.06);
+    --hover-subtle: rgba(0, 0, 0, 0.03);
+    --hover-medium: rgba(0, 0, 0, 0.05);
+    --bar-track-bg: rgba(0, 0, 0, 0.08);
+    --li-sun: #e58a00;
+    --li-moon: #d9a514;
+    --li-cloud: #64748b;
+    --li-fog: #6b7785;
+    --li-rain: #2563eb;
+    --li-snow: #1f8fcf;
+    --li-storm: #6d4ae8;
+    --li-therm: #e0583a;
+    --connected-text-shadow: none; --connected-value-shadow: none; --connected-icon-lift: none;
+    color: var(--text-primary);
+    background: var(--icon-circle-bg) !important;
+    border: 1px solid var(--icon-circle-ring);
+    box-shadow: var(--icon-circle-shadow);
+    text-shadow: none;
+    -webkit-backdrop-filter: blur(12px) saturate(1.3) !important;
+    backdrop-filter: blur(12px) saturate(1.3) !important;
+  }
+  :root:not([data-theme])[data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active.sky-tone-light .weather-content .glance-alert {
+    background:
+      linear-gradient(color-mix(in srgb, var(--glance-c) 14%, transparent), color-mix(in srgb, var(--glance-c) 14%, transparent)),
+      var(--icon-circle-bg) !important;
+  }
+}
+
+/* Section titles in the same light-sky case. On the sky they are near-solid
+   white rather than the 70% the glass rule gives them, which a sunny sky's
+   blue swallowed; in a pale tile (Weather Insight) they take the tile's dark
+   secondary instead of that white. */
+:root[data-theme="light"][data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active.sky-tone-light .weather-content .card:not(.current-card):not(.radar-expanded) .section-label {
+  color: rgb(255 255 255 / 0.95);
+}
+:root[data-theme="light"][data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active.sky-tone-light .weather-content :is(.weather-left, .sortable-block) > .card.card--insight:not(.current-card) .section-label {
+  color: var(--text-secondary);
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme])[data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active.sky-tone-light .weather-content .card:not(.current-card):not(.radar-expanded) .section-label {
+    color: rgb(255 255 255 / 0.95);
+  }
+  :root:not([data-theme])[data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active.sky-tone-light .weather-content :is(.weather-left, .sortable-block) > .card.card--insight:not(.current-card) .section-label {
+    color: var(--text-secondary);
+  }
+}
+
+/* Weather Insight is the one pale tile that is mostly running text, set in the
+   secondary grey with tertiary headings, and that read faint on the glass. Its
+   greys go darker here: the sentences close to the primary, the headings
+   ("WEATHER INSIGHT", "CURRENT CONDITIONS", "CLOTHING") a step behind them.
+   The doubled class only lifts this over the shared pale-tile rule above. */
+:root[data-theme="light"][data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active.sky-tone-light .weather-content :is(.weather-left, .sortable-block) > .card.card--insight.card--insight:not(.current-card) {
+  --text-secondary: #2f3a4d;
+  --text-tertiary: #4a5568;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme])[data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active.sky-tone-light .weather-content :is(.weather-left, .sortable-block) > .card.card--insight.card--insight:not(.current-card) {
+    --text-secondary: #2f3a4d;
+    --text-tertiary: #4a5568;
+  }
+}
+
+/* Values on the sky in the same light-sky case. A sunny sky's blue is
+   mid-tone, so no temperature colour reads on it, light palette or dark: the
+   7-day numbers, the day page's high and low, and its hour strip are white
+   with the sky's soft shadow, like the hero. The colour coding stays where it
+   can be seen: the 7-day range bars, the icons, and every value inside a pale
+   tile. !important over the inline colour tempStyle writes (a hot or frosty
+   day's glow, also inline, is kept).
+
+   The day and detail pages stand on that sky too: their secondary text and
+   labels go near-white, the warmer/colder arrows white (the arrow says which
+   way), and the page's on-sky text takes the connected layout's soft shadow.
+   Its tiles have their own rule above, which takes the shadow off again. */
+:root[data-theme="light"][data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active.sky-tone-light :is(
+  .weather-content .card--daily .daily-precip-badge,
+  .detail-page .detail-summary-val > span,
+  .detail-page .hourly-scroll-wrapper :is(.hourly-temp, .hourly-precip)
+) {
+  color: #fff !important;
+}
+:root[data-theme="light"][data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active.sky-tone-light .detail-page {
+  --text-secondary: rgb(255 255 255 / 0.9);
+  --text-tertiary: rgb(255 255 255 / 0.82);
+}
+:root[data-theme="light"][data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active.sky-tone-light .detail-page .detail-page-scroll {
+  text-shadow: 0 1px 3px rgb(0 0 0 / 0.22), 0 1px 12px rgb(0 0 0 / 0.18);
+}
+:root[data-theme="light"][data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active.sky-tone-light .detail-page :is(.day-compare-icon, .day-cond-title, .day-cond-when, :is(.hour-section, .detail-section:has(.storm-week)) > .detail-section-label) {
+  color: rgb(255 255 255 / 0.95);
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme])[data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active.sky-tone-light :is(
+    .weather-content .card--daily .daily-precip-badge,
+    .detail-page .detail-summary-val > span,
+    .detail-page .hourly-scroll-wrapper :is(.hourly-temp, .hourly-precip)
+  ) {
+    color: #fff !important;
+  }
+  :root:not([data-theme])[data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active.sky-tone-light .detail-page {
+    --text-secondary: rgb(255 255 255 / 0.9);
+    --text-tertiary: rgb(255 255 255 / 0.82);
+  }
+  :root:not([data-theme])[data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active.sky-tone-light .detail-page .detail-page-scroll {
+    text-shadow: 0 1px 3px rgb(0 0 0 / 0.22), 0 1px 12px rgb(0 0 0 / 0.18);
+  }
+  :root:not([data-theme])[data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active.sky-tone-light .detail-page :is(.day-compare-icon, .day-cond-title, .day-cond-when, :is(.hour-section, .detail-section:has(.storm-week)) > .detail-section-label) {
+    color: rgb(255 255 255 / 0.95);
+  }
+}
+
+:root[data-shell="mobile"][data-layout="connected"] .app.sky-active .weather-content .card:not(.current-card):not(.radar-expanded) {
+  text-shadow: var(--connected-text-shadow);
+}
+/* Not on the map: its labels and controls sit on surfaces of their own. */
+:root[data-shell="mobile"][data-layout="connected"] .app.sky-active .weather-content .radar-map-wrap {
+  text-shadow: none;
+}
+
+/* 7-day values. A hot or frosty day's inline glow still replaces the shadow
+   on its own number, as it does everywhere. */
+:root[data-shell="mobile"][data-layout="connected"] .app.sky-active .weather-content .card--daily .daily-precip-badge {
+  text-shadow: var(--connected-value-shadow);
+}
+:root[data-shell="mobile"][data-layout="connected"] .app.sky-active .weather-content .card--daily .daily-precip-badge {
+  color: color-mix(in srgb, var(--accent) 30%, var(--text-primary));
+}
+:root[data-shell="mobile"][data-layout="connected"] .app.sky-active .weather-content .card--daily .daily-icon .weather-icon-line {
+  filter: var(--connected-icon-lift);
+}
+
+/* The hourly conditions bar. Its tones are see-through tints, so on the bare
+   sky they ran into it. It gets a backing under them (the bar's
+   background-colour; HourlyForecast puts the tones on as an image above it)
+   and a hairline ring: the hourly pills' own fill beside it, the connected tint
+   on Android and the header buttons' glass on iOS (pale over a light sky). */
+:root[data-shell="mobile"][data-layout="connected"] .app.sky-active .weather-content .hourly-tl-bar {
+  background-color: var(--connected-tile);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.14);
+}
+:root[data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active .weather-content .hourly-tl-bar {
+  background-color: var(--icon-circle-bg);
+  box-shadow: 0 0 0 1px var(--icon-circle-ring), var(--icon-circle-shadow);
+}
+
+/* Hourly values. */
+:root[data-shell="mobile"][data-layout="connected"] .app.sky-active .weather-content :is(.hourly-tl-pill, .card--daily .daily-low, .card--daily .daily-high) {
+  background: var(--connected-tile);
+  box-shadow: none;
+  text-shadow: none;
+}
+:root[data-shell="mobile"][data-layout="connected"] .app.sky-active .weather-content .hourly-tl-chip.is-on {
+  border-color: #fff;
+  background: #fff;
+  color: #1a1a2e;
+  text-shadow: none;
 }
 
 /* Sides: the cards no longer need a gutter of sky around them, so the column

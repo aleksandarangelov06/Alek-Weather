@@ -1,9 +1,9 @@
 import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import {
   ArrowLeft, ChevronRight, ChevronDown, X, Info, LifeBuoy,
-  Palette, Flame, Thermometer, CloudRain, Radar as RadarIcon, Bell, Database, RefreshCw, Trash2,
+  Palette, Flame, Thermometer, CloudRain, Radar as RadarIcon, Bell, Database, RefreshCw, RotateCcw, Trash2,
 } from 'lucide-react'
-import { APP_VERSION, ANDROID_VERSION, IS_ANDROID_APP } from '../utils/version'
+import { APP_VERSION_LABEL, ANDROID_VERSION_LABEL, IS_ANDROID_APP } from '../utils/version'
 import { APK_URL, isAndroidWeb } from './ApkPrompt'
 import { IS_PHONE, IS_DESKTOP } from '../utils/device'
 import { UNIT_GROUPS, UNIT_GROUP_KEYS } from '../utils/units'
@@ -261,7 +261,7 @@ function UpdateSection() {
 
   const status = {
     checking: 'Checking for updates…',
-    current: `You're on the latest version (${ANDROID_VERSION}).`,
+    current: `You're on the latest version (${ANDROID_VERSION_LABEL}).`,
     downloading: `Downloading… ${pct}%`,
     permission: 'Allow installs from Alek Weather, then tap Update again.',
     error: "Couldn't check for updates. Try again later.",
@@ -345,12 +345,8 @@ const COLOR_CODING_TILES = [
   { key: 'details',  label: 'Weather Details'  },
 ]
 
-function ColorCodingView({ colorCoding, onToggle, onBack, webShell }) {
-  // Same reason the Tiles entry goes on desktop: the overview isn't on the page
-  // there, so a switch for how it colours its readings has nothing to colour.
-  const tiles = webShell
-    ? COLOR_CODING_TILES.filter(t => t.key !== 'overview')
-    : COLOR_CODING_TILES
+function ColorCodingView({ colorCoding, onToggle, onReset, onBack }) {
+  const tiles = COLOR_CODING_TILES
   return (
     <>
       {onBack && (
@@ -376,6 +372,13 @@ function ColorCodingView({ colorCoding, onToggle, onBack, webShell }) {
           <Toggle id="toggle-cc-frost" checked={colorCoding.frost} onChange={() => onToggle('frost')} />
         </SettingRow>
       </div>
+      {onReset && (
+        <div className="card settings-card">
+          <button className="settings-row clear-cache-btn" onClick={onReset}>
+            <div className="settings-row-label">Reset to default</div>
+          </button>
+        </div>
+      )}
     </>
   )
 }
@@ -710,11 +713,11 @@ function RadarSettingsView({ radarMode, onRadarModeChange, radarSource, onRadarS
         <RadarEnhancedRow checked={radarEnhanced} onChange={onRadarEnhancedChange} />
       </div>
       {/* Which observed feed the map draws, in the US (elsewhere RainViewer
-          is the only one there is). RainViewer is the default. MRMS is
-          NOAA's seamless national mosaic at ~1 km; NEXRAD is the nearest
-          single radar at 0.25 km — sharper, but it ends ~230 km out. Auto
-          draws MRMS zoomed out and NEXRAD zoomed in, which is each one where
-          it is best. Four options don't fit beside a label at phone width, so
+          is the only one there is). MRMS is NOAA's seamless national mosaic
+          at ~1 km; NEXRAD is the nearest single radar at 0.25 km — sharper,
+          but it ends ~230 km out. Default ('auto') draws MRMS zoomed out and
+          NEXRAD zoomed in, which is each one where it is best, and keeps the
+          whole timeline on NOAA with the HRRR forecast. Four options don't fit beside a label at phone width, so
           the control gets a card of its own with the label above it. */}
       <p className="color-coding-desc">Radar source. Outside the US, RainViewer is always used.</p>
       <div className="card settings-card">
@@ -723,16 +726,25 @@ function RadarSettingsView({ radarMode, onRadarModeChange, radarSource, onRadarS
             value={radarSource}
             onChange={onRadarSourceChange}
             options={[
+              { value: 'auto',   label: 'Default' },
               { value: 'rainviewer', label: 'RainViewer' },
-              { value: 'auto',   label: 'Auto'   },
               { value: 'mrms',   label: 'MRMS'   },
               { value: 'nexrad', label: 'NEXRAD' },
             ]}
           />
         </div>
       </div>
+      <p className="color-coding-desc">{RADAR_SOURCE_DESC[radarSource]}</p>
     </>
   )
+}
+
+// A line under the radar source picker saying what the selected one does.
+const RADAR_SOURCE_DESC = {
+  auto: 'NOAA radar throughout: the national mosaic zoomed out, the nearest radar station zoomed in, and the HRRR model for the forecast.',
+  rainviewer: 'RainViewer\'s global radar, with NOAA\'s HRRR model for the forecast. Coarser and updated less often than NOAA\'s own radar.',
+  mrms: 'NOAA\'s national radar mosaic, updated about every 5 minutes. Smooth coverage at any zoom.',
+  nexrad: 'The nearest single radar station. The sharpest detail, but it only reaches about 230 km out.',
 }
 
 function radarViewProps(bodyProps) {
@@ -891,8 +903,8 @@ function SettingsBody({ onHelpOpen, darkMode, onDarkModeChange, platformTheme, c
       <AboutSection onHelpOpen={onHelpOpen} />
 
       <div className="settings-footer">
-        <p className="settings-version">Version {APP_VERSION}</p>
-        {IS_ANDROID_APP && <p className="settings-version">Android {ANDROID_VERSION}</p>}
+        <p className="settings-version">Version {APP_VERSION_LABEL}</p>
+        {IS_ANDROID_APP && <p className="settings-version">Android {ANDROID_VERSION_LABEL}</p>}
         <p className="settings-studio">Alek Studios&#8482;</p>
       </div>
     </>
@@ -966,7 +978,7 @@ function WebSettings({
   nowcastMode, onNowcastModeChange,
   radarMode, onRadarModeChange, radarSource, onRadarSourceChange, radarEnhanced, onRadarEnhancedChange,
   weatherAnimations, onWeatherAnimationsChange, iconMotion, onIconMotionChange, iconSet, onIconSetChange,
-  colorCoding, onColorCodingToggle, webShell, onHelpOpen,
+  colorCoding, onColorCodingToggle, onColorCodingReset, onHelpOpen,
   notifyEnabled, notifyTypes, notifyPermission, onNotifyEnabledChange, onNotifyTypeToggle,
 }) {
   const sections = [
@@ -993,7 +1005,7 @@ function WebSettings({
   }
   const current = sections.find(s => s.id === section) ?? sections[0]
 
-  const tiles = webShell ? COLOR_CODING_TILES.filter(t => t.key !== 'overview') : COLOR_CODING_TILES
+  const tiles = COLOR_CODING_TILES
 
   let content
   switch (current.id) {
@@ -1066,6 +1078,16 @@ function WebSettings({
               <Toggle id="ws-cc-frost" checked={colorCoding.frost} onChange={() => onColorCodingToggle('frost')} />
             </WebRow>
           </WebGroup>
+          {onColorCodingReset && (
+            <WebGroup>
+              <WebRow label="Reset to default" desc="Put every color coding option back the way it was when the app was first opened.">
+                <button className="ws-btn" onClick={onColorCodingReset}>
+                  <RotateCcw size={15} aria-hidden="true" />
+                  Reset
+                </button>
+              </WebRow>
+            </WebGroup>
+          )}
         </>
       )
       break
@@ -1121,13 +1143,13 @@ function WebSettings({
               ]}
             />
           </WebRow>
-          <WebRow label="Radar source" desc="US only. MRMS is NOAA's national mosaic; NEXRAD is the nearest single radar: sharper, but it ends about 230 km out. Auto uses each where it's best.">
+          <WebRow label="Radar source" desc={`US only. ${RADAR_SOURCE_DESC[radarSource]}`}>
             <SegmentedControl
               value={radarSource}
               onChange={onRadarSourceChange}
               options={[
+                { value: 'auto', label: 'Default' },
                 { value: 'rainviewer', label: 'RainViewer' },
-                { value: 'auto', label: 'Auto' },
                 { value: 'mrms', label: 'MRMS' },
                 { value: 'nexrad', label: 'NEXRAD' },
               ]}
@@ -1188,8 +1210,8 @@ function WebSettings({
             ))}
           </WebGroup>
           <div className="ws-footer">
-            <span>Version {APP_VERSION}</span>
-            {IS_ANDROID_APP && <span>Android {ANDROID_VERSION}</span>}
+            <span>Version {APP_VERSION_LABEL}</span>
+            {IS_ANDROID_APP && <span>Android {ANDROID_VERSION_LABEL}</span>}
             <span>Alek Studios&#8482;</span>
           </div>
         </>
@@ -1228,7 +1250,7 @@ function WebSettings({
   )
 }
 
-export function SettingsPage({ onBack, onDismiss, inline, page, modal, closing, subView, onColorCodingOpen, onRadarOpen, onWeatherEffectsOpen, onIconsOpen, onThemeOpen, onNotificationsOpen, onSubViewBack, colorCoding, onColorCodingToggle, ...bodyProps }) {
+export function SettingsPage({ onBack, onDismiss, inline, page, modal, closing, subView, onColorCodingOpen, onRadarOpen, onWeatherEffectsOpen, onIconsOpen, onThemeOpen, onNotificationsOpen, onSubViewBack, colorCoding, onColorCodingToggle, onColorCodingReset, ...bodyProps }) {
   // Set while the transparency thumb is held, which fades the page down to just
   // that slider (see .settings-page.peeking). A pointer released off the input
   // — dragged past the end of the track, or lifted after the browser handed the
@@ -1309,7 +1331,7 @@ export function SettingsPage({ onBack, onDismiss, inline, page, modal, closing, 
 
   let body
   if (subView === 'colorcoding') {
-    body = <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} webShell={bodyProps.webShell} />
+    body = <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} onReset={onColorCodingReset} />
   } else if (subView === 'theme') {
     body = (
       <ThemeView
@@ -1361,7 +1383,7 @@ export function SettingsPage({ onBack, onDismiss, inline, page, modal, closing, 
 
   // The web app's Settings tab: its own desktop layout (see WebSettings).
   if (page) {
-    return <WebSettings {...bodyProps} colorCoding={colorCoding} onColorCodingToggle={onColorCodingToggle} />
+    return <WebSettings {...bodyProps} colorCoding={colorCoding} onColorCodingToggle={onColorCodingToggle} onColorCodingReset={onColorCodingReset} />
   }
 
   if (inline) {
@@ -1437,10 +1459,10 @@ export function SettingsPage({ onBack, onDismiss, inline, page, modal, closing, 
   )
 }
 
-export function SettingsPill({ expanded, onToggle, subView, onColorCodingOpen, onRadarOpen, onWeatherEffectsOpen, onIconsOpen, onThemeOpen, onNotificationsOpen, onSubViewBack, colorCoding, onColorCodingToggle, ...bodyProps }) {
+export function SettingsPill({ expanded, onToggle, subView, onColorCodingOpen, onRadarOpen, onWeatherEffectsOpen, onIconsOpen, onThemeOpen, onNotificationsOpen, onSubViewBack, colorCoding, onColorCodingToggle, onColorCodingReset, ...bodyProps }) {
   let body
   if (subView === 'colorcoding') {
-    body = <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} onBack={onSubViewBack} webShell={bodyProps.webShell} />
+    body = <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} onReset={onColorCodingReset} onBack={onSubViewBack} />
   } else if (subView === 'theme') {
     body = (
       <ThemeView

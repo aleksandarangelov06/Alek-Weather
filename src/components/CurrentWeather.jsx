@@ -9,7 +9,7 @@ const HOME_HOLD_MS = 700
 // Filled version of lucide's House: a solid house silhouette with the door cut
 // out as a hole (fill-rule: evenodd) so only the inside is marked. No stroke —
 // stroking the narrow door left an odd thin slit; fill-only reads cleanly.
-function HouseFilled({ size = 17 }) {
+export function HouseFilled({ size = 17 }) {
   return (
     <svg
       xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24"
@@ -32,7 +32,7 @@ function formatUpdated(date) {
 // The age line keeps itself current. The card is memoised, so it no longer
 // re-renders along with every unrelated change in App, which is what used to
 // move "Updated 2 min ago" along.
-function UpdatedText({ date }) {
+export function UpdatedText({ date }) {
   const [, tick] = useReducer((n) => n + 1, 0)
   useEffect(() => {
     if (!date) return
