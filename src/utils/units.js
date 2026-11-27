@@ -66,6 +66,14 @@ export const UNIT_GROUPS = {
 
 export const UNIT_GROUP_KEYS = Object.keys(UNIT_GROUPS)
 
+// What Settings' one °F / °C switch sets every other measure to: the US set
+// with °F, metric with °C. Each can still be changed on its own afterwards,
+// on the Units page.
+export const UNIT_SYSTEMS = {
+  F: { wind: 'mph', pressure: 'inHg', visibility: 'mi', precip: 'in' },
+  C: { wind: 'kmh', pressure: 'hPa', visibility: 'km', precip: 'mm' },
+}
+
 export const DEFAULT_UNITS = Object.fromEntries(
   UNIT_GROUP_KEYS.map((g) => [g, UNIT_GROUPS[g].fallback]),
 )

@@ -17,8 +17,10 @@ function readCache(cities) {
 // Current conditions for a list of cities, keyed by conditionKey(city), read
 // through the same pipeline as the forecast and the splash (see
 // placeConditions) so a card always agrees with them. One forecast load per
-// city, all in parallel; a failure leaves that city's entry missing rather than
-// erroring, and its card still renders the name, just without a temperature.
+// city, a couple at a time (placeConditions queues them), and each card fills
+// in as its own reading lands rather than all of them waiting for the slowest.
+// A failure leaves that city's entry missing rather than erroring, and its
+// card still renders the name, just without a temperature.
 export function useCityConditions(cities) {
   // Results are tagged with the list they were fetched for, so a changed list
   // drops them on the next render instead of needing an effect to clear them.
@@ -31,14 +33,14 @@ export function useCityConditions(cities) {
     if (!missing.length) return
 
     let live = true
-    Promise.allSettled(missing.map(loadConditions)).then(results => {
-      if (!live) return
-      const next = {}
-      results.forEach((r, i) => {
-        if (r.status === 'fulfilled' && r.value?.temp != null) next[conditionKey(missing[i])] = r.value
-      })
-      setFetched({ key: citiesKey, data: next })
-    })
+    const next = {}
+    for (const city of missing) {
+      loadConditions(city).then((cond) => {
+        if (!live || cond?.temp == null) return
+        next[conditionKey(city)] = cond
+        setFetched({ key: citiesKey, data: { ...next } })
+      }, () => { /* that card goes without */ })
+    }
     return () => { live = false }
   }, [citiesKey]) // eslint-disable-line react-hooks/exhaustive-deps
 

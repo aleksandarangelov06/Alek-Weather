@@ -1,0 +1,1206 @@
+/* ── Storm Center ────────────────────────────────────────────────────────── */
+
+/* The page Home turns into while something is happening (StormCenterPage.jsx),
+   and the phones' Storm Center sheet. Loaded with StormCenterPage, which can
+   come before or after WebApp.css (see WebShell.js), so no rule here may
+   depend on winning a tie against it.
+
+   A flat, dark briefing page in every theme. No glows, gradients or motion
+   beyond a fade in: type carries the hierarchy, and colour is kept for what
+   means something, the alert in force (--alert) and the risk levels. */
+
+:root[data-storm] {
+  /* One flat colour for the backdrop and the tab bar's strip. */
+  --sc-bg: #141518;
+}
+
+:root[data-storm] body {
+  background: var(--sc-bg);
+}
+
+/* The sticky tab bar's backing strip: the page colour in place of the sky it
+   normally repaints, with a hairline under it. */
+:root[data-storm] .app .app-header--tabs::before {
+  background: var(--sc-bg);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+:root[data-storm] .header-sky,
+:root[data-storm] .header-fx {
+  opacity: 0;
+}
+
+/* ── Backdrop ── */
+
+/* In <body>, after #root: over the sky (z-index 0) and its canvas (1), under
+   .app (2). */
+.sc-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: var(--sc-bg, #141518);
+}
+
+/* ── Page ── */
+
+.sc {
+  --text-primary: #f1f0ec;
+  --text-secondary: #a9abb0;
+  --text-tertiary: #7b7e85;
+  --temp-light: 0;
+  --card-bg: #1c1e22;
+  --web-sunken: rgba(255, 255, 255, 0.05);
+  --sc-line: rgba(255, 255, 255, 0.09);
+  --sc-raised: #1c1e22;
+  /* The theme's condition colours are tuned for light cards in light mode;
+     these read on this page in every theme (the alert colours use them). */
+  --cond-green: #6cc070;
+  --cond-yellow: #e7c449;
+  --cond-orange: #ec9346;
+  --cond-red: #ec5f56;
+  --cond-info: #6aa8ec;
+  color: var(--text-primary);
+  animation: sc-in 0.35s ease both;
+}
+
+@keyframes sc-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* Two classes, so it beats .web-page's 16px whichever stylesheet loads first. */
+.web-page.sc {
+  gap: 28px;
+}
+
+/* On the phones: the page inside StormSheet (StormSheet.css), over its own
+   backdrop, which sits fixed behind it in the sheet. */
+.sc--mobile {
+  position: relative;
+  z-index: 1;
+}
+
+/* The radar goes full screen from inside the page, and z-index 1 above keeps
+   the page, radar included, under the sheet's top bar (z-index 2), so the bar
+   covered the map's zoom and collapse buttons. Lifted over the bar while the
+   radar is open or opening. Safe for the rest of the page: the sheet's scroll
+   box clips it below the bar, so only the fixed radar reaches up there. */
+.sc--mobile:has(.radar-iris--framed, .radar-expanded) {
+  z-index: 3;
+}
+
+.sc--mobile {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 16px max(16px, var(--sa-right, 0px)) calc(28px + var(--sa-bottom, 0px)) max(16px, var(--sa-left, 0px));
+}
+
+.sc-sheet .sc-backdrop {
+  z-index: 0;
+}
+
+.sc button {
+  font: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── Ticker (desktop only) ── */
+
+.sc-ticker {
+  display: flex;
+  align-items: stretch;
+  height: 40px;
+  overflow: hidden;
+  border: 1px solid var(--sc-line);
+  border-radius: 6px;
+  background: var(--sc-raised);
+}
+
+/* The label, in the top alert's colour when there is one. */
+.sc-ticker-tag {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 0 14px;
+  background: var(--tag, #3a3d44);
+  color: #141518;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.sc-ticker:not([style*="--tag"]) .sc-ticker-tag { color: var(--text-primary); }
+
+.sc-ticker-track {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+}
+
+.sc-ticker-belt {
+  display: flex;
+  width: max-content;
+  height: 100%;
+  animation: sc-crawl var(--dur, 40s) linear infinite;
+}
+
+.sc-ticker:hover .sc-ticker-belt { animation-play-state: paused; }
+
+@keyframes sc-crawl {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+.sc-ticker-run {
+  display: flex;
+  align-items: center;
+}
+
+.sc-ticker-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 18px;
+  font-size: 14px;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+/* A dot between headlines. */
+.sc-ticker-item::after {
+  content: '';
+  width: 4px;
+  height: 4px;
+  margin-left: 12px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+}
+
+.sc-ticker-item[style] {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.sc-ticker-item svg { color: var(--item); }
+
+/* ── Alert banner ── */
+
+.sc-banner {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 14px;
+  padding: 16px 18px;
+  /* Tinted all over, with an even edge: no stripe down one side. */
+  border: 1px solid color-mix(in srgb, var(--alert) 45%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--alert) 14%, var(--sc-raised));
+}
+
+.sc-banner-icon {
+  margin-top: 2px;
+  color: var(--alert);
+}
+
+.sc-banner-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.sc-banner-when {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.sc-banner-from {
+  color: var(--text-secondary);
+}
+
+.sc-banner-also {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  color: var(--text-secondary);
+}
+
+.sc-banner-btn {
+  align-self: center;
+  padding: 9px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.sc-banner-btn:hover { background: rgba(255, 255, 255, 0.06); }
+
+/* ── Hero ── */
+
+.sc-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 32px;
+}
+
+.sc-hero-text {
+  max-width: 720px;
+}
+
+.sc-kicker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+}
+
+.sc-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px 3px 8px;
+  border-radius: 4px;
+  background: #c8332b;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.sc-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fff;
+  animation: sc-blink 2s ease-in-out infinite;
+}
+
+@keyframes sc-blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+.sc-place {
+  font-size: 15px;
+  color: var(--text-secondary);
+}
+
+.sc-title {
+  margin: 0;
+  font-family: var(--font-display, var(--font));
+  font-size: clamp(30px, 4.2vw, 44px);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+}
+
+.sc-note {
+  margin: 12px 0 0;
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+/* The threat dial: 45 ticks round 270 degrees, lit to the score. */
+.sc-dial {
+  position: relative;
+  width: 230px;
+  aspect-ratio: 1;
+}
+
+.sc-dial svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.sc-dial-tick {
+  stroke: rgba(255, 255, 255, 0.12);
+  stroke-width: 6;
+  stroke-linecap: round;
+}
+
+.sc-dial-tick.is-on {
+  animation: sc-tick-in 0.3s ease both;
+  animation-delay: var(--d, 0ms);
+}
+
+@keyframes sc-tick-in {
+  from { stroke-opacity: 0; }
+  to   { stroke-opacity: 1; }
+}
+
+.sc-dial-read {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding-top: 6px;
+}
+
+.sc-dial-score {
+  font-size: 54px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.sc-dial-level {
+  margin-top: 4px;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.sc-dial-cap {
+  margin-top: 2px;
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+}
+
+.sc-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.sc-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--sc-line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.sc-action:hover { background: rgba(255, 255, 255, 0.05); }
+.sc-action.is-on { border-color: rgba(255, 255, 255, 0.24); }
+
+.sc-updated {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.sc-refresh {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.sc-refresh:hover { background: rgba(255, 255, 255, 0.06); }
+.sc-refresh:disabled { cursor: default; }
+.sc-refresh.is-spinning svg { animation: sc-spin 1s linear infinite; }
+
+@keyframes sc-spin { to { transform: rotate(360deg); } }
+
+/* ── Facts ── */
+
+.sc-facts-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  margin: 0;
+  border-top: 1px solid var(--sc-line);
+  border-bottom: 1px solid var(--sc-line);
+}
+
+.sc-facts-row > div {
+  min-width: 0;
+  padding: 14px 16px 14px 0;
+}
+
+.sc-facts-row > div + div {
+  padding-left: 16px;
+  border-left: 1px solid var(--sc-line);
+}
+
+.sc-facts-row dt {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.sc-facts-row dd {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.sc-facts-row dd.sc-fact-sub {
+  margin-top: 2px;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sc-fact-now {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sc-fact-icon {
+  display: flex;
+  width: 30px;
+  height: 30px;
+}
+
+.sc-fact-icon :is(svg, img) { width: 100%; height: 100%; }
+
+/* The alert's countdown, in its colour. */
+.sc-fact-clock dd:not(.sc-fact-sub) { color: var(--alert); }
+
+.sc-countdown {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Five steps, filled up to a level. */
+.sc-meter {
+  display: inline-flex;
+  gap: 3px;
+  vertical-align: middle;
+}
+
+.sc-meter > span {
+  width: 14px;
+  height: 5px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.13);
+}
+
+/* ── Layout ── */
+
+.sc-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: 36px;
+  align-items: start;
+}
+
+.sc-col {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  min-width: 0;
+}
+
+/* ── Sections ── */
+
+.sc-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-top: 12px;
+  border-top: 2px solid rgba(255, 255, 255, 0.16);
+}
+
+.sc-section-head h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.sc-section-aside {
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.sc-empty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 14.5px;
+  color: var(--text-secondary);
+}
+
+/* ── 24-hour threat timeline ── */
+
+.sc-chart-plot {
+  position: relative;
+  height: 180px;
+  margin-top: 28px;
+}
+
+.sc-chart-plot svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.sc-chart-band {
+  stroke: rgba(255, 255, 255, 0.07);
+  stroke-width: 1;
+  stroke-dasharray: 4 6;
+}
+
+.sc-chart-line {
+  fill: none;
+  stroke: var(--sc-tint);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+/* Where the curve starts: a dashed rule and its label. */
+.sc-chart-now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  padding-left: 8px;
+  border-left: 1px dashed rgba(255, 255, 255, 0.25);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* The peak: a dot on the curve in its level's colour, ringed, with a tag. */
+.sc-chart-peak {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin: -7px 0 0 -7px;
+  border: 2px solid #141518;
+  border-radius: 50%;
+  background: var(--lvl);
+  box-shadow: 0 0 0 5px color-mix(in srgb, var(--lvl) 28%, transparent);
+}
+
+.sc-chart-peak-tag {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  translate: -50% 0;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--lvl);
+  color: #141518;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* At either end of the chart, the tag starts (or ends) at the dot rather than
+   centring on it, so it never hangs off the page. */
+.sc-chart-peak.is-start .sc-chart-peak-tag {
+  left: 0;
+  translate: 0 0;
+}
+
+.sc-chart-peak.is-end .sc-chart-peak-tag {
+  left: auto;
+  right: 0;
+  translate: 0 0;
+}
+
+/* Each hour's level, under the curve. */
+.sc-heat {
+  display: grid;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+  gap: 3px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sc-heat > li {
+  height: 10px;
+  border-radius: 2px;
+}
+
+.sc-hours {
+  display: grid;
+  grid-template-columns: repeat(24, minmax(0, 1fr));
+  gap: 3px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+.sc-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px 0 0;
+}
+
+/* Plain columns under a rule, like the facts row. */
+.sc-stats > div {
+  padding-top: 10px;
+  border-top: 1px solid var(--sc-line);
+}
+
+.sc-stats dt {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.sc-stats dd {
+  margin: 2px 0 0;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.sc-stats dd.sc-stats-sub {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+/* ── What to expect ── */
+
+.sc-hazards {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sc-hazard {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.sc-hazard + .sc-hazard { border-top: 1px solid var(--sc-line); }
+
+.sc-hazard-icon {
+  margin-top: 1px;
+  color: var(--text-secondary);
+}
+
+.sc-hazard-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sc-hazard-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.sc-hazard-detail {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.sc-hazard-alert {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.sc-hazard-scope {
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+
+.sc-hazard-level {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* ── Alerts in effect ── */
+
+.sc-alert-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* A plain card: the tier label carries the alert's colour, not the edge. */
+.sc-alert {
+  padding: 14px 16px;
+  border: 1px solid var(--sc-line);
+  border-radius: 6px;
+  background: var(--sc-raised);
+}
+
+.sc-alert-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sc-alert-head h3 {
+  margin: 0;
+  font-size: 16.5px;
+  font-weight: 700;
+}
+
+.sc-alert-tier {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--alert);
+  color: #141518;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.sc-alert-when {
+  margin: 4px 0 0;
+  font-size: 14px;
+}
+
+.sc-alert-left {
+  margin-left: 10px;
+  color: var(--alert);
+  font-weight: 600;
+}
+
+.sc-alert-area {
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  color: var(--text-secondary);
+}
+
+.sc-alert-headline {
+  margin: 10px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.sc-alert-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0 0;
+}
+
+.sc-alert-facts > div {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.sc-alert-facts dt {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.sc-alert-facts dd {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.sc-alert-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.sc-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.sc-btn:hover { background: rgba(255, 255, 255, 0.06); }
+
+/* ── Radar ── */
+
+.sc-radar-frame {
+  --sc-map-h: 340px;
+  position: relative;
+}
+
+/* The card sits inside the radar's opening-animation wrapper (IrisShell), so
+   it is matched as a descendant, not a child. Not once it is expanded: the
+   full-screen radar keeps its own surface. !important because the phone
+   styles' card fills carry far more specificity than this. */
+.sc .sc-radar-frame .radar-card:not(.radar-expanded) {
+  margin: 0 !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  overflow: visible;
+}
+
+.sc .sc-radar-frame .radar-header {
+  display: none;
+}
+
+/* Weighted past the phones' 16px map corner. */
+:root .sc.sc .sc-radar-frame .radar-card:not(.radar-expanded) .radar-map-wrap {
+  margin: 0;
+  border-radius: 6px;
+}
+
+.sc .sc-radar-frame .radar-card:not(.radar-expanded) .radar-map {
+  height: var(--sc-map-h);
+  background: #0f1012;
+}
+
+/* The dark basemap whatever the theme: a light map was a white hole in the
+   page. A flag, not a filter (see .map-base-tiles in App.css), so the map is
+   drawn dark rather than dimmed. */
+:root .sc .sc-radar-frame .map-base-tiles {
+  --map-scheme: dark;
+  filter: none;
+}
+
+.sc .sc-radar-frame .radar-card:not(.radar-expanded) .radar-map-wrap::after {
+  box-shadow: inset 0 0 0 1px var(--sc-line);
+}
+
+/* The player: time, play, scrubber, legend. */
+.sc .sc-radar-frame .radar-card:not(.radar-expanded) .radar-controls {
+  padding: 12px 0 0;
+}
+
+.sc .sc-radar-frame .radar-card:not(.radar-expanded) .radar-main-row {
+  padding: 0 0 10px;
+}
+
+.sc .sc-radar-frame .radar-card:not(.radar-expanded) .radar-big-time {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+/* Weighted past the phone styles' play buttons (the iOS glass circle, the
+   Android FAB), which would otherwise dress it in the theme. */
+:root .sc.sc .sc-radar-frame .radar-card:not(.radar-expanded) .radar-play-circle {
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 50%;
+  background: var(--text-primary);
+  color: #141518;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  animation: none;
+}
+
+:root .sc.sc .sc-radar-frame .radar-card:not(.radar-expanded) .radar-play-circle:is(:hover, :active) {
+  opacity: 0.85;
+  background: var(--text-primary);
+}
+
+.sc .sc-radar-frame .radar-card:not(.radar-expanded) .radar-scrub-rail {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.sc .sc-radar-frame .radar-card:not(.radar-expanded) .radar-scrub-fill {
+  background: var(--text-secondary);
+  box-shadow: none;
+}
+
+.sc .sc-radar-frame .radar-card:not(.radar-expanded) .radar-scrub-thumb {
+  background: var(--text-primary);
+  box-shadow: 0 0 0 2px #141518;
+}
+
+.sc .sc-radar-frame .radar-card:not(.radar-expanded) .radar-tick-label {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+
+.sc .sc-radar-frame .radar-card:not(.radar-expanded) .radar-legend {
+  margin-top: 10px;
+}
+
+.sc .sc-radar-frame .radar-card:not(.radar-expanded) .radar-legend-lbl {
+  font-size: 12px;
+  color: var(--text-tertiary);
+}
+
+/* ── Be prepared ── */
+
+.sc-prep-status {
+  --prep: #8a8f98;
+  padding: 12px 14px;
+  border-radius: 6px;
+  background: var(--sc-raised);
+}
+
+.sc-prep-status--ready { --prep: #e7c449; }
+.sc-prep-status--act { --prep: #ec5f56; }
+
+.sc-prep-status-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.sc-prep-level {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--prep);
+}
+
+.sc-prep-pct {
+  font-size: 14px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.sc-prep-bar {
+  height: 6px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.sc-prep-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #6cc070;
+  transition: width 0.3s ease;
+}
+
+.sc-prep-text {
+  margin: 8px 0 0;
+  font-size: 13.5px;
+  color: var(--text-secondary);
+}
+
+.sc-prep-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sc-prep-list li + li { border-top: 1px solid var(--sc-line); }
+
+.sc-prep-item {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 22px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 0;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  text-align: start;
+  cursor: pointer;
+}
+
+.sc-prep-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--text-primary);
+}
+
+.sc-prep-words {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.sc-prep-label {
+  font-size: 14.5px;
+  font-weight: 600;
+}
+
+.sc-prep-why {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.sc-prep-check {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 2px solid rgba(255, 255, 255, 0.28);
+  border-radius: 50%;
+  color: #141518;
+}
+
+.sc-prep-item.is-done .sc-prep-check {
+  border-color: #6cc070;
+  background: #6cc070;
+}
+
+.sc-prep-item.is-done .sc-prep-icon { color: #6cc070; }
+.sc-prep-item.is-done .sc-prep-label { color: var(--text-secondary); text-decoration: line-through; }
+
+/* ── Next 6 hours ── */
+
+.sc-hbh {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sc-hbh th,
+.sc-hbh td {
+  padding: 8px 6px;
+  text-align: end;
+  white-space: nowrap;
+}
+
+.sc-hbh :is(th, td):first-child { padding-left: 0; text-align: start; }
+.sc-hbh :is(th, td):last-child { padding-right: 0; }
+
+.sc-hbh thead th {
+  padding-top: 0;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+}
+
+.sc-hbh tbody tr { border-top: 1px solid var(--sc-line); }
+.sc-hbh tbody th { font-weight: 600; }
+.sc-hbh tr.is-worst { background: rgba(255, 255, 255, 0.04); }
+
+.sc-hbh-icon {
+  width: 30px;
+}
+
+.sc-hbh-icon :is(svg, img) {
+  width: 24px;
+  height: 24px;
+  vertical-align: middle;
+}
+
+.sc-hbh small {
+  font-size: 11.5px;
+  color: var(--text-tertiary);
+}
+
+.sc-hbh-gust.is-strong { color: var(--cond-orange); }
+.sc-hbh-gust.is-severe { color: var(--cond-red); font-weight: 600; }
+
+/* ── Next hour ── */
+
+.sc-nowcast:empty { display: none; }
+
+.sc .sc-nowcast > .card {
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+/* ── Foot ── */
+
+.sc-foot {
+  padding-top: 16px;
+  border-top: 1px solid var(--sc-line);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-tertiary);
+}
+
+.sc-foot p { margin: 0 0 6px; max-width: 80ch; }
+
+.sc-foot .source-note {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-tertiary);
+}
+
+/* ── Narrower windows ── */
+
+@media (max-width: 1099px) {
+  .sc-layout { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 640px) {
+  .sc-banner { grid-template-columns: auto minmax(0, 1fr); padding: 14px; }
+  .sc-banner-btn { grid-column: 2; justify-self: start; }
+  .sc-banner-title { font-size: 18px; }
+  .sc-note { font-size: 16px; }
+  .sc-facts-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sc-facts-row > div { padding: 12px 12px 12px 0; }
+  .sc-facts-row > div + div { padding-left: 0; border-left: 0; }
+  .sc-facts-row > div:nth-child(even) { padding-left: 12px; border-left: 1px solid var(--sc-line); }
+  .sc-facts-row > div:nth-child(n + 3) { border-top: 1px solid var(--sc-line); }
+  .sc-facts-row dd { font-size: 21px; }
+  .sc-radar-frame { --sc-map-h: 260px; }
+  .sc-hero { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .sc-dial { justify-self: center; width: 210px; }
+  .sc-chart-plot { height: 150px; }
+  .sc-stats { grid-template-columns: minmax(0, 1fr); }
+  .sc-alert-facts > div { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sc,
+  .sc-refresh.is-spinning svg,
+  .sc-live-dot,
+  .sc-dial-tick.is-on { animation: none; }
+  /* The crawl stops; the headlines can still be scrolled through by hand. */
+  .sc-ticker-belt { animation: none; }
+  .sc-ticker-track { overflow-x: auto; scrollbar-width: none; }
+}

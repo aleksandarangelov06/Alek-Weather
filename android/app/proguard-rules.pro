@@ -17,6 +17,8 @@
 -keep class com.alekweather.app.MainActivity$Updater { *; }
 -keep class com.alekweather.app.MainActivity$NotifyBridge { *; }
 -keep class com.alekweather.app.MainActivity$BootBridge { *; }
+-keep class com.alekweather.app.MainActivity$ThemeBridge { *; }
+-keep class com.alekweather.app.MainActivity$HapticBridge { *; }
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;
 }

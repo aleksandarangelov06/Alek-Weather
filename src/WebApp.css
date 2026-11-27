@@ -172,6 +172,14 @@
   pointer-events: none;
 }
 
+/* The page's sky carries a slight tint (.sky-tint, App.css); the strip's copy
+   of it takes the same, or it would read as a brighter band. 0.6 is the 40%
+   wash as a filter, near enough to meet it without a seam. */
+.header-sky,
+.header-fx {
+  filter: brightness(0.6);
+}
+
 .sky-active .app-header--tabs::before {
   background: none;
   box-shadow: none;
@@ -523,13 +531,6 @@
   color: var(--accent);
 }
 
-/* Home sits in the bar but isn't a page; it only takes the pill on the splash. */
-.web-tab--home {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-}
-
 .web-tab:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -649,57 +650,36 @@
   .web-tabs:has(.web-tab--active:active) .web-tab-pill { scale: none; }
 }
 
-/* ── Header brand and version ────────────────────────────────────────────── */
+/* ── Header brand ────────────────────────────────────────────────────────── */
 
-/* Both float in the header's side gutters, over the hidden corner buttons,
-   vertically centred on the tab bar's row (the header's top padding down to
-   its 12px bottom padding). Absolute, so the bar keeps its window centring
-   no matter how wide either is. */
-.web-brand,
-.web-version {
-  position: absolute;
-  top: calc(24px + var(--sa-top));
-  bottom: 12px;
-  margin-block: auto;
-  height: fit-content;
+/* The logo and wordmark at the nav bar's left end, inside the glass (see the
+   `brand` slot in WebTabs). It sits outside the scrolling row, so it holds its
+   place while the tabs scroll, and is lettered and lit like a tab: no bubble
+   of its own, the bar's material behind it, and the same faint wash under the
+   pointer. Its margin matches the row's 6px inner padding, so it is inset from
+   the rim the way the first tab would be. The version lives in Settings > About. */
+.web-brand {
+  position: relative;
+  z-index: 1;
+  isolation: isolate;
+  flex: 0 0 auto;
+  align-self: center;
   display: inline-flex;
   align-items: center;
-  animation: web-brand-in 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) 0.1s both;
-}
-
-/* Room for them: the hidden corner buttons get an equal margin on their inner
-   side, so the tab bar's wrapper shrinks symmetrically (the bar stays centred)
-   and scrolls its tabs instead of running under the brand or the version. */
-.app-header--tabs {
-  --brand-room: 170px;
-}
-.app-header--tabs .header-icon-btn.header-btn--gone {
-  margin-inline-end: var(--brand-room);
-}
-.app-header--tabs .settings-btn.header-btn--gone {
-  margin-inline-start: var(--brand-room);
-}
-
-.web-brand {
-  --brand-gutter: max(clamp(14px, 3.4vw, 48px), var(--sa-left));
-  left: var(--brand-gutter);
-  isolation: isolate;
-  gap: 10px;
-  padding: 6px 14px 6px 8px;
+  gap: 9px;
+  margin-inline-start: 6px;
+  padding: 0 14px 0 2px;
   border-radius: 999px;
   cursor: pointer;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
-  transition: background 0.2s ease, scale 0.35s cubic-bezier(0.34, 1.5, 0.64, 1);
+  transition: background-color 0.2s ease, scale 0.35s cubic-bezier(0.34, 1.5, 0.64, 1);
 }
 
-.web-version {
-  right: max(clamp(14px, 3.4vw, 48px), var(--sa-right));
-}
-
-@keyframes web-brand-in {
-  from { opacity: 0; translate: 0 -6px; }
-  to   { opacity: 1; translate: none; }
+/* The divider after it: a hair closer than the ones inside the row, which
+   have the row's padding on their far side as well. */
+.web-tabs-divider--brand {
+  margin: 0 0 0 4px;
 }
 
 .web-brand-logo {
@@ -712,29 +692,34 @@
 
 .web-brand-img {
   grid-area: 1 / 1;
-  width: 38px;
-  height: 38px;
-  transition: rotate 0.6s cubic-bezier(0.34, 1.4, 0.64, 1), scale 0.4s cubic-bezier(0.34, 1.5, 0.64, 1);
+  width: 34px;
+  height: 34px;
+  transition:
+    rotate 0.6s cubic-bezier(0.34, 1.4, 0.64, 1),
+    scale 0.4s cubic-bezier(0.34, 1.5, 0.64, 1),
+    opacity 0.25s ease;
 }
 
 .web-brand-img--dark { display: none; }
 
+/* The wordmark and the word "Search" sit side by side, and whichever is not
+   showing is squeezed to nothing (see "Search" below). No gap here: the
+   wordmark carries its own. */
 .web-brand-name {
   display: inline-flex;
   align-items: baseline;
-  gap: 5px;
+  gap: 0;
   font-family: var(--font-display), var(--font);
-  font-size: 21px;
+  font-size: 18px;
   line-height: 1;
-  letter-spacing: -0.4px;
+  letter-spacing: -0.3px;
   white-space: nowrap;
 }
 
-/* The brand and the version are lettered like the nav bar's tabs: its text
-   colour at the 0.72 the unselected tabs sit at, and the same white over the
-   darker skies (see "Over a sky" below and the splash's light-text glass). */
-.web-brand,
-.web-version {
+/* Lettered like the tabs beside it: their text colour at the 0.72 the
+   unselected tabs sit at. It inherits --text-primary from the bar, so it goes
+   white wherever the tabs do. */
+.web-brand {
   --brand-ink: color-mix(in srgb, var(--text-primary) 72%, transparent);
 }
 
@@ -743,20 +728,14 @@
   color: var(--brand-ink);
 }
 
-/* "Weather" matches "Alek" when nothing is going on, and takes the event's
-   colour while the brand glows for one. */
 .web-brand-last {
   font-weight: 600;
   color: var(--brand-ink);
 }
 
-.web-brand--event .web-brand-last {
-  color: var(--event);
-}
-
 @media (hover: hover) and (pointer: fine) {
   .web-brand:hover {
-    background: color-mix(in srgb, var(--card-bg) 88%, transparent);
+    background-color: color-mix(in srgb, var(--text-primary) 7%, transparent);
   }
   .web-brand:hover .web-brand-img {
     rotate: 18deg;
@@ -769,64 +748,165 @@
   transition-duration: 0.06s;
 }
 
+/* Selected (the splash): the tabs' raised key behind it, and its lettering in
+   the selected tab's colour (it carries .web-tab--active for that, so the sky
+   and splash overrides apply too). The key fades and springs in rather than
+   sliding, since it lives outside the tab row the tabs' pill moves along. */
+.web-brand-pill {
+  inset: 0;
+  z-index: -2;
+  opacity: 0;
+  scale: 0.9;
+  transition:
+    opacity 0.2s ease,
+    scale 0.32s cubic-bezier(0.34, 1.5, 0.64, 1),
+    box-shadow 0.12s ease;
+}
+.web-brand--active .web-brand-pill {
+  opacity: 1;
+  scale: 1;
+}
+.web-brand--active {
+  --brand-ink: currentColor;
+}
+@media (hover: hover) and (pointer: fine) {
+  .web-brand--active:hover {
+    background-color: transparent;
+  }
+}
+
 .web-brand:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
-/* ── Event glow ──
-   Only while something is happening where you're looking: a coloured aura
-   behind the brand that breathes for rain and snow, flickers for a storm, and
-   pulses red — with the logo throbbing in the same red — for a warning or an
-   Extreme alert. --event is the colour; each kind sets its own. */
-.web-brand--rain    { --event: #3b9cff; }
-.web-brand--snow    { --event: #bfe6ff; }
-.web-brand--storm   { --event: #ffc533; }
-.web-brand--extreme { --event: #ff3b30; }
+/* ── Search ──
+   Off the splash the brand is the way to search: the logo spins away as a
+   magnifier spins in, and the wordmark slides up and out as "Search" slides up
+   in. Both words animate max-width, so the button narrows to fit rather than
+   keeping the wordmark's width. On the splash it is the wordmark again. */
+.web-brand-glyph {
+  grid-area: 1 / 1;
+  color: var(--brand-ink);
+  opacity: 0;
+  scale: 0.4;
+  rotate: -120deg;
+  transition:
+    rotate 0.55s cubic-bezier(0.34, 1.4, 0.64, 1),
+    scale 0.45s cubic-bezier(0.34, 1.5, 0.64, 1),
+    opacity 0.25s ease;
+}
 
-.web-brand--event::before {
+.web-brand--search .web-brand-img {
+  opacity: 0;
+  scale: 0.4;
+  rotate: 120deg;
+}
+
+.web-brand--search .web-brand-glyph {
+  opacity: 1;
+  scale: 1;
+  rotate: 0deg;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .web-brand--search:hover .web-brand-glyph {
+    rotate: -14deg;
+    scale: 1.1;
+  }
+}
+
+.web-brand-words,
+.web-brand-search-word {
+  display: inline-flex;
+  align-items: baseline;
+  overflow: hidden;
+  transition:
+    max-width 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 0.25s ease,
+    translate 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.web-brand-words {
+  gap: 5px;
+  max-width: 150px;
+}
+
+.web-brand-search-word {
+  max-width: 0;
+  opacity: 0;
+  translate: 0 10px;
+  font-weight: 700;
+  color: var(--brand-ink);
+}
+
+.web-brand--search .web-brand-words {
+  max-width: 0;
+  opacity: 0;
+  translate: 0 -10px;
+}
+
+.web-brand--search .web-brand-search-word {
+  max-width: 80px;
+  opacity: 1;
+  translate: none;
+}
+
+/* ── Storm Center glow ──
+   While something is happening where you're looking, the Home tab becomes the
+   Storm Center (see navTabs in App.jsx) and lights up: a coloured aura behind
+   its label that breathes for rain and snow, flickers for a storm, and pulses
+   red with a ring for a warning or an Extreme alert. --event is the colour;
+   each kind sets its own. Inside the tab's own box (it is a stacking context,
+   z-index 1), so the aura sits over the selection pill and under the label. */
+.web-tab--rain    { --event: #3b9cff; }
+.web-tab--snow    { --event: #bfe6ff; }
+.web-tab--storm   { --event: #ffc533; }
+.web-tab--extreme { --event: #ff3b30; }
+
+/* Full strength even when it isn't the tab on screen: it is calling you back. */
+.web-tab.web-tab--event {
+  opacity: 1;
+}
+
+.web-tab--event::before {
   content: '';
   position: absolute;
-  inset: -4px -8px;
+  inset: 0;
   z-index: -1;
   border-radius: 999px;
-  background: radial-gradient(ellipse at 22% 50%,
+  background: radial-gradient(ellipse at 50% 50%,
     color-mix(in srgb, var(--event) 55%, transparent) 0%,
-    color-mix(in srgb, var(--event) 22%, transparent) 45%,
-    transparent 72%);
-  filter: blur(8px);
+    color-mix(in srgb, var(--event) 24%, transparent) 50%,
+    transparent 74%);
+  filter: blur(6px);
   pointer-events: none;
-  animation: brand-breathe 3.2s ease-in-out infinite;
+  animation: tab-breathe 3.2s ease-in-out infinite;
 }
 
-.web-brand--event .web-brand-img {
-  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--event) 80%, transparent));
-}
-
-@keyframes brand-breathe {
+@keyframes tab-breathe {
   0%, 100% { opacity: 0.55; scale: 0.96; }
   50%      { opacity: 1;    scale: 1.04; }
 }
 
 /* A storm: a steady glow broken by lightning-quick double flashes. */
-.web-brand--storm::before {
-  animation: brand-flicker 4.5s linear infinite;
+.web-tab--storm::before {
+  animation: tab-flicker 4.5s linear infinite;
 }
 
-@keyframes brand-flicker {
+@keyframes tab-flicker {
   0%, 60%, 68%, 100% { opacity: 0.6; scale: 1; }
   62%                { opacity: 1;   scale: 1.1; }
   64%                { opacity: 0.5; scale: 1; }
   66%                { opacity: 1;   scale: 1.12; }
 }
 
-/* Extreme: faster, wider red pulse, an expanding ring, and the logo throbbing. */
-.web-brand--extreme::before {
-  inset: -6px -10px;
-  animation: brand-alarm 1.4s ease-in-out infinite;
+/* Extreme: a faster red pulse and a ring round the tab. */
+.web-tab--extreme::before {
+  animation: tab-alarm 1.4s ease-in-out infinite;
 }
 
-.web-brand--extreme::after {
+.web-tab--extreme::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -834,159 +914,52 @@
   border-radius: 999px;
   border: 2px solid color-mix(in srgb, var(--event) 70%, transparent);
   pointer-events: none;
-  animation: brand-ring 1.4s ease-out infinite;
+  animation: tab-ring 1.4s ease-out infinite;
 }
 
-.web-brand--extreme .web-brand-img {
-  animation: brand-logo-alarm 1.4s ease-in-out infinite;
-}
-
-@keyframes brand-alarm {
+@keyframes tab-alarm {
   0%, 100% { opacity: 0.6; scale: 0.95; }
-  50%      { opacity: 1;   scale: 1.12; }
+  50%      { opacity: 1;   scale: 1.08; }
 }
 
-@keyframes brand-ring {
-  0%   { opacity: 0.9; scale: 0.92; }
-  100% { opacity: 0;   scale: 1.25; }
+@keyframes tab-ring {
+  0%   { opacity: 0.9; scale: 0.9; }
+  100% { opacity: 0;   scale: 1.04; }
 }
-
-@keyframes brand-logo-alarm {
-  0%, 100% { filter: drop-shadow(0 0 3px color-mix(in srgb, var(--event) 60%, transparent)); }
-  50%      { filter: drop-shadow(0 0 10px var(--event)); }
-}
-
-/* The brand and the version: a matching pair of glass bubbles in the tab
-   bar's material, one in each gutter. */
-.web-brand,
-.web-version {
-  border: 1px solid var(--border);
-  background: color-mix(in srgb, var(--card-bg) 70%, transparent);
-  -webkit-backdrop-filter: blur(16px) saturate(160%);
-  backdrop-filter: blur(16px) saturate(160%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5), 0 2px 8px rgba(0, 0, 0, 0.08);
-}
-
-/* Set in the wordmark's face, so the two corners read as one header. */
-.web-version {
-  gap: 7px;
-  padding: 6px 12px;
-  border-radius: 999px;
-  font-family: var(--font-display), var(--font);
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: -0.1px;
-  font-variant-numeric: tabular-nums;
-  color: var(--brand-ink);
-  white-space: nowrap;
-}
-
 
 /* Dark theme: the moon logo. */
 [data-theme="dark"] .web-brand-img--light { display: none; }
 [data-theme="dark"] .web-brand-img--dark  { display: block; }
-[data-theme="dark"] :is(.web-brand, .web-version) {
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 8px rgba(0, 0, 0, 0.3);
-}
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .web-brand-img--light { display: none; }
   :root:not([data-theme="light"]) .web-brand-img--dark  { display: block; }
-  :root:not([data-theme="light"]) :is(.web-brand, .web-version) {
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 8px rgba(0, 0, 0, 0.3);
-  }
 }
 
-/* Over a sky — the forecast's, or a dark one behind the splash — both sit on
-   the backdrop in clear glass bubbles. Their text follows the tabs': white
-   where the bar's is (the tinted skies, below), ink where it isn't. */
-.sky-lvl-slight :is(.web-brand, .web-version),
-.sky-lvl-medium :is(.web-brand, .web-version),
-.sky-lvl-dark :is(.web-brand, .web-version),
-.sky-lvl-darkest :is(.web-brand, .web-version) {
-  --text-primary: #fff;
-}
-:is(.sky-active, :root[data-splash-sky="dark"] .app--web-splash) :is(.web-brand, .web-version) {
-  border-color: rgba(255, 255, 255, 0.28);
-  background: rgba(255, 255, 255, 0.12);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 2px 8px rgba(0, 0, 0, 0.15);
-}
-@media (hover: hover) and (pointer: fine) {
-  :is(.sky-active, :root[data-splash-sky="dark"] .app--web-splash) .web-brand:hover {
-    background: rgba(255, 255, 255, 0.2);
-  }
-}
-
-/* On the splash's light sky the chips take the splash's frosted glass. */
-:root[data-splash-sky]:not([data-splash-sky="dark"]) .app--web-splash :is(.web-brand, .web-version) {
-  background: var(--glass-bg);
-  border-color: var(--glass-rim);
-}
-
-/* The header carries the version now, so the splash's own line steps aside. */
+/* On the web the version is shown in Settings > About, not on the splash. */
 .splash-bg--web .splash-version {
   display: none;
 }
 
-/* Radar: the map runs up behind the header, so the brand and the version both
-   float on the same see-through frosted glass — a light sheen over a blur of
-   the map, a lit rim, a soft drop shadow — at the same height, so they read as
-   a matching pair. Specific enough to beat the sky rules above. The version
-   also clears the scrollbar lane the header pads for there. */
-.app.app--web-radar .app-header--tabs :is(.web-brand, .web-version) {
-  box-sizing: border-box;
-  height: 52px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(255, 255, 255, 0.32));
-  border: 1px solid rgba(255, 255, 255, 0.6);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7), 0 4px 14px rgba(0, 0, 0, 0.18);
-  -webkit-backdrop-filter: blur(18px) saturate(170%);
-  backdrop-filter: blur(18px) saturate(170%);
-}
-
-/* Over a sky, or in dark theme: clear smoky glass with white text. */
-.app.app--web-radar.sky-active .app-header--tabs :is(.web-brand, .web-version),
-[data-theme="dark"] .app.app--web-radar .app-header--tabs :is(.web-brand, .web-version) {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05)), rgba(10, 14, 22, 0.28);
-  border-color: rgba(255, 255, 255, 0.24);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 4px 14px rgba(0, 0, 0, 0.3);
-}
-/* Smoky glass wants light lettering whatever the sky. */
-.app.app--web-radar.sky-active .app-header--tabs :is(.web-brand, .web-version) {
-  --text-primary: #fff;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .app.app--web-radar .app-header--tabs :is(.web-brand, .web-version) {
-    background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.05)), rgba(10, 14, 22, 0.28);
-    border-color: rgba(255, 255, 255, 0.24);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 4px 14px rgba(0, 0, 0, 0.3);
-  }
-}
-.app.app--web-radar .app-header--tabs .web-brand {
-  left: var(--brand-gutter);
-}
-.app.app--web-radar .app-header--tabs .web-version {
-  right: calc(max(clamp(14px, 3.4vw, 48px), var(--sa-right)) + var(--scrollbar-w, 0px));
-  padding: 0 18px;
-  font-size: 13px;
-}
-
-/* Narrower windows: the wordmark folds down to its logo so the tab bar keeps
-   its room, and the version chip tightens. Both stay on screen. */
+/* Narrower windows: the wordmark folds down to its logo so the tabs keep
+   their room. */
 @media (max-width: 1240px) {
-  .app-header--tabs { --brand-room: 56px; }
   .web-brand-name { display: none; }
-  .web-brand { padding: 6px; }
-  .web-version { padding: 5px 9px; font-size: 12px; }
+  .web-brand { padding: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .web-brand, .web-version { animation: none; }
-  .web-brand-img { transition: none; }
-  .web-brand:hover .web-brand-img { rotate: none; scale: none; }
+  .web-brand-pill { transition: none; }
+  .web-brand--active .web-brand-pill { scale: none; }
+  .web-brand-img,
+  .web-brand-glyph,
+  .web-brand-words,
+  .web-brand-search-word { transition: none; }
+  .web-brand:hover .web-brand-img,
+  .web-brand--search:hover .web-brand-glyph { rotate: none; scale: none; }
   /* The glow still shows, it just holds still. */
-  .web-brand--event::before,
-  .web-brand--event .web-brand-img { animation: none; }
-  .web-brand--extreme::after { display: none; }
+  .web-tab--event::before { animation: none; }
+  .web-tab--extreme::after { display: none; }
 }
 
 /* ── Page frame ──────────────────────────────────────────────────────────── */
@@ -1892,9 +1865,13 @@
    column wrappers step out of the layout (display: contents) so their cards
    can be ordered as siblings. */
 @media (max-width: 1099px) {
+  /* Stretch, not the grid's start: a column flex item at start shrinks to its
+     content, and the size-contained cards (.wt-now, .wt-week) have none, so
+     they collapsed to a sliver. */
   .wt-grid {
     display: flex;
     flex-direction: column;
+    align-items: stretch;
   }
 
   .wt-main,
@@ -4435,6 +4412,14 @@
   z-index: 2;
 }
 
+/* That z-index only counts inside .splash-home, which is a stacking context of
+   its own (its transform). The Saved locations button comes after it in the
+   splash and so drew over a long dropdown hanging down to the foot of the
+   screen. While the dropdown is open the whole block is lifted above it. */
+.splash-home:has(.search-dropdown) {
+  z-index: 1;
+}
+
 .splash-search .search-wrapper {
   margin-bottom: 22px;
 }
@@ -4983,8 +4968,6 @@
    its text is near-white already. */
 :root[data-splash-sky="dark"] :is(
   .app--web-splash .web-tabs,
-  .app--web-splash .web-brand,
-  .app--web-splash .web-version,
   .splash-recents .section-label,
   .splash-saved-btn,
   .splash-saved-head,
@@ -4995,8 +4978,6 @@
 ),
 :root[data-splash-sky][data-theme="dark"] :is(
   .app--web-splash .web-tabs,
-  .app--web-splash .web-brand,
-  .app--web-splash .web-version,
   .splash-recents .section-label,
   .splash-saved-btn,
   .splash-saved-head,
@@ -5016,8 +4997,6 @@
 @media (prefers-color-scheme: dark) {
   :root[data-splash-sky]:not([data-theme="light"]) :is(
     .app--web-splash .web-tabs,
-    .app--web-splash .web-brand,
-    .app--web-splash .web-version,
     .splash-recents .section-label,
     .splash-saved-btn,
     .splash-saved-head,
@@ -5873,6 +5852,14 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12.5px;
   color: var(--text-secondary);
+}
+
+.ws-version {
+  font-size: 13.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .ws-footer {

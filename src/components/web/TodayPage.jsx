@@ -19,7 +19,9 @@ import {
 import { getAQIInfo, getHumidityInfo, getPrecipInfo, getVisibilityInfo, getWindInfo } from '../../utils/conditions'
 import { formatPrecip, formatVisibility, formatWind, unitSuffix, unitText } from '../../utils/units'
 import { formatMinutes, isoMinutes } from '../../utils/sunTimes'
-import { currentHourIndex, daylightLength, METERS_PER_MILE, weekdayLabel } from './webData'
+import {
+  currentHourIndex, daylightLength, hourLabel, localNow, METERS_PER_MILE, naiveMinutes, weekdayLabel,
+} from './webData'
 
 // The web Today page.
 //
@@ -69,28 +71,6 @@ function metricName(id, unit, units) {
     default:         return 'UV index'
   }
 }
-
-// "3 PM" from a naive local timestamp.
-function hourLabel(iso) {
-  const h = +iso.slice(11, 13)
-  return `${h % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`
-}
-
-// The forecast location's wall clock right now, as "YYYY-MM-DDTHH:MM".
-function localNow(timezone) {
-  const parts = {}
-  for (const p of new Intl.DateTimeFormat('en-CA', {
-    timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-  }).formatToParts(new Date())) parts[p.type] = p.value
-  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`
-}
-
-// Minutes since the epoch for a naive timestamp, read as UTC. Only ever
-// differenced against another one read the same way.
-const naiveMinutes = (iso) => Date.UTC(
-  +iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10), +iso.slice(11, 13), +iso.slice(14, 16),
-) / 60000
 
 // "45 min", "1 hour", "2½ hours".
 function untilText(mins) {
@@ -533,7 +513,7 @@ function WeekCard({ weather, unit, colorCoding, onNavigate }) {
 
 export function TodayPage(props) {
   const {
-    weather, location, alerts, unit, units, radarClear, airQuality, colorCoding, nowcastMode,
+    weather, location, alerts, unit, units, radarClear, radarTrend, airQuality, colorCoding, nowcastMode,
     hasActiveAlert, onNavigate, radarMode, radarSource, weatherAnimations,
   } = props
   const { current, hourly, daily, timezone } = weather
@@ -558,6 +538,7 @@ export function TodayPage(props) {
             mode={nowcastMode}
             current={current}
             radarClear={radarClear}
+            radarTrend={radarTrend}
             wide
           />
 

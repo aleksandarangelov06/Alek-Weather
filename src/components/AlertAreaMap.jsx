@@ -5,6 +5,7 @@ import { TriangleAlert, X } from 'lucide-react'
 import { resolveStyle } from '../utils/alertStyle'
 import { loadAlertArea } from '../utils/alertArea'
 import { addBasemap } from '../utils/basemap'
+import { lockScroll } from '../utils/scrollLock'
 
 // Where to stop when fitting a single small zone. Without a cap, a lone county
 // warning opens at street level, where the outline runs off every edge and the
@@ -44,8 +45,7 @@ export function AlertAreaMap({ alert, location, onClose }) {
   // and unmounts. Straight onClose would leave the entry behind, and the back
   // press after that would spend it on nothing.
   useEffect(() => {
-    const prev = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
+    const unlock = lockScroll()
     history.pushState({ overlay: 'alertMap' }, '')
     const onPop = () => onClose()
     // Esc leaves; the arrow keys zoom, the same pair the full-screen radar binds.
@@ -60,7 +60,7 @@ export function AlertAreaMap({ alert, location, onClose }) {
     window.addEventListener('popstate', onPop)
     window.addEventListener('keydown', onKey)
     return () => {
-      document.body.style.overflow = prev
+      unlock()
       window.removeEventListener('popstate', onPop)
       window.removeEventListener('keydown', onKey)
     }

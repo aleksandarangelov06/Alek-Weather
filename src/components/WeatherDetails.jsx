@@ -8,8 +8,8 @@ import {
   getUVNote, getVisibilityInfo, getVisibilityNote, getWindInfo, getWindNote,
 } from '../utils/conditions'
 import { formatPrecip, formatUnitDelta, unitSuffix, unitText, unitValue } from '../utils/units'
-import { coverFrom, useCoverHistory } from '../utils/detailCover'
-import { DetailCover, coverAsPage } from './DetailCover'
+import { coverAsPage, coverFrom, useCoverHistory } from '../utils/detailCover'
+import { DetailCover } from './DetailCover'
 import { POLLENS, POLLUTANTS, aqiDriver, pollenLevel } from '../utils/airQuality'
 import { STORM_KIND_NAME, stormHours, stormNote, stormPeak } from '../utils/stormRisk'
 import { Sparkline } from './web/Sparkline'

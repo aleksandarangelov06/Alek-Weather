@@ -76,12 +76,122 @@ function RequestLimits() {
   )
 }
 
+function OutsideUs() {
+  return (
+    <>
+      <h3>Two sources in the US, one everywhere else</h3>
+      <p>
+        Every forecast starts at Open-Meteo, a free, open-source weather service
+        that covers the whole world. In the US and its territories, the app adds
+        data from the National Weather Service (NWS) and NOAA on top. Those are
+        US government services, and they only cover the US, so everywhere else
+        the forecast comes from Open-Meteo alone.
+      </p>
+
+      <h3>What you only get in the US</h3>
+      <ul>
+        <li><strong>Weather alerts.</strong> Watches, warnings and advisories come from the NWS, so they don't appear anywhere else, and the Storm Center has no alerts to show.</li>
+        <li><strong>Forecaster details.</strong> The NWS forecast is blended in for temperature, feels-like, wind gusts, cloud cover, visibility, dew point and rain amounts.</li>
+        <li><strong>Live readings from weather stations.</strong> Current conditions are checked against the nearest NWS station.</li>
+        <li><strong>Sharper radar.</strong> In the US the radar map uses NOAA&apos;s own radar, drawn smoothly even zoomed in, plus a forecast radar for the next few hours. Elsewhere it uses RainViewer: past radar only, and blockier when zoomed in.</li>
+        <li><strong>The full Alek Weather Engine.</strong> Outside the US the engine checks a coarser worldwide radar instead, which can tell whether something is falling but not how hard. See &quot;How does the Alek Weather Engine work?&quot;</li>
+      </ul>
+
+      <h3>How much the quality drops</h3>
+      <p>
+        It depends on where you are. Open-Meteo picks the best weather model it
+        has for each place. Across much of Europe, Canada and Japan those are
+        detailed national models, and forecasts are very good. In other places
+        it relies on broader global models, which can miss local effects like
+        mountains, coastlines and summer storms that pop up quickly.
+      </p>
+      <p>
+        Without station readings or radar to check against, the current
+        conditions are the model&apos;s best estimate. They can now and then
+        say it&apos;s raining when it isn&apos;t, or the other way round.
+      </p>
+
+      <h3>Why not add more sources?</h3>
+      <p>
+        Most national weather services outside the US don&apos;t offer a free,
+        open feed an app like this can use, or they cover only their own
+        country. Open-Meteo is what makes worldwide forecasts possible without
+        charging for the app.
+      </p>
+    </>
+  )
+}
+
+function WeatherEngine() {
+  return (
+    <>
+      <p>
+        A forecast is a prediction. It can say rain at 3 PM while the sky stays
+        dry, or miss a shower that&apos;s falling on you right now. The Alek
+        Weather Engine closes that gap: it checks what the forecast says against
+        live radar over your exact location, and shows you what is really
+        happening.
+      </p>
+
+      <h3>How it works</h3>
+      <ul>
+        <li><strong>It reads the radar at your spot.</strong> Every time a forecast loads, and again every 5 minutes while it&apos;s open, the engine reads live radar at your location and at four points about a mile around it. Looking at five points tells a storm overhead apart from the edge of one passing by.</li>
+        <li><strong>It measures how hard it&apos;s falling.</strong> In the US the engine reads the strength of the radar echo from NOAA&apos;s nationwide radar, updated about every 5 minutes. Light drizzle and a downpour look very different, so the conditions you see say how heavy it is, not just that it&apos;s raining.</li>
+        <li><strong>It waits for a second look.</strong> A change has to show up on two radar scans in a row before the engine acts on it, so a cloud edge drifting past doesn&apos;t flip your screen between rain and sun. A strong storm is the exception: it shows at once.</li>
+        <li><strong>It knows rain from snow.</strong> Snow shows up weaker on radar than rain does, so the engine uses a lower bar when it&apos;s snowing, and light snow isn&apos;t missed.</li>
+      </ul>
+
+      <h3>What you&apos;ll notice</h3>
+      <ul>
+        <li><strong>No phantom rain.</strong> If the forecast says rain but the radar shows nothing over you, you see the actual sky instead.</li>
+        <li><strong>No missed showers.</strong> If rain is falling on you that the forecast didn&apos;t expect, you see it, at the strength the radar measures.</li>
+        <li><strong>Calmer updates.</strong> Conditions change when the weather really changes, not with every flicker on the radar.</li>
+      </ul>
+
+      <h3>What it won&apos;t override</h3>
+      <p>
+        An active warning from the National Weather Service always wins: radar
+        can show brief gaps inside a storm, and a warning is an official call.
+        Radar also can&apos;t see lightning, so the engine never adds a
+        thunderstorm the forecast didn&apos;t already call for.
+      </p>
+
+      <h3>Outside the US</h3>
+      <p>
+        The engine checks RainViewer&apos;s worldwide radar instead. It can tell
+        whether something is falling over you, but not how hard, and it
+        can&apos;t take the second look, so it&apos;s a lighter check than in
+        the US.
+      </p>
+
+      <h3>Turning it off</h3>
+      <p>
+        The engine is on by default. It&apos;s the Enhanced accuracy switch in
+        Settings, under Radar. With it off, you see the forecast&apos;s own
+        reading for right now.
+      </p>
+    </>
+  )
+}
+
 const HELP_ARTICLES = [
   {
     id: 'request-limits',
     title: 'Why does it say the forecast service hit its request limit?',
     summary: 'What the limit is, why it can happen, and what to do.',
     Body: RequestLimits,
+  },
+  {
+    id: 'outside-us',
+    title: 'Why are forecasts outside the US less detailed?',
+    summary: 'What changes outside the US, and why.',
+    Body: OutsideUs,
+  },
+  {
+    id: 'weather-engine',
+    title: 'How does the Alek Weather Engine work?',
+    summary: 'How live radar keeps the current conditions honest.',
+    Body: WeatherEngine,
   },
 ]
 

@@ -8,22 +8,19 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 // Also the Hourly page's reading menu, which is the same control in a different
 // place — hence the id and label props. `controls` is for the case where every
 // tab points at one region that changes contents (the hourly table) rather than
-// at a panel per tab; a tab may carry `disabled` when its reading has no data.
+// at a panel per tab; a tab may carry `disabled` when its reading has no data,
+// and `className` / `title` for a tab dressed for the moment (the Storm Center).
 //
-// `home` ({ label, icon, onSelect }) is drawn inside the bar ahead of the tabs
-// without being one — the forecast bar's Home button, which leaves the forecast
-// for the splash rather than switching page. It takes the pill when `active` is
-// 'home' (the splash keeps this bar up, with Home selected), but it is kept out
-// of `tabs` so the arrow keys, which wrap around the tab list, can never land
-// on it: ← from the first page would otherwise throw you out to the splash.
+// `pages` ([{ id, label, onSelect }]) sit at the bar's right end: Settings, a
+// page of the app rather than of the forecast. It takes the pill like any tab,
+// but sits apart from the forecast pages (after a divider) and outside the
+// arrow-key cycle, since it doesn't need a forecast and the forecast tabs do.
 //
-// `pages` ([{ id, label, onSelect }]) are the same idea at the other end of the
-// bar: Settings, a page of the app rather than of the forecast. It takes the
-// pill like any tab, but sits apart from the forecast pages (after a divider)
-// and outside the arrow-key cycle for the same reason Home does — it doesn't
-// need a forecast, and the forecast tabs do.
+// `brand` (a node) is drawn at the bar's left end, outside the scrolling row so
+// it stays put when the tabs scroll, and set off from them by a divider. It is
+// the way back to the splash, where `active` is 'home' and no tab is selected.
 export function WebTabs({
-  tabs, active, onChange, home = null, pages = [],
+  tabs, active, onChange, pages = [], brand = null,
   idPrefix = 'web-tab', controls, label = 'Forecast pages', className = '',
 }) {
   const listRef = useRef(null)
@@ -52,7 +49,9 @@ export function WebTabs({
     }
     const measure = () => {
       const el = btnRefs.current[active]
-      if (!el) return
+      // Nothing to select (the splash): no pill, rather than one left sitting
+      // on whichever tab had it last.
+      if (!el) { setPill(null); edges(); return }
       setPill({ left: el.offsetLeft, width: el.offsetWidth })
       // Too narrow for every tab (a phone-width window), so the bar scrolls:
       // centre the active one rather than leave the selection off the edge.
@@ -126,6 +125,12 @@ export function WebTabs({
           apart so the row's edges can fade out where tabs run past them
           without fading the bar's own rim and shadow along with them. */}
       <div className="web-tabs card">
+        {brand && (
+          <>
+            {brand}
+            <span className="web-tabs-divider web-tabs-divider--brand" aria-hidden="true" />
+          </>
+        )}
         <div className="web-tabs-scroll" role="tablist" aria-label={label} ref={listRef} onKeyDown={handleKeyDown}>
           {pill && (
             <span
@@ -134,28 +139,12 @@ export function WebTabs({
               aria-hidden="true"
             />
           )}
-          {home && (
-            <>
-              <button
-                type="button"
-                ref={(el) => { btnRefs.current.home = el }}
-                className={`web-tab web-tab--home${active === 'home' ? ' web-tab--active' : ''}`}
-                aria-current={active === 'home' ? 'page' : undefined}
-                onClick={home.onSelect}
-              >
-                {home.icon}
-                {home.label}
-              </button>
-              {/* Home leaves the forecast rather than switching page, so it is set
-                  off from the forecast tabs the way Settings is at the other end. */}
-              <span className="web-tabs-divider" aria-hidden="true" />
-            </>
-          )}
           {tabs.map((t) => (
             <button
               key={t.id}
               ref={(el) => { btnRefs.current[t.id] = el }}
-              className={`web-tab${t.id === active ? ' web-tab--active' : ''}`}
+              className={`web-tab${t.id === active ? ' web-tab--active' : ''}${t.className ? ` ${t.className}` : ''}`}
+              title={t.title}
               role="tab"
               id={`${idPrefix}-${t.id}`}
               aria-selected={t.id === active}

@@ -88,3 +88,53 @@ body {
   background: var(--cond-red, #ef4444);
   color: #fff;
 }
+
+/* A lazy part (radar, Settings, alert map) that failed to load: see
+   ChunkBoundary. Drawn in the slot the part would have filled. */
+.chunk-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 20px;
+  text-align: center;
+  font-family: var(--font, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
+}
+.chunk-error--overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 500;
+  justify-content: center;
+}
+.chunk-error--page {
+  max-width: 420px;
+  margin: 20vh auto 0;
+}
+.chunk-error-text {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--text-primary, #1a1a2e);
+}
+/* The alert map's area is dark in either theme. */
+.alert-map-wrap .chunk-error-text {
+  color: #fff;
+}
+.chunk-error-actions {
+  display: flex;
+  gap: 10px;
+}
+.chunk-error-btn {
+  padding: 9px 20px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent, #3b82f6);
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+}
+.chunk-error-btn--secondary {
+  background: var(--accent-light, rgba(59, 130, 246, 0.1));
+  color: var(--accent, #3b82f6);
+}

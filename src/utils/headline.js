@@ -41,10 +41,18 @@ function nowSlot(minutely, now) {
 // `place` is the place's name, so the line says where it is happening ("Light
 // rain falling in Bel Air"). Each phrase has a nameless form for a place found
 // from the device whose reverse geocode came back without one.
+// Longest place name worked into the line. The splash sets the headline large
+// and centred, and a long name ("Gallatin and Madison County Mountains and
+// Centennial Mountains", an NWS zone) wrapped it to six lines that ran up into
+// the icon. Past this the nameless phrase is used; the place is still on its
+// own card below.
+const MAX_PLACE_CHARS = 18
+
 export function weatherHeadline(data, code, place = '') {
   const cur = data?.current
   if (!cur || code == null) return null
-  const p = place?.trim()
+  const name = place?.trim()
+  const p = name && name.length <= MAX_PLACE_CHARS ? name : ''
   // The phrase with the place in it, or the one that stands alone.
   const at = (placed, plain) => (p ? placed : plain)
   const minutely = data.minutely_15

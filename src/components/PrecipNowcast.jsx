@@ -43,6 +43,16 @@ const WIDE_FALLBACK_W = 900
 // Rate → y, against a chart bottom `cb` and height `ch` that differ per flavour.
 const yFor = (p, cb, ch) => cb - (Math.min(Math.max(p, 0), MAX_P) / MAX_P) * ch
 
+// The header's "falling now" label, which says so when the radar has just seen
+// it start (or, still falling by every other measure, the radar has just seen
+// it stop over the point: it is letting up). `trend` is the radar's, by its
+// last two sweeps (applyRadar in useWeather), and null with the setting off.
+function nowLabel(snow, trend) {
+  if (trend === 'starting') return snow ? 'Just started snowing' : 'Just started raining'
+  if (trend === 'ending') return 'Letting up'
+  return snow ? 'Snowing now' : 'Raining now'
+}
+
 function buildPath(pts, cb) {
   if (pts.length < 2) return { line: '', area: '' }
   const f = (n) => n.toFixed(2)
@@ -60,7 +70,7 @@ function buildPath(pts, cb) {
 
 // Memoised: App re-renders for every overlay, toggle and keystroke, and the
 // props here are the reading and the settings, which those leave alone.
-export const PrecipNowcast = memo(function PrecipNowcast({ minutely, currentTime, mode = 'auto', current = null, radarClear = null, wide = false }) {
+export const PrecipNowcast = memo(function PrecipNowcast({ minutely, currentTime, mode = 'auto', current = null, radarClear = null, radarTrend = null, wide = false }) {
   const [plotRef, measured] = useMeasure()
 
   const L = wide ? WIDE : PHONE
@@ -167,8 +177,10 @@ export const PrecipNowcast = memo(function PrecipNowcast({ minutely, currentTime
       <div className="nowcast-header">
         <span className="section-label" style={{ margin: 0 }}>PRECIPITATION</span>
         {rainingNow
-          ? <span className="nowcast-now">{SNOW_CODES.has(liveCode) ? 'Snowing now' : 'Raining now'}</span>
-          : allDry && <span className="nowcast-dry">None expected</span>}
+          ? <span className="nowcast-now">{nowLabel(SNOW_CODES.has(liveCode), radarTrend)}</span>
+          : radarTrend === 'ending'
+            ? <span className="nowcast-dry">Just stopped</span>
+            : allDry && <span className="nowcast-dry">None expected</span>}
       </div>
       {/* The measured box. Wide, the svg is sized in pixels to match it, so one
           viewBox unit is one pixel; on a phone the viewBox ratio scales it. */}

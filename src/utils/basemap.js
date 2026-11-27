@@ -19,6 +19,9 @@ const OFM = 'https://tiles.openfreemap.org/styles'
 
 export const BASEMAP_STYLE_LIGHT = `${OFM}/positron`
 export const BASEMAP_STYLE_DARK  = `${OFM}/dark`
+// The label fade while the map is moving: MapLibre's own default. See the note
+// in addBasemap for why it is a performance setting here, not a look.
+const MOVING_FADE_MS = 300
 
 // OpenFreeMap and OpenStreetMap ask for this wherever the basemap is shown. Both
 // maps currently run with attributionControl:false, so it is carried on the
@@ -89,6 +92,7 @@ export function addBasemap(L, map, onLayer) {
       interactive: false,
       // The basemap is static and the radar repaints over it every frame of
       // playback — skip the GL fade-ins so labels don't flicker on a swap.
+      // At rest only: while the map moves it is turned up (see below).
       fadeDuration: 0,
       // Rendered at no more than 2x. Phones are often 2.6-3x, and the GL canvas
       // is a screenful (plus padding) once the radar is full-screen: at 2.6x
@@ -100,6 +104,35 @@ export function addBasemap(L, map, onLayer) {
     const gl = layer.getMaplibreMap()
     layer.isLoading = () => !gl.loaded()
     gl.on('idle', () => layer?.fire('load'))
+
+    // Labels: placed in full on every redraw at rest, eased while the map moves.
+    //
+    // MapLibre's label fade isn't only a fade. At 0 (above), every redraw
+    // re-places every label from scratch, with no time budget
+    // (forceFullPlacement in its style.ts). At rest that is what we want: the
+    // map settles the moment its tiles are in, which is what the radar's
+    // opening and closing wait on (the 'load' above). But Leaflet drives a
+    // redraw on every frame of a pinch (the plugin's _pinchZoom), of a wheel or
+    // button zoom's end, and of the glide home on close, and about 30 times a
+    // second through a drag, so a full placement ran on the main thread on every
+    // frame of every gesture. With a fade, MapLibre re-places at most once per
+    // fade period, in 2 ms slices. So the fade is on while the map moves and
+    // back to 0 the moment it stops, where the next redraw puts every label in
+    // place at once and the map goes idle.
+    //
+    // MapLibre has no setter for it; _fadeDuration is the field its render loop
+    // reads every frame (map.ts). Checked, so a version without it keeps 0.
+    let unhookFade = null
+    if (typeof gl._fadeDuration === 'number') {
+      const moving = () => { gl._fadeDuration = MOVING_FADE_MS }
+      const still = () => { gl._fadeDuration = 0 }
+      map.on('movestart', moving)
+      map.on('moveend', still)
+      unhookFade = () => {
+        map.off('movestart', moving)
+        map.off('moveend', still)
+      }
+    }
 
     // Restyle when the app's darkness changes. Three things can change it: the
     // theme setting (data-theme on <html>), the OS preference, and the sky level
@@ -119,6 +152,7 @@ export function addBasemap(L, map, onLayer) {
       observer.disconnect()
       media.removeEventListener('change', restyle)
       probe.remove()
+      unhookFade?.()
     }
 
     onLayer?.(layer)

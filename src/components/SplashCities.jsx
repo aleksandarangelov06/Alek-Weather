@@ -3,6 +3,7 @@ import { Bookmark, CircleCheck, House, Search, Trash2 } from 'lucide-react'
 import { WeatherIcon } from './WeatherIcon'
 import { useCityConditions, conditionKey } from '../hooks/useCityConditions'
 import { getWeatherInfo, toTemp } from '../utils/weatherCodes'
+import { haptic } from '../utils/haptics'
 
 // Two, where the desktop splash shows six: the phone splash is a poster with a
 // centred wordmark, and these sit in the strip left between it and the version
@@ -80,7 +81,7 @@ export function SplashCities({
 
   const openMenu = (key) => {
     setMenuKey(key)
-    navigator.vibrate?.(15)
+    haptic('heavy')
   }
 
   const cancelHold = () => {

@@ -69,16 +69,77 @@ describe('loadForecast', () => {
     let settled = false
     const pending = loadForecast(LOC).then((r) => { settled = true; return r })
 
-    // Well short of the limits, a stalled NWS still holds it up...
+    // A stalled NWS holds the reading only for its grace period (and here the
+    // stalled radar for its own wait), not for the whole NWS budget...
     await vi.advanceTimersByTimeAsync(3000)
     expect(settled).toBe(false)
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(settled).toBe(true)
 
-    // ...and past them it gives up and keeps the Open-Meteo values.
-    await vi.advanceTimersByTimeAsync(10000)
-    const { data, alertFeatures } = await pending
+    // ...and the Open-Meteo values go out, with the overlay still to come.
+    const { data, alertFeatures, nwsLate } = await pending
     expect(data.current.weather_code).toBe(1)
     expect(alertFeatures).toEqual([])
     expect(data.radarClear).toBeNull()
+    expect(nwsLate).toBeInstanceOf(Promise)
+
+    // Past the budget NWS gives up with nothing to add.
+    await vi.advanceTimersByTimeAsync(10000)
+    await expect(nwsLate).resolves.toBeNull()
+  })
+
+  it('lays a slow NWS overlay on afterwards instead of holding the reading', async () => {
+    let answerHourly
+    const hourly = new Promise((resolve) => { answerHourly = resolve })
+    const om = openMeteo()
+    om.hourly = { ...om.hourly, temperature_2m: [80], is_day: [1], precipitation_probability: [0] }
+    vi.stubGlobal('fetch', vi.fn((url) => {
+      const reply = (body) => Promise.resolve({ ok: body != null, status: body != null ? 200 : 404, json: async () => body })
+      if (url.includes('api.open-meteo.com')) return reply(om)
+      if (url.includes('/points/')) return reply({ properties: { forecastHourly: 'https://api.weather.gov/hourly' } })
+      if (url.includes('api.weather.gov/hourly')) return hourly.then(reply)
+      if (url.includes('api.weather.gov/alerts')) return reply({ features: [] })
+      return reply(null)
+    }))
+
+    const pending = loadForecast(LOC)
+    await vi.advanceTimersByTimeAsync(4000)
+    const { data, nwsLate } = await pending
+    expect(data.current.temperature_2m).toBe(80) // Open-Meteo's
+    expect(data.current.nws_forecast).toBeUndefined()
+
+    answerHourly({ properties: { periods: [{
+      startTime: '2026-07-16T18:00:00Z', icon: 'https://api.weather.gov/icons/land/day/ovc', temperature: 77,
+    }] } })
+    await vi.advanceTimersByTimeAsync(0)
+    const late = await nwsLate
+    expect(late.data.current.temperature_2m).toBe(77) // NWS hour stamped on
+    expect(data.current.temperature_2m).toBe(80) // the reading already out is untouched
+  })
+
+  it('goes out without a stalled radar, handing it back to apply later', async () => {
+    vi.stubGlobal('fetch', fakeNetwork([
+      ['api.open-meteo.com', openMeteo],
+      ['air-quality-api', () => ({ current: { us_aqi: 20 } })],
+      ['api.weather.gov', () => null],
+      ['mapservices.weather.noaa.gov', () => HANG],
+      ['rainviewer', () => HANG],
+    ]))
+
+    let settled = false
+    const pending = loadForecast(LOC).then((r) => { settled = true; return r })
+
+    // The radar alone could hold it for three of its six-second limits; the
+    // forecast waits for it only so long.
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(settled).toBe(true)
+    const { data, radarLate } = await pending
+    expect(data.radarClear).toBeNull()
+    expect(radarLate).toBeInstanceOf(Promise)
+
+    // The late sample still finishes (here with nothing to say).
+    await vi.advanceTimersByTimeAsync(20000)
+    await expect(radarLate).resolves.toBeNull()
   })
 
   it('fails outright when Open-Meteo itself never answers', async () => {
@@ -142,9 +203,10 @@ describe('loadForecast', () => {
     vi.stubGlobal('fetch', fetch)
     const pending = loadForecast(LOC, { lite: true })
     await vi.advanceTimersByTimeAsync(20000)
-    const { data, aqiResult } = await pending
+    const { data, aqiPending, nwsLate } = await pending
     expect(data.daily).toBeUndefined()
-    expect(aqiResult.status).toBe('rejected')
+    expect((await aqiPending).status).toBe('rejected')
+    expect(nwsLate).toBeNull() // a lite load waits for the overlay
     expect(data.current.temperature_2m).toBe(77) // NWS hour stamped onto current
     const urls = fetch.mock.calls.map(([u]) => u)
     expect(urls.some(u => u.includes('air-quality'))).toBe(false)

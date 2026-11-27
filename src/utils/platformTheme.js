@@ -5,7 +5,13 @@ import { IS_PHONE, IS_DESKTOP, DEV_DEVICE } from './device'
 // state) and main.jsx, which has to know before the first render whether to wait
 // for the web layout's chunk (see components/web/webShellChunk).
 
-export const PLATFORM_THEME_KEY = 'alek-weather-platform-theme' // 'ios' | 'android' | 'web'
+// 'ios' | 'android' | 'web'. A dev device override (see device.js) keeps its
+// own copy: every pretend device shares the desktop browser's localStorage, so
+// one key let an ?device=android session's choice open ?device=tablet in
+// Android too, with no way back to Web short of picking it again.
+export const PLATFORM_THEME_KEY = DEV_DEVICE
+  ? `alek-weather-platform-theme:${DEV_DEVICE}`
+  : 'alek-weather-platform-theme'
 
 // Viewport width at which the desktop layout takes over. Shared with App's
 // isDesktop media query so the first-run default and the layout agree on what
@@ -27,6 +33,10 @@ export function defaultPlatformTheme() {
   // Dev override (see device.js): a pretend phone takes its pretend OS's look.
   if (DEV_DEVICE === 'iphone') return 'ios'
   if (DEV_DEVICE === 'android') return 'android'
+  // A pretend tablet is for trying the Web layout on a touch device, and the
+  // preview it usually runs in is narrower than DESKTOP_MQ, so the width test
+  // below would always send it to Android.
+  if (DEV_DEVICE === 'tablet') return 'web'
   const isApple = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
     (navigator.userAgent.includes('Macintosh') && navigator.maxTouchPoints > 1)
   if (isApple) return 'ios'

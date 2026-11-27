@@ -126,6 +126,86 @@ function skyCode(cloudCover) {
   return 0                       // clear
 }
 
+// ── Rain or snow ──
+// Air temperature alone is the wrong test: a lot of real snow falls at 33 to
+// 36°F, because snow falling through dry air cools it by evaporating, and the
+// air at ground level ends up nearer the wet-bulb temperature than the dry-bulb
+// one. So the test is the wet-bulb temperature, from temperature and humidity
+// (Stull 2011, good to about 1°C over the range that matters here), with snow
+// at or below 0.5°C wet-bulb. Without humidity (the lite readings) it falls back
+// to the air at or below 33°F. Temperatures in this app are °F.
+const SNOW_WET_BULB_C = 0.5
+const SNOW_AIR_F = 33
+
+// Relative humidity (%) of `current`: given, or worked out from the dew point.
+function humidity(current) {
+  const rh = current?.relative_humidity_2m
+  if (rh != null && Number.isFinite(rh)) return rh
+  const t = current?.temperature_2m, td = current?.dew_point_2m
+  if (t == null || td == null) return null
+  const tc = (t - 32) / 1.8, tdc = (td - 32) / 1.8
+  const e = (x) => Math.exp((17.625 * x) / (243.04 + x))
+  return Math.min(100, 100 * (e(tdc) / e(tc)))
+}
+
+// Wet-bulb temperature in °C, or null without temperature and humidity.
+export function wetBulbC(current) {
+  const t = current?.temperature_2m
+  const rh = humidity(current)
+  if (t == null || rh == null) return null
+  const T = (t - 32) / 1.8
+  const RH = Math.max(5, Math.min(99, rh))
+  return T * Math.atan(0.151977 * Math.sqrt(RH + 8.313659))
+    + Math.atan(T + RH) - Math.atan(RH - 1.676331)
+    + 0.00391838 * RH ** 1.5 * Math.atan(0.023101 * RH)
+    - 4.686035
+}
+
+// Whether precipitation falling at `current` would be snow.
+export function precipIsSnow(current) {
+  const tw = wetBulbC(current)
+  if (tw != null) return tw <= SNOW_WET_BULB_C
+  return current?.temperature_2m != null && current.temperature_2m <= SNOW_AIR_F
+}
+
+// ── Intensity from radar ──
+// How hard it is coming down, from the radar's dBZ over the point, as the
+// matching code in `code`'s own family (the forecast or a station says rain vs
+// drizzle vs snow; the radar says how much). Rain by Marshall-Palmer: 30 dBZ is
+// ~2.7 mm/h and 40 dBZ ~11.5 mm/h, close to the light / moderate / heavy lines
+// of 2.5 and 7.6 mm/h. Snow returns far less power for the same amount falling,
+// so its lines sit lower. Drizzle is by definition light: an echo strong enough
+// for moderate rain is rain, not drizzle. Codes with no intensity ladder
+// (thunder, hail, snow grains) come back unchanged.
+const RAIN_DBZ_STEPS = [30, 40]
+const SNOW_DBZ_STEPS = [20, 28]
+function step(dbz, [moderate, heavy]) {
+  return dbz >= heavy ? 2 : dbz >= moderate ? 1 : 0
+}
+export function codeForDbz(code, dbz) {
+  if (dbz == null || !Number.isFinite(dbz)) return code
+  const rain = step(dbz, RAIN_DBZ_STEPS)
+  const snow = step(dbz, SNOW_DBZ_STEPS)
+  switch (code) {
+    case 51: case 53: case 55:
+      return dbz >= RAIN_DBZ_STEPS[0] ? FAMILY.rain[rain] : (dbz >= 25 ? 53 : 51)
+    case 56: case 57:
+      return dbz >= RAIN_DBZ_STEPS[0] ? (dbz >= 35 ? 67 : 66) : (dbz >= 25 ? 57 : 56)
+    case 66: case 67:
+      return dbz >= 35 ? 67 : 66
+    case 61: case 63: case 65:
+      return FAMILY.rain[rain]
+    case 80: case 81: case 82:
+      return FAMILY.showers[rain]
+    case 71: case 73: case 75:
+      return FAMILY.snow[snow]
+    case 85: case 86:
+      return snow >= 1 ? 86 : 85
+    default:
+      return code
+  }
+}
+
 // Measured precip rate (inches/15min) at the current time from minutely_15.
 export function livePrecipRate(current, minutely) {
   const times = minutely?.time, precip = minutely?.precipitation
@@ -227,11 +307,23 @@ export function liveWeatherCode(current, minutely, radarClear = null) {
   // (it is the local forecast, just not confident enough on its own); plain rain
   // or snow by temperature is the fallback when it offers nothing.
   if (radarClear === false) {
+    // How hard it is falling, where the radar says (MRMS gives a strength,
+    // RainViewer doesn't): applyRadar in useWeather puts it on `current`.
+    const dbz = current.radar_dbz
     // Already a precipitation code: radar corroborates it, so short-circuit the
     // rate logic below exactly as a station-confirmed code does. Otherwise the
     // dry minutely series that caused this whole class of bug would still get to
     // downgrade a code radar just confirmed.
-    if (precipTier(code) > 0) return code
+    //
+    // The radar sets its intensity, though, unless something that was there
+    // reported it: a model's "Heavy Rain" over a light echo is the same
+    // over-claim as a model's rain over no echo. A station or a warning is a
+    // report from the ground and keeps its own, and thunder is the radar's to
+    // confirm, not to grade.
+    if (precipTier(code) > 0) {
+      if (current.weather_code_confirmed || THUNDER_CODES.has(code)) return code
+      return codeForDbz(code, dbz)
+    }
     // The forecast's code for this hour supplies the type — drizzle vs rain vs
     // snow — but only where it claims something reflectivity can actually stand
     // behind. Thunder is not that: radar sees precipitation, not lightning, and a
@@ -242,10 +334,12 @@ export function liveWeatherCode(current, minutely, radarClear = null) {
     // over-claim as the old code's 0%, pointed the other way — verified over Bel
     // Air MD, where NWS still carried 96 for hours after the storm passed and
     // only light rain was left falling.
+    //
+    // The type only: how hard comes from the radar's strength where it gives
+    // one, so a forecast "Heavy Rain" over a light echo shows light rain.
     const forecast = current.forecast_hour_code
-    if (forecast != null && precipTier(forecast) > 0 && !THUNDER_CODES.has(forecast)) return forecast
-    const snow = current.temperature_2m != null && current.temperature_2m <= 32 // °F
-    return snow ? 71 : 61
+    if (forecast != null && precipTier(forecast) > 0 && !THUNDER_CODES.has(forecast)) return codeForDbz(forecast, dbz)
+    return codeForDbz(precipIsSnow(current) ? 71 : 61, dbz)
   }
   // Confirmed by an active warning (or a station obs when radar isn't clearing
   // it): trust it over the model-driven minutely nowcast, which is routinely
@@ -268,8 +362,7 @@ export function liveWeatherCode(current, minutely, radarClear = null) {
   }
   // Code says clear/cloudy but the nowcast shows real precip → upgrade to rain/snow.
   if (rate >= PRECIP_RATE.LIGHT) {
-    const snow = current.temperature_2m != null && current.temperature_2m <= 32 // °F
-    return FAMILY[snow ? 'snow' : 'rain'][rateTier(rate)]
+    return FAMILY[precipIsSnow(current) ? 'snow' : 'rain'][rateTier(rate)]
   }
   return code
 }
@@ -287,7 +380,11 @@ export function liveWeatherSource(current, minutely, radarClear = null) {
     const precip = precipTier(code) > 0
     if ((radarClear === true && precip) || (radarClear === false && !precip)) return 'radar'
   }
-  return liveWeatherCode(current, minutely, radarClear) !== code ? 'nowcast' : decided
+  const live = liveWeatherCode(current, minutely, radarClear)
+  if (live === code) return decided
+  // Radar graded the intensity of a code it confirmed (see codeForDbz).
+  if (radarClear === false && current.radar_dbz != null) return 'radar'
+  return 'nowcast'
 }
 
 export function getWindDirection(degrees) {

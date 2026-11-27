@@ -1,16 +1,51 @@
 import { useState, useEffect, useLayoutEffect, useRef } from 'react'
 import {
   ArrowLeft, ChevronRight, ChevronDown, X, Info, LifeBuoy,
-  Palette, Flame, Thermometer, CloudRain, Radar as RadarIcon, Bell, Database, RefreshCw, RotateCcw, Trash2,
+  Palette, Flame, Thermometer, CloudRain, Radar as RadarIcon, Bell, Database, RefreshCw, Trash2,
 } from 'lucide-react'
 import { APP_VERSION_LABEL, ANDROID_VERSION_LABEL, IS_ANDROID_APP } from '../utils/version'
-import { APK_URL, isAndroidWeb } from './ApkPrompt'
+import { APK_URL, isAndroidWeb } from '../utils/apk'
 import { IS_PHONE, IS_DESKTOP } from '../utils/device'
-import { UNIT_GROUPS, UNIT_GROUP_KEYS } from '../utils/units'
+import { UNIT_GROUPS, UNIT_GROUP_KEYS, UNIT_SYSTEMS } from '../utils/units'
 import { MAX_CARD_TRANSPARENCY } from '../utils/appearance'
 import { systemSeed, SYSTEM_SEED } from '../utils/materialTheme'
 import { WeatherIcon } from './WeatherIcon'
 import { armPageTransition } from '../utils/pageTransition'
+import { haptic } from '../utils/haptics'
+
+// The easter egg: three taps on "Alek Studios" within a second and a half
+// opens the Explore page. Each tap nudges the mark, so the second one hints
+// that something is listening.
+const STUDIO_TAPS = 3
+const STUDIO_WINDOW_MS = 1500
+
+function StudioMark({ className, onExploreOpen, as: Tag = 'p' }) {
+  const taps = useRef([])
+  const [nudge, setNudge] = useState(0)
+  const onClick = () => {
+    if (!onExploreOpen) return
+    const now = Date.now()
+    taps.current = [...taps.current.filter((t) => now - t < STUDIO_WINDOW_MS), now]
+    if (taps.current.length >= STUDIO_TAPS) {
+      taps.current = []
+      setNudge(0)
+      haptic('heavy')
+      onExploreOpen()
+      return
+    }
+    haptic('tap')
+    setNudge(taps.current.length)
+  }
+  return (
+    <Tag
+      className={`${className} studio-mark${nudge ? ` studio-mark--nudge${nudge}` : ''}`}
+      onClick={onClick}
+      onAnimationEnd={() => setNudge(0)}
+    >
+      Alek Studios&#8482;
+    </Tag>
+  )
+}
 
 function SettingRow({ label, children }) {
   return (
@@ -332,21 +367,25 @@ function NotificationsView({ notifyEnabled, notifyTypes, permission, onEnabledCh
           </SettingRow>
         ))}
       </div>
+      <p className="color-coding-desc">Notifications are for your Home location. Without a Home, they use your first saved place, or the last place you opened if nothing is saved.</p>
       <p className="color-coding-desc">The forecast is checked about once an hour in the background, including when the app is closed. Precipitation notices say when it starts and how long it lasts, and repeat only if the day turns worse. Rain, snow, and tomorrow's summary stay quiet overnight; severe weather and alerts arrive whenever they're issued.</p>
     </>
   )
 }
 
 const COLOR_CODING_TILES = [
-  { key: 'current',  label: 'Current Weather'  },
   { key: 'hourly',   label: 'Hourly Forecast'  },
   { key: 'daily',    label: '7-Day Forecast'   },
   { key: 'overview', label: 'Weather Overview' },
   { key: 'details',  label: 'Weather Details'  },
 ]
 
-function ColorCodingView({ colorCoding, onToggle, onReset, onBack }) {
+// Whether any colour coding is on: what the one switch for all of it shows.
+const anyColorCoding = (colorCoding) => COLOR_CODING_TILES.some(({ key }) => colorCoding[key])
+
+function ColorCodingView({ colorCoding, onToggle, onSetAll, onBack }) {
   const tiles = COLOR_CODING_TILES
+  const on = anyColorCoding(colorCoding)
   return (
     <>
       {onBack && (
@@ -355,6 +394,13 @@ function ColorCodingView({ colorCoding, onToggle, onReset, onBack }) {
           <span>Back</span>
         </button>
       )}
+      {/* Everything below at once: off turns every tile and both effects off,
+          on turns them all back on. */}
+      <div className="card settings-card">
+        <SettingRow label="Color Coding">
+          <Toggle id="toggle-cc-all" checked={on} onChange={() => onSetAll(!on)} />
+        </SettingRow>
+      </div>
       <p className="color-coding-desc">Choose which tiles color their readings by how hot, cold, or severe they are.</p>
       <div className="card settings-card">
         {tiles.map(({ key, label }) => (
@@ -372,13 +418,6 @@ function ColorCodingView({ colorCoding, onToggle, onReset, onBack }) {
           <Toggle id="toggle-cc-frost" checked={colorCoding.frost} onChange={() => onToggle('frost')} />
         </SettingRow>
       </div>
-      {onReset && (
-        <div className="card settings-card">
-          <button className="settings-row clear-cache-btn" onClick={onReset}>
-            <div className="settings-row-label">Reset to default</div>
-          </button>
-        </div>
-      )}
     </>
   )
 }
@@ -439,25 +478,19 @@ function IconSetPreview() {
   )
 }
 
-// The Animated Icons switch applies to both sets: the line icons animate too,
-// part by part (see "Line icon motion" in App.css).
-function IconsView({ iconSet, onIconSetChange, iconMotion, onIconMotionChange, onBack }) {
+// The icon style and Animated Icons, on the Theme page, in one card: the
+// preview between them animates with the switch, so the two read as one
+// setting. The Animated Icons switch applies to both sets: the line icons
+// animate too, part by part (see "Line icon motion" in App.css).
+function IconsSection({ iconSet, onIconSetChange, iconMotion, onIconMotionChange }) {
   return (
     <>
-      {onBack && (
-        <button className="back-btn color-coding-back" onClick={onBack} aria-label="Back to settings">
-          <ArrowLeft size={18} />
-          <span>Back</span>
-        </button>
-      )}
+      <p className="color-coding-desc">Choose the weather icons.</p>
       <div className="card settings-card">
         <SettingRow label="Icon Style">
           <SegmentedControl value={iconSet} onChange={onIconSetChange} options={ICON_SET_OPTIONS} />
         </SettingRow>
         <IconSetPreview />
-      </div>
-      <p className="color-coding-desc">Let the weather icons move: falling rain, drifting clouds, a flash of lightning.</p>
-      <div className="card settings-card">
         <SettingRow label="Animated Icons">
           <Toggle id="toggle-icon-motion" checked={iconMotion} onChange={onIconMotionChange} />
         </SettingRow>
@@ -614,7 +647,9 @@ function MaterialYouSection({ color, onColorChange, transparency, onTransparency
   )
 }
 
-function ThemeView({ darkMode, onDarkModeChange, platformTheme, onPlatformThemeChange, materialColor, onMaterialColorChange, cardTransparency, onCardTransparencyChange, onPeekChange, weatherAnimations, onBack }) {
+// The look of the app in one place: light or dark, the style, its colours and
+// glass, how the cards sit (Layout), and the icons.
+function ThemeView({ darkMode, onDarkModeChange, platformTheme, onPlatformThemeChange, materialColor, onMaterialColorChange, cardTransparency, onCardTransparencyChange, onPeekChange, weatherAnimations, cardLayout, onCardLayoutChange, iconSet, onIconSetChange, iconMotion, onIconMotionChange, onBack }) {
   return (
     <>
       {onBack && (
@@ -680,8 +715,103 @@ function ThemeView({ darkMode, onDarkModeChange, platformTheme, onPlatformThemeC
           weatherAnimations={weatherAnimations}
         />
       )}
+      {/* The forecast as one connected sheet or as separate cards. Phone
+          styles only: the web layout has its own page grid. */}
+      {platformTheme !== 'web' && onCardLayoutChange && (
+        <>
+          <p className="color-coding-desc">Show the forecast as separate cards, or joined into one sheet.</p>
+          <div className="card settings-card">
+            <SettingRow label="Layout">
+              <SegmentedControl
+                value={cardLayout}
+                onChange={onCardLayoutChange}
+                options={[
+                  { value: 'separate',  label: 'Separate'  },
+                  { value: 'connected', label: 'Connected' },
+                ]}
+              />
+            </SettingRow>
+          </div>
+        </>
+      )}
+      {onIconSetChange && (
+        <IconsSection
+          iconSet={iconSet}
+          onIconSetChange={onIconSetChange}
+          iconMotion={iconMotion}
+          onIconMotionChange={onIconMotionChange}
+        />
+      )}
     </>
   )
+}
+
+// Every unit, one measure a row. The °F / °C switch on the main list sets them
+// all at once (UNIT_SYSTEMS); this is where one can be set apart from the rest.
+// Every one is display-only: the app fetches and reasons in one fixed set of
+// units and converts at the last step, so switching is instant.
+function UnitsView({ unit, onUnitChange, units, onUnitGroupChange, onBack }) {
+  return (
+    <>
+      {onBack && (
+        <button className="back-btn color-coding-back" onClick={onBack} aria-label="Back to settings">
+          <ArrowLeft size={18} />
+          <span>Back</span>
+        </button>
+      )}
+      <div className="card settings-card">
+        <SettingRow label="Temperature">
+          <SegmentedControl
+            value={unit}
+            onChange={onUnitChange}
+            options={[
+              { value: 'F', label: '°F' },
+              { value: 'C', label: '°C' },
+            ]}
+          />
+        </SettingRow>
+        {UNIT_GROUP_KEYS.map((group) => (
+          <SettingRow key={group} label={UNIT_GROUPS[group].label}>
+            <SegmentedControl
+              value={units[group]}
+              onChange={(value) => onUnitGroupChange(group, value)}
+              options={UNIT_GROUPS[group].options}
+            />
+          </SettingRow>
+        ))}
+      </div>
+    </>
+  )
+}
+
+// The Theme page's props, out of the settings' own.
+function themeViewProps(bodyProps) {
+  return {
+    darkMode: bodyProps.darkMode,
+    onDarkModeChange: bodyProps.onDarkModeChange,
+    platformTheme: bodyProps.platformTheme,
+    onPlatformThemeChange: bodyProps.onPlatformThemeChange,
+    materialColor: bodyProps.materialColor,
+    onMaterialColorChange: bodyProps.onMaterialColorChange,
+    cardTransparency: bodyProps.cardTransparency,
+    onCardTransparencyChange: bodyProps.onCardTransparencyChange,
+    weatherAnimations: bodyProps.weatherAnimations,
+    cardLayout: bodyProps.cardLayout,
+    onCardLayoutChange: bodyProps.onCardLayoutChange,
+    iconSet: bodyProps.iconSet,
+    onIconSetChange: bodyProps.onIconSetChange,
+    iconMotion: bodyProps.iconMotion,
+    onIconMotionChange: bodyProps.onIconMotionChange,
+  }
+}
+
+function unitsViewProps(bodyProps) {
+  return {
+    unit: bodyProps.unit,
+    onUnitChange: bodyProps.onUnitChange,
+    units: bodyProps.units,
+    onUnitGroupChange: bodyProps.onUnitGroupChange,
+  }
 }
 
 // The radar settings, on their own page off the Tiles card.
@@ -758,7 +888,14 @@ function radarViewProps(bodyProps) {
   }
 }
 
-function SettingsBody({ onHelpOpen, darkMode, onDarkModeChange, platformTheme, cardLayout, onCardLayoutChange, unit, onUnitChange, units, onUnitGroupChange, nowcastMode, onNowcastModeChange, onColorCodingOpen, onRadarOpen, onWeatherEffectsOpen, onIconsOpen, onThemeOpen, onNotificationsOpen, weatherAnimations, onWeatherAnimationsChange, installPrompt, onInstall }) {
+function SettingsBody({ onHelpOpen, onExploreOpen, darkMode, onDarkModeChange, unit, onUnitChange, onUnitGroupChange, colorCoding, onColorCodingAll, nowcastMode, onNowcastModeChange, onColorCodingOpen, onRadarOpen, onWeatherEffectsOpen, onUnitsOpen, onThemeOpen, onNotificationsOpen, weatherAnimations, onWeatherAnimationsChange, haptics, onHapticsChange, installPrompt, onInstall }) {
+  // One switch for the whole set of units: °F with the US measures, °C with
+  // metric (UNIT_SYSTEMS). The Units page sets any one apart.
+  const changeUnitSystem = (value) => {
+    onUnitChange(value)
+    for (const group of UNIT_GROUP_KEYS) onUnitGroupChange(group, UNIT_SYSTEMS[value][group])
+  }
+  const ccOn = colorCoding ? anyColorCoding(colorCoding) : false
   return (
     <>
       <div className="settings-group-label">Appearance</div>
@@ -785,24 +922,20 @@ function SettingsBody({ onHelpOpen, darkMode, onDarkModeChange, platformTheme, c
             </button>
           </div>
         </div>
-        {/* The forecast as one connected sheet or as separate cards. Phone
-            styles only: the web layout has its own page grid. */}
-        {platformTheme !== 'web' && (
-          <SettingRow label="Layout">
-            <SegmentedControl
-              value={cardLayout}
-              onChange={onCardLayoutChange}
-              options={[
-                { value: 'separate',  label: 'Separate'  },
-                { value: 'connected', label: 'Connected' },
-              ]}
-            />
-          </SettingRow>
-        )}
-        <button className="settings-row about-row" onClick={onColorCodingOpen}>
+        {/* All of it on or off right here; the page picks tiles one by one. */}
+        <div className="settings-row settings-row--link" onClick={onColorCodingOpen}>
           <div className="settings-row-label">Color Coding</div>
-          <ChevronRight size={16} className="about-chevron" />
-        </button>
+          <div className="settings-row-controls">
+            {onColorCodingAll && (
+              <div onClick={e => e.stopPropagation()}>
+                <Toggle id="toggle-cc-all-main" checked={ccOn} onChange={() => onColorCodingAll(!ccOn)} />
+              </div>
+            )}
+            <button className="theme-chevron-btn" onClick={onColorCodingOpen} aria-label="Color coding options">
+              <ChevronRight size={16} className="about-chevron" />
+            </button>
+          </div>
+        </div>
         {/* Gyroscope tilt lives on its own page and only exists on mobile, so on
             mobile this is a plain link into that page (the on/off toggle lives
             there, next to gyroscope — like Color Coding). Desktop has no page, so
@@ -820,43 +953,25 @@ function SettingsBody({ onHelpOpen, darkMode, onDarkModeChange, platformTheme, c
             </div>
           </div>
         )}
-        {/* Its own page rather than switches inside Weather Effects: that page
-            is about the sky behind the app, and this is the icons on top of it.
-            Someone who turns the backdrop off often still wants the forecast to
-            move, so neither should silently disable the other. The icon style
-            and Animated Icons live there together (IconsView). */}
-        <button className="settings-row about-row" onClick={onIconsOpen}>
-          <div className="settings-row-label">Icons</div>
-          <ChevronRight size={16} className="about-chevron" />
-        </button>
-      </div>
-
-      {/* Temperature is its own state and its own row; the rest are driven off
-          the UNIT_GROUPS registry, so adding a measure or an option there puts
-          it here without a second edit. Every one of these is display-only —
-          the app fetches and reasons in one fixed set of units and converts at
-          the last step, so switching is instant and needs no refetch. */}
-      <div className="settings-group-label">Units</div>
-      <div className="card settings-card">
-        <SettingRow label="Temperature">
-          <SegmentedControl
-            value={unit}
-            onChange={onUnitChange}
-            options={[
-              { value: 'F', label: '°F' },
-              { value: 'C', label: '°C' },
-            ]}
-          />
-        </SettingRow>
-        {UNIT_GROUP_KEYS.map((group) => (
-          <SettingRow key={group} label={UNIT_GROUPS[group].label}>
-            <SegmentedControl
-              value={units[group]}
-              onChange={(value) => onUnitGroupChange(group, value)}
-              options={UNIT_GROUPS[group].options}
-            />
-          </SettingRow>
-        ))}
+        {/* One switch for every unit; the page sets any one apart. */}
+        <div className="settings-row settings-row--link" onClick={onUnitsOpen}>
+          <div className="settings-row-label">Units</div>
+          <div className="settings-row-controls">
+            <div className="theme-seg-wrap" onClick={e => e.stopPropagation()}>
+              <SegmentedControl
+                value={unit}
+                onChange={changeUnitSystem}
+                options={[
+                  { value: 'F', label: '°F' },
+                  { value: 'C', label: '°C' },
+                ]}
+              />
+            </div>
+            <button className="theme-chevron-btn" onClick={onUnitsOpen} aria-label="All units">
+              <ChevronRight size={16} className="about-chevron" />
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="settings-group-label">Tiles</div>
@@ -896,6 +1011,15 @@ function SettingsBody({ onHelpOpen, darkMode, onDarkModeChange, platformTheme, c
       )}
 
       <div className="settings-group-label">Other</div>
+      {/* The tick under each press. Like notifications it rides on a native
+          bridge (utils/haptics.js), so it only exists in the APK. */}
+      {IS_ANDROID_APP && (
+        <div className="card settings-card">
+          <SettingRow label="Haptics">
+            <Toggle id="toggle-haptics" checked={haptics} onChange={onHapticsChange} />
+          </SettingRow>
+        </div>
+      )}
       {IS_ANDROID_APP && <UpdateSection />}
       <ApkSection />
       <InstallSection installPrompt={installPrompt} onInstall={onInstall} />
@@ -905,13 +1029,13 @@ function SettingsBody({ onHelpOpen, darkMode, onDarkModeChange, platformTheme, c
       <div className="settings-footer">
         <p className="settings-version">Version {APP_VERSION_LABEL}</p>
         {IS_ANDROID_APP && <p className="settings-version">Android {ANDROID_VERSION_LABEL}</p>}
-        <p className="settings-studio">Alek Studios&#8482;</p>
+        <StudioMark className="settings-studio" onExploreOpen={onExploreOpen} />
       </div>
     </>
   )
 }
 
-const SUB_VIEW_TITLES = { colorcoding: 'Color Coding', radar: 'Radar', effects: 'Weather Effects', icons: 'Icons', theme: 'Theme', notifications: 'Notifications' }
+const SUB_VIEW_TITLES = { colorcoding: 'Color Coding', radar: 'Radar', effects: 'Weather Effects', units: 'Units', theme: 'Theme', notifications: 'Notifications' }
 
 // ── Web Settings page ─────────────────────────────────────────────────────
 //
@@ -978,7 +1102,7 @@ function WebSettings({
   nowcastMode, onNowcastModeChange,
   radarMode, onRadarModeChange, radarSource, onRadarSourceChange, radarEnhanced, onRadarEnhancedChange,
   weatherAnimations, onWeatherAnimationsChange, iconMotion, onIconMotionChange, iconSet, onIconSetChange,
-  colorCoding, onColorCodingToggle, onColorCodingReset, onHelpOpen,
+  colorCoding, onColorCodingToggle, onHelpOpen, onExploreOpen,
   notifyEnabled, notifyTypes, notifyPermission, onNotifyEnabledChange, onNotifyTypeToggle,
 }) {
   const sections = [
@@ -1050,10 +1174,7 @@ function WebSettings({
               <SegmentedControl value={iconSet} onChange={onIconSetChange} options={ICON_SET_OPTIONS} />
             </WebRow>
             <IconSetPreview />
-            <WebRow
-              label="Animated icons"
-              desc="Let the weather icons move: falling rain, drifting clouds, a flash of lightning."
-            >
+            <WebRow label="Animated icons">
               <Toggle id="ws-icon-motion" checked={iconMotion} onChange={onIconMotionChange} />
             </WebRow>
           </WebGroup>
@@ -1078,16 +1199,6 @@ function WebSettings({
               <Toggle id="ws-cc-frost" checked={colorCoding.frost} onChange={() => onColorCodingToggle('frost')} />
             </WebRow>
           </WebGroup>
-          {onColorCodingReset && (
-            <WebGroup>
-              <WebRow label="Reset to default" desc="Put every color coding option back the way it was when the app was first opened.">
-                <button className="ws-btn" onClick={onColorCodingReset}>
-                  <RotateCcw size={15} aria-hidden="true" />
-                  Reset
-                </button>
-              </WebRow>
-            </WebGroup>
-          )}
         </>
       )
       break
@@ -1189,19 +1300,28 @@ function WebSettings({
           <WebGroup>
             <p className="ws-about-desc">{ABOUT_DESC}</p>
           </WebGroup>
-          {/* Help before the source list so that, in two columns, the short
-              description and Help stack on the left beside the tall list on
-              the right, and the footer lands under two even columns. */}
-          {onHelpOpen && (
-            <WebGroup>
+          {/* Version and Help before the source list so that, in two columns,
+              the short description and this group stack on the left beside
+              the tall list on the right, and the footer lands under two even
+              columns. */}
+          <WebGroup>
+            <WebRow label="Version">
+              <span className="ws-version">{APP_VERSION_LABEL}</span>
+            </WebRow>
+            {IS_ANDROID_APP && (
+              <WebRow label="Android app">
+                <span className="ws-version">{ANDROID_VERSION_LABEL}</span>
+              </WebRow>
+            )}
+            {onHelpOpen && (
               <WebRow label="Help" desc="Answers for when something isn’t working, like forecasts that won’t load.">
                 <button className="about-help-btn" onClick={onHelpOpen}>
                   <LifeBuoy size={15} aria-hidden="true" />
                   Open Help
                 </button>
               </WebRow>
-            </WebGroup>
-          )}
+            )}
+          </WebGroup>
           <WebGroup title="Data sources">
             {ABOUT_APIS.map(([name, url]) => (
               <WebRow key={name} label={name}>
@@ -1210,9 +1330,7 @@ function WebSettings({
             ))}
           </WebGroup>
           <div className="ws-footer">
-            <span>Version {APP_VERSION_LABEL}</span>
-            {IS_ANDROID_APP && <span>Android {ANDROID_VERSION_LABEL}</span>}
-            <span>Alek Studios&#8482;</span>
+            <StudioMark as="span" className="ws-studio" onExploreOpen={onExploreOpen} />
           </div>
         </>
       )
@@ -1250,7 +1368,7 @@ function WebSettings({
   )
 }
 
-export function SettingsPage({ onBack, onDismiss, inline, page, modal, closing, subView, onColorCodingOpen, onRadarOpen, onWeatherEffectsOpen, onIconsOpen, onThemeOpen, onNotificationsOpen, onSubViewBack, colorCoding, onColorCodingToggle, onColorCodingReset, ...bodyProps }) {
+export function SettingsPage({ onBack, onDismiss, inline, page, modal, closing, subView, onColorCodingOpen, onRadarOpen, onWeatherEffectsOpen, onUnitsOpen, onThemeOpen, onNotificationsOpen, onSubViewBack, colorCoding, onColorCodingToggle, ...bodyProps }) {
   // Set while the transparency thumb is held, which fades the page down to just
   // that slider (see .settings-page.peeking). A pointer released off the input
   // — dragged past the end of the track, or lifted after the browser handed the
@@ -1287,11 +1405,23 @@ export function SettingsPage({ onBack, onDismiss, inline, page, modal, closing, 
   }
   useEffect(() => {
     if (closing) return
-    // Past the iOS push (0.44s) plus the arming frames below, so the fallback
-    // never frosts the page while it is still moving.
-    const t = setTimeout(() => setSettled(true), 520)
+    // Past the iOS push (0.44s), and past the last card of the phone cascade
+    // (70ms wait + 140ms stagger + 0.3s rise), plus the arming frames below,
+    // so the fallback never frosts the page while it is still moving.
+    const t = setTimeout(() => setSettled(true), 640)
     return () => clearTimeout(t)
   }, [closing])
+
+  // Which way the last move between the list and a sub-page went: "push" going
+  // into one, "pop" coming back. Null until the first move, so the open plays
+  // its own entrance. App.css reads it off .settings-body (data-nav) to bring
+  // the new page's cards in from that side.
+  const [prevSubView, setPrevSubView] = useState(subView)
+  const [navDir, setNavDir] = useState(null)
+  if (subView !== prevSubView) {
+    setPrevSubView(subView)
+    setNavDir(subView ? 'push' : 'pop')
+  }
 
   const panelRef = useRef(null)
 
@@ -1329,24 +1459,25 @@ export function SettingsPage({ onBack, onDismiss, inline, page, modal, closing, 
   }
   useEffect(() => () => clearTimeout(scrollTimer.current), [])
 
+  // A sub-page's cards slide in over the sky the way the open's do, so their
+  // blur comes off for the move, as it does for a scroll. Shares the scroll's
+  // timer, so whichever ends last puts the glass back. 520ms covers the last
+  // card: 140ms of stagger plus the 0.34s slide.
+  useLayoutEffect(() => {
+    const el = panelRef.current
+    if (!navDir || !el) return
+    el.classList.add('scrolling')
+    clearTimeout(scrollTimer.current)
+    scrollTimer.current = setTimeout(() => el.classList.remove('scrolling'), 520)
+  }, [subView]) // eslint-disable-line react-hooks/exhaustive-deps
+
   let body
   if (subView === 'colorcoding') {
-    body = <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} onReset={onColorCodingReset} />
+    body = <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} onSetAll={bodyProps.onColorCodingAll} />
   } else if (subView === 'theme') {
-    body = (
-      <ThemeView
-        darkMode={bodyProps.darkMode}
-        onDarkModeChange={bodyProps.onDarkModeChange}
-        platformTheme={bodyProps.platformTheme}
-        onPlatformThemeChange={bodyProps.onPlatformThemeChange}
-        materialColor={bodyProps.materialColor}
-        onMaterialColorChange={bodyProps.onMaterialColorChange}
-        cardTransparency={bodyProps.cardTransparency}
-        onCardTransparencyChange={bodyProps.onCardTransparencyChange}
-        onPeekChange={setPeeking}
-        weatherAnimations={bodyProps.weatherAnimations}
-      />
-    )
+    body = <ThemeView {...themeViewProps(bodyProps)} onPeekChange={setPeeking} />
+  } else if (subView === 'units') {
+    body = <UnitsView {...unitsViewProps(bodyProps)} />
   } else if (subView === 'radar') {
     body = <RadarSettingsView {...radarViewProps(bodyProps)} />
   } else if (subView === 'effects') {
@@ -1356,15 +1487,6 @@ export function SettingsPage({ onBack, onDismiss, inline, page, modal, closing, 
         onWeatherAnimationsChange={bodyProps.onWeatherAnimationsChange}
         gyroscope={bodyProps.gyroscope}
         onGyroscopeChange={bodyProps.onGyroscopeChange}
-      />
-    )
-  } else if (subView === 'icons') {
-    body = (
-      <IconsView
-        iconSet={bodyProps.iconSet}
-        onIconSetChange={bodyProps.onIconSetChange}
-        iconMotion={bodyProps.iconMotion}
-        onIconMotionChange={bodyProps.onIconMotionChange}
       />
     )
   } else if (subView === 'notifications') {
@@ -1378,12 +1500,12 @@ export function SettingsPage({ onBack, onDismiss, inline, page, modal, closing, 
       />
     )
   } else {
-    body = <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} onRadarOpen={onRadarOpen} onWeatherEffectsOpen={onWeatherEffectsOpen} onIconsOpen={onIconsOpen} onThemeOpen={onThemeOpen} onNotificationsOpen={onNotificationsOpen} />
+    body = <SettingsBody {...bodyProps} colorCoding={colorCoding} onColorCodingOpen={onColorCodingOpen} onRadarOpen={onRadarOpen} onWeatherEffectsOpen={onWeatherEffectsOpen} onUnitsOpen={onUnitsOpen} onThemeOpen={onThemeOpen} onNotificationsOpen={onNotificationsOpen} />
   }
 
   // The web app's Settings tab: its own desktop layout (see WebSettings).
   if (page) {
-    return <WebSettings {...bodyProps} colorCoding={colorCoding} onColorCodingToggle={onColorCodingToggle} onColorCodingReset={onColorCodingReset} />
+    return <WebSettings {...bodyProps} colorCoding={colorCoding} onColorCodingToggle={onColorCodingToggle} />
   }
 
   if (inline) {
@@ -1421,10 +1543,12 @@ export function SettingsPage({ onBack, onDismiss, inline, page, modal, closing, 
          modal's own entrance is on the page element, so any other animation
          ending there counts too. Guarded on the target for that one: other
          animations inside the page (a toggle, an info panel opening) bubble
-         their end events through here as well. */
+         their end events through here as well. The cards rise one after
+         another, so it is the last one's rise that counts: the header and
+         the earlier cards land while the lower ones are still moving. */
       onAnimationEnd={(e) => {
         if (closing) return
-        if (e.animationName === 'pageRise' || (e.target === e.currentTarget && e.animationName !== 'pageBgIn')) setSettled(true)
+        if ((e.animationName === 'pageRise' && !e.target.nextElementSibling) || (e.target === e.currentTarget && e.animationName !== 'pageBgIn')) setSettled(true)
       }}
       /* Only the modal is a dialog. The phone shells are a page that replaces
          what was on screen, and announcing that as a dialog would promise a
@@ -1452,27 +1576,23 @@ export function SettingsPage({ onBack, onDismiss, inline, page, modal, closing, 
           </button>
         )}
       </header>
-      <div className="settings-body">
+      {/* Keyed by sub-page so each move mounts the new page's cards fresh and
+          their entrance plays (see data-nav in App.css). */}
+      <div className="settings-body" key={subView ?? 'main'} data-nav={navDir ?? undefined}>
         {body}
       </div>
     </div>
   )
 }
 
-export function SettingsPill({ expanded, onToggle, subView, onColorCodingOpen, onRadarOpen, onWeatherEffectsOpen, onIconsOpen, onThemeOpen, onNotificationsOpen, onSubViewBack, colorCoding, onColorCodingToggle, onColorCodingReset, ...bodyProps }) {
+export function SettingsPill({ expanded, onToggle, subView, onColorCodingOpen, onRadarOpen, onWeatherEffectsOpen, onUnitsOpen, onThemeOpen, onNotificationsOpen, onSubViewBack, colorCoding, onColorCodingToggle, ...bodyProps }) {
   let body
   if (subView === 'colorcoding') {
-    body = <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} onReset={onColorCodingReset} onBack={onSubViewBack} />
+    body = <ColorCodingView colorCoding={colorCoding} onToggle={onColorCodingToggle} onSetAll={bodyProps.onColorCodingAll} onBack={onSubViewBack} />
   } else if (subView === 'theme') {
-    body = (
-      <ThemeView
-        darkMode={bodyProps.darkMode}
-        onDarkModeChange={bodyProps.onDarkModeChange}
-        platformTheme={bodyProps.platformTheme}
-        onPlatformThemeChange={bodyProps.onPlatformThemeChange}
-        onBack={onSubViewBack}
-      />
-    )
+    body = <ThemeView {...themeViewProps(bodyProps)} onBack={onSubViewBack} />
+  } else if (subView === 'units') {
+    body = <UnitsView {...unitsViewProps(bodyProps)} onBack={onSubViewBack} />
   } else if (subView === 'radar') {
     body = <RadarSettingsView {...radarViewProps(bodyProps)} onBack={onSubViewBack} />
   } else if (subView === 'effects') {
@@ -1482,16 +1602,6 @@ export function SettingsPill({ expanded, onToggle, subView, onColorCodingOpen, o
         onWeatherAnimationsChange={bodyProps.onWeatherAnimationsChange}
         gyroscope={bodyProps.gyroscope}
         onGyroscopeChange={bodyProps.onGyroscopeChange}
-        onBack={onSubViewBack}
-      />
-    )
-  } else if (subView === 'icons') {
-    body = (
-      <IconsView
-        iconSet={bodyProps.iconSet}
-        onIconSetChange={bodyProps.onIconSetChange}
-        iconMotion={bodyProps.iconMotion}
-        onIconMotionChange={bodyProps.onIconMotionChange}
         onBack={onSubViewBack}
       />
     )
@@ -1507,7 +1617,7 @@ export function SettingsPill({ expanded, onToggle, subView, onColorCodingOpen, o
       />
     )
   } else {
-    body = <SettingsBody {...bodyProps} onColorCodingOpen={onColorCodingOpen} onRadarOpen={onRadarOpen} onWeatherEffectsOpen={onWeatherEffectsOpen} onIconsOpen={onIconsOpen} onThemeOpen={onThemeOpen} onNotificationsOpen={onNotificationsOpen} />
+    body = <SettingsBody {...bodyProps} colorCoding={colorCoding} onColorCodingOpen={onColorCodingOpen} onRadarOpen={onRadarOpen} onWeatherEffectsOpen={onWeatherEffectsOpen} onUnitsOpen={onUnitsOpen} onThemeOpen={onThemeOpen} onNotificationsOpen={onNotificationsOpen} />
   }
 
   return (

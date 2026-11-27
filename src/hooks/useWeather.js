@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { nowcastHourlyCode, precipTier, livePrecipRate } from '../utils/weatherCodes'
+import { nowcastHourlyCode, precipTier, livePrecipRate, precipIsSnow } from '../utils/weatherCodes'
 import { gridHourly, gridHourlyAccum, gridHourlySpans } from '../utils/nwsGrid'
-import { sampleRadar } from './useRadarPrecip'
+import { sampleRadar, radarVerdict } from './useRadarPrecip'
 import { IS_ANDROID_APP } from '../utils/version'
 import { deadline, fetchWithin } from '../utils/fetchTimeout'
 import { assertOpenMeteoQuota, noteOpenMeteo429, clearOpenMeteoBlock } from '../utils/openMeteoQuota'
@@ -65,6 +65,25 @@ const OPEN_METEO_TIMEOUT_MS = 15000
 const AQI_TIMEOUT_MS = 10000
 const NWS_REQUEST_TIMEOUT_MS = 6000
 const NWS_BUDGET_MS = 10000
+// How long a full load waits for the NWS overlay (alerts, forecasts, station
+// walk) once Open-Meteo is in. Normally it is there first and the reading goes
+// out checked. A slower NWS no longer holds the whole screen on the loading
+// skeleton for up to NWS_BUDGET_MS: the Open-Meteo reading goes up, and the
+// overlay comes back as nwsLate to lay on when it lands. Splash cards (lite)
+// still wait for all of it, since nothing is held up behind them.
+const NWS_GRACE_MS = 2500
+// The radar check rides alongside the forecast and normally lands well before
+// it. This is as long past the start of the load as the forecast will wait for
+// it: a radar that is slower than that (MRMS stalled, then RainViewer slow) no
+// longer holds the forecast back for up to three of its six-second limits.
+// The forecast goes up without it and the radar's call is laid on when it
+// lands (see radarLate).
+const RADAR_WAIT_MS = 3500
+// How often the radar is looked at again while a forecast is up and the app is
+// in view. The mosaic lands every ~5 to 6 minutes, and the forecast itself only
+// refreshes when it goes stale, so without this the call went as old as the
+// forecast did. One small request each time.
+export const RADAR_REFRESH_MS = 5 * 60 * 1000
 const GEOCODE_TIMEOUT_MS = 8000
 
 // NWS icon code → WMO weather code
@@ -948,7 +967,9 @@ async function walkStations(loc, key, point, known, nwsFetch) {
 //
 // The live radar verdict for the point is taken here too, alongside everything
 // else, and carried on the reading as `data.radarClear` (see useRadarPrecip
-// for its true / false / null meaning). It used to be sampled only after the
+// for its true / false / null meaning, and applyRadar below for what else it
+// lays on). It is waited for only up to RADAR_WAIT_MS; a slower one comes back
+// as `radarLate` for the caller to apply when it lands. It used to be sampled only after the
 // reading was on screen, so for the second that took, the forecast showed the
 // model's unchecked code — a thunderstorm sky and rain particles — before
 // settling on the "Partly Cloudy" the radar check made of it. Arriving with the
@@ -958,41 +979,44 @@ async function walkStations(loc, key, point, known, nwsFetch) {
 // without a refetch. sampleRadar never rejects.
 //
 // `lite` loads only what a current condition needs (see LITE_PARAMS) and skips
-// air quality; aqiResult then comes back rejected.
+// air quality; aqiPending then settles rejected.
+//
+// Resolves to { data, alertFeatures, aqiPending, radarLate, nwsLate }:
+//   aqiPending  the air quality fetch, still in flight, as a settled result
+//               ({ status, value | reason }); the reading never waits for it
+//   radarLate   the radar sample when it missed RADAR_WAIT_MS (see above)
+//   nwsLate     null when the NWS overlay made it into the reading. Otherwise
+//               (a full load whose NWS ran past NWS_GRACE_MS) the reading is
+//               Open-Meteo's alone, and this resolves to { data, alertFeatures }
+//               with the overlay laid on, or to null if NWS had nothing to add.
+//               Its data has no radar call yet: the caller lays on the latest.
 export async function loadForecast(loc, { lite = false } = {}) {
   assertOpenMeteoQuota()
   const radarPromise = sampleRadar(loc.latitude, loc.longitude)
+  const radarWaitUntil = Date.now() + RADAR_WAIT_MS
   // One budget for every NWS request in this load; each also has its own limit.
   const nwsBudget = AbortSignal.timeout(NWS_BUDGET_MS)
   const nwsFetch = (url) => fetchWithin(url, NWS_REQUEST_TIMEOUT_MS, { headers: NWS_HEADERS, signal: nwsBudget })
   const point = `${loc.latitude.toFixed(4)},${loc.longitude.toFixed(4)}`
   const nwsChain = startNwsChain(loc, point, nwsFetch, lite)
-  const [weatherResult, aqiResult, alertsResult] = await Promise.allSettled([
-    fetchWithin(`${WEATHER_URL}?latitude=${loc.latitude}&longitude=${loc.longitude}&${lite ? LITE_PARAMS : PARAMS}`, OPEN_METEO_TIMEOUT_MS),
-    lite
-      ? Promise.reject(new Error('air quality not requested'))
-      : fetchWithin(`${AQI_URL}?latitude=${loc.latitude}&longitude=${loc.longitude}&${AQI_PARAMS}`, AQI_TIMEOUT_MS),
-    nwsFetch(`${NOAA_ALERTS_URL}?point=${point}`),
-  ])
+  // Parsed as they land: an active warning corroborates the current-condition
+  // cross-check after the NWS merge. Never rejects.
+  const alertsPromise = nwsFetch(`${NOAA_ALERTS_URL}?point=${point}`)
+    .then(async (res) => (res.ok ? collapseAlerts(dedupeAlerts((await res.json()).features ?? [])) : []))
+    .catch(() => [])
+  const aqiPending = (lite
+    ? Promise.reject(new Error('air quality not requested'))
+    : fetchWithin(`${AQI_URL}?latitude=${loc.latitude}&longitude=${loc.longitude}&${AQI_PARAMS}`, AQI_TIMEOUT_MS)
+  ).then((value) => ({ status: 'fulfilled', value }), (reason) => ({ status: 'rejected', reason }))
 
-  if (weatherResult.status === 'rejected') throw weatherResult.reason
-  if (weatherResult.value.status === 429) await noteOpenMeteo429(weatherResult.value)
-  if (!weatherResult.value.ok) {
-    const err = new Error(`Open-Meteo forecast returned ${weatherResult.value.status}`)
-    err.status = weatherResult.value.status
+  const weatherRes = await fetchWithin(`${WEATHER_URL}?latitude=${loc.latitude}&longitude=${loc.longitude}&${lite ? LITE_PARAMS : PARAMS}`, OPEN_METEO_TIMEOUT_MS)
+  if (weatherRes.status === 429) await noteOpenMeteo429(weatherRes)
+  if (!weatherRes.ok) {
+    const err = new Error(`Open-Meteo forecast returned ${weatherRes.status}`)
+    err.status = weatherRes.status
     throw err
   }
-  const data = await weatherResult.value.json()
-
-  // Parse alerts up front: an active warning corroborates the
-  // current-condition cross-check after the NWS merge below.
-  let alertFeatures = []
-  if (alertsResult.status === 'fulfilled' && alertsResult.value.ok) {
-    try {
-      const alertsData = await alertsResult.value.json()
-      alertFeatures = collapseAlerts(dedupeAlerts(alertsData.features ?? []))
-    } catch { /* non-fatal */ }
-  }
+  const data = await weatherRes.json()
 
   // Slice daily from today so existing components are unaffected.
   const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: data.timezone })
@@ -1011,13 +1035,67 @@ export async function loadForecast(loc, { lite = false } = {}) {
     )
   }
 
-  // For US locations, overlay NWS data on top of Open-Meteo. The requests have
-  // been running since the start (see startNwsChain): the hourly, daily and
-  // gridpoint forecasts are merged here, all three before rendering, and then
-  // the station walk's verdict is applied.
-  // Every step is non-fatal: any failure silently keeps the Open-Meteo values.
-  const nws = await nwsChain
+  // For US locations, overlay NWS data on top of Open-Meteo (see overlayNws).
+  // A full load lays it on a copy and waits for it only NWS_GRACE_MS: in time,
+  // the copy is the reading; late, the untouched Open-Meteo reading goes out
+  // and the copy follows as nwsLate. A lite load just waits.
+  let reading = data
+  let alertFeatures = []
+  let nwsLate = null
+  if (lite) {
+    alertFeatures = (await overlayNws(data, nwsChain, alertsPromise)).alertFeatures
+  } else {
+    const overlaid = structuredClone(data)
+    const overlay = overlayNws(overlaid, nwsChain, alertsPromise)
+    const GRACE = Symbol('grace')
+    let graceTimer = 0
+    const first = await Promise.race([
+      overlay,
+      new Promise(resolve => { graceTimer = setTimeout(() => resolve(GRACE), NWS_GRACE_MS) }),
+    ])
+    clearTimeout(graceTimer)
+    if (first === GRACE) {
+      confirmCurrentCode(data, [])
+      nwsLate = overlay.then(({ alertFeatures: late, merged }) =>
+        (merged || late.length ? { data: overlaid, alertFeatures: late } : null))
+    } else {
+      reading = overlaid
+      alertFeatures = first.alertFeatures
+    }
+  }
+
+  // Waits for the radar only up to RADAR_WAIT_MS from the start of the load.
+  // Past that the reading goes out without it, and the caller gets the sample
+  // still in flight as radarLate to lay on when it lands (see withRadar).
+  const LATE = Symbol('late')
+  const waitLeft = Math.max(0, radarWaitUntil - Date.now())
+  let timer = 0
+  const obs = await Promise.race([
+    radarPromise,
+    new Promise(resolve => { timer = setTimeout(() => resolve(LATE), waitLeft) }),
+  ])
+  clearTimeout(timer)
+  const late = obs === LATE
+  // Late: no call yet, but stamped as looked at now, so the periodic look
+  // (RADAR_REFRESH_MS) doesn't send a second request while this one is out.
+  applyRadar(reading, late ? { source: 'pending', sampledAt: Date.now() } : obs)
+
+  return { data: reading, alertFeatures, aqiPending, radarLate: late ? radarPromise : null, nwsLate }
+}
+
+// The NWS overlay, laid onto `data` in place. The hourly, daily and gridpoint
+// forecasts have been running since the start of the load (see startNwsChain);
+// all three are merged, then the station walk's verdict is applied, then the
+// current condition is cross-checked against active warnings and NWS hourly so
+// a storm the Open-Meteo model missed still shows as one. Every step is
+// non-fatal: any failure keeps the Open-Meteo values. Never rejects.
+// Resolves to { alertFeatures, merged }; `merged` is false when NWS had no
+// forecast for the place.
+async function overlayNws(data, nwsChain, alertsPromise) {
+  const [nws, alertFeatures] = await Promise.all([nwsChain, alertsPromise])
+  let merged = false
   if (nws) {
+    merged = true
     try {
       const [nwsHourlyRes, nwsForecastRes, nwsGridRes] = await nws.forecasts
       // The gridpoint carries the fields the two text products don't, and
@@ -1097,25 +1175,47 @@ export async function loadForecast(loc, { lite = false } = {}) {
       if (!dry) preferForecastHour(data)
     } catch { /* non-fatal */ }
   }
-
-  // Cross-check the current condition against active warnings + NWS hourly
-  // so a storm the Open-Meteo model missed still shows as one.
   confirmCurrentCode(data, alertFeatures)
+  return { alertFeatures, merged }
+}
 
-  data.radarClear = await radarPromise
+// Lays a radar observation (sampleRadar's return) onto a reading, in place:
+//   data.radar          the observation, kept for the next look (sampledAt)
+//                       and for the call's trend
+//   data.radarClear     the call: true / false / null (see useRadarPrecip)
+//   current.radar_dbz   how hard, where the radar says (liveWeatherCode)
+//   current.radar_trend 'starting' / 'ending' / null (the precipitation tile)
+// A null observation clears the call but keeps any earlier observation's
+// timestamp, so the next look is still scheduled from it.
+//
+// The threshold for "something is falling" depends on whether it would be
+// snow, which is decided from the reading's own temperature and humidity.
+export function applyRadar(data, obs) {
+  const cur = data.current
+  const v = radarVerdict(obs, { snowy: precipIsSnow(cur) })
+  data.radar = obs ?? data.radar ?? null
+  data.radarClear = v.clear
+  if (cur) {
+    cur.radar_dbz = v.dbz
+    cur.radar_trend = v.trend
+  }
 
   // A forecast-promoted code is a probability, not a reading. When the radar
   // sees nothing over the point, put the model's code back — whatever the
   // Radar enhanced accuracy setting says, since that setting governs whether
   // radar may overrule the model, and this code never came from the model.
-  const cur = data.current
-  if (data.radarClear === true && cur?.weather_code_source === 'forecast') {
+  if (v.clear === true && cur?.weather_code_source === 'forecast') {
     cur.weather_code = cur.model_weather_code
     cur.weather_code_confirmed = false
     cur.weather_code_source = null
   }
+  return data
+}
 
-  return { data, alertFeatures, aqiResult }
+// applyRadar on a copy, for a reading already in React state.
+export function withRadar(data, obs) {
+  if (!data) return data
+  return applyRadar({ ...data, current: data.current ? { ...data.current } : data.current }, obs)
 }
 
 // The latest reading of each recently opened place, kept so a launch (or a
@@ -1126,9 +1226,17 @@ export async function loadForecast(loc, { lite = false } = {}) {
 // One per place rather than only the last one shown: the launch opens on Home
 // (or the first saved city), and a single slot was usually holding whichever
 // place was looked at last, so the launch missed it and fetched from scratch.
-const READINGS_KEY = 'alek-weather-readings'
-// The single-slot store this replaced; still read so the first launch after an
-// update is instant too, and removed on the first write.
+//
+// Each place has a key of its own (READING_PREFIX + readingKey), plus a small
+// index of which places are stored and when. All five used to share one key,
+// so every fetch parsed and rewrote about half a megabyte of JSON to change a
+// fifth of it, and the launch parsed all of it to read one.
+const READING_PREFIX = 'alek-weather-reading:'
+const READINGS_INDEX_KEY = 'alek-weather-readings-index' // [{ key, updated }], newest first
+// The stores this replaced: all places in one key, and before that a single
+// slot. Still read once, so the first launch after an update is instant too,
+// then split up and removed.
+const SHARED_READINGS_KEY = 'alek-weather-readings'
 const LEGACY_READING_KEY = 'alek-weather-last-reading'
 // A reading is ~100 KB of JSON; a handful covers Home, the saved places in
 // regular use and the last search without crowding localStorage's ~5 MB.
@@ -1146,32 +1254,57 @@ const LAST_READING_MAX_AGE_MS = 24 * 60 * 60 * 1000
 // geocoded city share a reading.
 const readingKey = (loc) => `${loc.latitude.toFixed(2)},${loc.longitude.toFixed(2)}`
 
-function readStoredReadings() {
+function readIndex() {
   try {
-    const all = JSON.parse(localStorage.getItem(READINGS_KEY) ?? 'null')
-    if (all && typeof all === 'object') return all
-    const legacy = JSON.parse(localStorage.getItem(LEGACY_READING_KEY) ?? 'null')
-    if (legacy?.weather && legacy.location) return { [readingKey(legacy.location)]: legacy }
-  } catch { /* corrupt storage reads as empty */ }
-  return {}
+    const index = JSON.parse(localStorage.getItem(READINGS_INDEX_KEY) ?? 'null')
+    if (Array.isArray(index)) return index.filter((e) => typeof e?.key === 'string')
+  } catch { /* corrupt index reads as empty */ }
+  return []
 }
 
-// Stores `reading` as its place's latest, newest first, keeping MAX_READINGS.
+// Moves readings out of the older shared stores into a key each, once.
+function migrateReadings() {
+  let old
+  try {
+    old = JSON.parse(localStorage.getItem(SHARED_READINGS_KEY) ?? 'null')
+    if (!old || typeof old !== 'object') {
+      const legacy = JSON.parse(localStorage.getItem(LEGACY_READING_KEY) ?? 'null')
+      old = legacy?.weather && legacy.location ? { [readingKey(legacy.location)]: legacy } : null
+    }
+  } catch { old = null }
+  if (!old) return
+  try { localStorage.removeItem(SHARED_READINGS_KEY) } catch { /* storage off */ }
+  try { localStorage.removeItem(LEGACY_READING_KEY) } catch { /* storage off */ }
+  Object.values(old)
+    .filter((r) => r?.weather && r.location)
+    .sort((a, b) => (a.updated ?? 0) - (b.updated ?? 0)) // oldest first, so the newest ends up first
+    .forEach(storeReading)
+}
+
+// Stores `reading` as its place's latest, keeping the newest MAX_READINGS.
 // When storage is full the oldest go first; a full quota with only this one
 // left just means the next launch loads the slow way.
 function storeReading(reading) {
   const key = readingKey(reading.location)
-  const others = Object.entries(readStoredReadings())
-    .filter(([k, r]) => k !== key && r?.weather && r.location)
-    .sort(([, a], [, b]) => (b.updated ?? 0) - (a.updated ?? 0))
-    .slice(0, MAX_READINGS - 1)
-  for (let keep = others.length; keep >= 0; keep--) {
+  const json = JSON.stringify(reading)
+  let index = [{ key, updated: reading.updated ?? 0 }, ...readIndex().filter((e) => e.key !== key)]
+  const drop = (entries) => entries.forEach((e) => {
+    try { localStorage.removeItem(READING_PREFIX + e.key) } catch { /* storage off */ }
+  })
+  drop(index.slice(MAX_READINGS))
+  index = index.slice(0, MAX_READINGS)
+  for (;;) {
     try {
-      localStorage.setItem(READINGS_KEY, JSON.stringify(Object.fromEntries([[key, reading], ...others.slice(0, keep)])))
-      localStorage.removeItem(LEGACY_READING_KEY)
-      return
-    } catch { /* quota: retry with one fewer */ }
+      localStorage.setItem(READING_PREFIX + key, json)
+      break
+    } catch {
+      // Quota: make room by dropping the oldest other place, if there is one.
+      if (index.length <= 1) return
+      drop(index.slice(-1))
+      index = index.slice(0, -1)
+    }
   }
+  try { localStorage.setItem(READINGS_INDEX_KEY, JSON.stringify(index)) } catch { /* the reading is in; the index catches up next time */ }
 }
 
 // The cached reading for `loc`, or null if there is none or it is too old.
@@ -1179,7 +1312,8 @@ function storeReading(reading) {
 function loadLastReading(loc) {
   if (!loc) return null
   try {
-    const r = readStoredReadings()[readingKey(loc)]
+    migrateReadings()
+    const r = JSON.parse(localStorage.getItem(READING_PREFIX + readingKey(loc)) ?? 'null')
     if (!r?.weather || !r.location) return null
     if (!(Date.now() - r.updated < LAST_READING_MAX_AGE_MS)) return null
     return r
@@ -1212,15 +1346,55 @@ export function useWeather(initialCity = null) {
   const loadingRef = useRef(loading)
   useEffect(() => { loadingRef.current = loading }, [loading])
 
-  // Persist every complete reading. Keyed on lastUpdated so it writes once per
-  // fetch, plus once more when air quality lands after it.
+  // Persist every complete reading: the fetch, then again as air quality, a
+  // late radar call or a late NWS overlay lands on it. Each write is this
+  // place's key alone. A reading just read back from storage isn't written
+  // straight back (storedRef).
+  const storedRef = useRef(cached ? { weather: cached.weather, airQuality: cached.airQuality ?? null } : null)
   useEffect(() => {
     if (!weather || !location || !lastUpdated) return
+    const last = storedRef.current
+    if (last && last.weather === weather && last.airQuality === airQuality) return
+    storedRef.current = { weather, airQuality }
     storeReading({ location, weather, alerts, airQuality, updated: lastUpdated.getTime() })
-  }, [lastUpdated, airQuality]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [weather, airQuality]) // eslint-disable-line react-hooks/exhaustive-deps
   const [error, setError] = useState(null)
   const geoActiveRef = useRef(false)
   const fetchIdRef = useRef(0)
+
+  // Looks at the radar again every RADAR_REFRESH_MS while a forecast is up and
+  // the app is in view, and lays the new call onto the reading in place
+  // (withRadar), so "is it raining here" stays as fresh as the radar rather
+  // than as old as the forecast. Scheduled from the last observation's time, so
+  // a reading restored from storage, or one whose radar missed the load, is
+  // looked at straight away. Hidden, nothing runs; coming back into view runs
+  // it at once if it is due. A load starting meanwhile wins: the result is
+  // dropped if the reading changed under it.
+  const radarAt = weather?.radar?.sampledAt ?? 0
+  useEffect(() => {
+    if (!weather || !location) return
+    let cancelled = false
+    let timer = 0
+    const due = () => Date.now() - radarAt >= RADAR_REFRESH_MS
+    const run = async () => {
+      if (cancelled || document.visibilityState !== 'visible' || loadingRef.current) return
+      const id = fetchIdRef.current
+      const obs = await sampleRadar(location.latitude, location.longitude)
+      if (cancelled || id !== fetchIdRef.current) return
+      // A new observation reschedules through radarAt. A failed look doesn't
+      // change it, so it tries again after a full interval.
+      if (obs) setWeather(w => (w ? withRadar(w, obs) : w))
+      else timer = setTimeout(run, RADAR_REFRESH_MS)
+    }
+    timer = setTimeout(run, Math.max(0, radarAt + RADAR_REFRESH_MS - Date.now()))
+    const onVisible = () => { if (document.visibilityState === 'visible' && due()) run() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      cancelled = true
+      clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [radarAt, location, !weather]) // eslint-disable-line react-hooks/exhaustive-deps
   // The place whose forecast last failed, for the error card's Try again.
   const failedLocRef = useRef(null)
 
@@ -1247,6 +1421,7 @@ export function useWeather(initialCity = null) {
     if (!r) return null
     fetchIdRef.current++ // whatever was in flight is for a reading we've left
     geoActiveRef.current = false
+    storedRef.current = { weather: r.weather, airQuality: r.airQuality ?? null }
     setLocation(loc)
     setWeather(r.weather)
     setAirQuality(r.airQuality ?? null)
@@ -1274,21 +1449,41 @@ export function useWeather(initialCity = null) {
       setAlerts([])
     }
     try {
-      const { data, alertFeatures, aqiResult } = await loadForecast(loc)
+      const { data, alertFeatures, aqiPending, radarLate, nwsLate } = await loadForecast(loc)
 
       if (fetchIdRef.current !== fetchId) return
       setWeather(data)
+      // The radar missed the forecast's wait: its call goes on when it lands,
+      // provided this is still the reading on screen.
+      radarLate?.then((obs) => {
+        if (obs && fetchIdRef.current === fetchId) setWeather(w => (w ? withRadar(w, obs) : w))
+      })
+      // So did NWS: its overlay replaces the Open-Meteo reading when it lands,
+      // keeping whatever radar call the reading on screen has by then.
+      nwsLate?.then((late) => {
+        if (!late || fetchIdRef.current !== fetchId) return
+        setWeather(w => (w ? applyRadar(late.data, w.radar) : w))
+        setAlerts(late.alertFeatures)
+      })
       setLocation(loc)
       setLastUpdated(new Date())
       setAlerts(alertFeatures)
       setError(null)  // a silent refresh skips the clear up top; success clears it here
+      // The reading is up; air quality fills its tile when it lands.
+      if (!silent) {
+        loadingRef.current = false
+        setLoading(false)
+      }
 
+      const aqiResult = await aqiPending
       if (aqiResult.status === 'fulfilled' && aqiResult.value.ok) {
-        const aqiData = await aqiResult.value.json()
-        // Spread current so existing consumers keep reading top-level fields
-        // (us_aqi, pm2_5, …); the hourly forecast rides along for the overview.
-        if (fetchIdRef.current === fetchId && aqiData.current?.us_aqi != null)
-          setAirQuality({ ...aqiData.current, hourly: aqiData.hourly ?? null })
+        try {
+          const aqiData = await aqiResult.value.json()
+          // Spread current so existing consumers keep reading top-level fields
+          // (us_aqi, pm2_5, …); the hourly forecast rides along for the overview.
+          if (fetchIdRef.current === fetchId && aqiData.current?.us_aqi != null)
+            setAirQuality({ ...aqiData.current, hourly: aqiData.hourly ?? null })
+        } catch { /* a garbled air quality reply just leaves the tile empty */ }
       }
 
     } catch (e) {

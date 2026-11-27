@@ -59,7 +59,9 @@ export function stormLevel(score) {
   return { index, ...LEVELS[index] }
 }
 
-export function stormHour({ cape, code, pop, gust, severe = false }) {
+// The three parts of an hour's score, each 0-100, before they are combined.
+// The Storm Center shows them side by side as its hazard tiles.
+export function stormParts({ cape, code, pop, gust, severe = false }) {
   const p = Number.isFinite(pop) ? pop : 0
   const thunderCode = THUNDER_CODES.has(code)
 
@@ -75,6 +77,12 @@ export function stormHour({ cape, code, pop, gust, severe = false }) {
 
   const wind = Number.isFinite(gust) ? scale(GUST_SCALE, gust) : 0
 
+  return { thunder, wet, wind, thunderCode }
+}
+
+export function stormHour({ cape, code, pop, gust, severe = false }) {
+  const { thunder, wet, wind, thunderCode } = stormParts({ cape, code, pop, gust, severe })
+
   let score = Math.max(thunder, wet, wind)
   if (wet >= 20 && wind >= 20) score = Math.min(100, score + 10)
 
@@ -83,7 +91,11 @@ export function stormHour({ cape, code, pop, gust, severe = false }) {
     : wet >= wind ? (SNOW_CODES.has(code) ? 'snow' : 'rain')
     : 'wind'
 
-  return { score, level: stormLevel(score), kind, thunderCode, cape: Number.isFinite(cape) ? cape : null }
+  return {
+    score, level: stormLevel(score), kind, thunderCode,
+    cape: Number.isFinite(cape) ? cape : null,
+    parts: { thunder, wet, wind },
+  }
 }
 
 // Every hour from `from` on (at most `count`), each with its time. `severeNow`

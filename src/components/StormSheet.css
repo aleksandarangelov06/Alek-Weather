@@ -1,0 +1,155 @@
+/* ── Storm Center on the phones (StormSheet.jsx) ──────────────────────────── */
+
+/* The banner at the top of the forecast while something is happening. It is a
+   card, so it takes each phone style's own card surface (its fill, rim and
+   shadow are left alone); the tint (the colour of the alert in force, see
+   stormTint) marks its icon. */
+.card.storm-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.15s ease;
+}
+
+.card.storm-banner:active {
+  transform: scale(0.985);
+}
+
+.storm-banner-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--sc-tint);
+  color: #0b0f1a;
+}
+
+.storm-banner--extreme .storm-banner-icon {
+  color: #fff;
+}
+
+.storm-banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.storm-banner-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.storm-banner-sub {
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.storm-banner-chevron {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+/* The sheet: full screen over the app (above the header and settings, under
+   the alert sheets in #alert-portal-root and the Help page). Dark in every
+   theme, like the page. Opacity only on the way in: a transform here would
+   make the fixed backdrop inside it scroll with the page. */
+.sc-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 520;
+  display: flex;
+  flex-direction: column;
+  background: #141518;
+  color: #f1f0ec;
+  animation: sc-sheet-in 0.22s ease both;
+}
+
+@keyframes sc-sheet-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.sc-sheet-bar {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  min-height: 52px;
+  padding: var(--sa-top, 0px) max(12px, var(--sa-right, 0px)) 0 max(12px, var(--sa-left, 0px));
+  background: #141518;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.sc-sheet-back {
+  position: absolute;
+  left: max(12px, var(--sa-left, 0px));
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 52px;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  color: #f1f0ec;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sc-sheet-back:active {
+  opacity: 0.6;
+}
+
+.sc-sheet-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 52px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.sc-sheet-title svg {
+  color: #a9abb0;
+}
+
+.sc-sheet-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.sc-sheet-error {
+  --text-primary: #fff;
+  --text-secondary: rgba(255, 255, 255, 0.72);
+  color: #fff;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sc-sheet { animation: none; }
+}

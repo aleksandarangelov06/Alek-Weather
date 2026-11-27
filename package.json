@@ -1,7 +1,7 @@
 {
   "name": "alek-weather",
   "private": true,
-  "version": "4.0.1",
+  "version": "4.0.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "generate-pwa-assets": "pwa-assets-generator && node scripts/maskable-icon.mjs"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

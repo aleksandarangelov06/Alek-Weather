@@ -1,6 +1,7 @@
 import { memo, useEffect, useState } from 'react'
 import { loadWeatherRadar } from '../radarChunk'
 import { TodayPage } from './TodayPage'
+import { StormCenterPage } from './StormCenterPage'
 import { DailyPage } from './DailyPage'
 import { DetailsPage } from './DetailsPage'
 import { RadarPage } from './RadarPage'
@@ -56,7 +57,7 @@ export function WebLayout(props) {
   // props, so anything it alone needs — radarClear, weatherAnimations — travels
   // in the spread and is deliberately not pulled out here.
   const {
-    weather, location, airQuality, radarMode, radarSource, unit, units, colorCoding, tab,
+    weather, location, airQuality, radarMode, radarSource, unit, units, colorCoding, tab, stormKind,
   } = props
 
   // Adjusted during render rather than in an effect, so a newly opened tab is
@@ -80,7 +81,13 @@ export function WebLayout(props) {
 
   return (
     <div className="web-shell">
-      {panel('today', () => <TodayPage {...props} />)}
+      {/* While something is happening (the Storm Center tab glows), Home is the Storm
+          Center. It takes Home's props and whether it is the tab on screen:
+          its backdrop covers the whole window, so it has to go when the panel
+          is hidden rather than stay mounted behind the other tabs. */}
+      {panel('today', () => (stormKind
+        ? <StormCenterPage {...props} active={tab === 'today'} />
+        : <TodayPage {...props} />))}
       {panel('daily', () => <DailyPage weather={weather} unit={unit} units={units} colorCoding={colorCoding} />)}
       {panel('details', () => (
         <DetailsPage

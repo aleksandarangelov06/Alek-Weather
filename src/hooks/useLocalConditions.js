@@ -56,7 +56,7 @@ export const locatedPlace = () => located
 async function readConditions(chosen) {
   const place = chosen ?? (located ??= await locate())
   if (!place) return null
-  return loadConditions(place)
+  return loadConditions(place, { urgent: true })
 }
 
 function fresh(place) {

@@ -6,7 +6,9 @@ import { MRMS_BASE, inMrmsDomain, usViewBounds } from '../utils/mrms'
 import { HrrrLayer, focusHrrrLayer } from '../utils/hrrrLayer'
 import { addBasemap } from '../utils/basemap'
 import { RadarRain } from './RadarRain'
+import { RadarSweep } from './RadarSweep'
 import { fetchWithin } from '../utils/fetchTimeout'
+import { releasePress, springFrom } from '../utils/tactilePress'
 
 // The frame lists the card waits on. Past this a source counts as down and the
 // timeline falls back to the next one, as it already does on an error.
@@ -158,8 +160,13 @@ const NEXRAD_BLUR_KM = 1.2
 // off screen; any wider and the map would show where the radar runs out.
 const AUTO_HD_ZOOM = 8
 // How far apart in time an MRMS sweep and a NEXRAD scan may be and still be the
-// "same" Auto frame. Under one sweep interval, so no sweep is shown twice.
-const AUTO_PAIR_MS = 4 * 60 * 1000
+// "same" Auto frame. It was 4 minutes, under one sweep interval so no sweep was
+// shown twice — but sweeps land every 6-8 minutes and scans every 4-6, so a
+// good share of scans had no sweep that close. Those stayed on the single site
+// zoomed out, and playback flickered between the whole region's rain and one
+// radar's circle of it. A sweep shown for two scans in a row is invisible by
+// comparison. Wide enough to cover the longest measured gap between sweeps.
+const AUTO_PAIR_MS = 8 * 60 * 1000
 
 // IEM's API wants minute-precision UTC: 2026-11-06T03:18Z.
 const iemTime = (ms) => new Date(ms).toISOString().slice(0, 16) + 'Z'
@@ -206,8 +213,14 @@ async function fetchNexradFrames(lat, lon) {
 // Auto's timeline: the NEXRAD scans, each carrying the MRMS sweep nearest it in
 // time so the layer code can draw either one depending on zoom. A scan with no
 // sweep close enough keeps NEXRAD at every zoom rather than leaving a hole.
+//
+// The NEXRAD list runs back two hours and MRMS's only ~100 minutes, so the
+// oldest scans have no sweep at all. When MRMS answered, the timeline starts
+// where it does, so every frame has a wide view; when it didn't, every scan is
+// kept and the card is NEXRAD throughout, as before.
 function pairAutoFrames(nexrad, mrms) {
-  return nexrad.map(f => {
+  const oldest = mrms.length ? mrms[0].time * 1000 - AUTO_PAIR_MS : -Infinity
+  return nexrad.filter(f => f.time * 1000 >= oldest).map(f => {
     let best = null
     for (const m of mrms) {
       const gap = Math.abs(m.time - f.time) * 1000
@@ -248,11 +261,21 @@ const inHrrrDomain = (lat, lon) => lat >= 21 && lat <= 53 && lon >= -134 && lon 
 const MAP_MIN_ZOOM     = 4
 const MAP_MAX_ZOOM     = 12
 const RADAR_NATIVE_MAX = 7 // RainViewer's 512px radar tiles cap here; higher returns "zoom level not supported"
+// The view the card opens on, and the one it returns to on closing. It was 10,
+// which stretched RainViewer's tiles (native to 7) eight times over into
+// visible blocks. At 8 they are stretched twice, the US feeds are at their own
+// source zoom (MRMS_SRC_MAX_ZOOM, NEXRAD_SRC_MAX_ZOOM), and Auto is still on the
+// single site (AUTO_HD_ZOOM), so `hd`'s initial state still holds.
+const HOME_ZOOM        = 8
 const RADAR_OPACITY     = 0.65
 const RADAR_WINDOW      = 2 // frames either side of current kept attached to the map
 // How long the finger has to rest on a frame mid-scrub before a frame that
 // isn't loaded yet is fetched and drawn (see the layer effect).
 const SCRUB_SETTLE_MS   = 90
+// How long after a zoom onto a new tile level the neighbouring frames wait
+// before they are fetched again, so a run of wheel steps or quick pinches
+// doesn't attach and detach them on every one.
+const ZOOM_SETTLE_MS    = 300
 
 // The last frame list fetched for each place and feed, so a radar that mounts
 // again — the web Radar tab is built fresh on every visit — opens on a timeline
@@ -473,7 +496,7 @@ function windowFrames(win, box, radius, align) {
 // which of the two the map will end the close on.
 function homeAlready(map, home) {
   const off = map.latLngToContainerPoint(home).distanceTo(map.getSize().divideBy(2))
-  return map.getZoom() === 10 && off < 2
+  return map.getZoom() === HOME_ZOOM && off < 2
 }
 
 // An element's box as it lays out, with its own transform taken back out —
@@ -613,6 +636,11 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'aut
   // The still of the card, taken on the way out of the stack and mounted into
   // the placeholder. See snapshot().
   const holdClone   = useRef(null)
+  // How far in the card was pressed when the tap opened it (1: not pressed).
+  // The still springs back up from there as the window opens (see expand).
+  const stillPress  = useRef(1)
+  // That spring, while it runs, so measureWindow can read the map at rest.
+  const stillSpring = useRef(null)
 
   // Both halves of the timeline as fetched, kept apart rather than pre-joined:
   // the Observed/Forecast toggle is a slice of this, so switching views is a
@@ -645,6 +673,14 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'aut
   const [playing, setPlaying]     = useState(false)
   const [expanded, setExpanded]   = useState(false)
   const [mapReady, setMapReady]   = useState(false)
+  // A radar frame has been on screen since the map was built: the loading
+  // sweep (RadarSweep) turns until it has, then fades.
+  const [radarShown, setRadarShown] = useState(false)
+  const sweepRef = useRef(null)
+  // A zoom onto a new tile level is landing, or landed under ZOOM_SETTLE_MS
+  // ago: the frame window is narrowed to the frame on screen meanwhile (see
+  // the 'zoomanim' handler where the map is made, and the layer effect).
+  const [zooming, setZooming] = useState(false)
   // The Leaflet map once it exists, as state, for children that need it during
   // render (RadarRain); mapInst is the same object for effects and handlers.
   const [rainMap, setRainMap]     = useState(null)
@@ -940,9 +976,47 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'aut
     const wheelEl = mapRef.current
     wheelEl.addEventListener('wheel', onWheel, { capture: true, passive: true })
 
-    map.setView([location.latitude, location.longitude], 10)
-    // Starts at 10, past AUTO_HD_ZOOM, which is what `hd`'s initial state says.
+    map.setView([location.latitude, location.longitude], HOME_ZOOM)
+    // Starts at HOME_ZOOM, at or past AUTO_HD_ZOOM, which is what `hd`'s initial state says.
     map.on('zoomend', () => setHd(map.getZoom() >= AUTO_HD_ZOOM))
+
+    // A zoom onto a new tile level: the neighbouring frames come off before
+    // they refetch, and come back a beat after it lands (see `zooming`).
+    //
+    // Every attached frame would otherwise fetch (and, for the smoothed feeds,
+    // draw) a whole screen at the new level at once. The map zooms in
+    // fractions, so Leaflet updates the grids as the zoom's eased finish
+    // *starts*, inside each layer's own 'zoomanim' handler, and calls those in
+    // the order they were added. That is why this is registered here, as the
+    // map is made, before any radar layer: it runs first, and a layer taken off
+    // the map mid-event is skipped for the rest of it.
+    //
+    // Only for a new level. A zoom within one only fills in edge tiles, like a
+    // pan, and taking the neighbours off for it would throw away every tile
+    // they had. Pans never do it, for the same reason. The frame on screen and
+    // one still loading to replace it always stay.
+    let zoomSettle = 0
+    map.on('zoomanim', (e) => {
+      const active = cache.get(activeKey.current)
+      // The level a layer draws at for a zoom: Leaflet's rounding and its
+      // native-zoom clamp (RainViewer's tiles stop at RADAR_NATIVE_MAX). The
+      // current one is read off the layer, not the map: through a pinch the map
+      // is already at the new zoom while the tiles are still at the old level.
+      const level = (z) => (active?._clampZoom ? active._clampZoom(Math.round(z)) : Math.round(z))
+      if (level(e.zoom) === (active?._tileZoom ?? level(map.getZoom()))) return
+      clearTimeout(zoomSettle)
+      cache.forEach((layer, key) => {
+        if (key === activeKey.current || key === wantedKey.current || !map.hasLayer(layer)) return
+        layer.setOpacity(0)
+        layer._radarLoaded = false // tiles go with it; wait for a reload next time
+        map.removeLayer(layer)
+      })
+      setZooming(true)
+    })
+    map.on('zoomend', () => {
+      clearTimeout(zoomSettle)
+      zoomSettle = setTimeout(() => setZooming(false), ZOOM_SETTLE_MS)
+    })
     // Where you are. A DOM marker rather than the circleMarker this was, because
     // Leaflet zooms by CSS-scaling a pane rather than redrawing it mid-gesture,
     // and which pane decides what that does to the dot. Vectors live in the
@@ -969,6 +1043,9 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'aut
       activeKey.current = null
       setMapReady(false)
       setRainMap(null)
+      setRadarShown(false)
+      clearTimeout(zoomSettle)
+      setZooming(false)
     }
   }, [hasFrames, location.latitude, location.longitude])
 
@@ -984,6 +1061,39 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'aut
       baseTileRef.current = null
     }
   }, [mapReady])
+
+
+  // Keeps the loading sweep's beam pivoting on the location dot. The beam is
+  // laid out round the middle of the map's wrapper, and the dot is only there
+  // until the map is panned (and not quite even then: full-screen, Leaflet
+  // re-centres on a whole-pixel origin), so its offset from the middle is
+  // handed to the sweep as it moves: every frame of a drag or a pinch, and at
+  // the end of an animated zoom. Only while the sweep is up. The wrapper's
+  // size and the map's place in it are read only when the map resizes.
+  useEffect(() => {
+    const map = mapInst.current
+    const el = sweepRef.current
+    if (!map || !mapReady || !el || radarShown) return
+    const here = [location.latitude, location.longitude]
+    let box = null
+    const measure = () => {
+      const m = mapRef.current
+      box = { x: m?.offsetLeft ?? 0, y: m?.offsetTop ?? 0, w: el.clientWidth, h: el.clientHeight }
+    }
+    const place = () => {
+      const p = map.latLngToContainerPoint(here)
+      el.style.setProperty('--sweep-dx', `${box.x + p.x - box.w / 2}px`)
+      el.style.setProperty('--sweep-dy', `${box.y + p.y - box.h / 2}px`)
+    }
+    const onResize = () => { measure(); place() }
+    onResize()
+    map.on('move zoom viewreset', place)
+    map.on('resize', onResize)
+    return () => {
+      map.off('move zoom viewreset', place)
+      map.off('resize', onResize)
+    }
+  }, [mapReady, radarShown, location.latitude, location.longitude])
 
   // Cross-fade between cached radar layers as idx changes.
   // Each frame's layer is created once and cached (no recreate churn). Layers near
@@ -1052,7 +1162,13 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'aut
     // at the new size, once the window has settled. On the way out the map flies
     // home under the shrinking window, and fewer grids to move keeps that
     // smooth too.
-    const win = windowMoving ? 0 : playing ? RADAR_WINDOW + 1 : RADAR_WINDOW
+    //
+    // The same for a zoom onto a new tile level (`zooming`): every attached
+    // grid would otherwise refetch the whole screen at the new level at once.
+    // The 'zoomanim' handler where the map is made takes the neighbours off as
+    // the zoom starts to land; this keeps them off until it has settled.
+    const narrow = windowMoving || zooming
+    const win = narrow ? 0 : playing ? RADAR_WINDOW + 1 : RADAR_WINDOW
 
     // Detach layers outside the window so the map isn't dragging 13 tile grids.
     // Still-loading ones go too: a frame scrubbed past has nobody waiting for
@@ -1089,6 +1205,10 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'aut
       }
       layer.setOpacity(RADAR_OPACITY)
       activeKey.current = key
+      // Ends the loading sweep. A no-op render after the first frame. Leaflet
+      // fires `load` once every tile has settled, failures included, so a feed
+      // that errors still ends it rather than leaving it turning.
+      setRadarShown(true)
     }
 
     // Show immediately if tiles are already cached; otherwise keep the old frame
@@ -1110,7 +1230,7 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'aut
       return () => clearTimeout(settle)
     }
     attachAndShow()
-    if (dragging || windowMoving) return
+    if (dragging || narrow) return
 
     // Prefetch the full forward window so playback never waits on cold layers:
     // the next frame at once, since playback reaches it first, and the rest one
@@ -1129,7 +1249,7 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'aut
     }
     if (d <= win) handle = idle(next, { timeout: 300 })
     return () => cancelIdle(handle)
-  }, [mapReady, frames, idx, playing, hd, dragging, windowMoving])
+  }, [mapReady, frames, idx, playing, hd, dragging, windowMoving, zooming])
 
   // Animation playback. Load-aware: if the next frame's tiles aren't in yet,
   // hold the current frame for another tick instead of advancing past it —
@@ -1160,6 +1280,13 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'aut
     // computed style rather than hard-coded, so a theme that changes the gap
     // can't leave this a few pixels out.
     const el = cardRef.current
+    // On the phone the map's window is still dipped under the finger that
+    // tapped it (utils/tactilePress.js). Everything below measures the card
+    // and copies it, so the press comes off first, and the copy finishes it
+    // instead: the still's map springs back up from the pressed size while the
+    // window grows out of it, so the open reads as the map being pushed and
+    // letting go into the radar.
+    stillPress.current = releasePress(el?.querySelector('.radar-map-wrap'))
     const cs = el && getComputedStyle(el)
     // Kept for the still that covers the card when it comes back: read here, on
     // a tap with nothing in flight, instead of in the middle of the teardown.
@@ -1272,12 +1399,24 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'aut
       // invalidateSize adds a tile above, and the load event is Leaflet saying
       // the grid is complete; a fully cached grid answers false here and opens
       // on the next frame, as it always did.
+      //
+      // The radar frame on screen is waited on too: the resize asks it for a
+      // screen of tiles as well, and each one landing mid-opening was a repaint
+      // of the layer the window is moving. Its tiles are drawn in a worker now
+      // (see utils/hrrrLayer), so they come in quickly; the cap still holds.
       inner = requestAnimationFrame(() => {
-        const base = baseTileRef.current
+        const pending = [baseTileRef.current, layerCache.current.get(activeKey.current)]
+          .filter(l => l?.isLoading?.())
+        if (pending.length === 0) { setPhase('in'); return }
+        const unhooks = []
         const go = () => { clearTimeout(cap); unhook?.(); unhook = null; setPhase('in') }
-        if (!base?.isLoading?.()) { setPhase('in'); return }
-        base.once('load', go)
-        unhook = () => base.off('load', go)
+        let left = pending.length
+        for (const l of pending) {
+          const h = () => { if (--left === 0) go() }
+          l.once('load', h)
+          unhooks.push(() => l.off('load', h))
+        }
+        unhook = () => unhooks.forEach(u => u())
         cap = setTimeout(go, ARM_TILE_WAIT_MS)
       })
     })
@@ -1318,7 +1457,7 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'aut
     if (opening || homeAlready(map, home)) {
       pt = map.latLngToContainerPoint(home)
     } else {
-      const p = map.project(home, 10)
+      const p = map.project(home, HOME_ZOOM)
       const pos = map._getMapPanePos?.() ?? L.point(0, 0)
       const origin = p.subtract(map.getSize().divideBy(2)).add(pos).round()
       pt = p.subtract(origin).add(pos)
@@ -1346,7 +1485,16 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'aut
     if (!frame || !win) return null
     const box = untransformedBox(frame)
     const radius = parseFloat(getComputedStyle(win).borderTopLeftRadius) || 0
-    return windowFrames(win.getBoundingClientRect(), box, radius, alignPoints(opening, frame))
+    // The still's map may be springing back from the tap's press (see
+    // expand). The window opens from where the map sits at rest, so read it
+    // with that spring stepped to its end and put back, in the same task:
+    // nothing paints in between.
+    const springs = stillSpring.current ? [stillSpring.current] : []
+    const times = springs.map(a => a.currentTime)
+    springs.forEach(a => { a.currentTime = a.effect.getComputedTiming().endTime })
+    const winBox = win.getBoundingClientRect()
+    springs.forEach((a, i) => { a.currentTime = times[i] })
+    return windowFrames(winBox, box, radius, alignPoints(opening, frame))
   }
   // The latest of it, for the back handler, which is set up once per open.
   useLayoutEffect(() => { measureWindowRef.current = measureWindow })
@@ -1373,7 +1521,9 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'aut
     // controls' fade, every read forced a full layout of the dirty page, and
     // that stall (~90ms at a 4x slowed CPU) was the hitch at the start of every
     // close. Opening measures here, as it always has.
-    const f = (!opening && closeWindow.current) || measureWindow(opening)
+    // Through the ref (kept current by the layout effect above), so the effect
+    // stays keyed on the phase alone.
+    const f = (!opening && closeWindow.current) || measureWindowRef.current?.(opening)
     closeWindow.current = null
     if (!f) return
     const order = (frames) => (opening ? frames : [...frames].reverse())
@@ -1406,7 +1556,7 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'aut
     if (!map) return
     const home = [location.latitude, location.longitude]
     if (homeAlready(map, home)) return
-    map.flyTo(home, 10, { duration: IRIS_OUT_MS / 1000, easeLinearity: 0.5 })
+    map.flyTo(home, HOME_ZOOM, { duration: IRIS_OUT_MS / 1000, easeLinearity: 0.5 })
     return () => map.stop()
   }, [phase, location.latitude, location.longitude])
 
@@ -1527,7 +1677,7 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'aut
     if (!map) return
     const t = setTimeout(() => {
       map.invalidateSize()
-      if (!expanded && !fill) map.setView([location.latitude, location.longitude], 10, { animate: false })
+      if (!expanded && !fill) map.setView([location.latitude, location.longitude], HOME_ZOOM, { animate: false })
     }, 80)
     if (expanded || fill) {
       map.dragging.enable(); map.scrollWheelZoom.enable()
@@ -1573,7 +1723,7 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'aut
     const map = mapInst.current
     if (!map || expanded || fill) return
     map.invalidateSize()
-    map.setView([location.latitude, location.longitude], 10, { animate: false })
+    map.setView([location.latitude, location.longitude], HOME_ZOOM, { animate: false })
   }, [expanded, fill, mapReady, location.latitude, location.longitude])
 
   // US feeds (MRMS, NEXRAD, the HRRR forecast) only cover the US, so while every
@@ -1612,7 +1762,7 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'aut
   const handleLocate = useCallback(() => {
     const map = mapInst.current
     if (!map) return
-    map.setView([location.latitude, location.longitude], 9, { animate: true })
+    map.setView([location.latitude, location.longitude], HOME_ZOOM, { animate: true })
   }, [location.latitude, location.longitude])
 
   // The radar layer currently on screen, for RadarRain to read its tiles from.
@@ -1743,6 +1893,17 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'aut
   const attachPlaceholder = useCallback((node) => {
     placeholderRef.current = node
     attachSnapshot(node)
+    // The rest of the tap's press, on the still (see expand). Once only: a
+    // second mount of the slot (StrictMode) mustn't bounce it again.
+    if (node && holdClone.current && stillPress.current < 1) {
+      const spring = springFrom(holdClone.current.querySelector('.radar-map-wrap'), stillPress.current)
+      stillPress.current = 1
+      if (spring) {
+        stillSpring.current = spring
+        spring.addEventListener('finish', () => { if (stillSpring.current === spring) stillSpring.current = null })
+        spring.addEventListener('cancel', () => { if (stillSpring.current === spring) stillSpring.current = null })
+      }
+    }
   }, [attachSnapshot])
 
   // Nothing to draw yet. In the stack the card stays out until it has frames;
@@ -1756,6 +1917,7 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'aut
       <div className="card radar-card radar-fill" aria-busy="true">
         <div className="radar-map-wrap">
           <div className="radar-map" />
+          <RadarSweep />
         </div>
       </div>
     ) : null
@@ -1894,6 +2056,9 @@ export function WeatherRadar({ location, timezone, mode = 'split', source = 'aut
       <div className="radar-map-stage">
       <div className="radar-map-wrap">
         <div ref={mapRef} className="radar-map" />
+        {/* Until the first frame is up, turning round the map's own dot
+            wherever it is (see the effect that sets its pivot). */}
+        <RadarSweep done={radarShown} dot={false} enter={false} anchorRef={sweepRef} />
         {/* Rain drawn only where the radar shows echoes — on the compact card
             too, so the map that grows into the full-screen view is already the
             one with weather falling on it. */}

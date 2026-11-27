@@ -19,11 +19,18 @@ const TTL = 10 * 60 * 1000
 // fails — a card with last hour's temperature beats a blank one while Open-Meteo
 // is refusing requests. Kept in storage so they survive a reload.
 const KEEP_MS = 6 * 60 * 60 * 1000
-const STORE_KEY = 'alek-weather-place-conditions'
+// Versioned, because the stored reading carries its headline as finished text:
+// a change to how headlines are worded (v2: long place names left out, see
+// MAX_PLACE_CHARS in utils/headline) would otherwise keep showing the old
+// wording for up to KEEP_MS. Bump it whenever that wording changes.
+const STORE_KEY = 'alek-weather-place-conditions-v2'
 
 const cache = new Map(loadStored())    // key → { at, cond }
 
 function loadStored() {
+  try {
+    localStorage.removeItem('alek-weather-place-conditions') // v1, superseded
+  } catch { /* storage off */ }
   try {
     const now = Date.now()
     return Object.entries(JSON.parse(localStorage.getItem(STORE_KEY) ?? '{}'))
@@ -43,6 +50,29 @@ function store(key, cond, at = Date.now()) {
 }
 const inflight = new Map() // key → Promise, so the splash and a card asking for
                            // the same place at once share one fetch
+
+// Each card's reading is the full pipeline (Open-Meteo, the NWS points, hourly
+// and gridpoint, alerts, a station walk and a radar sample), which is a dozen
+// requests and a few hundred KB of JSON. Five saved places all at once was a
+// burst of sixty-odd requests on a phone's radio while the splash animated, so
+// cards take turns, this many at a time. The splash's own place skips the line
+// (see `urgent` below): it is the sky on screen.
+const MAX_PARALLEL = 2
+let running = 0
+const waiting = []
+function inTurn(task) {
+  return new Promise((resolve, reject) => {
+    const run = () => {
+      running++
+      task().then(resolve, reject).finally(() => {
+        running--
+        waiting.shift()?.()
+      })
+    }
+    if (running < MAX_PARALLEL) run()
+    else waiting.push(run)
+  })
+}
 
 // Coordinates rounded to ~1 km, matching the tolerance sameCity() treats as one
 // place, so a GPS fix and the geocoded city centre share an entry.
@@ -85,8 +115,9 @@ export function rememberConditions(place, data, at) {
   store(cacheKey(place), conditionsOf(place, data), at)
 }
 
-// { name, temp, feels, code, isDay, severe, headline } for `place`.
-export function loadConditions(place) {
+// { name, temp, feels, code, isDay, severe, headline } for `place`. `urgent`
+// skips the queue the cards wait in (see inTurn).
+export function loadConditions(place, { urgent = false } = {}) {
   const key = cacheKey(place)
   const fresh = freshConditions(place)
   if (fresh) return Promise.resolve(fresh)
@@ -98,7 +129,8 @@ export function loadConditions(place) {
   // while the forecast said partly cloudy. The verdict arrives with the reading
   // (data.radarClear, see loadForecast); the setting decides if it applies.
   // Lite: a card needs the current condition, not the week (see LITE_PARAMS).
-  const p = loadForecast(place, { lite: true })
+  const load = () => loadForecast(place, { lite: true })
+  const p = (urgent ? load() : inTurn(load))
     .then(({ data }) => {
       const cond = conditionsOf(place, data)
       store(key, cond)

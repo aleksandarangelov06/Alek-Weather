@@ -2,6 +2,7 @@ import { memo, useEffect, useReducer, useRef, useState } from 'react'
 import { Bookmark, RefreshCw, House } from 'lucide-react'
 import { getWeatherInfo, liveWeatherCode, toTemp, tempStyle } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
+import { haptic } from '../utils/haptics'
 
 // Hold time to set the current location as home (matched by the CSS fill).
 const HOME_HOLD_MS = 700
@@ -62,7 +63,7 @@ export const CurrentWeather = memo(function CurrentWeather({ hideHeader = false,
       setHolding(false)
       if (hasHome) onGoHome()
       else onSetHome()
-      navigator.vibrate?.(15)
+      haptic('heavy')
     }, HOME_HOLD_MS)
   }
   const cancelHold = () => {

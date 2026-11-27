@@ -1,0 +1,403 @@
+/* ── Explore the weather (ExplorePage.jsx) ─────────────────────────────────
+   The Settings easter egg. Full screen over the app, under Help (900). Built
+   from the app's own parts rather than a look of its own: the Help page's
+   header (.help-page-header, .back-btn), the theme's page background, .card
+   for every surface and .section-label for the headings, so it follows the
+   theme setting like every other page. The category colours appear only as
+   small dots, the way the alert chips use theirs. */
+
+.explore {
+  position: fixed;
+  inset: 0;
+  z-index: 850;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font);
+  animation: helpIn 0.2s ease;
+}
+
+/* ── Header (the Help page's, plus a refresh button on the right) ── */
+
+.explore-refresh {
+  position: absolute;
+  right: 12px;
+}
+.explore-refresh:disabled { cursor: default; }
+.explore-refresh.is-spinning svg { animation: explore-spin 0.9s linear infinite; }
+
+.explore-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.explore-inner {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 20px max(16px, var(--sa-right, 0px)) calc(32px + var(--sa-bottom, 0px)) max(16px, var(--sa-left, 0px));
+}
+
+.explore-lede {
+  margin: 0 0 14px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* ── Filter ── */
+
+.explore-chips {
+  display: flex;
+  gap: 8px;
+  margin: 0 -16px;
+  padding: 0 16px 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.explore-chips::-webkit-scrollbar { display: none; }
+
+.explore-chip {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card-bg);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s, opacity 0.15s;
+}
+.explore-chip.is-on { border-color: var(--accent); color: var(--accent); }
+.explore-chip.is-empty:not(.is-on) { opacity: 0.5; }
+
+.explore-chip-count {
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.explore-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--tint, var(--accent));
+}
+
+/* ── Sections ── */
+
+.explore-section { margin-top: 28px; }
+
+.explore-section-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 10px;
+}
+.explore-section-label span {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.explore-empty {
+  padding: 18px;
+  border-radius: var(--radius);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 14px;
+  text-align: center;
+}
+
+.explore-empty--error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.explore-retry {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Every surface: the theme's card, as the Help page draws its list. Not .card
+   itself, whose background is retinted by the sky level on .app, and this
+   page sits on the plain page background, not the sky. */
+.explore-card {
+  border-radius: var(--radius);
+  background: var(--card-bg);
+  box-shadow: var(--shadow);
+}
+
+/* ── Happening now ── */
+
+.explore-events {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.explore-event,
+.explore-extreme {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  margin: 0;
+  padding: 14px;
+  border: none;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.explore-event-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+}
+
+.explore-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.explore-badge::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--tint, var(--accent));
+}
+
+.explore-event-temp {
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.explore-event-icon {
+  width: 48px;
+  height: 48px;
+  margin: 8px 0 6px -2px;
+}
+.explore-event-icon :is(svg, img) { width: 100%; height: 100%; }
+
+.explore-event-name {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.explore-event-where,
+.explore-event-meta {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.explore-event-meta { margin-top: 2px; color: var(--text-tertiary); }
+
+/* The day's records among the places checked. */
+.explore-extremes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.explore-extreme { gap: 2px; }
+
+.explore-extreme-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.explore-extreme-value {
+  font-size: 24px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.explore-extreme-place {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── US alerts ── */
+
+.explore-group {
+  margin-bottom: 12px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.explore-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.explore-group-name { font-size: 15px; font-weight: 600; }
+
+.explore-group-count {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.explore-alerts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.explore-alerts li + li { border-top: 1px solid var(--border); }
+
+.explore-alert {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 16px;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.explore-alert:disabled { cursor: progress; }
+
+/* Warnings in red, watches in orange, the rest in the category's colour. */
+.explore-alert-bar {
+  align-self: stretch;
+  width: 3px;
+  flex-shrink: 0;
+  border-radius: 2px;
+  background: var(--tint, var(--accent));
+}
+.explore-alert--t0 .explore-alert-bar { background: #ff3b30; }
+.explore-alert--t1 .explore-alert-bar { background: #ff8a1f; }
+
+.explore-alert-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.explore-alert-event { font-size: 14.5px; font-weight: 600; }
+
+.explore-alert-area {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.explore-alert-meta {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.explore-chevron { flex-shrink: 0; color: var(--text-tertiary); }
+.explore-spin { flex-shrink: 0; color: var(--accent); animation: explore-spin 0.9s linear infinite; }
+
+@keyframes explore-spin {
+  to { transform: rotate(360deg); }
+}
+
+.explore-more {
+  width: 100%;
+  padding: 12px;
+  border: none;
+  border-top: 1px solid var(--border);
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+/* ── Loading: plain card-coloured blocks, pulsing. ── */
+
+.explore-skeleton {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.explore-skeleton > span {
+  height: 128px;
+  border-radius: var(--radius);
+  background: var(--card-bg);
+  animation: explore-pulse 1.4s ease-in-out infinite;
+  animation-delay: calc(var(--i) * 80ms);
+}
+
+@keyframes explore-pulse {
+  50% { opacity: 0.55; }
+}
+
+.explore-foot {
+  margin: 28px 0 0;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .explore,
+  .explore-skeleton > span,
+  .explore-refresh.is-spinning svg,
+  .explore-spin { animation: none; }
+}

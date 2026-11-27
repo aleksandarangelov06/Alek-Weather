@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.HapticFeedbackConstants
 import android.view.ViewGroup
 import android.webkit.GeolocationPermissions
 import android.webkit.JavascriptInterface
@@ -230,6 +231,7 @@ class MainActivity : AppCompatActivity() {
         web.addJavascriptInterface(Updater(), "AndroidUpdate")
         web.addJavascriptInterface(NotifyBridge(), "AndroidNotify")
         web.addJavascriptInterface(ThemeBridge(), "AndroidTheme")
+        web.addJavascriptInterface(HapticBridge(), "AndroidHaptics")
         if (boot != null) {
             web.addJavascriptInterface(BootBridge(), "AndroidBoot")
             root.postDelayed({ liftBoot() }, BOOT_FALLBACK_MS)
@@ -266,7 +268,13 @@ class MainActivity : AppCompatActivity() {
                 // Keep the app's own pages in the WebView; hand anything else
                 // (attribution links, external forecasts) to the real browser.
                 if (request.url.host == DOMAIN) return false
-                startActivity(Intent(Intent.ACTION_VIEW, request.url))
+                // No app for the link (an odd scheme, a stripped-down device):
+                // drop the tap instead of crashing the activity.
+                try {
+                    startActivity(Intent(Intent.ACTION_VIEW, request.url))
+                } catch (e: android.content.ActivityNotFoundException) {
+                    // Nothing to open it with.
+                }
                 return true
             }
 
@@ -336,6 +344,28 @@ class MainActivity : AppCompatActivity() {
         val overlay = boot ?: return
         boot = null
         overlay.lift { (overlay.parent as? ViewGroup)?.removeView(overlay) }
+    }
+
+    /**
+     * Touch haptics for the page, bound as `window.AndroidHaptics` (see
+     * src/utils/haptics.js; Settings > Haptics turns them off there). The
+     * system's own haptic clicks rather than the Vibrator: they are the same
+     * ticks the rest of Android gives, they follow the phone's Touch feedback
+     * setting, and they need no VIBRATE permission. Called on a binder thread,
+     * so posted to the UI thread, where the view has to be touched.
+     */
+    inner class HapticBridge {
+        /** A press landing: the light tick of a key. */
+        @JavascriptInterface
+        fun tap() {
+            runOnUiThread { web.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP) }
+        }
+
+        /** A hold that completed: the long-press buzz. */
+        @JavascriptInterface
+        fun heavy() {
+            runOnUiThread { web.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS) }
+        }
     }
 
     /**
@@ -585,9 +615,10 @@ class MainActivity : AppCompatActivity() {
 
         /**
          * Mirrors the page's notification settings into prefs and (re)schedules
-         * the background check. Called whenever the toggles or the displayed
-         * location change, so the worker always checks the place the user is
-         * actually looking at.
+         * the background check. Called whenever the toggles or the notification
+         * place change. The place is the user's Home (or their first saved
+         * place), not whatever forecast is on screen, so browsing another city
+         * never redirects the notifications.
          *
          * @param json `{ enabled, types: string[], latitude, longitude, unit }`
          */
@@ -605,13 +636,15 @@ class MainActivity : AppCompatActivity() {
                     for (i in 0 until typesArray.length()) add(typesArray.optString(i))
                 }
             }
-            // A missing/NaN coordinate stays null so the worker skips the run
-            // rather than checking the weather at 0,0.
-            val lat = obj.optDouble("latitude").takeIf { !it.isNaN() }
-            val lon = obj.optDouble("longitude").takeIf { !it.isNaN() }
+            // A missing coordinate keeps the place already stored: the page has
+            // nothing to say about where, which is not the same as "stop". Only
+            // with no place at all does the worker skip its run, rather than
+            // check the weather at 0,0.
+            val store = NotifyStore(applicationContext)
+            val lat = obj.optDouble("latitude").takeIf { !it.isNaN() } ?: store.latitude
+            val lon = obj.optDouble("longitude").takeIf { !it.isNaN() } ?: store.longitude
 
-            NotifyStore(applicationContext)
-                .saveSettings(enabled, types, lat, lon, obj.optString("unit", "F"))
+            store.saveSettings(enabled, types, lat, lon, obj.optString("unit", "F"))
 
             if (enabled && lat != null && lon != null) {
                 WeatherCheckWorker.schedule(applicationContext)

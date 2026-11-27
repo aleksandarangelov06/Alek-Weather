@@ -1,11 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The sky gradient lifted from pwa-icon.svg's skyBg, as a full-bleed layer so
-     the launcher's mask (circle, squircle, teardrop) crops sky rather than art. -->
+<!-- Clear: the launcher icon has no plate, just the sun and cloud. The adaptive
+     icon still needs a background layer, so this is a transparent one. The art
+     in ic_launcher_foreground is centred and kept inside the 66dp safe zone,
+     so no launcher mask (circle, squircle, teardrop) clips it. -->
 <shape xmlns:android="http://schemas.android.com/apk/res/android"
     android:shape="rectangle">
-    <gradient
-        android:type="linear"
-        android:angle="270"
-        android:startColor="#4AA8E8"
-        android:endColor="#85CCFF" />
+    <solid android:color="@android:color/transparent" />
 </shape>

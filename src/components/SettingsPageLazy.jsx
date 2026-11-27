@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { loadSettingsPage } from './settingsChunk'
+import { ChunkBoundary, RetryButton } from './ChunkBoundary'
 
 // The settings screen is ~25 KB of controls that only exist once the reader
 // opens them, so it loads as its own chunk rather than riding along with the
@@ -8,16 +9,30 @@ import { loadSettingsPage } from './settingsChunk'
 //
 // Import this rather than ./SettingsPage anywhere settings is rendered, and
 // preloadSettings from ./settingsChunk to warm it ahead of the open.
-const SettingsPageImpl = lazy(() =>
-  loadSettingsPage().then(m => ({ default: m.SettingsPage })),
-)
+const makeImpl = () => lazy(() => loadSettingsPage().then(m => ({ default: m.SettingsPage })))
+let SettingsPageImpl = makeImpl()
+// A lazy component remembers a rejection forever, so a retry needs a new one.
+const freshImpl = () => { SettingsPageImpl = makeImpl() }
 
 export function SettingsPage(props) {
-  // No fallback: the screen animates in from nothing anyway, so an empty frame
-  // reads as the animation not having started rather than as something missing.
+  const close = props.onDismiss ?? props.onBack
+  const fallback = (retry, attempts) => (
+    <div className="chunk-error chunk-error--page" role="alert">
+      <p className="chunk-error-text">Settings couldn't load.</p>
+      <div className="chunk-error-actions">
+        <RetryButton retry={retry} attempts={attempts} />
+        {close && <button type="button" className="chunk-error-btn chunk-error-btn--secondary" onClick={close}>Close</button>}
+      </div>
+    </div>
+  )
+  // No Suspense fallback: the screen animates in from nothing anyway, so an
+  // empty frame reads as the animation not having started rather than as
+  // something missing.
   return (
-    <Suspense fallback={null}>
-      <SettingsPageImpl {...props} />
-    </Suspense>
+    <ChunkBoundary fallback={fallback} onRetry={freshImpl}>
+      <Suspense fallback={null}>
+        <SettingsPageImpl {...props} />
+      </Suspense>
+    </ChunkBoundary>
   )
 }

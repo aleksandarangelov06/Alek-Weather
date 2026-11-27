@@ -27,7 +27,8 @@ const CSP = [
   // 307-redirects to it, so both are allowed (the redirect target must be permitted too).
   // mesonet.agron.iastate.edu also provides the HRRR run metadata JSON (fetch).
   // mapservices.weather.noaa.gov is fetched twice over: the radar timeline lists
-  // sweeps with /query, and useRadarPrecip samples one pixel with /identify.
+  // sweeps with /query, and useRadarPrecip samples five points across the
+  // recent sweeps with /getSamples.
   // tiles.openfreemap.org is the basemap (see utils/basemap). MapLibre fetches
   // everything — style, vector tiles, fonts, sprite — so it is connect-src only.
   "connect-src 'self' https://api.open-meteo.com https://geocoding-api.open-meteo.com https://air-quality-api.open-meteo.com https://api.weather.gov https://api.rainviewer.com https://api.bigdatacloud.net https://api-bdc.io https://mesonet.agron.iastate.edu https://mapservices.weather.noaa.gov https://tiles.openfreemap.org",
@@ -60,8 +61,10 @@ export default defineConfig({
     cspPlugin,
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
-      includeAssets: ['pwa-icon.svg'],
+      // 'prompt': a new build waits until the page says to take over (see
+      // registerSW in main.jsx), instead of reloading an open tab mid-use.
+      registerType: 'prompt',
+      includeAssets: ['pwa-icon.svg', 'favicon.svg', 'favicon.ico', 'apple-touch-icon-180x180.png'],
       manifest: {
         name: 'Alek Weather',
         short_name: 'Alek Weather',
@@ -74,8 +77,15 @@ export default defineConfig({
         orientation: 'any',
         scope: base,
         start_url: base,
+        // PNGs for the launchers and install sheets that don't take SVG, and a
+        // maskable icon of its own (the art pulled into the safe circle); see
+        // pwa-assets.config.js. The SVG stays for everything that does.
         icons: [
-          { src: 'pwa-icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' },
+          { src: 'pwa-64x64.png', sizes: '64x64', type: 'image/png' },
+          { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+          { src: 'maskable-icon-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: 'pwa-icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
         ],
       },
       workbox: {

@@ -76,5 +76,27 @@ export function daylightLength(sunrise, sunset) {
   return `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, '0')}m`
 }
 
+// The forecast location's wall clock right now, as "YYYY-MM-DDTHH:MM".
+export function localNow(timezone) {
+  const parts = {}
+  for (const p of new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).formatToParts(new Date())) parts[p.type] = p.value
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`
+}
+
+// Minutes since the epoch for a naive timestamp, read as UTC. Only ever
+// differenced against another one read the same way.
+export const naiveMinutes = (iso) => Date.UTC(
+  +iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10), +iso.slice(11, 13), +iso.slice(14, 16),
+) / 60000
+
+// "3 PM" from a naive local timestamp.
+export function hourLabel(iso) {
+  const h = +iso.slice(11, 13)
+  return `${h % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`
+}
+
 export const METERS_PER_MILE = 1609.34
 export const HPA_PER_INHG = 33.8639

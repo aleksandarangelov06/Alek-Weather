@@ -29,6 +29,11 @@ jobs:
 
       - run: npm ci
 
+      # A lint error or a failing test stops the deploy before anything ships.
+      - run: npm run lint
+
+      - run: npm test
+
       - run: npm run build
         env:
           VITE_BASE_PATH: /${{ github.event.repository.name }}/

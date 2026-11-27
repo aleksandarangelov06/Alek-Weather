@@ -5,6 +5,10 @@
 //
 // Import from here only through loadWebShell — a static import anywhere in the
 // main bundle would pull the whole layout back into it.
+//
+// StormCenter.css isn't imported here: it comes with StormCenterPage, which the
+// phones open too (see ../stormCenterChunk.js), so it may land in a shared
+// chunk whose CSS loads before WebApp.css. Its rules don't rely on coming later.
 import '../../WebApp.css'
 
 export { WebLayout } from './WebLayout'

@@ -1,4 +1,78 @@
-import { useState, useEffect, useLayoutEffect, useRef, useCallback, useReducer } from 'react'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useReducer, useMemo } from 'react'
+import {
+  Search, MapPin, MapPinOff, AlertCircle, HelpCircle, ArrowLeft, Building2, X, Navigation, Bookmark,
+  ArrowUpDown, Check, Plus,
+} from 'lucide-react'
+import { ReorderList } from './components/ReorderListLazy'
+import { preloadReorderList } from './components/reorderChunk'
+import { blockMeta } from './components/blockMeta'
+import { useCoverHistory } from './utils/detailCover'
+import { useWeather } from './hooks/useWeather'
+import { useStaleRefresh } from './hooks/useStaleRefresh'
+import { RADAR_ENHANCED_KEY } from './hooks/useRadarPrecip'
+import { useSavedCities } from './hooks/useSavedCities'
+import { usePersistentSetting, onByDefault, orDefault } from './hooks/usePersistentSetting'
+import { useRecentSearches } from './hooks/useRecentSearches'
+import { SearchBar } from './components/SearchBar'
+import { SearchSheet } from './components/SearchSheet'
+import { StyleCoverArt } from './components/StyleCoverArt'
+import { SavedCities } from './components/SavedCities'
+import { SavedCitiesPage } from './components/SavedCitiesPage'
+import { CurrentWeather } from './components/CurrentWeather'
+import { HourlyForecast } from './components/HourlyForecast'
+import { DailyForecast } from './components/DailyForecast'
+import { WeatherDetails } from './components/WeatherDetails'
+import { WeatherRadar } from './components/WeatherRadarLazy'
+import { WeatherCanvas } from './components/WeatherCanvas'
+import { SkyStage } from './components/SkyStage'
+import { PrecipNowcast } from './components/PrecipNowcast'
+import { WeatherAlerts } from './components/WeatherAlerts'
+import { WeatherOverview } from './components/WeatherOverview'
+import { TodayCard } from './components/TodayCard'
+import { SettingsPage } from './components/SettingsPageLazy'
+import { HelpPage } from './components/HelpPage'
+import { StormCenterBanner, StormSheet } from './components/StormSheet'
+import { ExplorePage } from './components/ExplorePageLazy'
+import { FREEZING_RAIN_CODES, isStormAlert, sortAlerts, stormCenterAlert, stormTint } from './utils/stormCenter'
+import { preloadSettings } from './components/settingsChunk'
+import { BuildingsIcon, GearIcon, SearchIcon } from './components/headerGlyphs'
+import { SlidersIcon } from './components/SlidersIcon'
+import { MAX_CARD_TRANSPARENCY, IOS_FULL_CLARITY_AT } from './utils/appearance'
+// The web layout's components arrive with its own chunk (see webShellChunk) and
+// are read off loadedWebShell() at render; only the tab list and the hook that
+// holds the selected tab are needed whatever the style.
+import { loadWebShell, loadedWebShell } from './components/web/webShellChunk'
+import { TABS as WEB_TABS, useWebTab } from './components/web/tabs'
+import { SplashCities } from './components/SplashCities'
+import { LoadingScreen } from './components/LoadingScreen'
+import { liveWeatherCode, getWeatherInfo, precipTier, SNOW_CODES } from './utils/weatherCodes'
+import { isSnowing } from './utils/conditions'
+import { WeatherIcon } from './components/WeatherIcon'
+import { useIconSet, setIconSet } from './utils/iconSet'
+import { useLocalConditions, locatedPlace, localConditionsFailed } from './hooks/useLocalConditions'
+import { rememberConditions } from './hooks/placeConditions'
+import { loadUnits, saveUnit } from './utils/units'
+import { APP_VERSION_LABEL, IS_ANDROID_APP } from './utils/version'
+import { UpdateToast } from './components/UpdateToast'
+import { WebUpdateToast } from './components/WebUpdateToast'
+import { useWebUpdateReady } from './utils/webUpdate'
+import { SourceNote } from './components/SourceNote'
+import { ApkPrompt } from './components/ApkPrompt'
+import { IS_PHONE, IS_DESKTOP } from './utils/device'
+import { DESKTOP_MQ, PLATFORM_THEME_KEY, initialPlatformTheme } from './utils/platformTheme'
+import { applyMaterialTokens, DEFAULT_SEED, isValidSeed, resolveSeed, systemSeed, SYSTEM_SEED } from './utils/materialTheme'
+import { useNotifications } from './hooks/useNotifications'
+import { syncNotificationSettings, notificationPlace } from './utils/notifications'
+import { liftNativeBoot, rememberBootLook } from './utils/bootStage'
+import { armPageTransition } from './utils/pageTransition'
+import { installTactilePress } from './utils/tactilePress'
+import { haptic, setHapticsEnabled, HAPTICS_KEY } from './utils/haptics'
+import './App.css'
+// The few phone rules that used to live in WebApp.css, in the slot WebApp.css
+// had. WebApp.css itself now comes with the web layout's chunk, still after
+// App.css, so the web app's rules win the same ties against the shared card
+// styles they refine.
+import './PhoneShell.css'
 
 function skyClass(code, isDay) {
   if (code == null) return ''
@@ -88,78 +162,13 @@ const SKY_NAV_COLOR = {
   'sky-storm':          ['#1a1f38', '#1a1f38'],
 }
 
+// The night sky's stars, scattered once per page load.
 const STARS = Array.from({ length: 40 }, () => ({
   top:   `${Math.random() * 88 + 4}%`,
   left:  `${Math.random() * 92 + 2}%`,
   dur:   `${(Math.random() * 3 + 2).toFixed(1)}s`,
   delay: `${-(Math.random() * 4).toFixed(1)}s`,
 }))
-import {
-  Search, MapPin, MapPinOff, AlertCircle, HelpCircle, ArrowLeft, Building2, X, Navigation, Bookmark,
-  ArrowUpDown, CalendarDays, Check, Clock, Eye, GripVertical, LayoutGrid, Minus, Plus, Radar as RadarIcon, Sparkles, Umbrella,
-} from 'lucide-react'
-import { DndContext, closestCenter, KeyboardSensor, MouseSensor, TouchSensor, useSensor, useSensors } from '@dnd-kit/core'
-import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove, sortableKeyboardCoordinates } from '@dnd-kit/sortable'
-import { CSS } from '@dnd-kit/utilities'
-import { useCoverHistory } from './utils/detailCover'
-import { useWeather } from './hooks/useWeather'
-import { useStaleRefresh } from './hooks/useStaleRefresh'
-import { RADAR_ENHANCED_KEY } from './hooks/useRadarPrecip'
-import { useSavedCities } from './hooks/useSavedCities'
-import { useRecentSearches } from './hooks/useRecentSearches'
-import { SearchBar } from './components/SearchBar'
-import { SearchSheet } from './components/SearchSheet'
-import { StyleCoverArt } from './components/StyleCoverArt'
-import { SavedCities } from './components/SavedCities'
-import { SavedCitiesPage } from './components/SavedCitiesPage'
-import { CurrentWeather } from './components/CurrentWeather'
-import { HourlyForecast } from './components/HourlyForecast'
-import { DailyForecast } from './components/DailyForecast'
-import { WeatherDetails } from './components/WeatherDetails'
-import { WeatherRadar } from './components/WeatherRadarLazy'
-import { WeatherCanvas } from './components/WeatherCanvas'
-import { SkyStage } from './components/SkyStage'
-import { PrecipNowcast } from './components/PrecipNowcast'
-import { WeatherAlerts } from './components/WeatherAlerts'
-import { WeatherOverview } from './components/WeatherOverview'
-import { TodayCard } from './components/TodayCard'
-import { SettingsPage } from './components/SettingsPageLazy'
-import { HelpPage } from './components/HelpPage'
-import { preloadSettings } from './components/settingsChunk'
-import { BuildingsIcon, GearIcon, SearchIcon } from './components/headerGlyphs'
-import { SlidersIcon } from './components/SlidersIcon'
-import { MAX_CARD_TRANSPARENCY, IOS_FULL_CLARITY_AT } from './utils/appearance'
-// The web layout's components arrive with its own chunk (see webShellChunk) and
-// are read off loadedWebShell() at render; only the tab list and the hook that
-// holds the selected tab are needed whatever the style.
-import { loadWebShell, loadedWebShell } from './components/web/webShellChunk'
-import { TABS as WEB_TABS, useWebTab } from './components/web/tabs'
-import { SplashCities } from './components/SplashCities'
-import { LoadingScreen } from './components/LoadingScreen'
-import { liveWeatherCode, getWeatherInfo } from './utils/weatherCodes'
-import { isSnowing } from './utils/conditions'
-import { WeatherIcon } from './components/WeatherIcon'
-import { useIconSet, setIconSet } from './utils/iconSet'
-import { useLocalConditions, locatedPlace, localConditionsFailed } from './hooks/useLocalConditions'
-import { rememberConditions } from './hooks/placeConditions'
-import { loadUnits, saveUnit } from './utils/units'
-import { APP_VERSION_LABEL, IS_ANDROID_APP } from './utils/version'
-import { UpdateToast } from './components/UpdateToast'
-import { SourceNote } from './components/SourceNote'
-import { ApkPrompt } from './components/ApkPrompt'
-import { IS_PHONE, IS_DESKTOP } from './utils/device'
-import { DESKTOP_MQ, PLATFORM_THEME_KEY, initialPlatformTheme } from './utils/platformTheme'
-import { applyMaterialTokens, DEFAULT_SEED, isValidSeed, resolveSeed, systemSeed, SYSTEM_SEED } from './utils/materialTheme'
-import { useNotifications } from './hooks/useNotifications'
-import { syncNotificationSettings } from './utils/notifications'
-import { liftNativeBoot, rememberBootLook } from './utils/bootStage'
-import { armPageTransition } from './utils/pageTransition'
-import './App.css'
-// The few phone rules that used to live in WebApp.css, in the slot WebApp.css
-// had. WebApp.css itself now comes with the web layout's chunk, still after
-// App.css, so the web app's rules win the same ties against the shared card
-// styles they refine.
-import './PhoneShell.css'
 
 const THEME_KEY = 'alek-weather-theme'
 const MATERIAL_COLOR_KEY = 'alek-weather-material-color' // seed hex for the Material You palette
@@ -224,8 +233,10 @@ const PRESS_DIP_MIN_MS = 110
 const PRESS_DIP_SELECTOR = '.app-header .header-icon-btn, .app-header .settings-btn, .current-card .fav-btn, .current-card .save-btn'
 // Hold the header search button this long to skip the overlay and geolocate.
 // Passed to App.css as the --long-press-ms custom property so the fill animation
-// always matches this value.
-const LONG_PRESS_MS = 2000
+// always matches this value. A shortcut: the search page has "Use my location"
+// in plain sight, so this only has to be long enough not to fire on a slow tap,
+// about what the OS itself takes for a long press.
+const LONG_PRESS_MS = 700
 
 // Corrupted localStorage (partial write, manual edit) must never crash the app
 // during the initial render — fall back to defaults instead.
@@ -275,11 +286,11 @@ const DEFAULT_BLOCK_ORDER = ['overview', 'today', 'nowcast', 'hourly', 'daily', 
 const SHOW_TODAY_KEY = 'alek-weather-show-today'
 const NOWCAST_MODE_KEY  = 'alek-weather-nowcast-mode'
 const COLOR_CODING_KEY  = 'alek-weather-color-coding'
-// The current-weather reading starts plain: it is the largest text on the
-// screen, and a coloured figure that size over a sky read as decoration more
-// than as information. The details tiles start plain too. The other readings
-// keep their colour.
-const DEFAULT_COLOR_CODING = { current: false, hourly: true, daily: true, overview: true, details: false, glow: true, frost: true }
+// The current-weather reading is always plain, not a setting: it is the largest
+// text on the screen, and a coloured figure that size over a sky read as
+// decoration more than as information. The other readings, the details tiles
+// included, start coloured and each has its toggle in Settings.
+const DEFAULT_COLOR_CODING = { current: false, hourly: true, daily: true, overview: true, details: true, glow: true, frost: true }
 const ICON_MOTION_KEY   = 'alek-weather-icon-motion'
 // How the radar timeline presents its two feeds.
 //   'combined'  one scrubber running observed → forecast, divided at now
@@ -290,64 +301,31 @@ const RADAR_MODE_KEY = 'alek-weather-radar-mode' // 'combined' | 'split'
 const RADAR_SOURCE_KEY = 'alek-weather-radar-source' // 'rainviewer' | 'auto' | 'mrms' | 'nexrad'
 const RADAR_SOURCES = ['rainviewer', 'auto', 'mrms', 'nexrad']
 
-// The cards as the reorder list shows them: the name each one carries on its
-// own heading, and an icon for it.
-const BLOCK_META = {
-  overview: { label: 'Weather insight', Icon: Sparkles },
-  today:    { label: 'At a glance',     Icon: Eye },
-  nowcast:  { label: 'Precipitation',   Icon: Umbrella },
-  hourly:   { label: 'Hourly forecast', Icon: Clock },
-  daily:    { label: '7-day forecast',  Icon: CalendarDays },
-  details:  { label: 'Details',         Icon: LayoutGrid },
-  radar:    { label: 'Radar',           Icon: RadarIcon },
+// Enter and Space on a non-button element with role="button", the way a real
+// button answers them.
+const pressOnKey = (action) => (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ') return
+  e.preventDefault()
+  action()
 }
 
-// The reorder list is one column, so a dragged row only ever moves up or down.
-const lockToVertical = ({ transform }) => ({ ...transform, x: 0 })
-
-// One card in reorder mode, drawn as a short row so the whole stack fits on a
-// phone screen and a move is a short drag rather than hauling a 600px card
-// past the others. The whole row is the handle. A card that can't be removed
-// (onRemove null) gets a blank where the minus would be.
-function ReorderRow({ id, onRemove }) {
-  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({ id })
-  const { label, Icon } = BLOCK_META[id] ?? { label: id, Icon: LayoutGrid }
-  return (
-    <div
-      ref={setNodeRef}
-      className={`card reorder-row${isDragging ? ' reorder-row--dragging' : ''}`}
-      style={{ transform: CSS.Translate.toString(transform), transition }}
-    >
-      {/* Outside the handle, so tapping it can never start a drag. */}
-      {onRemove ? (
-        <button
-          type="button"
-          className="reorder-row-action reorder-row-action--remove"
-          onClick={() => onRemove(id)}
-          aria-label={`Remove ${label}`}
-        >
-          <Minus size={16} strokeWidth={3} aria-hidden="true" />
-        </button>
-      ) : (
-        <span className="reorder-row-action reorder-row-action--none" aria-hidden="true" />
-      )}
-      <div className="reorder-row-handle" ref={setActivatorNodeRef} {...attributes} {...listeners}>
-        <Icon size={19} className="reorder-row-icon" aria-hidden="true" />
-        <span className="reorder-row-label">{label}</span>
-        <GripVertical size={19} className="reorder-row-grip" aria-hidden="true" />
-      </div>
-    </div>
-  )
+// Moves the item at `from` to `to`, the rest shuffling up or down to make room.
+function arrayMove(list, from, to) {
+  const next = list.slice()
+  next.splice(to, 0, next.splice(from, 1)[0])
+  return next
 }
 
 function App() {
-  const [unit, setUnit] = useState(() => localStorage.getItem('alek-weather-unit') ?? 'F')
+  // The plain settings: one localStorage key each, stored as they change (see
+  // usePersistentSetting). The ones with more to them follow further down.
+  const [unit, changeUnit] = usePersistentSetting('alek-weather-unit', orDefault('F'))
   // Wind, pressure, visibility and precipitation, as one object rather than
   // four states: every consumer wants the whole set, and passing `units` keeps
   // the prop lists from growing a member per measure. Temperature stays its own
   // `unit` — it is threaded through colour coding and toTemp separately.
   const [units, setUnits] = useState(loadUnits)
-  const [darkMode, setDarkMode] = useState(() => localStorage.getItem(THEME_KEY) ?? 'system')
+  const [darkMode, changeDarkMode] = usePersistentSetting(THEME_KEY, orDefault('system'))
   // Phones never keep 'web' and desktops are always it — see
   // initialPlatformTheme, which main.jsx also reads to load the web layout's
   // chunk before the first render when this comes out as 'web'.
@@ -361,34 +339,36 @@ function App() {
     if (isValidSeed(saved)) return saved.toLowerCase()
     return systemSeed() ? SYSTEM_SEED : DEFAULT_SEED
   })
-  const [cardTransparency, setCardTransparency] = useState(() => {
-    const saved = Number(localStorage.getItem(CARD_TRANSPARENCY_KEY))
+  const [cardTransparency, changeCardTransparency] = usePersistentSetting(CARD_TRANSPARENCY_KEY, (raw) => {
+    const saved = Number(raw)
     return Number.isFinite(saved) ? Math.min(MAX_CARD_TRANSPARENCY, Math.max(0, saved)) : 0
   })
   // The phone styles' Layout setting: the forecast as one connected sheet (the
   // default) or a stack of separate cards. Only an explicit 'separate' keeps
   // the cards.
-  const [cardLayout, setCardLayout] = useState(() => localStorage.getItem(CARD_LAYOUT_KEY) === 'separate' ? 'separate' : 'connected')
+  const [cardLayout, changeCardLayout] = usePersistentSetting(CARD_LAYOUT_KEY, (raw) => (raw === 'separate' ? 'separate' : 'connected'))
   // On by default: only an explicit 'false' hides the At a Glance card (stored
   // under its old Today card key).
-  const [showToday, setShowToday] = useState(() => localStorage.getItem(SHOW_TODAY_KEY) !== 'false')
-  const [nowcastMode, setNowcastMode] = useState(() => localStorage.getItem(NOWCAST_MODE_KEY) ?? 'auto')
-  const [weatherAnimations, setWeatherAnimations] = useState(() => localStorage.getItem('alek-weather-animations') !== 'false')
-  const [gyroscope, setGyroscope] = useState(() => localStorage.getItem('alek-weather-gyroscope') !== 'false')
+  const [showToday, changeShowToday] = usePersistentSetting(SHOW_TODAY_KEY, onByDefault)
+  const [nowcastMode, changeNowcastMode] = usePersistentSetting(NOWCAST_MODE_KEY, orDefault('auto'))
+  const [weatherAnimations, changeWeatherAnimations] = usePersistentSetting('alek-weather-animations', onByDefault)
+  const [gyroscope, storeGyroscope] = usePersistentSetting('alek-weather-gyroscope', onByDefault)
+  // Settings > Haptics (Android app only; utils/haptics.js keeps its own copy
+  // for the presses to read).
+  const [haptics, setHaptics] = useState(() => localStorage.getItem(HAPTICS_KEY) !== 'false')
   // Separate from weatherAnimations, which is the sky backdrop and the canvas
   // effects behind the whole app. This is only the weather icons' own motion —
   // falling rain, drifting cloud, the lightning flash — so it can be turned off
   // by someone who still wants the sky, and vice versa.
-  const [iconMotion, setIconMotion] = useState(() => localStorage.getItem(ICON_MOTION_KEY) !== 'false')
+  const [iconMotion, changeIconMotion] = usePersistentSetting(ICON_MOTION_KEY, onByDefault)
   // Color (the Fluent glyphs) or Line (Lucide). Stored and broadcast by
   // iconSet.js, which WeatherIcon reads directly — see the note there.
   const iconSet = useIconSet()
   // Defaults on: radar is the only source that observes precipitation over the
   // location itself, and it has caught storms every model and nearby station
   // missed. `!== 'false'` so anyone who explicitly turned it off stays off.
-  const [radarEnhanced, setRadarEnhanced] = useState(() => localStorage.getItem(RADAR_ENHANCED_KEY) !== 'false')
-  const [radarMode, setRadarMode] = useState(() => {
-    const saved = localStorage.getItem(RADAR_MODE_KEY)
+  const [radarEnhanced, changeRadarEnhanced] = usePersistentSetting(RADAR_ENHANCED_KEY, onByDefault)
+  const [radarMode, changeRadarMode] = usePersistentSetting(RADAR_MODE_KEY, (saved) => {
     // Migrating the values this key used to hold. 'both' was the single
     // timeline, which is what 'combined' is now. 'nowcast' and 'future' were
     // the retired "opens on" choice, and that only ever existed in the split
@@ -401,15 +381,15 @@ function App() {
   // the nearest NEXRAD zoomed in, ahead of the NOAA HRRR forecast; elsewhere it
   // is RainViewer, the only feed there is (see WeatherRadar). A saved choice is
   // kept, so anyone who already picked one stays on it.
-  const [radarSource, setRadarSource] = useState(() => {
-    const saved = localStorage.getItem(RADAR_SOURCE_KEY)
-    return RADAR_SOURCES.includes(saved) ? saved : 'auto'
-  })
+  const [radarSource, changeRadarSource] = usePersistentSetting(RADAR_SOURCE_KEY, (saved) => (RADAR_SOURCES.includes(saved) ? saved : 'auto'))
   const [colorCoding, setColorCoding] = useState(() => {
     const saved = loadJSON(COLOR_CODING_KEY)
-    return saved ? { ...DEFAULT_COLOR_CODING, ...saved } : DEFAULT_COLOR_CODING
+    // `current` is pinned to the default over anything saved: it was a toggle
+    // once, and a copy saved back then would otherwise keep it coloured.
+    return saved ? { ...DEFAULT_COLOR_CODING, ...saved, current: DEFAULT_COLOR_CODING.current } : DEFAULT_COLOR_CODING
   })
   const [installPrompt, setInstallPrompt] = useState(null)
+  const webUpdateReady = useWebUpdateReady()
   const [showSettings, setShowSettings] = useState(false)
   const [settingsClosing, setSettingsClosing] = useState(false)
   // True only while the cog is turning, before the panel is mounted.
@@ -425,15 +405,23 @@ function App() {
   // The same, for the magnifier's sweep and the search overlay.
   const [searchSweeping, setSearchSweeping] = useState(false)
   const searchOpenTimer = useRef(null)
-  const [subView, setSubView] = useState(null) // null | 'colorcoding' | 'radar' | 'effects' | 'icons' | 'theme' | 'notifications'
+  const [subView, setSubView] = useState(null) // null | 'colorcoding' | 'radar' | 'effects' | 'units' | 'theme' | 'notifications'
   const [isDesktop, setIsDesktop] = useState(() => window.matchMedia(DESKTOP_MQ).matches)
   const [webTab, setWebTab] = useWebTab()
-  // The web app's non-forecast page — 'settings' | null. Kept
+  // The web app's non-forecast page: 'settings' | null. Kept
   // apart from webTab: they need no forecast, so they can be opened from Home
   // with nothing loaded, and leaving one returns to whichever forecast page you
   // were on. Not persisted: a reload lands on the forecast, as it always has.
   const [webPage, setWebPage] = useState(null)
   const [help, setHelp] = useState(null) // { article } while the Help page is open
+  // The phones' Storm Center sheet (see StormSheet), and the card a link on it
+  // asked to be taken to once it has closed.
+  const [stormOpen, setStormOpen] = useState(false)
+  const stormGoTo = useRef(null)
+  // The Explore page (the easter egg behind "Alek Studios" in Settings), and
+  // the place picked on it, opened once the page and Settings have closed.
+  const [exploreOpen, setExploreOpen] = useState(false)
+  const exploreGoTo = useRef(null)
 
   // The app style setting is honoured at every width: picking "Web" and then
   // narrowing the window keeps the web app, because a layout that swapped
@@ -517,16 +505,11 @@ function App() {
   // arrow keys. Back, Done, or loading another place leaves the mode.
   const [reordering, setReordering] = useState(false)
   const endReorder = useCoverHistory(reordering, () => setReordering(false))
-  const sensors = useSensors(
-    useSensor(MouseSensor, { activationConstraint: { distance: 4 } }),
-    useSensor(TouchSensor, { activationConstraint: { delay: 150, tolerance: 8 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
-  )
 
-  const handleDragEnd = ({ active, over }) => {
-    if (!over || active.id === over.id) return
+  // A row dropped onto another (see ReorderList).
+  const moveBlock = (id, overId) => {
     setBlockOrder(prev => {
-      const next = arrayMove(prev, prev.indexOf(active.id), prev.indexOf(over.id))
+      const next = arrayMove(prev, prev.indexOf(id), prev.indexOf(overId))
       localStorage.setItem(BLOCK_ORDER_KEY, JSON.stringify(next))
       return next
     })
@@ -565,15 +548,22 @@ function App() {
   // find a location" screen instead. A layout effect, so that screen never gets
   // a frame. A Web page that's up (navPageUp) is something to show, and
   // loading and error states have screens of their own.
+  // The setState in a layout effect is the point here: it lands before paint,
+  // on the rare paths above, so the empty screen is never drawn. Deriving it in
+  // render instead would mean reworking the splash phases, so the rule is
+  // silenced for this line alone.
   useLayoutEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     if (splashPhase === 'done' && !weather && !loading && !error && !navPageUp) setSplashPhase('visible')
   }, [splashPhase, weather, loading, error, navPageUp])
 
   // Each forecast reading also fills the splash's card for that place, so going
-  // back Home doesn't ask Open-Meteo for a reading already on hand.
+  // back Home doesn't ask Open-Meteo for a reading already on hand. Keyed on the
+  // reading as well as its time: a late NWS overlay or radar call changes what
+  // the card should say without changing when the reading was taken.
   useEffect(() => {
     if (weather && location && lastUpdated) rememberConditions(location, weather, lastUpdated.getTime())
-  }, [lastUpdated]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lastUpdated, weather]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Radar cross-check for the current condition (opt-in "Radar enhanced accuracy").
   // The verdict is sampled with the reading itself (see loadForecast), so it is
@@ -581,6 +571,9 @@ function App() {
   // first frame — sampling it afterwards showed the model's unchecked code (a
   // thunderstorm sky) for a beat before the check corrected it.
   const radarClear = radarEnhanced ? (weather?.radarClear ?? null) : null
+  // Whether precipitation over the point just started or just stopped, by the
+  // radar's last two sweeps (applyRadar). The same setting governs it.
+  const radarTrend = radarEnhanced ? (weather?.current?.radar_trend ?? null) : null
 
   const { cities, save, remove, isSaved, home, setHome, unsetHome, isHome } = useSavedCities()
   const { recents, addRecent, removeRecent } = useRecentSearches()
@@ -597,12 +590,20 @@ function App() {
 
   // Weather notifications are APK-only (they ride the native bridge). The page
   // only publishes settings: the native worker does the checking, on its own
-  // schedule, so notifications keep arriving with the app closed. Re-syncing on
-  // a location change is what points it at the place currently on screen.
+  // schedule, so notifications keep arriving with the app closed.
+  // They are for one place: Home, else the first saved place, else whatever was
+  // last opened. Browsing another city doesn't move them, and going back to the
+  // splash (no location) sends no coordinates, which the shell reads as "keep
+  // the place you have" rather than "stop". Keyed on the coordinates, so a
+  // refresh of the same place doesn't re-sync.
+  const notifyPlace = notificationPlace({ home, cities, location })
+  const notifyLat = notifyPlace?.latitude ?? null
+  const notifyLon = notifyPlace?.longitude ?? null
   useEffect(() => {
     if (!IS_ANDROID_APP) return
-    syncNotificationSettings({ enabled: notifyEnabled, types: notifyTypes, location, unit })
-  }, [notifyEnabled, notifyTypes, location, unit])
+    const place = notifyLat != null && notifyLon != null ? { latitude: notifyLat, longitude: notifyLon } : null
+    syncNotificationSettings({ enabled: notifyEnabled, types: notifyTypes, location: place, unit })
+  }, [notifyEnabled, notifyTypes, notifyLat, notifyLon, unit])
   useEffect(() => {
     const handler = (e) => { e.preventDefault(); setInstallPrompt(e) }
     window.addEventListener('beforeinstallprompt', handler)
@@ -813,10 +814,21 @@ function App() {
     if (!firstOpenRef.current) { setSplashHold(false); setSplashPhase('exit'); return }
     firstOpenRef.current = false
     setSplashHold(true)
-    const t = setTimeout(() => { setSplashHold(false); setSplashPhase('exit') }, 450)
+    // The beat lasts until the main thread is next idle, which is when the
+    // mount's work is done, rather than a fixed 450ms that most devices were
+    // finished well inside. 450ms stays as the ceiling, and the wait where
+    // there is no idle callback (Safari).
+    const exit = () => { setSplashHold(false); setSplashPhase('exit') }
+    const ric = window.requestIdleCallback
+    let t = 0, idle = 0
+    if (ric) idle = ric(exit, { timeout: 450 })
+    else t = setTimeout(exit, 450)
     // A later source landing on the reading re-runs this effect; with the ref
     // spent it then exits at once rather than leaving the splash stuck.
-    return () => clearTimeout(t)
+    return () => {
+      clearTimeout(t)
+      if (idle) window.cancelIdleCallback?.(idle)
+    }
   }, [weather, error]) // eslint-disable-line react-hooks/exhaustive-deps
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -838,6 +850,10 @@ function App() {
   //      removed and data-boot cleared, which starts the sky (WeatherCanvas)
   //      and lets idle work like the settings preload run.
   const bootReady = !HAS_SAVED_CITY || !!weather || !!error
+  // A launch that already has its reading (restored from storage) skips the
+  // BOOT_MIN_MS floor: there is no later swap for the floor to smooth over, and
+  // it only kept the forecast behind the boot screen for longer.
+  const [bootHadReading] = useState(() => !!weather)
   const [bootTimedOut, setBootTimedOut] = useState(false)
   const [bootGone, setBootGone] = useState(() => !document.getElementById('boot'))
   useEffect(() => {
@@ -874,12 +890,12 @@ function App() {
         if (ric) idle = ric(lift, { timeout: 300 })
         else t = setTimeout(lift, 50)
       }, BOOT_PREP_MS)
-    }, Math.max(0, BOOT_MIN_MS - performance.now()))
+    }, bootHadReading ? 0 : Math.max(0, BOOT_MIN_MS - performance.now()))
     return () => {
       clearTimeout(t)
       if (idle) window.cancelIdleCallback?.(idle)
     }
-  }, [bootReady, bootTimedOut])
+  }, [bootReady, bootTimedOut, bootHadReading])
 
   // The first place picked in a session opens on Today (the overview) rather
   // than whichever page was last left open. Once any forecast has been shown —
@@ -947,19 +963,9 @@ function App() {
     return () => document.removeEventListener('keydown', handler)
   }, [isDesktop, weather, loading, searchOpen, webSplash, navPageUp])
 
-  const changeUnit = (u) => {
-    setUnit(u)
-    localStorage.setItem('alek-weather-unit', u)
-  }
-
   const changeUnitGroup = (group, value) => {
     setUnits(prev => ({ ...prev, [group]: value }))
     saveUnit(group, value)
-  }
-
-  const changeShowToday = (val) => {
-    setShowToday(val)
-    localStorage.setItem(SHOW_TODAY_KEY, String(val))
   }
 
   // Whether a card is in the stack. Only REMOVABLE_BLOCKS can be out of it, so
@@ -982,9 +988,15 @@ function App() {
     })
   }
 
-  const changeNowcastMode = (mode) => {
-    setNowcastMode(mode)
-    localStorage.setItem(NOWCAST_MODE_KEY, mode)
+  // Settings' Color Coding switch: every tile, and the glow and frost on top
+  // of them, on or off together. `current` stays pinned (see above).
+  const setAllColorCoding = (on) => {
+    setColorCoding(prev => {
+      const next = { ...prev }
+      for (const key of Object.keys(DEFAULT_COLOR_CODING)) if (key !== 'current') next[key] = on
+      localStorage.setItem(COLOR_CODING_KEY, JSON.stringify(next))
+      return next
+    })
   }
 
   const toggleColorCoding = (key) => {
@@ -995,52 +1007,21 @@ function App() {
     })
   }
 
-  // Back to the first-run choices. The saved copy is dropped rather than
-  // overwritten, so the user follows DEFAULT_COLOR_CODING if it ever changes.
-  const resetColorCoding = () => {
-    setColorCoding(DEFAULT_COLOR_CODING)
-    localStorage.removeItem(COLOR_CODING_KEY)
-  }
-
-  const changeWeatherAnimations = (val) => {
-    setWeatherAnimations(val)
-    localStorage.setItem('alek-weather-animations', String(val))
-  }
-
-  const changeIconMotion = (val) => {
-    setIconMotion(val)
-    localStorage.setItem(ICON_MOTION_KEY, String(val))
+  const changeHaptics = (val) => {
+    setHaptics(val)
+    setHapticsEnabled(val)
+    // Turning them on answers with one, so you feel what you just chose.
+    if (val) haptic('tap')
   }
 
   const changeGyroscope = (val) => {
-    setGyroscope(val)
-    localStorage.setItem('alek-weather-gyroscope', String(val))
+    storeGyroscope(val)
     // iOS 13+ gates motion sensors behind a permission prompt that must be
     // requested from a user gesture — flipping this toggle on is one.
     if (val && typeof DeviceOrientationEvent !== 'undefined'
         && typeof DeviceOrientationEvent.requestPermission === 'function') {
       DeviceOrientationEvent.requestPermission().catch(() => {})
     }
-  }
-
-  const changeRadarEnhanced = (val) => {
-    setRadarEnhanced(val)
-    localStorage.setItem(RADAR_ENHANCED_KEY, String(val))
-  }
-
-  const changeRadarMode = (mode) => {
-    setRadarMode(mode)
-    localStorage.setItem(RADAR_MODE_KEY, mode)
-  }
-
-  const changeRadarSource = (src) => {
-    setRadarSource(src)
-    localStorage.setItem(RADAR_SOURCE_KEY, src)
-  }
-
-  const changeDarkMode = (mode) => {
-    setDarkMode(mode)
-    localStorage.setItem(THEME_KEY, mode)
   }
 
   const changePlatformTheme = (mode) => {
@@ -1134,17 +1115,15 @@ function App() {
     localStorage.setItem(MATERIAL_COLOR_KEY, seed)
   }
 
-  const changeCardTransparency = (pct) => {
-    setCardTransparency(pct)
-    localStorage.setItem(CARD_TRANSPARENCY_KEY, String(pct))
-  }
-
-  const changeCardLayout = (layout) => {
-    setCardLayout(layout)
-    localStorage.setItem(CARD_LAYOUT_KEY, layout)
-  }
+  // A tap on the cog while settings is still closing would be lost: the page
+  // is on its way out, so there is nothing to open yet. It is held instead
+  // (settingsReopen) and acted on once the close has finished (see the effect
+  // after doCloseSettings). Search does the same.
+  const settingsReopen = useRef(false)
+  const searchReopen = useRef(false)
 
   const openSettings = () => {
+    if (settingsClosing) { settingsReopen.current = true; return }
     if (showSettings) return
     // The page opens on the tap itself. It used to wait for the cog to finish
     // turning first, and that wait read as lag. The cog still turns, alongside
@@ -1165,6 +1144,11 @@ function App() {
     setSettingsClosing(true)
     setTimeout(() => { setShowSettings(false); setSettingsClosing(false); setSubView(null) }, SETTINGS_CLOSE_MS)
   }
+  useEffect(() => {
+    if (showSettings || !settingsReopen.current) return
+    settingsReopen.current = false
+    openSettings()
+  }, [showSettings]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const closeSettings = () => history.back()
 
@@ -1180,6 +1164,19 @@ function App() {
 
   const closeSubView = () => history.back()
 
+  // Explore, full screen over Settings. Back closes it onto Settings again;
+  // picking a place leaves Settings too (all of its entries, as
+  // dismissSettings does) and opens that place's forecast.
+  const openExplore = () => {
+    if (!exploreOpen) history.pushState({ overlay: 'explore' }, '')
+    setExploreOpen(true)
+  }
+  const closeExplore = () => history.back()
+  const exploreGo = (place) => {
+    exploreGoTo.current = place
+    history.go(-(1 + (showSettings ? (subView ? 2 : 1) : 0)))
+  }
+
   // The Help page, full screen over everything (see HelpPage). `article` opens
   // straight onto one; with none it opens on the list. It takes a history
   // entry so Back closes it, like the other overlays.
@@ -1188,6 +1185,19 @@ function App() {
     setHelp({ article })
   }
   const closeHelp = () => history.back()
+
+  // The phones' Storm Center, full screen over the forecast. It takes a
+  // history entry so Back closes it. Its links to the radar and the week close
+  // it and scroll to that card instead, since the phones have no tabs.
+  const openStormCenter = () => {
+    if (!stormOpen) history.pushState({ overlay: 'storm' }, '')
+    setStormOpen(true)
+  }
+  const closeStormCenter = () => history.back()
+  const stormNavigate = (id) => {
+    stormGoTo.current = id
+    history.back()
+  }
 
   // Called straight from a click (the empty state, the location error's link),
   // or by the magnifier through sweepThenOpenSearch.
@@ -1201,6 +1211,7 @@ function App() {
   // wait for the glass to finish sweeping, and that wait read as lag. The sweep
   // still plays alongside the reveal, and the timer only ends it.
   const sweepThenOpenSearch = () => {
+    if (searchClosing) { searchReopen.current = true; return }
     if (searchOpen) return
     openSearch()
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
@@ -1221,6 +1232,11 @@ function App() {
       setSearchResults([])
     }, SEARCH_CLOSE_MS)
   }
+  useEffect(() => {
+    if (searchOpen || !searchReopen.current) return
+    searchReopen.current = false
+    sweepThenOpenSearch()
+  }, [searchOpen]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const closeSearch = () => history.back()
 
@@ -1247,7 +1263,7 @@ function App() {
     searchHoldTimer.current = setTimeout(() => {
       searchLongPressed.current = true
       setSearchHolding(false)
-      navigator.vibrate?.(40)
+      haptic('heavy')
       locateMe()
     }, LONG_PRESS_MS)
   }
@@ -1285,6 +1301,10 @@ function App() {
     const t = setTimeout(preloadSettings, 1500)
     return () => clearTimeout(t)
   }, [bootGone])
+
+  // The same give and spring-back for everything else you can tap on the
+  // phone: rows, tiles, chips, small buttons (utils/tactilePress.js).
+  useEffect(() => installTactilePress(), [])
 
   // Tactile press for the round icon buttons (PRESS_DIP_SELECTOR): data-pressed
   // goes on at the touch and comes off at release, but never sooner than
@@ -1386,6 +1406,38 @@ function App() {
       // rather than surface the list underneath.
       // Help sits on top of everything, so it is always the first to go.
       if (help) { setHelp(null); return }
+      // The Storm Center sheet is over everything else on the phones. The
+      // alert map and the full-screen radar inside it take entries of their
+      // own, so it only closes once Back has gone below its entry.
+      if (stormOpen) {
+        if (history.state?.overlay === 'storm') return
+        setStormOpen(false)
+        const id = stormGoTo.current
+        stormGoTo.current = null
+        if (id) {
+          requestAnimationFrame(() => {
+            document.querySelector(`.sortable-block[data-block="${id}"]`)
+              ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          })
+        }
+        return
+      }
+      if (exploreOpen) {
+        if (history.state?.overlay === 'explore') return
+        setExploreOpen(false)
+        const place = exploreGoTo.current
+        exploreGoTo.current = null
+        if (place) {
+          if (showSettings) doCloseSettings()
+          // closeNavPage, which is declared further down.
+          if (webPage != null) { setWebPage(null); setSubView(null) }
+          landFirstPick()
+          if (webLayout) setWebTab('today')
+          addRecent(place)
+          selectCity(place)
+        }
+        return
+      }
       if (subView && history.state?.overlay === 'settings') setSubView(null)
       else if (showSettings) doCloseSettings()
       else if (searchOpen) doCloseSearch()
@@ -1394,7 +1446,13 @@ function App() {
     }
     window.addEventListener('popstate', handler)
     return () => window.removeEventListener('popstate', handler)
-  }, [help, subView, showSettings, searchOpen, savedOpen, splashSaved]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [help, stormOpen, exploreOpen, subView, showSettings, searchOpen, savedOpen, splashSaved, webPage]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The sheet is the phones' alone: widening into the web layout (which shows
+  // the Storm Center on Home instead) backs out of its entry, which closes it.
+  useEffect(() => {
+    if (webLayout && stormOpen) history.back()
+  }, [webLayout]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Escape backs out of the splash's saved view, as it does out of every page.
   useEffect(() => {
@@ -1403,6 +1461,15 @@ function App() {
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [splashSaved, showSettings, searchOpen, help])
+
+  // Escape closes Explore, and only Explore: Settings' own Escape (above) is
+  // kept from seeing it, as Help does below.
+  useEffect(() => {
+    if (!exploreOpen || help) return
+    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); history.back() } }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [exploreOpen, help])
 
   // Escape closes the Help page.
   useEffect(() => {
@@ -1522,23 +1589,50 @@ function App() {
   )
 
   const liveCode = weather ? liveWeatherCode(weather.current, weather.minutely_15, radarClear) : null
-  // What the header brand glows for (web). An alert that's a Warning (the
+  // What makes the web Home tab the Storm Center, and what it glows for. An alert that's a Warning (the
   // hazard is happening or imminent) or rated Extreme outranks everything and
   // glows red; otherwise falling weather right now — storm, snow, rain —
   // glows in its own colour. Nothing notable, no glow.
+  // Only storm alerts count (see isStormAlert): a Coastal Flood Warning under a
+  // clear sky stays in the alert list and leaves the Storm Center off.
   const brandEvent = (() => {
-    const extreme = alerts.find(a =>
-      a.properties?.severity === 'Extreme' || /warning$/i.test((a.properties?.event ?? '').trim())
-    )
+    const extreme = stormCenterAlert(alerts)
     if (extreme) return { kind: 'extreme', label: extreme.properties.event }
     if (liveCode == null) return null
+    // Only weather worth a Storm Center: thunder, ice, and heavy rain or snow.
+    // Ordinary rain and light snow opened it too, with a "LIVE" banner over a
+    // dial reading Minimal, which taught people to ignore it.
     if (liveCode >= 95) return { kind: 'storm', label: 'Thunderstorm now' }
-    if ((liveCode >= 71 && liveCode <= 77) || liveCode === 85 || liveCode === 86) return { kind: 'snow', label: 'Snowing now' }
-    // Light drizzle (51) is left out: barely anything is falling, and it read
-    // as the brand glowing for no reason.
-    if ((liveCode >= 53 && liveCode <= 67) || (liveCode >= 80 && liveCode <= 82)) return { kind: 'rain', label: 'Raining now' }
+    if (FREEZING_RAIN_CODES.has(liveCode)) return { kind: 'snow', label: 'Freezing rain now' }
+    if (SNOW_CODES.has(liveCode) && precipTier(liveCode) >= 3) return { kind: 'snow', label: 'Heavy snow now' }
+    if (!SNOW_CODES.has(liveCode) && precipTier(liveCode) >= 3) return { kind: 'rain', label: 'Heavy rain now' }
     return null
   })()
+
+  // While something is happening over a forecast, the web Home tab is the Storm Center
+  // (see WebLayout).
+  const stormMode = webLayout && !!brandEvent && !!weather
+  // On the phones the card stack stays, and a banner at its top opens the same
+  // page as a sheet (see StormSheet), tinted as the page will be.
+  const phoneStorm = !webLayout && !!brandEvent && !!weather
+  const phoneStormTint = phoneStorm ? stormTint(sortAlerts(alerts).find(isStormAlert), brandEvent.kind) : null
+
+  // The web brand takes you to Home's search field: off Home it reads "Search"
+  // (see brandSearch below), and on Home it is the wordmark and just puts the
+  // cursor in the field. It leaves the Saved locations view first if that is
+  // up. The field mounts with the render this starts (or after the Back that
+  // closes Saved), so it is looked for over the next few frames.
+  const openWebSearch = () => {
+    if (webSplash) { if (splashSaved) closeSplashSaved() }
+    else handleNavHome()
+    let tries = 12
+    const focus = () => {
+      const input = document.querySelector('.splash-bg--web .splash-search input')
+      if (input) input.focus()
+      else if (--tries > 0) requestAnimationFrame(focus)
+    }
+    requestAnimationFrame(focus)
+  }
   const skyC     = weather ? skyClass(liveCode, weather.current.is_day) : ''
   const skyLevel = SKY_LEVEL[skyC] ?? ''
   // The sky level class is what tints the cards toward the sky (and flips the
@@ -1625,10 +1719,15 @@ function App() {
   // sky live in different trees: the header buttons inside .app, the location
   // cards beside it. "dark" for the skies the forecast tints its cards for most
   // heavily (night, rain, storm), which is where a light-mode surface glares.
+  // A layout effect, so it lands in the same frame as the render that shows or
+  // hides the splash. As a plain effect it trailed by a frame: going Home, the
+  // nav bar was painted once as the forecast's opaque card before turning to
+  // the splash's glass, and leaving, once as glass over the forecast, which
+  // read as a flash behind the bar on every switch.
   const splashSkyTone = splashSkyC && splashPhase !== 'done'
     ? (SKY_LEVEL[splashSkyC] === 'sky-lvl-dark' || SKY_LEVEL[splashSkyC] === 'sky-lvl-darkest' ? 'dark' : 'light')
     : ''
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = document.documentElement
     if (splashSkyTone) root.dataset.splashSky = splashSkyTone
     else delete root.dataset.splashSky
@@ -1728,8 +1827,12 @@ function App() {
     hourly:  <HourlyForecast hourly={weather.hourly} daily={weather.daily} timezone={weather.timezone} unit={unit} units={units} colorCoding={colorCoding.hourly} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} />,
     daily:   <DailyForecast daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} units={units} colorCoding={colorCoding.daily} glow={colorCoding.glow} frost={colorCoding.frost} current={weather.current} minutely={weather.minutely_15} radarClear={radarClear} yesterday={weather.yesterday} airQuality={airQuality} />,
     details: <WeatherDetails latitude={weather.latitude} current={weather.current} daily={weather.daily} hourly={weather.hourly} timezone={weather.timezone} unit={unit} units={units} airQuality={airQuality} colorCoding={colorCoding.details} />,
-    radar:   <WeatherRadar location={location} timezone={weather.timezone} mode={radarMode} source={radarSource} sky={weatherAnimations ? skyC : ''} rainFx={weatherAnimations} snow={isSnowing(weather.current)} />,
-    nowcast: <PrecipNowcast minutely={weather.minutely_15} currentTime={weather.current.time} mode={nowcastMode} current={weather.current} radarClear={radarClear} />,
+    // No rain over the radar on the phone styles: the overlay is a particle
+    // field across the whole map plus a read-back of its tiles several times a
+    // second, and on a phone that was cost on top of the map itself for an
+    // effect nobody needs to read the radar. The web layout keeps it.
+    radar:   <WeatherRadar location={location} timezone={weather.timezone} mode={radarMode} source={radarSource} sky={weatherAnimations ? skyC : ''} rainFx={weatherAnimations && webLayout} snow={isSnowing(weather.current)} />,
+    nowcast: <PrecipNowcast minutely={weather.minutely_15} currentTime={weather.current.time} mode={nowcastMode} current={weather.current} radarClear={radarClear} radarTrend={radarTrend} />,
   } : null
   // The cards the phone stack can hold (the right column on desktop, where a
   // few live in the left column instead), in the saved order; then the ones
@@ -1775,6 +1878,9 @@ function App() {
   // Settings still work.
   const navCity = home ?? recents[0] ?? cities[0] ?? (localCond?.name ? locatedPlace() : null)
   const showNav = headerTabs || webSplash
+  // The wordmark goes Home once a forecast is up, while it is the visible
+  // header (not covered by the place line or handed off to the tab bar).
+  const titleIsButton = splashPhase === 'done' && !!weather && !showNav && !placeInHeader
 
   // The Radar tab's full-bleed layout. On from the moment the splash starts
   // fading as well as once it has gone: the forecast is revealed under the fade,
@@ -1784,7 +1890,22 @@ function App() {
   // On Locations or Settings with nothing loaded and nowhere to load (a first
   // visit that went straight to Settings), the forecast tabs have nothing to
   // open, so they are offered but disabled.
-  const navTabs = !weather && !navCity && !forecastFailed ? WEB_TABS.map(t => ({ ...t, disabled: true })) : WEB_TABS
+  //
+  // While something is happening (stormMode), Home is the Storm Center, and its
+  // tab says so: renamed, and glowing in the colour of what is happening (see
+  // "Storm Center glow" in WebApp.css), with the event itself as its tooltip.
+  // Memoised on those few values: WebTabs re-measures its pill whenever the
+  // array changes, so a fresh one every render would re-measure every render.
+  const tabsDisabled = !weather && !navCity && !forecastFailed
+  const stormTabKind = stormMode ? brandEvent.kind : null
+  const stormTabLabel = stormMode ? brandEvent.label : null
+  const navTabs = useMemo(() => WEB_TABS.map((t) => {
+    if (tabsDisabled) return { ...t, disabled: true }
+    if (t.id === 'today' && stormTabKind) {
+      return { ...t, label: 'Storm Center', title: stormTabLabel, className: `web-tab--event web-tab--${stormTabKind}` }
+    }
+    return t
+  }), [tabsDisabled, stormTabKind, stormTabLabel])
   // Home while the splash is idle. Once a place is picked the pill moves to the
   // page it will open on, while the forecast loads behind the splash.
   const navActive = navPageUp ? webPage
@@ -1879,6 +2000,7 @@ function App() {
   // shells' settings page and the web app's Settings tab.
   const settingsProps = {
     onHelpOpen: () => openHelp(),
+    onExploreOpen: openExplore,
     darkMode,
     onDarkModeChange: changeDarkMode,
     platformTheme,
@@ -1897,7 +2019,7 @@ function App() {
     onNowcastModeChange: changeNowcastMode,
     colorCoding,
     onColorCodingToggle: toggleColorCoding,
-    onColorCodingReset: resetColorCoding,
+    onColorCodingAll: setAllColorCoding,
     weatherAnimations,
     onWeatherAnimationsChange: changeWeatherAnimations,
     iconMotion,
@@ -1906,6 +2028,8 @@ function App() {
     onIconSetChange: setIconSet,
     gyroscope,
     onGyroscopeChange: changeGyroscope,
+    haptics,
+    onHapticsChange: changeHaptics,
     radarEnhanced,
     onRadarEnhancedChange: changeRadarEnhanced,
     radarMode,
@@ -1932,6 +2056,7 @@ function App() {
       unit={unit}
       units={units}
       radarClear={radarClear}
+      radarTrend={radarTrend}
       lastUpdated={lastUpdated}
       loading={loading}
       colorCoding={colorCoding}
@@ -1949,6 +2074,10 @@ function App() {
       onSetHome={setHomeCurrent}
       onUnsetHome={unsetHome}
       onRefresh={refreshCurrent}
+      // While something is happening, the Home tab is the Storm Center. Strings
+      // rather than the brandEvent object, which is rebuilt every render.
+      stormKind={stormMode ? brandEvent.kind : null}
+      stormLabel={stormMode ? brandEvent.label : null}
     />
   ) : (
     <>
@@ -1956,7 +2085,20 @@ function App() {
           of the screen. Hidden rather than unmounted, so the reading and its
           alerts are just as they were on Done. */}
       <div className="weather-left" hidden={reordering}>
-        <WeatherAlerts alerts={alerts} location={location} />
+        {phoneStorm && (
+          <StormCenterBanner
+            kind={brandEvent.kind}
+            label={brandEvent.label}
+            tint={phoneStormTint}
+            onOpen={openStormCenter}
+          />
+        )}
+        <WeatherAlerts
+          alerts={alerts}
+          location={location}
+          // Each alert's sheet carries a button into the Storm Center.
+          onStormCenter={webLayout ? null : openStormCenter}
+        />
         <CurrentWeather
           // The phone shells show the city and date in the header, and keep
           // home and save on the search page, so the card starts at the icon.
@@ -1991,23 +2133,18 @@ function App() {
       <div className={`weather-right${reordering ? ' weather-right--reordering' : ''}`}>
         {reordering ? (
           <>
-            <DndContext sensors={sensors} collisionDetection={closestCenter} modifiers={[lockToVertical]} onDragEnd={handleDragEnd}>
-              <SortableContext items={stackBlocks} strategy={verticalListSortingStrategy}>
-                {stackBlocks.map(id => (
-                  <ReorderRow
-                    key={id}
-                    id={id}
-                    onRemove={REMOVABLE_BLOCKS.includes(id) ? (b) => setBlockShown(b, false) : null}
-                  />
-                ))}
-              </SortableContext>
-            </DndContext>
+            <ReorderList
+              blocks={stackBlocks}
+              removable={REMOVABLE_BLOCKS}
+              onRemove={(b) => setBlockShown(b, false)}
+              onMove={moveBlock}
+            />
             {/* Removed cards, each one tap from coming back. */}
             {removedBlocks.length > 0 && (
               <div className="card reorder-removed">
                 <div className="section-label">REMOVED CARDS</div>
                 {removedBlocks.map(id => {
-                  const { label, Icon } = BLOCK_META[id] ?? { label: id, Icon: LayoutGrid }
+                  const { label, Icon } = blockMeta(id)
                   return (
                     <button
                       key={id}
@@ -2028,12 +2165,13 @@ function App() {
             )}
           </>
         ) : stackBlocks.map(id => (
-          <div key={id} className="sortable-block">{blockComponents[id]}</div>
+          <div key={id} className="sortable-block" data-block={id}>{blockComponents[id]}</div>
         ))}
         {/* Under the last card: the way into reorder mode, and out of it. */}
         <button
           type="button"
           className={`card reorder-btn${reordering ? ' reorder-btn--done' : ''}`}
+          onPointerDown={reordering ? undefined : preloadReorderList}
           onClick={reordering ? endReorder : () => setReordering(true)}
         >
           {reordering
@@ -2054,6 +2192,7 @@ function App() {
           {/* Not held while loading on the web, whose canvas also feeds the
               header's copy of the sky. */}
           {weather && weatherAnimations && <WeatherCanvas code={liveCode} gyro={gyroscope} />}
+          {weather && weatherAnimations && <div className="sky-tint" aria-hidden="true" />}
         </>
       ) : (
         // The phone's one sky, for the splash and the forecast alike (see
@@ -2119,8 +2258,10 @@ function App() {
           <span
             className={`app-title${placeInHeader ? ' app-title--behind-place' : ''}${splashPhase === 'visible' || splashPhase === 'enter' ? ' app-title--splash' : ''}${splashPhase === 'exit' ? ' app-title--splash-exit' : ''}${splashPhase === 'done' && weather ? ' app-title--home' : ''}${showNav ? ' app-title--handed-off' : ''}`}
             onClick={handleLogoClick}
-            role={splashPhase === 'done' && weather ? 'button' : undefined}
-            aria-label={splashPhase === 'done' && weather ? 'Go to home' : undefined}
+            role={titleIsButton ? 'button' : undefined}
+            tabIndex={titleIsButton ? 0 : undefined}
+            onKeyDown={titleIsButton ? pressOnKey(handleLogoClick) : undefined}
+            aria-label={titleIsButton ? 'Go to home' : undefined}
             aria-hidden={showNav || placeInHeader || undefined}
           >Alek Weather</span>
           {/* Phone shells: once a forecast is up, the place and date take the
@@ -2133,7 +2274,7 @@ function App() {
               onClick={handleLogoClick}
               role="button"
               tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleLogoClick() } }}
+              onKeyDown={pressOnKey(handleLogoClick)}
               aria-label={`${placeLine}, ${placeDate}. Go to home`}
             >
               <span className="app-place-name">{placeLine}</span>
@@ -2144,11 +2285,43 @@ function App() {
             <div className="web-tabs-row">
               <web.WebTabs
                 tabs={navTabs} active={navActive} onChange={handleNavTab}
-                // Back to the splash — the logo-tap the phone shells use, which
-                // the web app can't offer because the tab bar has taken the
-                // logo's place. On the splash itself it is the selected page.
-                home={{ label: 'Search', icon: <Search size={17} aria-hidden="true" />, onSelect: handleNavHome }}
                 pages={navPages}
+                // The brand rides at the bar's left end, on every screen the
+                // bar is on, the splash included. It is the way back to the
+                // splash, whose search field is where search lives on the web:
+                // on the splash it is the wordmark, and anywhere else it morphs
+                // into a search button (see openWebSearch). The version is in
+                // Settings > About.
+                brand={
+                  <span
+                    className={`web-brand${navActive === 'home' ? ' web-brand--active web-tab--active' : ' web-brand--search'}`}
+                    onClick={openWebSearch}
+                    role="button"
+                    tabIndex={0}
+                    aria-current={navActive === 'home' ? 'page' : undefined}
+                    onKeyDown={pressOnKey(openWebSearch)}
+                    aria-label={navActive === 'home' ? 'Alek Weather, search for a place' : 'Search for a place'}
+                    title={navActive === 'home' ? undefined : 'Search'}
+                  >
+                    {/* The tabs' selection pill, for when the brand is the
+                        selection (the splash). Shares .web-tab-pill so every
+                        theme and sky draws it the same; see .web-brand-pill. */}
+                    <span className="web-tab-pill web-brand-pill" aria-hidden="true" />
+                    <span className="web-brand-logo" aria-hidden="true">
+                      {/* The splash logos minus their sun/moon glow and the cloud's lavender tint. */}
+                      <img src={`${import.meta.env.BASE_URL}logo-light-header.svg`} alt="" className="web-brand-img web-brand-img--light" />
+                      <img src={`${import.meta.env.BASE_URL}logo-dark-header.svg`} alt="" className="web-brand-img web-brand-img--dark" />
+                      <Search size={22} strokeWidth={2.3} className="web-brand-glyph" />
+                    </span>
+                    <span className="web-brand-name" aria-hidden="true">
+                      <span className="web-brand-words">
+                        <span className="web-brand-first">Alek</span>
+                        <span className="web-brand-last">Weather</span>
+                      </span>
+                      <span className="web-brand-search-word">Search</span>
+                    </span>
+                  </span>
+                }
               />
               {headerTabs && weather && <web.WebAlertPill alerts={alerts} tab={navPageUp ? webPage : webTab} location={location} />}
             </div>
@@ -2165,43 +2338,11 @@ function App() {
           {/* Gear on the phone styles; the web layout keeps the sliders. */}
           {webLayout ? <SlidersIcon size={22} /> : <GearIcon size={22} className="settings-gear" />}
         </button>
-        {/* Web: the brand on the left of the tab bar and the version on its
-            right, on every screen the tab bar is on, the splash included.
-            Both sit over the hidden corner buttons, positioned absolutely so
-            the bar stays centred on the window whatever their widths. The
-            brand keeps the wordmark's job: click to go back to the start —
-            and it glows while something is happening (see brandEvent). */}
-        {navOwnsCorners && (
-          <>
-            <span
-              className={`web-brand${brandEvent ? ` web-brand--event web-brand--${brandEvent.kind}` : ''}`}
-              onClick={handleLogoClick}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleLogoClick() } }}
-              aria-label={`Alek Weather${brandEvent ? ` (${brandEvent.label})` : ''}, go to home`}
-              title={brandEvent?.label}
-            >
-              <span className="web-brand-logo" aria-hidden="true">
-                {/* The splash logos minus their sun/moon glow and the cloud's lavender tint. */}
-                <img src={`${import.meta.env.BASE_URL}logo-light-header.svg`} alt="" className="web-brand-img web-brand-img--light" />
-                <img src={`${import.meta.env.BASE_URL}logo-dark-header.svg`} alt="" className="web-brand-img web-brand-img--dark" />
-              </span>
-              <span className="web-brand-name" aria-hidden="true">
-                <span className="web-brand-first">Alek</span>
-                <span className="web-brand-last">Weather</span>
-              </span>
-            </span>
-            <span className="web-version" aria-label={`Version ${APP_VERSION_LABEL}`}>
-              v{APP_VERSION_LABEL}
-            </span>
-          </>
-        )}
       </header>
 
       <div className="app-grid">
         <main className="main-content">
-          {navPageUp && (
+          {navPageUp && webPage === 'settings' && (
             <div className="weather-content weather-content--web">
               <div className="web-shell">
                 <SettingsPage page {...settingsProps} />
@@ -2240,7 +2381,7 @@ function App() {
             )
           )}
           {!weather && !loading && !error && !navPageUp && splashPhase === 'done' && (
-            <div className="empty-state" onClick={openSearch} role="button" aria-label="Search for a location">
+            <div className="empty-state" onClick={openSearch} role="button" tabIndex={0} onKeyDown={pressOnKey(openSearch)} aria-label="Search for a location">
               <MapPin size={72} className="empty-pin-icon" />
               <p className="empty-text">{isDesktop ? 'Click anywhere or begin typing to search for a city' : 'Tap to find a location'}</p>
             </div>
@@ -2531,7 +2672,7 @@ function App() {
           onColorCodingOpen={() => openSubView('colorcoding')}
           onRadarOpen={() => openSubView('radar')}
           onWeatherEffectsOpen={() => openSubView('effects')}
-          onIconsOpen={() => openSubView('icons')}
+          onUnitsOpen={() => openSubView('units')}
           onThemeOpen={() => openSubView('theme')}
           onNotificationsOpen={() => openSubView('notifications')}
           onSubViewBack={closeSubView}
@@ -2544,9 +2685,46 @@ function App() {
           loading rather than as something to act on. Mounting here is what starts
           its (throttled) check — see UpdateToast. */}
       {IS_ANDROID_APP && splashPhase === 'done' && <UpdateToast />}
+      {/* The web app: a deploy waiting to be switched to (see WebUpdateToast).
+          It and the APK offer below share the bottom of the screen, so the
+          update goes first. */}
+      {!IS_ANDROID_APP && <WebUpdateToast />}
       {/* The web version on an Android phone: offer the APK once. ApkPrompt
           checks the device itself and stays empty everywhere else. */}
-      {!IS_ANDROID_APP && splashPhase === 'done' && <ApkPrompt />}
+      {!IS_ANDROID_APP && !webUpdateReady && splashPhase === 'done' && <ApkPrompt />}
+      {stormOpen && !webLayout && weather && location && (
+        <StormSheet
+          onClose={closeStormCenter}
+          onNavigate={stormNavigate}
+          // The event can end with the sheet open; the page then reads as
+          // all clear rather than closing under the reader.
+          stormKind={brandEvent?.kind ?? null}
+          stormLabel={brandEvent?.label ?? null}
+          weather={weather}
+          location={location}
+          alerts={alerts}
+          unit={unit}
+          units={units}
+          radarClear={radarClear}
+          radarTrend={radarTrend}
+          nowcastMode={nowcastMode}
+          radarMode={radarMode}
+          radarSource={radarSource}
+          weatherAnimations={weatherAnimations}
+          lastUpdated={lastUpdated}
+          loading={loading}
+          onRefresh={refreshCurrent}
+          saved={isSaved(location)}
+          onSave={saveCurrent}
+          onRemove={removeCurrent}
+          isHome={isHome(location)}
+          onSetHome={setHomeCurrent}
+          onUnsetHome={unsetHome}
+        />
+      )}
+      {exploreOpen && (
+        <ExplorePage unit={unit} units={units} onClose={closeExplore} onGo={exploreGo} />
+      )}
       {help && (
         <HelpPage
           article={help.article}

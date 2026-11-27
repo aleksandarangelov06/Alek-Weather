@@ -45,9 +45,20 @@ export function requestPermission() {
 }
 
 /**
+ * The place notifications are about: Home, else the first saved place, else the
+ * forecast on screen (null on the splash, which the shell treats as "keep the
+ * last place"). Someone with a Home who looks up another city should still hear
+ * about rain at home, not in the city they glanced at.
+ */
+export function notificationPlace({ home, cities, location }) {
+  return home ?? cities?.[0] ?? location ?? null
+}
+
+/**
  * Hands the native worker everything it needs to check the weather without the
- * app: the master toggle, the enabled types, the location currently on screen,
- * and the temperature unit to phrase the daily summary in.
+ * app: the master toggle, the enabled types, the notification place (see
+ * notificationPlace; null keeps whatever the shell already has), and the
+ * temperature unit to phrase the daily summary in.
  *
  * Called on every change to any of those. Syncing also kicks an immediate
  * check, so switching a type on can produce a notification straight away rather

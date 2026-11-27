@@ -9,6 +9,7 @@ import { IS_ANDROID_APP } from './utils/version.js'
 import { initialPlatformTheme } from './utils/platformTheme.js'
 import { loadWebShell } from './components/web/webShellChunk.js'
 import { keepBootStage, rememberBootLook } from './utils/bootStage.js'
+import { offerWebUpdate } from './utils/webUpdate.js'
 
 // Opening in the Web style: that layout (and WebApp.css) is its own chunk, which
 // the phone styles never download (see webShellChunk). It is requested here,
@@ -94,10 +95,12 @@ if (IS_ANDROID_APP) {
   // home city or Theme setting since App last kept a sky.
   document.addEventListener('visibilitychange', () => { if (document.hidden) rememberBootLook() })
 } else {
-  // With registerType 'autoUpdate', a new deploy activates the new service worker
-  // and reloads the page automatically — no manual cache clearing required.
-  registerSW({
+  // registerType 'prompt': a new deploy installs in the background and waits.
+  // WebUpdateToast offers it, and the page reloads onto it only on a tap, so a
+  // deploy never yanks an open tab out from under someone mid-use.
+  const updateSW = registerSW({
     immediate: true,
+    onNeedRefresh() { offerWebUpdate(updateSW) },
     onRegisteredSW(_swUrl, registration) {
       // Poll for a new version every hour so long-lived tabs/PWAs pick up deploys.
       if (registration) {

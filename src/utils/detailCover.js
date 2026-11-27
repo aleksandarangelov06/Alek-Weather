@@ -98,3 +98,12 @@ export function useCoverHistory(open, close) {
     else close()
   }
 }
+
+// Whether a cover should open as a page of its own rather than over its card.
+// The connected layout takes the card surfaces away (see "Connected layout" in
+// App.css), so a cover growing to fill the card would bring back a panel the
+// layout no longer has. There it opens as a full-screen page over the same sky
+// instead. Read when a cover opens, not on every render: the layout can't
+// change while one is up (Settings covers the forecast).
+export const coverAsPage = () =>
+  document.documentElement.getAttribute('data-layout') === 'connected'

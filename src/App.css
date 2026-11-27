@@ -639,7 +639,7 @@ body {
 }
 
 .header-icon-btn--holding::before {
-  animation: header-hold-fill var(--long-press-ms, 2000ms) linear forwards;
+  animation: header-hold-fill var(--long-press-ms, 700ms) linear forwards;
 }
 
 @keyframes header-hold-fill {
@@ -1854,7 +1854,7 @@ body {
   color: var(--text-primary);
   border-top: 1px solid var(--border);
 }
-.settings-card .icon-set-preview + .ws-row { border-top: 1px solid var(--border); }
+.settings-card .icon-set-preview + :is(.ws-row, .settings-row) { border-top: 1px solid var(--border); }
 .icon-set-preview-cell { display: flex; align-items: center; justify-content: center; }
 
 /* ── Weather icon palette ──────────────────────────────────────────────────
@@ -2023,6 +2023,33 @@ body {
   animation: wi-flake calc(var(--wi-fall) * var(--wi-mote-dur, 1)) linear infinite;
   animation-delay: calc(0s - var(--wi-row-delay, 0s) - var(--wi-fall) * var(--wi-mote-lag, 0));
 }
+/* The phone hero's colour glyphs are drawn at 220px with the box's blank bottom
+   pulled out of the layout (see the -8px margin above), so the reading starts
+   right where the art ends. The full fall carried the drops ~35px past that,
+   over the temperature. Here they travel half as far and are gone before the
+   edge of the box. Only the keyframes change; duration and scatter stay. */
+:root[data-shell="mobile"] .current-card .current-icon:not(:has(.weather-icon-line)) :is(
+  .weather-icon--rain, .weather-icon--sunRain,
+  .weather-icon--storm, .weather-icon--stormStrong
+) .wi-mote {
+  animation-name: wi-drop-short;
+}
+:root[data-shell="mobile"] .current-card .current-icon:not(:has(.weather-icon-line)) .weather-icon--snow .wi-mote {
+  animation-name: wi-flake-short;
+}
+@keyframes wi-drop-short {
+  0%   { transform: translateY(-2px); opacity: 0; }
+  20%  { opacity: 1; }
+  45%  { opacity: 1; }
+  100% { transform: translateY(2px); opacity: 0; }
+}
+@keyframes wi-flake-short {
+  0%   { transform: translate(0, -2px); opacity: 0; }
+  25%  { opacity: 1; }
+  55%  { opacity: 1; }
+  100% { transform: translate(-1px, 2.5px); opacity: 0; }
+}
+
 .daily-row:nth-child(2n),   .web-day:nth-child(2n),   .web-week-day:nth-child(2n),   .web-mini-hour:nth-child(2n),   .hourly-item:nth-child(2n)   { --wi-row-delay: 0.62s; }
 .daily-row:nth-child(3n+1), .web-day:nth-child(3n+1), .web-week-day:nth-child(3n+1), .web-mini-hour:nth-child(3n+1), .hourly-item:nth-child(3n+1) { --wi-row-delay: 1.18s; }
 
@@ -3411,6 +3438,176 @@ html:has(.detail-page) {
   --hover-subtle: color-mix(in srgb, var(--text-primary) 7%, transparent);
 }
 
+/* ── The alert page (AlertPage in WeatherAlerts.jsx) ──
+   An alert, opened on a phone, as a page like a day of the 7-day forecast:
+   the title, a summary line, three tiles, then the message on a panel the way
+   a Details page puts its sections on one. The alert's colour is only on its
+   icon and its kind ("Warning"); the rest is the page's own fills and type. */
+.alert-page-tier {
+  color: color-mix(in oklab, var(--alert-color) 80%, var(--text-primary));
+}
+.alert-page-severity {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.alert-page-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+.alert-page-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 48px;
+  padding: 0 12px 0 14px;
+  border: none;
+  border-radius: 14px;
+  background: var(--hover-subtle);
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 14.5px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s, transform 0.15s;
+}
+.alert-page-action:active {
+  transform: scale(0.98);
+}
+.alert-page-action-chevron {
+  margin-left: auto;
+  color: var(--text-tertiary);
+}
+
+.alert-page-panel {
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: var(--hover-subtle);
+}
+.alert-page-headline {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  /* NWS writes these in capitals, which are kept (they hold place names);
+     a smaller size than the body keeps them from shouting. */
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.01em;
+  color: var(--text-primary);
+}
+
+/* Each statement of a headline on its own line (headlineLines). */
+:is(.alert-page-headline, .alert-sheet-headline) > span {
+  display: block;
+}
+
+/* A forecast in an alert (".TODAY...E winds 45 kt."), one period a row: the
+   period's name beside what it brings, parted by hairlines (alertBlocks). */
+.alert-periods {
+  margin: 0;
+}
+.alert-periods > div {
+  display: grid;
+  grid-template-columns: 7.5em minmax(0, 1fr);
+  gap: 10px;
+  padding: 8px 0;
+}
+.alert-periods > div + div {
+  border-top: 1px solid var(--border);
+}
+.alert-periods dt {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.alert-periods dd {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+.alert-page-text {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  overflow-wrap: break-word;
+}
+.alert-page-text--strong {
+  color: var(--text-primary);
+}
+
+/* ── The day page (a day of the 7-day forecast, full screen) ──
+   Laid out to the screen rather than scrolled: the page is one column the
+   height of the screen, and the spacing, the summary and the tiles size with
+   the screen's height (dvh), so a small phone gets everything closer together
+   and a tall one gets room, and neither has to scroll. Reading order, top to
+   bottom: the day at a glance, the six readings, the conditions, and the hours
+   pinned to the foot, where the strip (mounted after the page opens) lands
+   without pushing anything else down. The text is a step larger than the card
+   cover's, which has a card's width to fit and this has the whole screen.
+   The scroll is kept as a fallback for a screen too short for even the
+   tightest of it (a phone on its side). */
+.detail-page--daily {
+  --day-gap: clamp(10px, 2.3dvh, 26px);
+}
+.detail-page--daily .detail-page-scroll {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: calc(var(--sa-bottom, 0px) + clamp(12px, 2.5dvh, 28px));
+}
+.detail-page--daily .detail-page-title {
+  margin-bottom: var(--day-gap);
+  font-size: clamp(22px, 3.6dvh, 28px);
+}
+.detail-page--daily .detail-cover-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--day-gap);
+  width: 100%;
+  max-width: 560px;
+  margin-inline: auto;
+}
+.detail-page--daily .detail-summary-val { font-size: clamp(40px, 7dvh, 60px); }
+.detail-page--daily .detail-summary-label { font-size: 18px; }
+.detail-page--daily .day-compare-row { font-size: 14px; }
+
+.detail-page--daily .day-stats { order: 1; gap: 10px; }
+.detail-page--daily .day-cond { order: 2; gap: 10px; }
+.detail-page--daily .daily-hours-in { order: 3; margin-top: auto; }
+
+.detail-page--daily :is(.day-stat, .day-cond-cell) {
+  padding: clamp(8px, 1.4dvh, 14px) 12px;
+  border-radius: 14px;
+}
+.detail-page--daily .day-stat { gap: clamp(2px, 0.5dvh, 5px); }
+.detail-page--daily .day-stat-label,
+.detail-page--daily .day-cond-title { font-size: 11.5px; }
+.detail-page--daily .day-stat-value { font-size: clamp(17px, 2.7dvh, 21px); }
+.detail-page--daily .day-stat-sub { font-size: 12px; }
+.detail-page--daily .day-cond-overall { font-size: 14px; }
+.detail-page--daily .day-cond-cell { gap: clamp(5px, 0.9dvh, 8px); }
+.detail-page--daily .day-cond-name { font-size: 13px; }
+.detail-page--daily .day-cond-score { font-size: 17px; }
+.detail-page--daily .day-cond-bar { height: 5px; }
+.detail-page--daily .day-cond-reason { font-size: 12px; line-height: 1.3; }
+
+/* A short screen (a small phone, or one with big system bars): the reason
+   under each conditions score goes to one line, the first thing that can give
+   without losing a reading. */
+@media (max-height: 700px) {
+  .detail-page--daily .day-cond-reason { -webkit-line-clamp: 1; }
+  .detail-page--daily .detail-summary-label { font-size: 16px; }
+  .detail-page--daily .day-compare-row { font-size: 13px; }
+}
+
 /* The day page's hour strip: the chevrons sit just inside the strip, and the
    first hour isn't "now" (the strip starts at the day's first hour), so it has
    no highlight. As in the day cover. */
@@ -4169,6 +4366,11 @@ html:has(.detail-page) {
   font-variant-numeric: tabular-nums;
   color: var(--text-primary);
 }
+/* The " / " between the feels-like high and low, quieter than the numbers. */
+.day-stat-sep {
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
 .day-stat-sub {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4526,6 +4728,25 @@ html:has(.detail-page) {
   pointer-events: none;
 }
 
+/* A slight tint over the sky and its weather, under the cards: it takes the
+   edge off the falling rain and snow (which show through glass cards) without
+   changing the sky's colour. The phones put it on each sky layer; the web
+   draws its sky outside one, so it has its own .sky-tint (App.jsx). */
+.sky-layer::after,
+.sky-tint {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: rgba(10, 14, 22, 0.4);
+  pointer-events: none;
+}
+
+.sky-tint {
+  position: fixed;
+  z-index: 1;
+}
+
 .sky-layer--leaving {
   z-index: 1;
   animation: sky-layer-out 0.7s ease both;
@@ -4863,9 +5084,17 @@ html:has(.detail-page) {
    and hide the toolbar; touch-action on the layers that take the touches stops
    the pan before it starts, and taps still go through as clicks. */
 html.splash-lock,
-html.splash-lock body {
+html.splash-lock body,
+html.scroll-lock,
+html.scroll-lock body {
   overflow: hidden;
   overscroll-behavior: none;
+}
+/* Under a dialog (utils/scrollLock.js): a swipe on the dimmed backdrop pans
+   nothing. The dialog's own scrolling area is a scroll container, so its
+   touches never reach this. */
+html.scroll-lock .alert-backdrop {
+  touch-action: none;
 }
 html.splash-lock .splash-overlay,
 html.splash-lock .splash-mini,
@@ -5632,17 +5861,22 @@ html.splash-lock .splash-mini-scrim {
   margin-bottom: 4px;
 }
 
+/* A settings page's caption, introducing the card under it. Inset to line up
+   with the text inside the cards (it sat 4px from the screen edge, crammed
+   against it beside rows indented ~20px), and closer to the card it describes
+   than to the one above, so each caption reads as that card's heading. */
 .color-coding-desc {
   font-size: 13px;
   color: var(--text-tertiary);
-  margin: 4px 4px 16px;
+  margin: 4px 20px 10px;
   line-height: 1.45;
 }
 
 /* A caption that follows a card. Settings cards sit with no gap below them on
-   Android, which left the text almost touching the card above. */
+   Android, which left the text almost touching the card above; the space
+   above it is the larger one, so the caption groups with the card below. */
 .settings-card + .color-coding-desc {
-  margin-top: 16px;
+  margin-top: 26px;
 }
 
 /* Options that depend on a switch that is off (Gyroscope Tilt with the effects
@@ -6000,6 +6234,25 @@ html.splash-lock .splash-mini-scrim {
   font-weight: 600;
   color: var(--text-secondary);
   margin: 0;
+}
+
+/* "Alek Studios" in both settings layouts: three taps open the Explore page
+   (StudioMark in SettingsPage.jsx). Nothing gives it away until it is tapped:
+   no pointer, no highlight, no selection. Each tap short of the third gives a
+   small bounce, bigger the second time. */
+.studio-mark {
+  display: inline-block;
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.studio-mark--nudge1 { animation: studio-nudge 0.32s ease; --nudge: 1.06; }
+.studio-mark--nudge2 { animation: studio-nudge2 0.36s ease; --nudge: 1.12; }
+@keyframes studio-nudge  { 50% { transform: scale(var(--nudge)); } }
+@keyframes studio-nudge2 { 50% { transform: scale(var(--nudge)) rotate(-2deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .studio-mark--nudge1, .studio-mark--nudge2 { animation: none; }
 }
 
 @media (min-width: 768px) {
@@ -7002,10 +7255,6 @@ button.reorder-row-action:focus-visible {
   border-radius: 12px;
 }
 
-.radar-map-tap:hover {
-  background: rgba(59, 130, 246, 0.04);
-}
-
 .leaflet-container {
   background: var(--bg);
   font-family: var(--font);
@@ -7025,6 +7274,99 @@ button.reorder-row-action:focus-visible {
   height: 100%;
   z-index: 450;
   pointer-events: none;
+}
+
+/* ── Radar loading sweep (RadarSweep) ──
+   While the radar loads, a beam sweeps clockwise round the location over the
+   whole map, with the fading trail a radar display leaves behind it, then
+   fades once the first frame is on screen. In the location dot's blue so it
+   reads as the dot's own radar. Above the map and the rain, below the
+   floating controls. The beam turns on the compositor (see RadarSweep). */
+.radar-sweep {
+  --sweep: 59, 130, 246;
+  /* The beam's length, as a diameter: twice the map's diagonal, so it reaches
+     every corner as it turns from wherever on the map it pivots (the location,
+     which can be anywhere on screen once the map is panned). More where
+     hypot() isn't supported. */
+  --d: calc(2 * (100cqw + 100cqh));
+  position: absolute;
+  inset: 0;
+  z-index: 460;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  pointer-events: none;
+  container-type: size;
+  /* Held back a beat, so a placeholder that is gone at once never flashes. */
+  animation: radar-sweep-in 0.3s ease 0.2s backwards;
+  transition: opacity 0.45s ease, visibility 0s linear 0.45s;
+}
+@supports (width: hypot(1px, 1px)) {
+  .radar-sweep { --d: calc(2 * hypot(100cqw, 100cqh) + 6px); }
+}
+.radar-sweep--now {
+  animation: none;
+}
+.radar-sweep--done {
+  opacity: 0;
+  visibility: hidden;
+}
+@keyframes radar-sweep-in {
+  from { opacity: 0; }
+}
+
+/* The beam's carrier: a circle centred on the middle of the map, shifted onto
+   the location by --sweep-dx / --sweep-dy (set by WeatherRadar as the map
+   moves). The shift is `translate`, which composes with the turning
+   `transform` and moves the layer without laying anything out again.
+   Positioned rather than grid-aligned: a grid item bigger than its container
+   doesn't reliably stay centred in one that clips. */
+.radar-sweep-rotor {
+  position: absolute;
+  left: calc(50% - var(--d) / 2);
+  top: calc(50% - var(--d) / 2);
+  width: var(--d);
+  height: var(--d);
+  translate: var(--sweep-dx, 0px) var(--sweep-dy, 0px);
+  border-radius: 50%;
+  will-change: transform;
+}
+/* The trail, drawn once into a small canvas and stretched over the rotor. */
+.radar-sweep-beam {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+/* The leading edge: a bright line from the location out to the rim. */
+.radar-sweep-rotor::after {
+  content: '';
+  position: absolute;
+  left: calc(50% - 1px);
+  top: 0;
+  width: 2px;
+  height: 50%;
+  border-radius: 1px;
+  background: linear-gradient(to top, rgba(var(--sweep), 0.35), rgba(var(--sweep), 0.95));
+}
+
+/* The same dot the live map draws at the location (.radar-here), for the
+   skeleton and the empty Radar page, which have no map to draw it yet. Over
+   the beam, so it turns under the dot. */
+.radar-sweep-dot {
+  position: relative;
+  width: 12px;
+  height: 12px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: #3b82f6;
+  border: 2px solid #fff;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.45);
+}
+
+/* No motion: RadarSweep doesn't turn the beam; it holds still at the top. */
+@media (prefers-reduced-motion: reduce) {
+  .radar-sweep { animation: none; }
 }
 
 /* ── Weather Insight ── */
@@ -10191,13 +10533,13 @@ button.reorder-row-action:focus-visible {
 
 /* ── Weather Alerts ── */
 .alerts-card {
-  padding-bottom: 12px;
+  padding-bottom: 14px;
 }
 
 .alerts-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 /* The row and its map button, side by side. The button is outside the row's own
@@ -10209,52 +10551,46 @@ button.reorder-row-action:focus-visible {
   gap: 6px;
 }
 
+/* Each alert, drawn as At a Glance draws its banners (.glance-alert): a tint
+   of the alert's colour over the card, a stronger one behind its icon (so pale
+   yellows still read on a light card), the name over where it applies, and
+   when it ends at the right. --alert-color is set on the row from the same
+   resolveStyle() result that colours the alert sheet. */
 .alert-row {
+  --alert-color: var(--text-secondary);
+  /* For the connected-layout tint rules shared with At a Glance's banners. */
+  --glance-c: var(--alert-color);
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 11px;
   flex: 1;
   min-width: 0;
-  background: var(--hover-subtle);
+  padding: 10px 12px 10px 10px;
   border: none;
-  border-radius: 12px;
-  padding: 10px 10px 10px 10px;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.15s;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--alert-color) 12%, transparent);
+  color: var(--text-primary);
   font-family: var(--font);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .alert-row:hover {
-  background: var(--hover-medium);
+  background: color-mix(in srgb, var(--alert-color) 18%, transparent);
 }
 
 .alert-row-icon {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-}
-
-/* Warnings (the hazard is happening or imminent): the sign pulses to draw the
-   eye. Colour is not forced here — the row sets --alert-color inline from the
-   same resolveStyle() result that paints the icon, the chip and the modal
-   title, so the pulse can't contradict them. It also means the glow follows
-   the sky-tinted and dark palettes, which the flat red it replaced did not. */
-.alert-row-icon--critical {
-  animation: alert-icon-blink 1.1s ease-in-out infinite;
-}
-
-@keyframes alert-icon-blink {
-  0%, 100% { opacity: 1;    box-shadow: 0 0 0 0   color-mix(in srgb, var(--alert-color) 55%, transparent); }
-  50%      { opacity: 0.45; box-shadow: 0 0 0 5px transparent; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .alert-row-icon--critical { animation: none; }
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--alert-color) 22%, transparent);
+  color: color-mix(in oklab, var(--alert-color) 80%, var(--text-primary));
 }
 
 .alert-row-text {
@@ -10265,23 +10601,47 @@ button.reorder-row-action:focus-visible {
   min-width: 0;
 }
 
+.alert-row-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
 .alert-row-event {
-  font-size: 13px;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alert-row-when {
+  flex-shrink: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
 }
 
 .alert-row-area {
-  font-size: 11px;
-  color: var(--text-secondary);
-  white-space: nowrap;
   overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--text-secondary);
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
+.alert-row-chevron {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+/* The severity chip, in the alert sheet's header (AlertModal). */
 .alert-chip {
   font-size: 10px;
   font-weight: 700;
@@ -10289,11 +10649,6 @@ button.reorder-row-action:focus-visible {
   padding: 3px 7px;
   border-radius: 6px;
   white-space: nowrap;
-  flex-shrink: 0;
-}
-
-.alert-row-chevron {
-  color: var(--text-tertiary);
   flex-shrink: 0;
 }
 
@@ -10378,18 +10733,13 @@ button.reorder-row-action:focus-visible {
   animation: alertPop 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.alert-sheet-fixed {
-  padding: 18px 20px 0;
-  flex-shrink: 0;
-}
-
 .alert-sheet-scroll {
   overflow-y: auto;
   flex: 1;
-  padding: 0 20px calc(20px + var(--sa-bottom));
+  padding: 16px 20px 18px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
   /* Firefox: same slim, trackless bar the WebKit rules below produce. */
   scrollbar-width: thin;
   scrollbar-color: var(--bar-track-bg) transparent;
@@ -10421,39 +10771,60 @@ button.reorder-row-action:focus-visible {
   to   { transform: translate(-50%, -50%) scale(1);    opacity: 1; }
 }
 
-.alert-sheet-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 10px;
+/* The header, set like the Storm Center's: the kind of alert as a small line
+   in its colour, then the name. No band or tiles; the sheet keeps the app's
+   own card surface (white, sky-tinted or dark). --alert-color is set on the
+   sheet from resolveStyle(). */
+.alert-sheet-head {
+  position: relative;
+  flex-shrink: 0;
+  padding: 20px 64px 0 20px;
 }
 
-.alert-sheet-title-row {
+.alert-sheet-kicker {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-width: 0;
+  gap: 6px;
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  /* Pulled toward the text colour, so yellows still read on a white card. */
+  color: color-mix(in oklab, var(--alert-color) 82%, var(--text-primary));
+}
+
+.alert-sheet-severity {
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+
+.alert-sheet-severity::before {
+  content: '·';
+  margin-right: 6px;
 }
 
 .alert-sheet-event {
-  font-size: 17px;
+  margin: 0;
+  font-size: 24px;
   font-weight: 700;
-  line-height: 1.3;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
 }
 
 .alert-close-btn {
-  background: var(--hover-subtle);
-  border: none;
-  border-radius: 50%;
-  width: 30px;
-  height: 30px;
+  position: absolute;
+  top: 16px;
+  right: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  background: var(--hover-subtle);
   color: var(--text-secondary);
-  flex-shrink: 0;
+  cursor: pointer;
   transition: background 0.15s;
 }
 
@@ -10461,29 +10832,58 @@ button.reorder-row-action:focus-visible {
   background: var(--hover-medium);
 }
 
-.alert-sheet-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
+/* When it runs and who issued it: one row of columns between rules, like the
+   Storm Center's facts. */
+.alert-sheet-times {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  flex-shrink: 0;
+  margin: 16px 20px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
 }
 
-.alert-sheet-area {
-  font-size: 12px;
+.alert-sheet-times > div {
+  min-width: 0;
+  padding: 10px 12px 10px 0;
+}
+
+.alert-sheet-times > div + div {
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
+}
+
+.alert-sheet-times dt {
+  font-size: 12.5px;
   color: var(--text-secondary);
 }
 
-.alert-sheet-headline {
-  font-size: 14px;
+.alert-sheet-times dd {
+  margin: 2px 0 0;
+  overflow: hidden;
+  font-size: 15px;
   font-weight: 600;
   color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* NWS's own message for the alert, leading the sheet. In the alert's colour
+   on a rule down its left, the way the sheet marks what the alert is about. */
+.alert-sheet-headline {
   margin: 0;
-  line-height: 1.4;
+  padding-left: 12px;
+  border-left: 3px solid var(--alert-color);
+  color: var(--text-primary);
+  font-size: 14.5px;
+  font-weight: 600;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
 .alert-sheet-description {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--text-secondary);
   margin: 0;
   line-height: 1.6;
@@ -10499,34 +10899,60 @@ button.reorder-row-action:focus-visible {
   word-break: break-word;
 }
 
-.alert-sheet-instruction {
-  background: var(--hover-subtle);
-  border-radius: 12px;
-  padding: 12px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.alert-sheet-instruction strong {
-  font-size: 11px;
+/* Section heads over a rule, as on the Storm Center. */
+.alert-sheet-section-title {
+  margin: 0 0 6px;
+  padding-top: 10px;
+  border-top: 2px solid var(--border);
+  font-size: 15px;
   font-weight: 700;
-  letter-spacing: 0.8px;
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-}
-
-.alert-sheet-instruction p {
-  font-size: 13px;
   color: var(--text-primary);
-  margin: 0;
-  line-height: 1.6;
 }
 
-.alert-sheet-expires {
-  font-size: 11px;
-  color: var(--text-tertiary);
-  margin: 0;
+.alert-sheet-section p {
+  margin: 6px 0 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-primary);
+}
+
+/* The ways on: the Storm Center (phones) and the affected area. */
+.alert-sheet-foot {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+  padding: 12px 20px calc(14px + var(--sa-bottom));
+  border-top: 1px solid var(--border);
+}
+
+.alert-sheet-btn {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+  height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font);
+  font-size: 14.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.alert-sheet-btn:hover {
+  background: var(--hover-subtle);
+}
+
+.alert-sheet-btn:active {
+  background: var(--hover-medium);
 }
 
 /* Alert sheet follows sky-level card styling */
@@ -10663,12 +11089,15 @@ button.reorder-row-action:focus-visible {
     padding-bottom: 24px;
   }
 
-  .alert-sheet-event      { font-size: 21px; }
-  .alert-sheet-headline   { font-size: 16px; }
+  .alert-sheet-head       { padding: 24px 72px 0 26px; }
+  .alert-sheet-times      { margin-left: 26px; margin-right: 26px; }
+  .alert-close-btn        { top: 20px; right: 20px; }
+  .alert-sheet-scroll     { padding-left: 26px; padding-right: 26px; }
+  .alert-sheet-foot       { padding-left: 26px; padding-right: 26px; }
+  .alert-sheet-event      { font-size: 28px; }
   .alert-sheet-description { font-size: 15px; line-height: 1.7; }
-  .alert-sheet-instruction p { font-size: 15px; }
-  .alert-sheet-area       { font-size: 14px; }
-  .alert-sheet-expires    { font-size: 13px; }
+  .alert-sheet-section p  { font-size: 15px; }
+
 }
 
 /* ── Alert area map ──
@@ -11556,6 +11985,51 @@ button.reorder-row-action:focus-visible {
 :root[data-shell="mobile"][data-platform] .settings-page:not(.settings-page--modal).closing > .settings-body > * {
   animation: var(--page-content-out);
 }
+
+/* Moving between the list and a sub-page, the way the web's pages change:
+   the new page comes in as its cards rather than as one slab. SettingsPage
+   keys .settings-body by sub-page and marks it data-nav="push" going in and
+   "pop" coming back out, so the new cards travel a short way along the
+   direction of travel (in from the right going deeper, from the left coming
+   back) while they fade up. Short travel, the M3 shared axis, rather than a
+   full-width push: the header stays put, so only the contents need to say
+   which way you went. No starting delay, unlike the open: the old page is
+   already gone, and a beat of empty page between the two reads as a flash.
+   SettingsPage takes the cards' blur off while they move (.scrolling), for
+   the reason the open holds it back until .settled. */
+@keyframes settingsNavPush { from { transform: translateX(28px); } }
+@keyframes settingsNavPop  { from { transform: translateX(-28px); } }
+:root[data-shell="mobile"][data-platform] .settings-page:not(.settings-page--modal):not(.closing) > .settings-body[data-nav] > * {
+  animation:
+    pageFadeIn 0.2s cubic-bezier(0, 0, 0.2, 1) backwards,
+    settingsNavPush 0.34s cubic-bezier(0.05, 0.7, 0.1, 1) backwards;
+}
+:root[data-shell="mobile"][data-platform] .settings-page:not(.settings-page--modal):not(.closing) > .settings-body[data-nav="pop"] > * {
+  animation-name: pageFadeIn, settingsNavPop;
+}
+
+/* And each card a beat after the one above it, as .web-page's cards do:
+   positional, 35ms a step, capped at the fifth so a long list's lower cards
+   aren't left waiting. The open keeps its 70ms wait for the backdrop on top.
+   The last card's rise is what SettingsPage takes as the open having landed. */
+:root[data-shell="mobile"][data-platform] .settings-page:not(.settings-page--modal):not(.closing) > .settings-body > :nth-child(2) { --pt-step: 1; }
+:root[data-shell="mobile"][data-platform] .settings-page:not(.settings-page--modal):not(.closing) > .settings-body > :nth-child(3) { --pt-step: 2; }
+:root[data-shell="mobile"][data-platform] .settings-page:not(.settings-page--modal):not(.closing) > .settings-body > :nth-child(4) { --pt-step: 3; }
+:root[data-shell="mobile"][data-platform] .settings-page:not(.settings-page--modal):not(.closing) > .settings-body > :nth-child(n + 5) { --pt-step: 4; }
+:root[data-shell="mobile"][data-platform] .settings-page:not(.settings-page--modal):not(.closing):not(.settled) > .settings-body:not([data-nav]) > * {
+  animation-delay: calc(0.07s + var(--pt-step, 0) * 35ms);
+}
+:root[data-shell="mobile"][data-platform] .settings-page:not(.settings-page--modal):not(.closing) > .settings-body[data-nav] > * {
+  animation-delay: calc(var(--pt-step, 0) * 35ms);
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-shell="mobile"][data-platform] .settings-page:not(.settings-page--modal):not(.closing) > .settings-body[data-nav] > * {
+    animation: pageFadeIn 0.2s cubic-bezier(0, 0, 0.2, 1) backwards;
+  }
+  :root[data-shell="mobile"][data-platform] .settings-page:not(.settings-page--modal):not(.closing) > .settings-body > :nth-child(n) {
+    --pt-step: 0;
+  }
+}
 /* What stands in for the page's background moves with it, as one sheet: the
    sky layer behind settings, the iOS search glass, and the dimmer under
    search (which only shows through that glass). The dimmer used to keep its
@@ -12005,8 +12479,7 @@ button.reorder-row-action:focus-visible {
   margin-bottom: 4px;
 }
 
-/* Two cards in a row with no label between them (Color Coding's reset card
-   under the extremes, say): the 4px above is meant to sit under a label, and
+/* Two cards in a row with no label between them: the 4px above is meant to sit under a label, and
    between two cards it left them all but touching. */
 :root[data-shell="mobile"][data-platform="android"] :is(.settings-page, .settings-inline, .settings-pill) .settings-card + .settings-card {
   margin-top: 16px;
@@ -13156,6 +13629,15 @@ a.apk-download-btn {
   -webkit-backdrop-filter: blur(12px) saturate(1.3) !important;
   backdrop-filter: blur(12px) saturate(1.3) !important;
 }
+/* ...except the small repeated chips: 24 hourly pills, 14 daily highs and lows
+   and the AQI pollutants. Each blur is redrawn on every frame the sky canvas
+   animates under it, and at their size the frost barely shows, so these keep
+   the glass fill and ring without the blur. That is about 45 fewer live blurs
+   on the forecast. */
+:root[data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active .weather-content :is(.aqi-pollutant, .hourly-tl-pill, .card--daily .daily-low, .card--daily .daily-high) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
 /* ── Connected, light mode, light sky (iOS): tiles are the header's pale glass ──
    Over a light sky in light mode the header's search and settings circles turn
    to pale glass with dark icons (see "Light mode over a light sky"), and they
@@ -13175,7 +13657,7 @@ a.apk-download-btn {
   .weather-content :is(.glance-tile, .glance-alert, .alert-row, .detail-card:not(.detail-expand-tile--active), .aqi-pollutant, .hourly-tl-pill, .card--daily .daily-low, .card--daily .daily-high),
   .weather-content :is(.weather-left, .sortable-block) > .card.card--insight:not(.current-card),
   .weather-right > .card:is(.reorder-row, .reorder-removed, .reorder-btn),
-  .detail-page :is(.day-cond-cell, .day-stat, .detail-stat:not(.detail-section *), .hour-grid .uv-timeline-item, .storm-week-row),
+  .detail-page :is(.day-cond-cell, .day-stat, .detail-stat:not(.detail-section *), .hour-grid .uv-timeline-item, .storm-week-row, .alert-page-action, .alert-page-panel),
   .detail-page--details :is(:is(.detail-chart, .aqi-scale):not(.detail-section *), .detail-section:not(.hour-section):not(:has(.storm-week)))
 ) {
   --text-primary: #1a1a2e; --temp-light: 1;
@@ -13204,7 +13686,8 @@ a.apk-download-btn {
   -webkit-backdrop-filter: blur(12px) saturate(1.3) !important;
   backdrop-filter: blur(12px) saturate(1.3) !important;
 }
-:root[data-theme="light"][data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active.sky-tone-light .weather-content .glance-alert {
+:root[data-theme="light"][data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active.sky-tone-light .weather-content .glance-alert,
+:root[data-theme="light"][data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active.sky-tone-light .weather-content .alert-row {
   background:
     linear-gradient(color-mix(in srgb, var(--glance-c) 14%, transparent), color-mix(in srgb, var(--glance-c) 14%, transparent)),
     var(--icon-circle-bg) !important;
@@ -13214,7 +13697,7 @@ a.apk-download-btn {
     .weather-content :is(.glance-tile, .glance-alert, .alert-row, .detail-card:not(.detail-expand-tile--active), .aqi-pollutant, .hourly-tl-pill, .card--daily .daily-low, .card--daily .daily-high),
     .weather-content :is(.weather-left, .sortable-block) > .card.card--insight:not(.current-card),
     .weather-right > .card:is(.reorder-row, .reorder-removed, .reorder-btn),
-    .detail-page :is(.day-cond-cell, .day-stat, .detail-stat:not(.detail-section *), .hour-grid .uv-timeline-item, .storm-week-row),
+    .detail-page :is(.day-cond-cell, .day-stat, .detail-stat:not(.detail-section *), .hour-grid .uv-timeline-item, .storm-week-row, .alert-page-action, .alert-page-panel),
     .detail-page--details :is(:is(.detail-chart, .aqi-scale):not(.detail-section *), .detail-section:not(.hour-section):not(:has(.storm-week)))
   ) {
     --text-primary: #1a1a2e; --temp-light: 1;
@@ -13243,7 +13726,8 @@ a.apk-download-btn {
     -webkit-backdrop-filter: blur(12px) saturate(1.3) !important;
     backdrop-filter: blur(12px) saturate(1.3) !important;
   }
-  :root:not([data-theme])[data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active.sky-tone-light .weather-content .glance-alert {
+  :root:not([data-theme])[data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active.sky-tone-light .weather-content .glance-alert,
+  :root:not([data-theme])[data-shell="mobile"][data-layout="connected"][data-platform="ios"] .app.sky-active.sky-tone-light .weather-content .alert-row {
     background:
       linear-gradient(color-mix(in srgb, var(--glance-c) 14%, transparent), color-mix(in srgb, var(--glance-c) 14%, transparent)),
       var(--icon-circle-bg) !important;

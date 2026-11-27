@@ -1,10 +1,10 @@
 import { memo, useState, useRef, useCallback, useEffect } from 'react'
 import { Droplet, ArrowUp, ArrowDown, Equal, TreePine, Car, Footprints } from 'lucide-react'
-import { getWeatherInfo, formatDay, formatHour, liveWeatherCode, nowcastHourlyCode, toTemp, tempInk, tempStyle } from '../utils/weatherCodes'
+import { getWeatherInfo, formatDay, formatHour, getUVLabel, liveWeatherCode, nowcastHourlyCode, toTemp, tempInk, tempStyle } from '../utils/weatherCodes'
 import { WeatherIcon } from './WeatherIcon'
 import { formatPrecip, formatWind } from '../utils/units'
-import { coverFrom, useCoverHistory } from '../utils/detailCover'
-import { DetailCover, coverAsPage } from './DetailCover'
+import { coverAsPage, coverFrom, useCoverHistory } from '../utils/detailCover'
+import { DetailCover } from './DetailCover'
 import { dayWindow, direction, rateActivities, scoreColor, scoreLabel } from '../utils/todayOutlook'
 
 // The Today tab's three ratings, in its order and with its icons.
@@ -50,6 +50,26 @@ function precipColor(inches) {
   if (inches <= 0)   return 'var(--text-tertiary)'
   if (inches < 0.25) return 'var(--cond-blue)'
   return 'var(--accent)'
+}
+
+// "7:01 AM" from the forecast's local time ("2026-11-27T07:01"). Read off the
+// string rather than through a Date, which would take it as the device's own
+// time zone and shift it for a place in another.
+function clockText(iso) {
+  const m = /T(\d{2}):(\d{2})/.exec(iso ?? '')
+  if (!m) return null
+  const h = Number(m[1])
+  return `${h % 12 || 12}:${m[2]} ${h < 12 ? 'AM' : 'PM'}`
+}
+
+// The day's daylight: { length: "9h 32m", rise: "7:01 AM", set: "4:33 PM" },
+// or null when either end is missing (polar day and night have neither).
+function daylightOf(rise, set) {
+  const a = clockText(rise), b = clockText(set)
+  if (!a || !b) return null
+  const mins = Math.round((Date.parse(set) - Date.parse(rise)) / 60000)
+  if (!Number.isFinite(mins) || mins <= 0) return null
+  return { length: `${Math.floor(mins / 60)}h ${String(mins % 60).padStart(2, '0')}m`, rise: a, set: b }
 }
 
 // "Today, Jul 17" / "Friday, Jul 18" — full weekday for the cover title, where
@@ -307,6 +327,13 @@ export const DailyForecast = memo(function DailyForecast({ daily, hourly, timezo
   const humidityAvg = humVals.length
     ? Math.round(humVals.reduce((a, b) => a + b, 0) / humVals.length)
     : null
+  // The second row of readings. Feels-like has no daily aggregate either, so
+  // it is the day's hourly range.
+  const feelsVals = openIdx.map(i => hourly?.apparent_temperature?.[i]).filter(Number.isFinite)
+  const feelsHigh = feelsVals.length ? Math.max(...feelsVals) : null
+  const feelsLow  = feelsVals.length ? Math.min(...feelsVals) : null
+  const uvMax     = di !== -1 && Number.isFinite(daily.uv_index_max?.[di]) ? daily.uv_index_max[di] : null
+  const daylight  = di !== -1 ? daylightOf(daily.sunrise?.[di], daily.sunset?.[di]) : null
 
   return (
     <div className="card card--daily" ref={cardRef}>
@@ -480,6 +507,33 @@ export const DailyForecast = memo(function DailyForecast({ daily, hourly, timezo
                 <span className="day-stat-value" style={colorCoding && humidityAvg != null ? { color: humidityColor(humidityAvg) } : undefined}>{humidityAvg != null ? `${humidityAvg}%` : '-'}</span>
                 <span className="day-stat-sub">Day average</span>
               </div>
+              {/* A second row, from data the forecast already carries: the
+                  day's feels-like range, its peak UV, and its daylight. */}
+              {feelsHigh != null && (
+                <div className="day-stat">
+                  <span className="day-stat-label">Feels like</span>
+                  <span className="day-stat-value">
+                    <span style={tempStyle(feelsHigh, colorCoding, 0.4, glow, frost)}>{toTemp(feelsHigh, unit)}°</span>
+                    <span className="day-stat-sep"> / </span>
+                    <span style={tempStyle(feelsLow, colorCoding, 0.4, glow, frost)}>{toTemp(feelsLow, unit)}°</span>
+                  </span>
+                  <span className="day-stat-sub">High / low</span>
+                </div>
+              )}
+              {uvMax != null && (
+                <div className="day-stat">
+                  <span className="day-stat-label">UV index</span>
+                  <span className="day-stat-value" style={colorCoding ? { color: getUVLabel(uvMax).color } : undefined}>{Math.round(uvMax)}</span>
+                  <span className="day-stat-sub">{getUVLabel(uvMax).label} at peak</span>
+                </div>
+              )}
+              {daylight && (
+                <div className="day-stat">
+                  <span className="day-stat-label">Daylight</span>
+                  <span className="day-stat-value">{daylight.length}</span>
+                  <span className="day-stat-sub">{daylight.rise} to {daylight.set}</span>
+                </div>
+              )}
             </div>
             {hoursReady && openHours.length > 0 && (
               <div className="hourly-scroll-wrapper daily-hours-in">

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { assertOpenMeteoQuota, noteOpenMeteo429 } from '../utils/openMeteoQuota'
-import { colorDbz } from '../utils/hrrrLayer'
+import { createRain, classifyMask, MASK_PX, PHASE_COLS, PHASE_ROWS } from '../utils/radarRainCore'
 
 // Rain and snow falling on the radar map — only where the radar has echoes, and
 // as whichever one is actually falling there.
@@ -24,48 +24,10 @@ import { colorDbz } from '../utils/hrrrLayer'
 // The drops are one particle field over the whole map; each samples both grids
 // where it is, and is drawn as a streak or a flake — or not at all — accordingly.
 
-// One mask cell per this many CSS pixels. Radar data is ~1 km and smoothed, so a
-// coarse grid loses nothing visible and keeps the read-back tiny.
-const MASK_PX = 6
-// How often the mask is rebuilt from the tiles. Pans between rebuilds are
-// tracked exactly (see `origin` below), so this only has to keep up with frame
-// changes and tiles arriving.
-const MASK_MS = 180
-// One drop per this many square CSS pixels of map, capped for big monitors.
-// Denser than the visible field needs: light echoes show only a share of the
-// drops (see density), so heavy cells have the spare drops to fill in.
-const AREA_PER_DROP = 420
-const MAX_DROPS = 4200
-// Alpha steps, so a frame is a handful of stroke() calls. Fine enough that a
-// drop fading in or out (see FADE_IN) steps through them without visible jumps.
-const LEVELS = 10
-
-// Rain falls at a slight slant, as if under a light breeze, rather than in
-// ruler-straight verticals: dx per px of fall, shared by every drop so the
-// field reads as one sheet of rain.
-const RAIN_SLANT = 0
-// A streak is drawn as head-to-tail segments at falling brightness, so it
-// tapers to nothing instead of ending in a hard edge. Fractions of its length
-// and the share of the head's alpha each one gets.
-const STREAK_SEGMENTS = [[0, 0.3, 1], [0.3, 0.62, 0.5], [0.62, 1, 0.18]]
-// How quickly a drop fades in as it enters an echo and out as it leaves one,
-// per 74 Hz frame — a short ease instead of popping on and off at the radar's
-// blocky edges and on every mask rebuild.
-const FADE_IN = 0.14
-const FADE_OUT = 0.2
-
-const ECHO_MIN_ALPHA = 24 // tile pixels fainter than this are blank map
-
-// How hard it is falling, 0 to 1, from the echo's reflectivity (read off its
-// colour, see colorDbz). Haze and the faintest drizzle (10 dBZ and under) sit
-// at the floor, light rain (20) about a quarter, moderate (30) a little under
-// half, heavy (50) most of the way. Capped short of 1 so the strongest cores
-// stay rain rather than a white sheet.
-const strengthOf = (dbz) => Math.max(0.02, Math.min(0.95, (dbz - 8) / 50))
-
-// How much of the field shows at a strength: a drizzle is a sparse scatter, a
-// downpour nearly every drop there is.
-const density = (I) => 0.05 + 0.95 * Math.pow(I, 1.2)
+//
+// The drops and the mask themselves are in utils/radarRainCore.js; this
+// component finds the tiles, fetches the conditions, and decides where the
+// drawing runs (see "Where the work runs").
 
 // ── Rain or snow, per place ─────────────────────────────────────────────────
 //
@@ -85,8 +47,6 @@ const PHASE_URL = 'https://api.open-meteo.com/v1/forecast'
 // 48 points every five minutes, which on its own could use up the free tier's
 // daily allowance. A rain/snow line moves slowly, and the blend between points
 // still places it smoothly.
-const PHASE_COLS = 4
-const PHASE_ROWS = 3
 const PHASE_PAD = 0.5              // fetch this much beyond each edge of the view, so a pan rarely leaves it
 const PHASE_MAX_AGE = 30 * 60 * 1000
 const PHASE_RETRY_MS = 2 * 60 * 1000 // after a failed fetch, wait this long before the next
@@ -147,135 +107,124 @@ async function fetchPhaseField(b) {
   return { s, n, w, e, val, temp, at: Date.now() }
 }
 
-// Bilinear blend of the field at a point. A missing point (the API had nothing
-// there) is skipped and the rest re-weighted; all four missing gives NaN.
-function blendAt(field, grid, lat, lng) {
-  const fx = Math.max(0, Math.min(PHASE_COLS - 1, ((lng - field.w) / (field.e - field.w)) * (PHASE_COLS - 1)))
-  const fy = Math.max(0, Math.min(PHASE_ROWS - 1, ((lat - field.s) / (field.n - field.s)) * (PHASE_ROWS - 1)))
-  const x0 = Math.min(PHASE_COLS - 2, fx | 0), y0 = Math.min(PHASE_ROWS - 2, fy | 0)
-  const tx = fx - x0, ty = fy - y0
-  let sum = 0, wsum = 0
-  for (const [dx, dy, wgt] of [[0, 0, (1 - tx) * (1 - ty)], [1, 0, tx * (1 - ty)], [0, 1, (1 - tx) * ty], [1, 1, tx * ty]]) {
-    const v = grid[(y0 + dy) * PHASE_COLS + x0 + dx]
-    if (Number.isNaN(v)) continue
-    sum += v * wgt; wsum += wgt
+// How often the mask is rebuilt from the tiles. Pans between rebuilds are
+// tracked exactly (see createRain), so this only has to keep up with frame
+// changes and tiles arriving.
+const MASK_MS = 180
+
+// ── Where the work runs ──────────────────────────────────────────────────────
+//
+// In a worker wherever the browser can hand it the canvas (radarRainWorker.js):
+// the mask's read-back and every frame's drawing then happen beside the page,
+// not on the thread that is also moving the map and running the phone's
+// full-screen opening. The page keeps only what needs the DOM: finding the
+// tiles, copying them small (createImageBitmap, which the browser does off the
+// main thread), and the map's position. Elsewhere it all runs on the page, as
+// it always did.
+const canOffload = () =>
+  typeof Worker !== 'undefined' &&
+  typeof OffscreenCanvas !== 'undefined' &&
+  typeof createImageBitmap === 'function' &&
+  typeof HTMLCanvasElement !== 'undefined' &&
+  'transferControlToOffscreen' in HTMLCanvasElement.prototype
+
+// Copies a tile at roughly mask size, nearest-pixel so each cell is still one
+// of the ramp's own colours. Browsers that don't take the resize options get a
+// full-size copy, which the worker scales instead.
+let resizeOk = true
+async function tileCopy(el, w, h) {
+  if (resizeOk) {
+    try {
+      return await createImageBitmap(el, {
+        resizeWidth: Math.max(1, Math.round(w)),
+        resizeHeight: Math.max(1, Math.round(h)),
+        resizeQuality: 'pixelated',
+      })
+    } catch {
+      resizeOk = false
+    }
   }
-  return wsum > 0 ? sum / wsum : NaN
-}
-const scoreAt = (field, lat, lng) => blendAt(field, field.val, lat, lng)
-const tempAt = (field, lat, lng) => (field.temp ? blendAt(field, field.temp, lat, lng) : NaN)
-
-// How wet the snow is, 0 to 1, from the surface temperature. Near freezing it
-// falls as big, wet clumps that come down fairly quickly; well below it, as
-// fine dry powder that drifts. Unknown temperature reads as ordinary snow.
-const POWDER_F = 15
-const WET_F = 32
-function snowWetness(tempF) {
-  if (!Number.isFinite(tempF)) return 0.5
-  return Math.max(0, Math.min(1, (tempF - POWDER_F) / (WET_F - POWDER_F)))
+  return createImageBitmap(el)
 }
 
-// Speeds below are px per frame on the 74 Hz screen they were tuned on. Each
-// frame moves by the time it actually took, so a 60, 120 or 144 Hz screen shows
-// the same fall speed instead of one scaled by its refresh rate. Capped so the
-// first frame after the tab was hidden doesn't teleport every drop.
-const FRAME_MS = 1000 / 74
-const MAX_STEP = 3
-
-// Snow: slower, drifting, and drawn as flakes. Fall speed is in px per frame;
-// flakes sway sideways on a slow sine of their own.
-const SNOW_SPEED = [0.8, 2.2]
-const SNOW_RADIUS = [1.1, 2.4]
+// The worker behind a canvas, created once per canvas element. A canvas can
+// hand its drawing over only once, so an effect that runs twice on the same
+// element (React's dev double-run, a new map) reuses it rather than starting a
+// second; it is shut down a tick after the last effect lets go, which is when
+// the element is really gone.
+function claimWorker(canvas) {
+  let rec = canvas.__rainWorker
+  if (rec) {
+    clearTimeout(rec.closing)
+    return rec
+  }
+  if (!canOffload()) return null
+  let worker
+  try {
+    worker = new Worker(new URL('../utils/radarRainWorker.js', import.meta.url), { type: 'module' })
+    const off = canvas.transferControlToOffscreen()
+    worker.postMessage({ type: 'init', canvas: off }, [off])
+  } catch {
+    worker?.terminate()
+    return null
+  }
+  rec = { worker, closing: 0 }
+  canvas.__rainWorker = rec
+  return rec
+}
+function releaseWorker(canvas) {
+  const rec = canvas.__rainWorker
+  if (!rec) return
+  rec.worker.postMessage({ type: 'run', on: false })
+  rec.closing = setTimeout(() => {
+    rec.worker.terminate()
+    if (canvas.__rainWorker === rec) canvas.__rainWorker = null
+  }, 0)
+}
 
 // `snow` is the fallback: the user's own location's verdict, used across the
 // whole map until the grid arrives, and wherever it can't be fetched at all.
 //
 // `paused` stops everything (the drops and the mask's read-backs) while the
-// radar's window is opening or closing on the phone. Each mask rebuild reads
-// pixels back off the radar tiles, a GPU round trip that could land on any frame
-// of the animation, and the drops were drawn on every one of them; nobody needs
-// the rain until the window is open. Lifted, the loop starts again from a fresh
-// mask, and the drops fade in the way they do at an echo's edge.
+// radar's window is opening or closing on the phone. Nobody needs the rain
+// until the window is open, and stopping it leaves the opening the whole of
+// the device. Lifted, the loop starts again from a fresh mask, and the drops
+// fade in the way they do at an echo's edge.
 export function RadarRain({ map, getLayer, snow = false, paused = false }) {
   const ref = useRef(null)
   const fallback = useRef(snow)
   const pausedRef = useRef(paused)
-  // Set by the main effect: restarts the loop once nothing is holding it.
-  const wakeRef = useRef(null)
+  // Set by the main effect: starts or stops the loop to match what is holding
+  // it, and passes a new fallback on to wherever the drawing runs.
+  const syncRef = useRef(null)
+  const fallbackOut = useRef(null)
   // Synced after render: writing a ref during render is unsafe under React's
   // concurrent rendering.
   useEffect(() => {
     fallback.current = snow
+    fallbackOut.current?.(snow)
   })
   useEffect(() => {
     pausedRef.current = paused
-    if (!paused) wakeRef.current?.()
+    syncRef.current?.()
   }, [paused])
 
   useEffect(() => {
     const canvas = ref.current
     if (!canvas || !map) return
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    const ctx = canvas.getContext('2d')
-    const maskCanvas = document.createElement('canvas')
-    const mctx = maskCanvas.getContext('2d', { willReadFrequently: true })
 
-    let W = 0, H = 0, dpr = 1
-    let mask = null, phase = null, wet = null, mw = 0, mh = 0
-    // The map's pan offset when the mask was built, and right now. Their
-    // difference is how far the map has slid since, so drops and mask lookups
-    // follow a drag instead of lagging it by up to MASK_MS.
-    let maskOrigin = null
-    let lastOrigin = null
-    let lastZoom = map.getZoom()
+    let W = 0, H = 0, mw = 0, mh = 0
     let tainted = false
-    let drops = []
-    let raf, timer, fieldTimer, refreshTimer
+    let timer, fieldTimer, refreshTimer
     let field = null, fetching = false, alive = true
     let hasEcho = false, failedAt = 0
+    let running = false
 
-    const rand = (a, b) => a + Math.random() * (b - a)
-    const seed = (d, anywhere) => {
-      // Starting further left by the slant's drift over the screen's height,
-      // so the left edge isn't left thin as the rain slides right.
-      d.x = rand(-20 - H * RAIN_SLANT, W + 20)
-      d.y = anywhere ? rand(0, H) : rand(-40, -10)
-      // Every drop carries both looks; which one it wears is decided per frame
-      // by where it is, so one crossing the rain/snow line changes as it goes.
-      // Depth, 0 far to 1 near: nearer drops fall faster, streak longer and
-      // show brighter and thicker, so the field has parallax instead of every
-      // streak being the same line.
-      d.z = Math.pow(Math.random(), 1.4) // most drops sit back, a few up close
-      d.rspd = 6.5 + 7 * d.z + rand(-0.6, 0.6)
-      d.sspd = rand(SNOW_SPEED[0], SNOW_SPEED[1]) * (0.7 + 0.6 * d.z)
-      d.len = 8 + 16 * d.z + rand(-1.5, 1.5)
-      d.r = rand(SNOW_RADIUS[0], SNOW_RADIUS[1]) * (0.75 + 0.5 * d.z)
-      d.vis = 0 // current fade, eased toward 1 inside an echo and 0 outside
-      d.phase = rand(0, Math.PI * 2)
-      d.sway = rand(0.01, 0.03)
-      // The drop's place in line: a cell at intensity I shows the drops whose
-      // gate is under sqrt(I), so heavier rain is denser rain.
-      d.gate = Math.random()
+    const panOrigin = () => {
+      const p = map.containerPointToLayerPoint([0, 0])
+      return { x: p.x, y: p.y }
     }
-
-    const resize = () => {
-      const box = canvas.getBoundingClientRect()
-      W = Math.max(1, Math.round(box.width))
-      H = Math.max(1, Math.round(box.height))
-      dpr = Math.min(2, window.devicePixelRatio || 1)
-      canvas.width = Math.round(W * dpr)
-      canvas.height = Math.round(H * dpr)
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      mw = Math.ceil(W / MASK_PX)
-      mh = Math.ceil(H / MASK_PX)
-      maskCanvas.width = mw
-      maskCanvas.height = mh
-      const n = Math.min(MAX_DROPS, Math.round((W * H) / AREA_PER_DROP))
-      while (drops.length < n) { const d = {}; seed(d, true); drops.push(d) }
-      drops.length = n
-    }
-
-    const panOrigin = () => map.containerPointToLayerPoint([0, 0])
 
     // Fetch a new conditions grid if the current one no longer fits the view.
     // Only while something is falling on screen: with no echo there is nothing
@@ -303,100 +252,143 @@ export function RadarRain({ map, getLayer, snow = false, paused = false }) {
       clearTimeout(fieldTimer)
       fieldTimer = setTimeout(ensureField, 500)
     }
+    const onEcho = (echo) => {
+      hasEcho = echo
+      // Precipitation has just come on screen with no grid to place it by:
+      // fetch one now rather than waiting for the next move or refresh.
+      if (echo && !field) ensureField()
+    }
 
+    // ── The two places the drawing can run ──
+    const rec = claimWorker(canvas)
+    let backend
+    if (rec) {
+      const { worker } = rec
+      let copying = false
+      worker.onmessage = ({ data: msg }) => {
+        if (!alive) return
+        if (msg.type === 'echo') onEcho(msg.echo)
+        else if (msg.type === 'tainted') { tainted = true; hasEcho = false }
+      }
+      const view = () => worker.postMessage({ type: 'view', origin: panOrigin(), zoom: map.getZoom() })
+      map.on('move zoomend viewreset', view)
+      view()
+      backend = {
+        resize: (w, h, dpr) => worker.postMessage({ type: 'resize', w, h, dpr }),
+        fallback: (fb) => worker.postMessage({ type: 'fallback', fb }),
+        run: (on) => { if (on) view(); worker.postMessage({ type: 'run', on }) },
+        // Copies of the tiles, then the mask is built in the worker. A round
+        // still copying when the next is due is simply skipped.
+        mask: (parts, ramp, place, fb, origin) => {
+          if (copying) return
+          copying = true
+          const copies = parts.map((p) =>
+            tileCopy(p.el, p.w, p.h).then((bmp) => ({ x: p.x, y: p.y, w: p.w, h: p.h, bmp }), () => null))
+          Promise.all(copies)
+            .then((got) => {
+              const ok = got.filter(Boolean)
+              if (!alive) { ok.forEach((c) => c.bmp.close()); return }
+              worker.postMessage(
+                { type: 'tiles', parts: ok, mw, mh, ramp, origin, place, fb },
+                ok.map((c) => c.bmp),
+              )
+            })
+            .finally(() => { copying = false })
+        },
+        dispose: () => {
+          map.off('move zoomend viewreset', view)
+          worker.onmessage = null
+          releaseWorker(canvas)
+        },
+      }
+    } else {
+      const ctx = canvas.getContext('2d')
+      const rain = createRain(ctx)
+      const mctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true })
+      let raf = 0
+      const draw = (now) => {
+        raf = requestAnimationFrame(draw)
+        rain.frame(now, panOrigin(), map.getZoom())
+      }
+      backend = {
+        resize: (w, h, dpr) => rain.resize(w, h, dpr),
+        fallback: (fb) => rain.setFallback(fb),
+        run: (on) => {
+          if (on && !raf) { rain.reset(); raf = requestAnimationFrame(draw) }
+          else if (!on && raf) { cancelAnimationFrame(raf); raf = 0 }
+        },
+        mask: (parts, ramp, place, fb, origin) => {
+          const c = mctx.canvas
+          if (c.width !== mw || c.height !== mh) { c.width = mw; c.height = mh }
+          mctx.clearRect(0, 0, mw, mh)
+          // Nearest-pixel sampling, so each cell reads one of the ramp's own
+          // colours rather than a blend of neighbouring steps. Set every time:
+          // resizing the canvas resets it.
+          mctx.imageSmoothingEnabled = false
+          for (const p of parts) mctx.drawImage(p.el, p.x, p.y, p.w, p.h)
+          let px
+          try {
+            px = mctx.getImageData(0, 0, mw, mh).data
+          } catch {
+            tainted = true // cross-origin tiles without CORS: nothing we can read
+            rain.clearMask()
+            return
+          }
+          const m = classifyMask(px, mw, mh, ramp, place, fb)
+          rain.setMask({ mask: m.mask, kind: m.kind, wet: m.wet, mw, mh }, origin)
+          onEcho(m.echo)
+        },
+        dispose: () => { cancelAnimationFrame(raf); raf = 0 },
+      }
+    }
+    fallbackOut.current = (fb) => backend.fallback(fb)
+    backend.fallback(fallback.current)
+
+    const resize = () => {
+      const box = canvas.getBoundingClientRect()
+      W = Math.max(1, Math.round(box.width))
+      H = Math.max(1, Math.round(box.height))
+      mw = Math.ceil(W / MASK_PX)
+      mh = Math.ceil(H / MASK_PX)
+      backend.resize(W, H, Math.min(2, window.devicePixelRatio || 1))
+    }
+
+    // Where the radar frame on screen has tiles, in mask cells, and where each
+    // mask row and column is on the globe, for the rain/snow grid.
     const buildMask = () => {
       if (tainted) return
       const layer = getLayer()
       const tiles = layer?._tiles
       const ramp = layer?.options?.rainRamp
-      mctx.clearRect(0, 0, mw, mh)
-      // Nearest-pixel sampling, so each cell reads one of the ramp's own colours
-      // rather than a blend of neighbouring steps. Set every time: resizing the
-      // canvas resets it.
-      mctx.imageSmoothingEnabled = false
+      const parts = []
       if (tiles && layer.options.opacity > 0) {
         const base = canvas.getBoundingClientRect()
         for (const key in tiles) {
           const el = tiles[key].el
-          // Image tiles count once loaded. Canvas tiles (the HRRR forecast, drawn
-          // in HrrrLayer) can be drawn at any point: until painted they are clear.
+          // Image tiles count once loaded. Canvas tiles (the smoothed feeds,
+          // drawn in HrrrLayer) can be read at any point: until painted they
+          // are clear.
           if (!(el instanceof HTMLCanvasElement) && (!el?.complete || !el.naturalWidth)) continue
           const r = el.getBoundingClientRect()
           if (r.right < base.left || r.left > base.right || r.bottom < base.top || r.top > base.bottom) continue
-          mctx.drawImage(
+          parts.push({
             el,
-            (r.left - base.left) / MASK_PX, (r.top - base.top) / MASK_PX,
-            r.width / MASK_PX, r.height / MASK_PX,
-          )
+            x: (r.left - base.left) / MASK_PX, y: (r.top - base.top) / MASK_PX,
+            w: r.width / MASK_PX, h: r.height / MASK_PX,
+          })
         }
       }
-      let px
-      try {
-        px = mctx.getImageData(0, 0, mw, mh).data
-      } catch {
-        tainted = true // cross-origin tiles without CORS: nothing we can read
-        mask = null
-        return
-      }
-      const next = new Float32Array(mw * mh)
-      let echo = false
-      for (let i = 0, j = 0; i < next.length; i++, j += 4) {
-        if (px[j + 3] < ECHO_MIN_ALPHA) continue
-        next[i] = strengthOf(colorDbz(px[j], px[j + 1], px[j + 2], ramp))
-        echo = true
-      }
-      hasEcho = echo
-      // Precipitation has just come on screen with no grid to place it by:
-      // fetch one now rather than waiting for the next move or refresh.
-      if (echo && !field) ensureField()
-
-      // Rain or snow for each cell, on the same grid. The map is unrotated Web
-      // Mercator, so a column shares one longitude and a row one latitude: that
-      // is mw + mh projections rather than one per cell.
-      const kind = new Uint8Array(mw * mh) // 1 = snow
-      const wetness = new Float32Array(mw * mh).fill(0.5) // snow only: see snowWetness
-      const fb = fallback.current ? 1 : 0
+      // The map is unrotated Web Mercator, so a column shares one longitude and
+      // a row one latitude: mw + mh projections rather than one per cell.
+      let place = null
       if (field) {
         const lngs = new Float64Array(mw), lats = new Float64Array(mh)
         for (let x = 0; x < mw; x++) lngs[x] = map.containerPointToLatLng([(x + 0.5) * MASK_PX, 0]).lng
         for (let y = 0; y < mh; y++) lats[y] = map.containerPointToLatLng([0, (y + 0.5) * MASK_PX]).lat
-        for (let y = 0; y < mh; y++) {
-          for (let x = 0; x < mw; x++) {
-            const i = y * mw + x
-            if (next[i] <= 0) continue // no echo, nothing to decide
-            const sc = scoreAt(field, lats[y], lngs[x])
-            kind[i] = Number.isNaN(sc) ? fb : sc <= 0 ? 1 : 0
-            if (kind[i]) wetness[i] = snowWetness(tempAt(field, lats[y], lngs[x]))
-          }
-        }
-      } else if (fb) {
-        kind.fill(1)
+        place = { field, lats, lngs }
       }
-
-      mask = next
-      phase = kind
-      wet = wetness
-      maskOrigin = panOrigin()
+      backend.mask(parts, ramp, place, fallback.current, panOrigin())
     }
-
-    // Buckets by drawn alpha. Rain buckets hold flat segment coordinates
-    // (x1, y1, x2, y2, ...), since one streak spans several of them.
-    const rainBuckets = Array.from({ length: LEVELS }, () => [])
-    const snowBuckets = Array.from({ length: LEVELS }, () => [])
-    const MAX_RAIN_ALPHA = 0.72
-    const MAX_SNOW_ALPHA = 0.9
-    const rainStyles = rainBuckets.map((_, i) =>
-      `rgba(214, 230, 255, ${((MAX_RAIN_ALPHA * (i + 1)) / LEVELS).toFixed(3)})`)
-    // Fainter segments are thinner too: the far drops and the tails of the
-    // near ones, which is what gives a streak its taper.
-    const rainWidths = rainBuckets.map((_, i) => 0.6 + (1.0 * i) / (LEVELS - 1))
-    const snowStyles = snowBuckets.map((_, i) =>
-      `rgba(255, 255, 255, ${((MAX_SNOW_ALPHA * (i + 1)) / LEVELS).toFixed(3)})`)
-    const snowGlows = snowBuckets.map((_, i) =>
-      `rgba(255, 255, 255, ${((0.16 * (i + 1)) / LEVELS).toFixed(3)})`)
-    const bucketOf = (a) => Math.min(LEVELS - 1, Math.round(a * LEVELS) - 1)
-    const slantLen = Math.hypot(1, RAIN_SLANT)
-    const ux = RAIN_SLANT / slantLen, uy = 1 / slantLen // fall direction
 
     // Only while the map is on screen and the app is in front. On the phone the
     // radar is one card in the stack, often scrolled well out of view, and it
@@ -404,139 +396,21 @@ export function RadarRain({ map, getLayer, snow = false, paused = false }) {
     // MASK_MS and animating every frame regardless. Off screen, the loop stops
     // and the timers skip their work; coming back rebuilds the mask at once.
     let onScreen = true
-    const active = () => onScreen && !document.hidden && !pausedRef.current
-
-    let lastFrame = 0
-    const draw = (now) => {
-      if (!active()) { raf = 0; return }
-      raf = requestAnimationFrame(draw)
-      const step = lastFrame ? Math.min(MAX_STEP, (now - lastFrame) / FRAME_MS) : 1
-      lastFrame = now
-      ctx.clearRect(0, 0, W, H)
-
-      // Follow the map while it is dragged. A zoom resets Leaflet's layer
-      // coordinates, so across one the drops just stay where they are and the
-      // next mask catches up.
-      const zoom = map.getZoom()
-      const o = panOrigin()
-      if (lastOrigin && zoom === lastZoom) {
-        const dx = lastOrigin.x - o.x, dy = lastOrigin.y - o.y
-        if (dx || dy) for (const d of drops) { d.x += dx; d.y += dy }
-      }
-      if (zoom !== lastZoom) maskOrigin = null
-      lastOrigin = o
-      lastZoom = zoom
-      if (!mask || !maskOrigin) return
-
-      const offX = o.x - maskOrigin.x, offY = o.y - maskOrigin.y
-      for (const b of rainBuckets) b.length = 0
-      for (const b of snowBuckets) b.length = 0
-      const fb = fallback.current
-
-      for (const d of drops) {
-        const cx = ((d.x + offX) / MASK_PX) | 0
-        const cy = ((d.y + offY) / MASK_PX) | 0
-        const inside = cx >= 0 && cy >= 0 && cx < mw && cy < mh
-        const i = inside ? cy * mw + cx : -1
-        const isSnow = inside ? phase[i] === 1 : fb
-        // Strength where the drop is. It sets density, size and brightness in
-        // full, but speed only gently: about 0.9x the old speed in drizzle and
-        // 1.25x in a downpour, so heavy rain reads as harder without racing.
-        const I = inside ? mask[i] : 0
-        // Snow wetness where it is (0 powder, 1 wet near freezing).
-        const w = inside ? wet[i] : 0.5
-        if (isSnow) {
-          d.y += d.sspd * (0.75 + 0.3 * I) * (0.8 + 0.5 * w) * step  // wet clumps fall faster
-          d.phase += d.sway * step
-          d.x += Math.sin(d.phase) * (0.75 - 0.4 * w) * (1 - 0.3 * I) * step // powder drifts most
-        } else {
-          const dy = d.rspd * (0.85 + 0.4 * I) * step
-          d.y += dy
-          d.x += dy * RAIN_SLANT
-        }
-        if (d.y - d.len > H || d.x < -40 - H * RAIN_SLANT || d.x > W + 40 || d.y < -60) { seed(d, false); continue }
-
-        // Ease toward shown or hidden rather than switching, so drops fade in
-        // and out at the edge of an echo instead of popping.
-        const show = inside && I > 0 && d.gate <= density(I)
-        d.vis += ((show ? 1 : 0) - d.vis) * (1 - Math.pow(1 - (show ? FADE_IN : FADE_OUT), step))
-        if (d.vis < 0.02) continue
-
-        // Near drops bright, far ones faint; light echoes faint, heavy ones bright.
-        const a = d.vis * (0.28 + 0.72 * d.z) * (0.5 + 1.0 * I)
-        if (isSnow) {
-          const lvl = bucketOf(a)
-          if (lvl < 0) continue
-          // Heavier snow, bigger flakes; wet snow clumps, powder is fine.
-          d.drawR = d.r * (0.6 + 0.7 * I) * (0.7 + 0.6 * w)
-          snowBuckets[lvl].push(d)
-        } else {
-          const len = d.len * (0.5 + 1.0 * I) // short ticks in drizzle, long streaks in a downpour
-          for (const [from, to, share] of STREAK_SEGMENTS) {
-            const lvl = bucketOf(a * share)
-            if (lvl < 0) continue
-            rainBuckets[lvl].push(
-              d.x - ux * len * from, d.y - uy * len * from,
-              d.x - ux * len * to, d.y - uy * len * to,
-            )
-          }
-        }
-      }
-
-      // Butt caps: round ones overlap where a streak's segments meet and
-      // leave brighter beads along it.
-      ctx.lineCap = 'butt'
-      for (let i = 0; i < LEVELS; i++) {
-        const b = rainBuckets[i]
-        if (!b.length) continue
-        ctx.lineWidth = rainWidths[i]
-        ctx.beginPath()
-        for (let k = 0; k < b.length; k += 4) {
-          ctx.moveTo(b[k], b[k + 1])
-          ctx.lineTo(b[k + 2], b[k + 3])
-        }
-        ctx.strokeStyle = rainStyles[i]
-        ctx.stroke()
-      }
-      // Flakes get a faint halo under a solid core, so they read as soft
-      // snow rather than hard dots.
-      for (let i = 0; i < LEVELS; i++) {
-        const b = snowBuckets[i]
-        if (!b.length) continue
-        ctx.beginPath()
-        for (const d of b) {
-          const g = d.drawR * 2.2
-          // moveTo first, or the path joins each flake to the previous one.
-          ctx.moveTo(d.x + g, d.y)
-          ctx.arc(d.x, d.y, g, 0, Math.PI * 2)
-        }
-        ctx.fillStyle = snowGlows[i]
-        ctx.fill()
-        ctx.beginPath()
-        for (const d of b) {
-          ctx.moveTo(d.x + d.drawR, d.y)
-          ctx.arc(d.x, d.y, d.drawR, 0, Math.PI * 2)
-        }
-        ctx.fillStyle = snowStyles[i]
-        ctx.fill()
-      }
+    const active = () => alive && onScreen && !document.hidden && !pausedRef.current
+    const sync = () => {
+      const on = active()
+      if (on === running) return
+      running = on
+      if (on) buildMask()
+      backend.run(on)
     }
-
-    // Restarts the loop after a pause, from a fresh mask and without a catch-up
-    // step for the time it was stopped.
-    const wake = () => {
-      if (!alive || !active() || raf) return
-      lastFrame = 0
-      buildMask()
-      raf = requestAnimationFrame(draw)
-    }
-    wakeRef.current = wake
+    syncRef.current = sync
     const io = new IntersectionObserver(([entry]) => {
       onScreen = entry.isIntersecting
-      wake()
+      sync()
     })
     io.observe(canvas)
-    document.addEventListener('visibilitychange', wake)
+    document.addEventListener('visibilitychange', sync)
 
     resize()
     const ro = new ResizeObserver(resize)
@@ -544,20 +418,21 @@ export function RadarRain({ map, getLayer, snow = false, paused = false }) {
     map.on('moveend', onMoveEnd)
     ensureField()
     refreshTimer = setInterval(() => { if (active()) ensureField() }, PHASE_MAX_AGE)
-    buildMask()
     timer = setInterval(() => { if (active()) buildMask() }, MASK_MS)
-    raf = requestAnimationFrame(draw)
+    sync()
     return () => {
       alive = false
-      wakeRef.current = null
-      cancelAnimationFrame(raf)
+      syncRef.current = null
+      fallbackOut.current = null
+      backend.run(false)
+      backend.dispose()
       clearInterval(timer)
       clearInterval(refreshTimer)
       clearTimeout(fieldTimer)
       map.off('moveend', onMoveEnd)
       ro.disconnect()
       io.disconnect()
-      document.removeEventListener('visibilitychange', wake)
+      document.removeEventListener('visibilitychange', sync)
     }
   }, [map, getLayer])
 
