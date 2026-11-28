@@ -7,6 +7,7 @@ import { HouseFilled, UpdatedText } from '../CurrentWeather'
 import { TodayCard } from '../TodayCard'
 import { WeatherOverview } from '../WeatherOverview'
 import { PrecipNowcast } from '../PrecipNowcast'
+import { StormCenterBanner } from '../StormSheet'
 import { WeatherAlerts } from '../WeatherAlerts'
 import { WeatherIcon } from '../WeatherIcon'
 import { SourceNote } from '../SourceNote'
@@ -515,6 +516,7 @@ export function TodayPage(props) {
   const {
     weather, location, alerts, unit, units, radarClear, radarTrend, airQuality, colorCoding, nowcastMode,
     hasActiveAlert, onNavigate, radarMode, radarSource, weatherAnimations,
+    stormOfferKind, stormOfferLabel, stormOfferPhase, stormOfferTint, onStormOpen,
   } = props
   const { current, hourly, daily, timezone } = weather
 
@@ -524,6 +526,17 @@ export function TodayPage(props) {
 
   return (
     <div className="web-page wt">
+      {/* A storm ahead, or a live one the reader put away: the Storm Center
+          is a click away rather than in place of Home. */}
+      {stormOfferKind && (
+        <StormCenterBanner
+          kind={stormOfferKind}
+          label={stormOfferLabel}
+          phase={stormOfferPhase}
+          tint={stormOfferTint}
+          onOpen={onStormOpen}
+        />
+      )}
       <WeatherAlerts alerts={alerts} location={location} />
 
       <div className="wt-grid">

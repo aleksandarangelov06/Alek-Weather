@@ -395,6 +395,53 @@ export const WeatherCanvas = memo(function WeatherCanvas({ code, gyro = true, ho
     let displayMs = 1000 / 60
     let lastTick = 0, lastDraw = 0, ticks = 0
 
+    // A clearing in the falling rain and snow around the big weather icon: the
+    // home screen's (the splash's icon, in place of the logo) or the
+    // forecast's (the current-weather card's). The sky is drawn under the app,
+    // so it never covers the icon, but its flakes and drops drifting right up
+    // to and past the icon read as falling in front of it. Erased with a
+    // soft-edged circle after each frame's precipitation is drawn (one
+    // gradient fill), so they thin out and vanish as they near it. The boxes
+    // are measured a few times a second and after a scroll or resize (see
+    // remeasure), not per frame.
+    // In order of preference: the splash, while it is up, before the forecast
+    // kept under it (which may only be faded out, and so still have a box).
+    const ICON_SELS = [
+      '.splash-logo-icon :is(.weather-icon, .weather-icon-line)',
+      '.current-card .current-icon :is(.weather-icon, .weather-icon-line)',
+    ]
+    let iconIn = 0, iconBox = null, canvasBox = null
+    function clearAroundIcon() {
+      if (iconIn-- <= 0) {
+        iconIn = 15
+        iconBox = null
+        for (const sel of ICON_SELS) {
+          const b = document.querySelector(sel)?.getBoundingClientRect()
+          if (b && b.width > 0 && b.height > 0 && b.bottom > 0 && b.top < window.innerHeight) { iconBox = b; break }
+        }
+        // Where this canvas actually is on screen, rather than assumed to be
+        // the window's top-left: the splash's canvas sits inside the splash
+        // layer, and anything that offsets it (or the page's zoom) would put
+        // the clearing beside the icon instead of on it.
+        canvasBox = canvas.getBoundingClientRect()
+      }
+      if (!iconBox || !canvasBox?.width || !canvasBox?.height) return
+      // From screen pixels into this canvas's own pixels.
+      const sx = canvas.width / canvasBox.width
+      const sy = canvas.height / canvasBox.height
+      const cx = (iconBox.left + iconBox.width / 2 - canvasBox.left) * sx
+      const cy = (iconBox.top + iconBox.height / 2 - canvasBox.top) * sy
+      const rad = Math.max(iconBox.width * sx, iconBox.height * sy) * 0.75
+      const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad)
+      g.addColorStop(0, 'rgba(0,0,0,1)')
+      g.addColorStop(0.7, 'rgba(0,0,0,1)')
+      g.addColorStop(1, 'rgba(0,0,0,0)')
+      ctx.globalCompositeOperation = 'destination-out'
+      ctx.fillStyle = g
+      ctx.fillRect(cx - rad, cy - rad, rad * 2, rad * 2)
+      ctx.globalCompositeOperation = 'source-over'
+    }
+
     function draw(now) {
       raf = requestAnimationFrame(draw)
       if (lastTick) {
@@ -479,6 +526,7 @@ export const WeatherCanvas = memo(function WeatherCanvas({ code, gyro = true, ho
           ctx.strokeStyle = style
           ctx.stroke()
         }
+        clearAroundIcon()
       } else if (scene === 'snow') {
         for (const { style, ps } of buckets) {
           ctx.beginPath()
@@ -498,6 +546,7 @@ export const WeatherCanvas = memo(function WeatherCanvas({ code, gyro = true, ho
           ctx.fillStyle = style
           ctx.fill()
         }
+        clearAroundIcon()
       } else {
         // Fog: the banks drift left to right like the clouds, the tilt nudging
         // them gently, and one that has fully left the right edge comes back
@@ -537,7 +586,7 @@ export const WeatherCanvas = memo(function WeatherCanvas({ code, gyro = true, ho
     // regardless, which covers the header moving without any of those.
     let mirror = null, lookupIn = 0
     let box = null, sx = 1, sy = 1
-    const remeasure = () => { measureIn = 0 }
+    const remeasure = () => { measureIn = 0; iconIn = 0 }
     const ro = new ResizeObserver(remeasure)
     ro.observe(canvas)
     window.addEventListener('scroll', remeasure, { passive: true })

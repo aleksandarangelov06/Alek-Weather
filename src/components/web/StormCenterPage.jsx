@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  BatteryCharging, Bookmark, BriefcaseMedical, Check, CloudRain, DoorClosed, Flashlight, Fuel,
+  ArrowLeft, BatteryCharging, Bookmark, CalendarClock, BriefcaseMedical, Check, CloudRain, DoorClosed, Flashlight, Fuel,
   GlassWater, House, ShoppingCart, Map as MapIcon, Armchair, Backpack, Pill, Radio, RefreshCw, Sandwich, ShieldCheck, Shirt,
   Shovel, Snowflake, Sun, TriangleAlert, Waves, Wind, Zap,
 } from 'lucide-react'
@@ -15,13 +15,14 @@ import { SourceNote } from '../SourceNote'
 import { resolveStyle } from '../../utils/alertStyle'
 import { isSnowing } from '../../utils/conditions'
 import {
-  alertFacts, alertTier, analyzeStorm, HAZARDS, isStormAlert, stormTint,
+  activeAlerts, alertFacts, alertTier, analyzeStorm, HAZARDS, isStormAlert, outlookName, outlookNote,
+  stormOutlook, stormPhases, stormPrecip, stormTint, whenText,
 } from '../../utils/stormCenter'
-import { stormNote, STORM_KIND_NAME } from '../../utils/stormRisk'
+import { stormLevel, stormNote, STORM_KIND_NAME } from '../../utils/stormRisk'
 import { preparedness } from '../../utils/preparedness'
-import { getWeatherInfo, getWindDirection, liveWeatherCode, SNOW_CODES, toTemp } from '../../utils/weatherCodes'
+import { getWeatherInfo, getWindDirection, liveWeatherCode, precipTier, SNOW_CODES, toTemp } from '../../utils/weatherCodes'
 import { formatPrecip, formatWind, unitSuffix, unitText } from '../../utils/units'
-import { currentHourIndex, hourLabel } from './webData'
+import { currentHourIndex, hourLabel, localNow, naiveMinutes } from './webData'
 // The page's own styles come with it, so the phones get them when they open
 // it (see stormCenterChunk.js) without loading the rest of the web layout.
 import './StormCenter.css'
@@ -227,7 +228,7 @@ function AlertBanner({ alert, others, timezone, clock, onRead }) {
 // ── Hero ─────────────────────────────────────────────────────────────────────
 
 // 270 degrees of tick marks, lit up to the score in each band's colour.
-function ThreatDial({ score, level }) {
+function ThreatDial({ score, level, caption = 'Threat level' }) {
   const N = 45
   const CX = 130, R1 = 100, R2 = 118
   const lit = Math.round((Math.min(100, Math.max(0, score)) / 100) * N)
@@ -243,7 +244,7 @@ function ThreatDial({ score, level }) {
     }
   })
   return (
-    <div className="sc-dial" role="img" aria-label={`Threat level ${level.label}, ${Math.round(score)} out of 100`}>
+    <div className="sc-dial" role="img" aria-label={`${caption} ${level.label}, ${Math.round(score)} out of 100`}>
       <svg viewBox="0 0 260 260" aria-hidden="true">
         {ticks.map((t, i) => (
           <line
@@ -257,7 +258,7 @@ function ThreatDial({ score, level }) {
       <div className="sc-dial-read">
         <span className="sc-dial-score">{Math.round(score)}</span>
         <span className="sc-dial-level" style={{ color: LEVEL_COLORS[level.index] }}>{level.label}</span>
-        <span className="sc-dial-cap">Threat level</span>
+        <span className="sc-dial-cap">{caption}</span>
       </div>
     </div>
   )
@@ -265,9 +266,17 @@ function ThreatDial({ score, level }) {
 
 // The place's own actions, which Home carries: home, save, and a refresh with
 // the age of the reading beside it.
-function PlaceActions({ saved, onSave, onRemove, isHome, onSetHome, onUnsetHome, lastUpdated, loading, onRefresh }) {
+function PlaceActions({ saved, onSave, onRemove, isHome, onSetHome, onUnsetHome, lastUpdated, loading, onRefresh, onClose }) {
   return (
     <div className="sc-actions">
+      {/* The web Home's way back to the forecast while the Storm Center is
+          up. It comes back by itself if the storm gets worse. */}
+      {onClose && (
+        <button type="button" className="sc-action" onClick={onClose} title="Show the regular forecast on Home">
+          <ArrowLeft size={15} aria-hidden="true" />
+          Show forecast
+        </button>
+      )}
       <button
         type="button"
         className={`sc-action${isHome ? ' is-on' : ''}`}
@@ -305,24 +314,28 @@ function PlaceActions({ saved, onSave, onRemove, isHome, onSetHome, onUnsetHome,
   )
 }
 
-function Hero({ place, title, note, storm, actions }) {
+function Hero({ place, title, note, storm, actions, ahead, dialScore, dialLevel }) {
   return (
     <header className="sc-hero">
       <div className="sc-hero-text">
         <p className="sc-kicker">
-          <span className="sc-live"><span className="sc-live-dot" aria-hidden="true" />Live</span>
+          {ahead ? (
+            <span className="sc-live sc-live--ahead"><CalendarClock size={13} aria-hidden="true" />Storm ahead</span>
+          ) : (
+            <span className="sc-live"><span className="sc-live-dot" aria-hidden="true" />Live</span>
+          )}
           <span className="sc-place">{place}</span>
         </p>
         <h1 className="sc-title">{title}</h1>
         <p className="sc-note">{note}</p>
         <PlaceActions {...actions} />
       </div>
-      <ThreatDial score={storm.threat.score} level={storm.threat.level} />
+      <ThreatDial score={dialScore ?? storm.threat.score} level={dialLevel ?? storm.threat.level} caption={ahead ? 'Expected peak' : 'Threat level'} />
     </header>
   )
 }
 
-function Facts({ storm, weather, info, unit, units, clock }) {
+function Facts({ storm, weather, info, unit, units, clock, arrival }) {
   const { current, timezone } = weather
   const top = storm.leadAlert
   const startIso = top && (top.properties.onset ?? top.properties.effective)
@@ -361,7 +374,13 @@ function Facts({ storm, weather, info, unit, units, clock }) {
             : storm.detail.rainToday >= 0.01 ? `${formatPrecip(storm.detail.rainToday, units)} expected today` : 'This hour'}
         </dd>
       </div>
-      {endIso ? (
+      {arrival ? (
+        <div className="sc-fact-clock" style={{ '--alert': 'var(--sc-tint)' }}>
+          <dt>Arrives in</dt>
+          <dd><Countdown to={arrival.at} /></dd>
+          <dd className="sc-fact-sub">{arrival.text}</dd>
+        </div>
+      ) : endIso ? (
         <div className="sc-fact-clock" style={{ '--alert': resolveStyle(top.properties).color }}>
           <dt>{pending ? 'Alert begins in' : 'Alert ends in'}</dt>
           <dd><Countdown to={+new Date(pending ? startIso : endIso)} /></dd>
@@ -377,6 +396,258 @@ function Facts({ storm, weather, info, unit, units, clock }) {
         </div>
       )}
     </dl>
+  )
+}
+
+// ── Storm progress ───────────────────────────────────────────────────────────
+
+// "Today 4 PM", "Tomorrow 2 AM", "Sat 9 PM": a naive local hour from the
+// forecast's own today.
+function dayHour(iso, nowIso) {
+  const day = (s) => Math.floor(naiveMinutes(`${s.slice(0, 10)}T00:00`) / 1440)
+  const d = day(iso) - day(nowIso)
+  const name = d <= 0 ? 'Today' : d === 1 ? 'Tomorrow'
+    : new Date(`${iso.slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' })
+  return `${name} ${hourLabel(iso)}`
+}
+
+// The storm from its first hour to its last, as one bar: filled up to now,
+// with its worst hour marked.
+//
+// A storm warning in effect sets the window: from when it took effect (or
+// its onset, if later) to when it ends, which is the forecaster's own call on
+// when the storm is on. The forecast's worst hour is marked if it falls inside.
+// Without one, the outlook's storm (stormOutlook) sets it, from the hour it
+// really began (beganTime, looked back for) rather than this one. Null when
+// neither gives a window.
+function stormWindow({ outlook, alerts, clock, timezone }) {
+  const nowIso = localNow(timezone)
+  const at = (iso) => clock + (naiveMinutes(iso) - naiveMinutes(nowIso)) * 60000
+  const outlookEnd = outlook ? (outlook.endTime ?? outlook.lastTime) : null
+
+  const warning = alerts.find((a) => isStormAlert(a) && alertTier(a.properties) === 0)
+  const p = warning?.properties
+  const startIso = p && (p.onset ?? p.effective ?? p.sent)
+  const endIso = p && (p.ends ?? p.expires)
+  const start = startIso ? +new Date(startIso) : NaN
+  const alertEnd = endIso ? +new Date(endIso) : NaN
+  // No end on the alert: the forecast's end of the storm stands in.
+  const end = Number.isFinite(alertEnd) ? alertEnd : outlookEnd ? at(outlookEnd) : NaN
+  if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
+    const peak = outlook ? at(outlook.peakTime) : null
+    const peakIn = peak != null && peak >= start && peak <= end
+    return {
+      name: p.event,
+      // The alert that set the window, so its own lane isn't drawn again under it.
+      alert: warning,
+      start,
+      end,
+      peak: peakIn ? peak : null,
+      startText: alertTime(startIso, timezone),
+      peakText: peakIn ? `Worst ${dayHour(outlook.peakTime, nowIso)}` : null,
+      endText: Number.isFinite(alertEnd) ? alertTime(endIso, timezone) : dayHour(outlookEnd, nowIso),
+      openEnded: !Number.isFinite(alertEnd) && !outlook?.endTime,
+    }
+  }
+
+  if (!outlook) return null
+  const firstIso = outlook.beganTime ?? outlook.startTime
+  return {
+    name: outlookName(outlook),
+    alert: null,
+    start: at(firstIso),
+    end: at(outlookEnd),
+    peak: at(outlook.peakTime),
+    startText: outlook.startIdx === 0 && !outlook.beganTime ? 'Under way' : dayHour(firstIso, nowIso),
+    peakText: `Worst ${dayHour(outlook.peakTime, nowIso)}`,
+    endText: outlook.endTime ? dayHour(outlook.endTime, nowIso) : 'Past 3 days',
+    openEnded: !outlook.endTime,
+  }
+}
+
+// The rows under the progress bar: one per kind of weather in the storm and
+// one per storm alert (stormPhases), drawn on the bar's own scale.
+const PHASE_META = {
+  thunder: { name: 'Thunderstorms', Icon: Zap, color: '#ffc533' },
+  snow: { name: 'Snow', Icon: Snowflake, color: '#cfe6fb' },
+  ice: { name: 'Freezing rain', Icon: CloudRain, color: '#c59cff' },
+  rain: { name: 'Rain', Icon: CloudRain, color: '#5fb2ff' },
+  wind: { name: 'Strong winds', Icon: Wind, color: '#8fd6c4' },
+}
+// Light weather is drawn fainter than heavy, so the worst stretch stands out.
+const PHASE_OPACITY = [0.45, 0.45, 0.7, 1, 1]
+
+// "3 AM", "3:40 AM", or "Sat 3 AM" off today, in the place's time.
+function clockAt(ms, timezone) {
+  const d = new Date(ms)
+  const tz = timezone ? { timeZone: timezone } : {}
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', ...tz }).replace(':00 ', ' ')
+  const day = (x) => x.toLocaleDateString('en-CA', tz)
+  return day(d) === day(new Date()) ? time : `${d.toLocaleDateString('en-US', { weekday: 'short', ...tz })} ${time}`
+}
+
+function phaseWhen(spans, w, clock, timezone) {
+  const one = (s) => {
+    const end = clockAt(s.to, timezone)
+    if (s.from <= clock && clock < s.to) return `Now to ${end}`
+    if (s.to >= w.end && w.openEnded) return `From ${clockAt(s.from, timezone)}`
+    return `${clockAt(s.from, timezone)} to ${end}`
+  }
+  const shown = spans.slice(0, 2).map(one).join(', ')
+  return spans.length > 2 ? `${shown}, and later` : shown
+}
+
+function StormPhases({ phases, window: w, clock, timezone }) {
+  if (!phases.length) return null
+  const span = w.end - w.start
+  const pos = (ms) => Math.min(100, Math.max(0, ((ms - w.start) / span) * 100))
+  const nowPct = clock > w.start && clock < w.end ? pos(clock) : null
+  return (
+    <ul className="sc-phases" aria-label="What happens when">
+      {phases.map((lane) => {
+        const meta = lane.kind === 'alert'
+          ? { name: lane.alert.properties.event, Icon: TriangleAlert, color: resolveStyle(lane.alert.properties).color }
+          : PHASE_META[lane.id]
+        const when = phaseWhen(lane.spans, w, clock, timezone)
+        const { Icon } = meta
+        return (
+          <li key={lane.id} className="sc-phase" style={{ '--phase': meta.color }}>
+            <span className="sc-phase-name"><Icon size={14} aria-hidden="true" />{meta.name}</span>
+            <span className="sc-phase-track" aria-hidden="true">
+              {lane.spans.map((s) => (
+                <span
+                  key={s.from}
+                  className="sc-phase-seg"
+                  style={{
+                    left: `${pos(s.from)}%`,
+                    width: `${Math.max(0.8, pos(s.to) - pos(s.from))}%`,
+                    opacity: PHASE_OPACITY[s.level] ?? 1,
+                  }}
+                />
+              ))}
+              {nowPct != null && <span className="sc-phase-now" style={{ left: `${nowPct}%` }} />}
+            </span>
+            <span className="sc-phase-when">{when}</span>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+function StormProgress({ storm: w, clock, phases = [], timezone }) {
+  const span = w.end - w.start
+  const frac = Math.min(1, Math.max(0, (clock - w.start) / span))
+  const pct = Math.round(frac * 100)
+  const peakPct = w.peak != null ? Math.min(100, Math.max(0, ((w.peak - w.start) / span) * 100)) : null
+  const status = clock < w.start ? `Starts in ${spanText(w.start - clock)}`
+    : clock >= w.end ? (w.openEnded ? 'Still going' : 'Wrapping up')
+    : w.peak != null && clock < w.peak ? `Building, worst in ${spanText(w.peak - clock)}`
+    : w.openEnded ? `${pct}% through the next 3 days`
+    : `Easing, ends in ${spanText(w.end - clock)}`
+
+  return (
+    <section className="sc-progress" aria-label="Storm progress">
+      <div className="sc-progress-head">
+        <span className="sc-progress-name">{w.name}</span>
+        <span className="sc-progress-status">{status}</span>
+      </div>
+      <div
+        className="sc-progress-track"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={pct}
+        aria-valuetext={status}
+      >
+        <span className="sc-progress-fill" style={{ width: `${frac * 100}%` }} />
+        {peakPct != null && <span className="sc-progress-peak" style={{ left: `${peakPct}%` }} aria-hidden="true" />}
+        {frac > 0 && frac < 1 && <span className="sc-progress-now" style={{ left: `${frac * 100}%` }} aria-hidden="true" />}
+      </div>
+      <div className="sc-progress-ends">
+        <span>{w.startText}</span>
+        {w.peakText && <span className="sc-progress-worst">{w.peakText}</span>}
+        <span>{w.endText}</span>
+      </div>
+      <StormPhases phases={phases} window={w} clock={clock} timezone={timezone} />
+    </section>
+  )
+}
+
+// ── Rain and snow so far ─────────────────────────────────────────────────────
+
+// How much of the storm's rain and snow has come down (stormPrecip), as a
+// gauge that fills: the storm's whole expected amount is a full gauge. Rain
+// and snow each get one when the storm brings enough of it.
+function PrecipGauges({ precip, window: w, clock, units, liveCode }) {
+  const gauges = [
+    precip.rain && { id: 'rain', name: 'Rain', Icon: CloudRain, fmt: (x) => formatPrecip(x, units), ...precip.rain },
+    precip.snow && { id: 'snow', name: 'Snow', Icon: Snowflake, fmt: (x) => snowText(x, units), ...precip.snow },
+  ].filter(Boolean)
+  if (!gauges.length) return null
+  return (
+    <section className="sc-accum" aria-label="Rain and snow so far">
+      <div className="sc-accum-gauges">
+        {gauges.map((g) => <PrecipGauge key={g.id} gauge={g} window={w} clock={clock} liveCode={liveCode} />)}
+      </div>
+      <p className="sc-accum-note">Estimated from the forecast model&apos;s hourly amounts, not a rain gauge.</p>
+    </section>
+  )
+}
+
+function PrecipGauge({ gauge: g, window: w, clock, liveCode }) {
+  const pct = Math.round(g.frac * 100)
+  const left = Math.max(0, g.total - g.fallen)
+  // "of at least": a storm still going past the forecast has more to come
+  // than the forecast can count.
+  const total = `${w.openEnded ? 'at least ' : ''}${g.fmt(g.total)}`
+  // The live reading (radar, stations, warnings) says it is coming down now.
+  // The amounts are the model's, which can lag a snowfall that has just
+  // begun: "None yet" under a "Slight Snow" headline read as a contradiction.
+  // An amount is never invented for it; the gauge says it is too light to
+  // measure until the model's own amounts catch up.
+  const snowNow = SNOW_CODES.has(liveCode)
+  const fallingNow = g.id === 'snow' ? snowNow : precipTier(liveCode) > 0 && !snowNow
+  const nothingShown = g.fmt(g.fallen) === g.fmt(0)
+  const amount = nothingShown && fallingNow ? `Under ${g.fmt(g.id === 'snow' ? 0.1 : 0.01)}` : g.fmt(g.fallen)
+  const verb = g.id === 'snow' ? 'Snowing' : 'Raining'
+  const status = fallingNow && nothingShown ? `${verb} now, too light to measure yet`
+    : clock < w.start ? 'Expected once it starts'
+    : clock >= w.end || pct >= 100 ? (w.openEnded ? 'Still coming down' : 'All of it is down')
+    : nothingShown ? 'None yet'
+    : `${pct}% down, about ${g.fmt(left)} to go`
+  const { Icon } = g
+
+  return (
+    <div
+      className={`sc-gauge sc-gauge--${g.id}`}
+      role="meter"
+      aria-label={`${g.name} so far`}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={pct}
+      aria-valuetext={`${amount} of ${total}. ${status}.`}
+    >
+      <div className="sc-gauge-tube" aria-hidden="true">
+        {/* Flakes or drops falling into the tube while it is coming down now. */}
+        {fallingNow && (
+          <span className="sc-gauge-falling">
+            <i /><i /><i /><i />
+          </span>
+        )}
+        {/* Not drawn at all when empty: the rain's ripple would sit on the bottom. */}
+        {g.frac > 0 && <span className="sc-gauge-fill" style={{ height: `${g.frac * 100}%` }} />}
+        <span className="sc-gauge-ticks" />
+      </div>
+      <div className="sc-gauge-text">
+        <span className="sc-gauge-kind"><Icon size={15} aria-hidden="true" />{g.name} so far</span>
+        <span className="sc-gauge-amount">
+          <strong>{amount}</strong>
+          <span className="sc-gauge-of"> of {total}</span>
+        </span>
+        <span className="sc-gauge-status">{status}</span>
+      </div>
+    </div>
   )
 }
 
@@ -585,6 +856,52 @@ function Hazards({ storm, units }) {
   )
 }
 
+// ── Storm outlook ────────────────────────────────────────────────────────────
+
+// The storm coming in the next three days (stormOutlook): when it starts, is
+// at its worst and ends, and what it brings. The 24-hour timeline can't see a
+// storm two days out; this is what lets people get ready in time.
+function Outlook({ outlook, units }) {
+  const o = outlook
+  const at = (iso) => {
+    const w = whenText(iso, o.nowTime).replace(/^by .*/, 'today')
+    return w.charAt(0).toUpperCase() + w.slice(1)
+  }
+  const brings = []
+  if (o.snowTotal >= 0.1) brings.push(`${snowText(o.snowTotal, units)} of snow, ${SNOW_IMPACT[o.snowLevel.index]}`)
+  if (o.freezing) brings.push('freezing rain and icy roads')
+  if (o.thunder) brings.push('thunder and lightning')
+  if (o.gustMax >= 30) brings.push(`gusts up to ${formatWind(o.gustMax, units)}`)
+  return (
+    <Section id="sc-outlook" title="Storm outlook" aside="Next 3 days">
+      <p className="sc-outlook-name">
+        <span style={{ color: LEVEL_COLORS[o.level.index] }}>{o.level.label}</span>
+        {' '}{outlookName(o).toLowerCase()}
+      </p>
+      <dl className="sc-stats">
+        <div>
+          <dt>Begins</dt>
+          <dd>{o.startIdx === 0 ? 'Now' : hourLabel(o.startTime)}</dd>
+          <dd className="sc-stats-sub">{o.startIdx === 0 ? 'Under way' : at(o.startTime)}</dd>
+        </div>
+        <div>
+          <dt>Worst</dt>
+          <dd>{o.peakIdx === 0 ? 'Now' : hourLabel(o.peakTime)}</dd>
+          <dd className="sc-stats-sub">{o.peakIdx === 0 ? `${o.level.label} risk` : at(o.peakTime)}</dd>
+        </div>
+        <div>
+          <dt>Ends</dt>
+          <dd>{o.endTime ? hourLabel(o.endTime) : 'Later'}</dd>
+          <dd className="sc-stats-sub">{o.endTime ? at(o.endTime) : 'Past the next 3 days'}</dd>
+        </div>
+      </dl>
+      {brings.length > 0 && (
+        <p className="sc-outlook-brings">Expect {brings.join(', ')}.</p>
+      )}
+    </Section>
+  )
+}
+
 // ── Be prepared ──────────────────────────────────────────────────────────────
 
 // Ticked items are kept on the device, so the list remembers what you already
@@ -607,8 +924,8 @@ function usePrepDone() {
   return [done, toggle]
 }
 
-function Prepare({ storm, current }) {
-  const { level, items } = preparedness(storm, current.temperature_2m)
+function Prepare({ storm, current, outlook }) {
+  const { level, items } = preparedness(storm, current.temperature_2m, outlook)
   const [done, toggle] = usePrepDone()
   const ready = items.filter((i) => done.has(i.id)).length
   const pct = items.length ? Math.round((ready / items.length) * 100) : 0
@@ -774,7 +1091,8 @@ function HourByHour({ storm, weather, start, unit, units }) {
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 export function StormCenterPage({
-  stormKind, stormLabel, active = true, weather, location, alerts, unit, units, radarClear, radarTrend,
+  stormKind, stormLabel, stormPhase = null, stormScore = null, onStormClose = null,
+  active = true, weather, location, alerts: allAlerts, unit, units, radarClear, radarTrend,
   nowcastMode, radarMode, radarSource, weatherAnimations, lastUpdated, loading, onRefresh, onNavigate,
   saved, onSave, onRemove, isHome, onSetHome, onUnsetHome, mobile = false,
 }) {
@@ -785,7 +1103,15 @@ export function StormCenterPage({
   const event = stormKind ? { kind: stormKind, label: stormLabel } : null
   const liveCode = liveWeatherCode(current, weather.minutely_15, radarClear)
   const start = currentHourIndex(hourly, timezone)
+  // Only alerts still in effect: a cached feed can hold on to ended ones.
+  const alerts = activeAlerts(allAlerts, clock)
   const storm = analyzeStorm({ weather, alerts, liveCode, start })
+  const outlook = stormOutlook({ weather, alerts, liveCode, start })
+  const ahead = stormPhase === 'ahead'
+  // The dial reads what switched the Storm Center on (stormCenterState), so
+  // it never reads lower than the banner that brought you here.
+  const dialScore = Math.max(storm.threat.score, stormScore ?? 0)
+  const dialLevel = dialScore > storm.threat.score && ahead && outlook ? outlook.level : stormLevel(dialScore)
   const tint = stormTint(storm.alerts.find(isStormAlert), event?.kind)
   const onOpenRadar = () => onNavigate('radar')
   const info = getWeatherInfo(liveCode ?? current.weather_code, !current.is_day, current.severe_storm)
@@ -796,9 +1122,26 @@ export function StormCenterPage({
   const top = storm.leadAlert
   const title = event?.label ?? top?.properties?.event ?? 'All clear for now'
   const quiet = storm.calmIdx === 'quiet'
-  const note = event || storm.threat.level.index > 0
-    ? stormNote(storm.now, storm.peak, storm.peak ? hourLabel(storm.peak.time) : '')
-    : 'Nothing stormy is happening here right now.'
+  const amounts = { snowText: (inches) => snowText(inches, units), gustText: (mph) => formatWind(mph, units) }
+  const note = ahead && outlook ? outlookNote(outlook, amounts)
+    : event || storm.threat.level.index > 0
+      ? stormNote(storm.now, storm.peak, storm.peak ? hourLabel(storm.peak.time) : '')
+      : 'Nothing stormy is happening here right now.'
+  // How far through the storm we are (see StormProgress).
+  const progress = stormWindow({ outlook, alerts: storm.alerts, clock, timezone })
+  // How much of its rain and snow has fallen, over that same window.
+  const nowIso = localNow(timezone)
+  const toMs = (iso) => clock + (naiveMinutes(iso) - naiveMinutes(nowIso)) * 60000
+  const precip = progress ? stormPrecip({ hourly, toMs, start: progress.start, end: progress.end, now: clock }) : null
+  // What happens when across it: snow, thunder, a tornado warning (stormPhases).
+  const phases = progress ? stormPhases({
+    hourly, liveCode, start, toMs, window: progress, alerts: storm.alerts, windowAlert: progress.alert,
+  }) : []
+  // A countdown to the storm's first hour, while it is still to come.
+  const arrival = ahead && outlook && outlook.startIdx > 0 ? {
+    at: clock + (naiveMinutes(outlook.startTime) - naiveMinutes(localNow(timezone))) * 60000,
+    text: `${outlookName(outlook)} ${whenText(outlook.startTime, outlook.nowTime)}`,
+  } : null
 
   const tickerLines = [
     `${place}: ${info.label}, ${toTemp(current.temperature_2m, unit)}°`,
@@ -832,13 +1175,24 @@ export function StormCenterPage({
           title={title}
           note={note}
           storm={storm}
-          actions={{ saved, onSave, onRemove, isHome, onSetHome, onUnsetHome, lastUpdated, loading, onRefresh }}
+          ahead={ahead}
+          dialScore={dialScore}
+          dialLevel={dialLevel}
+          actions={{
+            saved, onSave, onRemove, isHome, onSetHome, onUnsetHome, lastUpdated, loading, onRefresh,
+            onClose: mobile ? null : onStormClose,
+          }}
         />
 
-        <Facts storm={storm} weather={weather} info={info} unit={unit} units={units} clock={clock} />
+        <Facts storm={storm} weather={weather} info={info} unit={unit} units={units} clock={clock} arrival={arrival} />
+
+        {progress && <StormProgress storm={progress} clock={clock} phases={phases} timezone={timezone} />}
+        {precip && <PrecipGauges precip={precip} window={progress} clock={clock} units={units} liveCode={liveCode} />}
 
         <div className="sc-layout">
           <div className="sc-col">
+            {/* Ahead of a storm the outlook leads; once it is here, the radar. */}
+            {ahead && outlook && <Outlook outlook={outlook} units={units} />}
             <RadarSection
               location={location}
               weather={weather}
@@ -848,12 +1202,13 @@ export function StormCenterPage({
               onOpenRadar={onOpenRadar}
               mobile={mobile}
             />
+            {!ahead && outlook && <Outlook outlook={outlook} units={units} />}
             <Timeline storm={storm} />
             <Hazards storm={storm} units={units} />
             <Alerts storm={storm} timezone={timezone} clock={clock} onRead={setReading} onMap={setMapped} />
           </div>
           <div className="sc-col">
-            <Prepare storm={storm} current={current} />
+            <Prepare storm={storm} current={current} outlook={outlook} />
             <HourByHour storm={storm} weather={weather} start={start} unit={unit} units={units} />
             {nowcastMode !== 'off' && (
               <div className="sc-section sc-nowcast">

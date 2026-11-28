@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Widget text. The colors are placeholders for the picker preview; the
+         renderer sets each one for the widget's style. -->
+    <style name="WidgetText">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">#ffffff</item>
+        <item name="android:singleLine">true</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:fontFamily">sans-serif</item>
+    </style>
+
+    <style name="WidgetText.Medium">
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <!-- The big temperature: light weight with tightened tracking, like the
+         app's hero temperature. -->
+    <style name="WidgetTemp" parent="WidgetText">
+        <item name="android:fontFamily">sans-serif-light</item>
+        <item name="android:letterSpacing">-0.03</item>
+    </style>
+
+    <!-- The widget setup screen. -->
+    <style name="WidgetConfigTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:windowBackground">@color/cfg_bg</item>
+        <item name="android:statusBarColor">@color/cfg_bg</item>
+        <item name="android:navigationBarColor">@color/cfg_bg</item>
+        <item name="android:windowLightStatusBar">@bool/cfg_light_bars</item>
+        <item name="colorAccent">@color/cfg_primary</item>
+    </style>
+
+    <bool name="cfg_light_bars">true</bool>
+</resources>

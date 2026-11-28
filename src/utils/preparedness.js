@@ -48,10 +48,21 @@ export const PREP_LEVELS = [
   { id: 'act', label: 'Act now', text: 'Have these on hand and be ready to take shelter.' },
 ]
 
-export function preparedness(storm, currentTempF) {
+// Ahead of a storm (see stormOutlook): before it starts, there is still time
+// to shop, fill up and get the shovel out, so the list says so.
+const AHEAD = { id: 'ready', label: 'Get ready', text: 'It is on the way. Get these sorted before it starts, while roads are clear.' }
+const OUTLOOK_HAZARD = { thunder: 'thunder', rain: 'rain', wind: 'wind', snow: 'snow', ice: 'snow' }
+
+// `outlook` is the storm in the next three days, if any (stormOutlook): its
+// hazard counts at its expected level, so the list is ready before it is here.
+export function preparedness(storm, currentTempF, outlook = null) {
   const events = storm.alerts.map((a) => a.properties?.event ?? '')
   const has = (key) => events.some((e) => RE[key].test(e))
-  const lvl = (id) => storm.hazards[id]?.level.index ?? 0
+  const outlookHazard = outlook ? OUTLOOK_HAZARD[outlook.kind] : null
+  const lvl = (id) => Math.max(
+    storm.hazards[id]?.level.index ?? 0,
+    id === outlookHazard ? outlook.level.index : 0,
+  )
   const threat = storm.threat.level.index
   // Act now for a warning drawn around the storm itself, or a storm alert
   // rated Extreme. A zone-wide warning (winter storm, wind) covers a county or
@@ -81,12 +92,16 @@ export function preparedness(storm, currentTempF) {
   if (threat >= 3) add('groceries', 'water', 'food', 'meds', 'firstaid')
   // An ice storm brings down lines and closes roads for days, however little
   // snow comes with it.
-  if (events.some((e) => /ice storm|freezing rain/i.test(e))) add('groceries', 'flashlight', 'warm')
+  if (events.some((e) => /ice storm|freezing rain/i.test(e)) || outlook?.kind === 'ice') add('groceries', 'flashlight', 'warm')
+  // A big storm still to come: stock up and fill up while it is easy.
+  const coming = outlook && outlook.startIdx > 0
+  if (coming && outlook.level.index >= 3) add('groceries', 'fuel', 'water', 'meds')
   if (threat >= 2) add('firstaid')
   // Something is going on, so always the basics.
   add('charge', 'flashlight')
 
   const items = ITEMS.filter((i) => want.has(i.id)).map((i) => BY_ID[i.id])
-  const level = PREP_LEVELS[warning || threat >= 3 ? 2 : threat >= 2 ? 1 : 0]
+  const now = warning || threat >= 3 ? 2 : threat >= 2 ? 1 : 0
+  const level = coming && now < 2 ? AHEAD : PREP_LEVELS[now]
   return { level, items }
 }

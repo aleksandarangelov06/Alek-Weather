@@ -5,6 +5,7 @@ import { WeatherIcon } from './WeatherIcon'
 import { formatPrecip, formatWind } from '../utils/units'
 import { coverAsPage, coverFrom, useCoverHistory } from '../utils/detailCover'
 import { DetailCover } from './DetailCover'
+import { DayTempHead, DayTempPlot } from './DayTempChart'
 import { dayWindow, direction, rateActivities, scoreColor, scoreLabel } from '../utils/todayOutlook'
 
 // The Today tab's three ratings, in its order and with its icons.
@@ -535,6 +536,14 @@ export const DailyForecast = memo(function DailyForecast({ daily, hourly, timezo
                 </div>
               )}
             </div>
+            {/* Which way the day's temperature goes, in words, over the hour
+                strip; the line itself is in the strip (DayTempPlot), so it
+                scrolls with the hours it belongs to. */}
+            {hoursReady && openHours.length > 1 && (
+              <div className="daily-hours-in day-temp-wrap">
+                <DayTempHead hours={openHours} unit={unit} />
+              </div>
+            )}
             {hoursReady && openHours.length > 0 && (
               <div className="hourly-scroll-wrapper daily-hours-in">
                 <button className="hourly-nav hourly-nav-left" onClick={() => scroll(-1)} aria-label="Scroll left">‹</button>
@@ -543,6 +552,7 @@ export const DailyForecast = memo(function DailyForecast({ daily, hourly, timezo
                       transform) so horizontal scroll is a cheap GPU translate —
                       same fix as the main hourly forecast strip. */}
                   <div className="hourly-track">
+                    <DayTempPlot hours={openHours} unit={unit} colorCoding={colorCoding} timezone={timezone} />
                     <div className="hourly-row">
                       {openHours.map((h, hi) => {
                         const hInfo = getWeatherInfo(h.code, !h.isDay)

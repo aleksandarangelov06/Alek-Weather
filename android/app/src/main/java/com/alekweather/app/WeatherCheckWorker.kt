@@ -380,8 +380,8 @@ class WeatherCheckWorker(context: Context, params: WorkerParameters) : Worker(co
 
     companion object {
         private const val FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
-        private const val NOAA_ALERTS_URL = "https://api.weather.gov/alerts/active"
-        private const val NWS_USER_AGENT =
+        internal const val NOAA_ALERTS_URL = "https://api.weather.gov/alerts/active"
+        internal const val NWS_USER_AGENT =
             "AlekWeatherApp/1.0 (angelov6+alekweather@terpmail.umd.edu)"
 
         /** What one WMO weather code means for the notification. */

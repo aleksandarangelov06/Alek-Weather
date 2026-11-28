@@ -3,7 +3,7 @@
 import { version } from '../../package.json'
 
 export const APP_VERSION = version
-export const ANDROID_VERSION = '2.2'
+export const ANDROID_VERSION = '2.3'
 // The release channel, shown after the version wherever it is displayed
 // ("4.0.1 Beta"). Display only: the versions themselves stay plain numbers,
 // because the APK's update check compares release tags numerically and a

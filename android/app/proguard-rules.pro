@@ -28,6 +28,7 @@
 # an older install fails to inflate after an update. androidx ships consumer
 # rules covering its own internals; this is for the worker in this app.
 -keep class com.alekweather.app.WeatherCheckWorker { <init>(...); }
+-keep class com.alekweather.app.WidgetRefreshWorker { <init>(...); }
 
 # Keeps line numbers in a crash report meaningful after shrinking.
 -keepattributes SourceFile,LineNumberTable

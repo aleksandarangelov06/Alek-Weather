@@ -888,14 +888,13 @@ function radarViewProps(bodyProps) {
   }
 }
 
-function SettingsBody({ onHelpOpen, onExploreOpen, darkMode, onDarkModeChange, unit, onUnitChange, onUnitGroupChange, colorCoding, onColorCodingAll, nowcastMode, onNowcastModeChange, onColorCodingOpen, onRadarOpen, onWeatherEffectsOpen, onUnitsOpen, onThemeOpen, onNotificationsOpen, weatherAnimations, onWeatherAnimationsChange, haptics, onHapticsChange, installPrompt, onInstall }) {
+function SettingsBody({ onHelpOpen, onExploreOpen, darkMode, onDarkModeChange, unit, onUnitChange, onUnitGroupChange, nowcastMode, onNowcastModeChange, onColorCodingOpen, onRadarOpen, onWeatherEffectsOpen, onUnitsOpen, onThemeOpen, onNotificationsOpen, weatherAnimations, onWeatherAnimationsChange, haptics, onHapticsChange, installPrompt, onInstall }) {
   // One switch for the whole set of units: °F with the US measures, °C with
   // metric (UNIT_SYSTEMS). The Units page sets any one apart.
   const changeUnitSystem = (value) => {
     onUnitChange(value)
     for (const group of UNIT_GROUP_KEYS) onUnitGroupChange(group, UNIT_SYSTEMS[value][group])
   }
-  const ccOn = colorCoding ? anyColorCoding(colorCoding) : false
   return (
     <>
       <div className="settings-group-label">Appearance</div>
@@ -917,25 +916,16 @@ function SettingsBody({ onHelpOpen, onExploreOpen, darkMode, onDarkModeChange, u
               />
             </div>
             {/* Deeper theme options (platform style) live on their own page. */}
-            <button className="theme-chevron-btn" onClick={onThemeOpen} aria-label="More theme options">
+            <button className="theme-chevron-btn" onClick={(e) => { e.stopPropagation(); onThemeOpen() }} aria-label="More theme options">
               <ChevronRight size={16} className="about-chevron" />
             </button>
           </div>
         </div>
-        {/* All of it on or off right here; the page picks tiles one by one. */}
-        <div className="settings-row settings-row--link" onClick={onColorCodingOpen}>
+        {/* A link to the Color Coding page, where it is switched on and off. */}
+        <button className="settings-row about-row" onClick={onColorCodingOpen}>
           <div className="settings-row-label">Color Coding</div>
-          <div className="settings-row-controls">
-            {onColorCodingAll && (
-              <div onClick={e => e.stopPropagation()}>
-                <Toggle id="toggle-cc-all-main" checked={ccOn} onChange={() => onColorCodingAll(!ccOn)} />
-              </div>
-            )}
-            <button className="theme-chevron-btn" onClick={onColorCodingOpen} aria-label="Color coding options">
-              <ChevronRight size={16} className="about-chevron" />
-            </button>
-          </div>
-        </div>
+          <ChevronRight size={16} className="about-chevron" />
+        </button>
         {/* Gyroscope tilt lives on its own page and only exists on mobile, so on
             mobile this is a plain link into that page (the on/off toggle lives
             there, next to gyroscope — like Color Coding). Desktop has no page, so
@@ -967,7 +957,7 @@ function SettingsBody({ onHelpOpen, onExploreOpen, darkMode, onDarkModeChange, u
                 ]}
               />
             </div>
-            <button className="theme-chevron-btn" onClick={onUnitsOpen} aria-label="All units">
+            <button className="theme-chevron-btn" onClick={(e) => { e.stopPropagation(); onUnitsOpen() }} aria-label="All units">
               <ChevronRight size={16} className="about-chevron" />
             </button>
           </div>

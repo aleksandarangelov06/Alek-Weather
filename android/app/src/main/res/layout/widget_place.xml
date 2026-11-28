@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The place line every widget opens with: location arrow and the Home place's name. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingTop="2dp">
+
+    <ImageView
+        android:id="@+id/pin"
+        android:layout_width="11dp"
+        android:layout_height="11dp"
+        android:importantForAccessibility="no"
+        android:src="@drawable/ic_widget_pin" />
+
+    <TextView
+        android:id="@+id/place"
+        style="@style/WidgetText.Medium"
+        android:layout_marginStart="5dp"
+        android:textSize="13sp"
+        android:text="Home" />
+</LinearLayout>

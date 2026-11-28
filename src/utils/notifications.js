@@ -60,11 +60,14 @@ export function notificationPlace({ home, cities, location }) {
  * notificationPlace; null keeps whatever the shell already has), and the
  * temperature unit to phrase the daily summary in.
  *
+ * The home-screen widgets show the same place, so its name and the wind and
+ * pressure units ride along too.
+ *
  * Called on every change to any of those. Syncing also kicks an immediate
  * check, so switching a type on can produce a notification straight away rather
  * than at the top of the next hour.
  */
-export function syncNotificationSettings({ enabled, types, location, unit }) {
+export function syncNotificationSettings({ enabled, types, location, unit, units }) {
   const b = bridge()
   if (!b) return
   try {
@@ -74,6 +77,8 @@ export function syncNotificationSettings({ enabled, types, location, unit }) {
       latitude: location?.latitude ?? null,
       longitude: location?.longitude ?? null,
       unit: unit ?? 'F',
+      name: location?.name ?? null,
+      units: units ? { wind: units.wind, pressure: units.pressure } : null,
     }))
   } catch { /* older shell without the method */ }
 }

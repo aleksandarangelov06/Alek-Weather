@@ -33,7 +33,8 @@ import { SettingsPage } from './components/SettingsPageLazy'
 import { HelpPage } from './components/HelpPage'
 import { StormCenterBanner, StormSheet } from './components/StormSheet'
 import { ExplorePage } from './components/ExplorePageLazy'
-import { FREEZING_RAIN_CODES, isStormAlert, sortAlerts, stormCenterAlert, stormTint } from './utils/stormCenter'
+import { isStormAlert, sortAlerts, stormTint } from './utils/stormCenter'
+import { useStormCenter, useStormView } from './hooks/useStormCenter'
 import { preloadSettings } from './components/settingsChunk'
 import { BuildingsIcon, GearIcon, SearchIcon } from './components/headerGlyphs'
 import { SlidersIcon } from './components/SlidersIcon'
@@ -45,7 +46,7 @@ import { loadWebShell, loadedWebShell } from './components/web/webShellChunk'
 import { TABS as WEB_TABS, useWebTab } from './components/web/tabs'
 import { SplashCities } from './components/SplashCities'
 import { LoadingScreen } from './components/LoadingScreen'
-import { liveWeatherCode, getWeatherInfo, precipTier, SNOW_CODES } from './utils/weatherCodes'
+import { liveWeatherCode, getWeatherInfo } from './utils/weatherCodes'
 import { isSnowing } from './utils/conditions'
 import { WeatherIcon } from './components/WeatherIcon'
 import { useIconSet, setIconSet } from './utils/iconSet'
@@ -599,11 +600,18 @@ function App() {
   const notifyPlace = notificationPlace({ home, cities, location })
   const notifyLat = notifyPlace?.latitude ?? null
   const notifyLon = notifyPlace?.longitude ?? null
+  // The widgets show this place too, under its name and in these units.
+  const notifyName = notifyPlace?.name ?? null
+  const windUnit = units.wind
+  const pressureUnit = units.pressure
   useEffect(() => {
     if (!IS_ANDROID_APP) return
-    const place = notifyLat != null && notifyLon != null ? { latitude: notifyLat, longitude: notifyLon } : null
-    syncNotificationSettings({ enabled: notifyEnabled, types: notifyTypes, location: place, unit })
-  }, [notifyEnabled, notifyTypes, notifyLat, notifyLon, unit])
+    const place = notifyLat != null && notifyLon != null ? { latitude: notifyLat, longitude: notifyLon, name: notifyName } : null
+    syncNotificationSettings({
+      enabled: notifyEnabled, types: notifyTypes, location: place, unit,
+      units: { wind: windUnit, pressure: pressureUnit },
+    })
+  }, [notifyEnabled, notifyTypes, notifyLat, notifyLon, notifyName, unit, windUnit, pressureUnit])
   useEffect(() => {
     const handler = (e) => { e.preventDefault(); setInstallPrompt(e) }
     window.addEventListener('beforeinstallprompt', handler)
@@ -1589,33 +1597,23 @@ function App() {
   )
 
   const liveCode = weather ? liveWeatherCode(weather.current, weather.minutely_15, radarClear) : null
-  // What makes the web Home tab the Storm Center, and what it glows for. An alert that's a Warning (the
-  // hazard is happening or imminent) or rated Extreme outranks everything and
-  // glows red; otherwise falling weather right now — storm, snow, rain —
-  // glows in its own colour. Nothing notable, no glow.
-  // Only storm alerts count (see isStormAlert): a Coastal Flood Warning under a
-  // clear sky stays in the alert list and leaves the Storm Center off.
-  const brandEvent = (() => {
-    const extreme = stormCenterAlert(alerts)
-    if (extreme) return { kind: 'extreme', label: extreme.properties.event }
-    if (liveCode == null) return null
-    // Only weather worth a Storm Center: thunder, ice, and heavy rain or snow.
-    // Ordinary rain and light snow opened it too, with a "LIVE" banner over a
-    // dial reading Minimal, which taught people to ignore it.
-    if (liveCode >= 95) return { kind: 'storm', label: 'Thunderstorm now' }
-    if (FREEZING_RAIN_CODES.has(liveCode)) return { kind: 'snow', label: 'Freezing rain now' }
-    if (SNOW_CODES.has(liveCode) && precipTier(liveCode) >= 3) return { kind: 'snow', label: 'Heavy snow now' }
-    if (!SNOW_CODES.has(liveCode) && precipTier(liveCode) >= 3) return { kind: 'rain', label: 'Heavy rain now' }
-    return null
-  })()
-
-  // While something is happening over a forecast, the web Home tab is the Storm Center
-  // (see WebLayout).
-  const stormMode = webLayout && !!brandEvent && !!weather
+  // The Storm Center: 'live' while a storm is here (or a storm-based warning
+  // is out), 'ahead' while a significant one is in the next three days or a
+  // storm watch is out, so there is time to get ready. See stormCenterState,
+  // and useStormCenter for the hold that keeps it from flickering. Only storm
+  // alerts count (see isStormAlert), and only ones that haven't ended.
+  const { state: brandEvent, alerts: stormAlerts } = useStormCenter({ weather, alerts, liveCode, placeKey })
+  // On the web, Home is the Storm Center page while it is open: live storms
+  // open it, storms ahead offer it with a banner over the forecast, and the
+  // page has a way back to the forecast either way (useStormView).
+  const [stormPageOpen, setStormPageOpen] = useStormView(brandEvent, placeKey)
+  const stormMode = webLayout && !!brandEvent && !!weather && stormPageOpen
+  const stormOffer = webLayout && !!brandEvent && !!weather && !stormPageOpen
   // On the phones the card stack stays, and a banner at its top opens the same
   // page as a sheet (see StormSheet), tinted as the page will be.
   const phoneStorm = !webLayout && !!brandEvent && !!weather
-  const phoneStormTint = phoneStorm ? stormTint(sortAlerts(alerts).find(isStormAlert), brandEvent.kind) : null
+  const stormBannerTint = brandEvent ? stormTint(sortAlerts(stormAlerts).find(isStormAlert), brandEvent.kind) : null
+  const phoneStormTint = phoneStorm ? stormBannerTint : null
 
   // The web brand takes you to Home's search field: off Home it reads "Search"
   // (see brandSearch below), and on Home it is the wordmark and just puts the
@@ -2078,6 +2076,16 @@ function App() {
       // rather than the brandEvent object, which is rebuilt every render.
       stormKind={stormMode ? brandEvent.kind : null}
       stormLabel={stormMode ? brandEvent.label : null}
+      stormPhase={stormMode ? brandEvent.mode : null}
+      stormScore={stormMode ? brandEvent.score : null}
+      onStormClose={() => setStormPageOpen(false)}
+      // A storm ahead (or a live one put away) offers the page from a banner
+      // over the forecast instead.
+      stormOfferKind={stormOffer ? brandEvent.kind : null}
+      stormOfferLabel={stormOffer ? brandEvent.label : null}
+      stormOfferPhase={stormOffer ? brandEvent.mode : null}
+      stormOfferTint={stormOffer ? stormBannerTint : null}
+      onStormOpen={() => setStormPageOpen(true)}
     />
   ) : (
     <>
@@ -2089,6 +2097,7 @@ function App() {
           <StormCenterBanner
             kind={brandEvent.kind}
             label={brandEvent.label}
+            phase={brandEvent.mode}
             tint={phoneStormTint}
             onOpen={openStormCenter}
           />
@@ -2700,9 +2709,11 @@ function App() {
           // all clear rather than closing under the reader.
           stormKind={brandEvent?.kind ?? null}
           stormLabel={brandEvent?.label ?? null}
+          stormPhase={brandEvent?.mode ?? null}
+          stormScore={brandEvent?.score ?? null}
           weather={weather}
           location={location}
-          alerts={alerts}
+          alerts={stormAlerts}
           unit={unit}
           units={units}
           radarClear={radarClear}

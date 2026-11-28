@@ -11,7 +11,9 @@ import org.json.JSONObject
  * WebView and is unreadable from a background worker (and from a process that
  * has no WebView at all). So the page mirrors what the worker needs — the
  * toggle, the enabled types, the current location, the unit — through
- * `AndroidNotify.syncSettings`, and this class is where that lands.
+ * `AndroidNotify.syncSettings`, and this class is where that lands. The
+ * home-screen widgets read the same place from here, plus its name and the
+ * wind and pressure units.
  *
  * The dedup state lives here too, and only here: both the foreground check and
  * the background one run through [WeatherCheckWorker], so there is a single
@@ -30,6 +32,9 @@ class NotifyStore(context: Context) {
         private const val KEY_LAT = "lat"
         private const val KEY_LON = "lon"
         private const val KEY_UNIT = "unit"
+        private const val KEY_PLACE = "place"
+        private const val KEY_WIND_UNIT = "unit_wind"
+        private const val KEY_PRESSURE_UNIT = "unit_pressure"
         private const val KEY_SEEN_ALERTS = "seen_alerts"
         private const val KEY_NOTIFIED_DATES = "notified_dates"
 
@@ -50,6 +55,27 @@ class NotifyStore(context: Context) {
     /** "F" or "C"; forecasts are always fetched in F and converted for display. */
     val unit: String get() = prefs.getString(KEY_UNIT, "F") ?: "F"
 
+    /** The notification place's name, for the widgets' place line. */
+    val placeName: String? get() = prefs.getString(KEY_PLACE, null)
+
+    /**
+     * Every unit the widgets display in. Wind and pressure have their own
+     * settings on the page's Units screen; until a page that sends them has
+     * synced, they follow the °F / °C switch the way UNIT_SYSTEMS does.
+     */
+    class Units(val temp: String, val wind: String, val pressure: String)
+
+    val units: Units
+        get() {
+            val temp = unit
+            val metric = temp == "C"
+            return Units(
+                temp,
+                prefs.getString(KEY_WIND_UNIT, null) ?: if (metric) "kmh" else "mph",
+                prefs.getString(KEY_PRESSURE_UNIT, null) ?: if (metric) "hPa" else "inHg",
+            )
+        }
+
     /**
      * Replaces the mirrored settings. Coordinates arrive as strings because
      * SharedPreferences has no double; a float would lose the last decimals.
@@ -60,6 +86,9 @@ class NotifyStore(context: Context) {
         latitude: Double?,
         longitude: Double?,
         unit: String,
+        placeName: String? = this.placeName,
+        windUnit: String? = null,
+        pressureUnit: String? = null,
     ) {
         prefs.edit()
             .putBoolean(KEY_ENABLED, enabled)
@@ -67,6 +96,9 @@ class NotifyStore(context: Context) {
             .putString(KEY_LAT, latitude?.toString())
             .putString(KEY_LON, longitude?.toString())
             .putString(KEY_UNIT, unit)
+            .putString(KEY_PLACE, placeName)
+            .putString(KEY_WIND_UNIT, windUnit)
+            .putString(KEY_PRESSURE_UNIT, pressureUnit)
             .apply()
     }
 

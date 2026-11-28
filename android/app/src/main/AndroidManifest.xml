@@ -26,6 +26,40 @@
             </intent-filter>
         </activity>
 
+        <!-- Home-screen widgets. Each kind is its own provider so it shows up in
+             the launcher's picker on its own; they share AlekWidgetProvider and
+             draw from WidgetData's cache. -->
+        <activity
+            android:name=".WidgetConfigActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:theme="@style/WidgetConfigTheme">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
+        <receiver android:name=".CompactWidget" android:exported="false" android:label="@string/widget_name_compact">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_info_compact" />
+        </receiver>
+        <receiver android:name=".NowWidget" android:exported="false" android:label="@string/widget_name_now3">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_info_now3" />
+        </receiver>
+        <receiver android:name=".HourlyWidget" android:exported="false" android:label="@string/widget_name_hourly">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_info_hourly" />
+        </receiver>
+        <receiver android:name=".DetailsWidget" android:exported="false" android:label="@string/widget_name_details">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_info_details" />
+        </receiver>
+        <receiver android:name=".ComboWidget" android:exported="false" android:label="@string/widget_name_combo">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_info_combo" />
+        </receiver>
+
         <!-- Shares the downloaded update APK to the package installer over a
              content:// URI; a file:// hand-off is rejected on Android 7+. -->
         <provider

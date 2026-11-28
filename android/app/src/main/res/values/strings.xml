@@ -1,4 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Alek Weather</string>
+
+    <!-- Home-screen widgets: the name and description in the launcher's widget picker. -->
+    <string name="widget_name_compact">Compact</string>
+    <string name="widget_name_now3">Now + 3-day</string>
+    <string name="widget_name_hourly">Hourly</string>
+    <string name="widget_name_details">Details &amp; conditions</string>
+    <string name="widget_name_combo">Big combo</string>
+    <string name="widget_desc_compact">The weather right now at your Home place</string>
+    <string name="widget_desc_now3">Right now, then the next three days</string>
+    <string name="widget_desc_hourly">Right now and the next five hours, with when rain starts</string>
+    <string name="widget_desc_details">Feels like, wind, humidity, UV, air quality, rain, pressure and sunset</string>
+    <string name="widget_desc_combo">Alerts, right now, hourly and the next three days</string>
 </resources>

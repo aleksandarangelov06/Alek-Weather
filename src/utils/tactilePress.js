@@ -24,9 +24,11 @@
 // should feel like contact rather than an animation; back up in 350ms on an
 // overshooting one, which is what reads as a spring rather than a fade.
 //
-// In the Android app each press also ticks (utils/haptics.js), on the same
-// beat as the dip, so a scroll that cancels the dip cancels the tick too.
-// Presses with no dip of their own here get the tick alone (TICK_ONLY).
+// In the Android app each tap also ticks (utils/haptics.js), when the finger
+// lifts: only a press that ends as a tap (no scroll, no drag past the slop)
+// ever ticks. Ticking with the dip buzzed whenever a finger rested on a row or
+// a control on its way into a scroll. Presses with no dip of their own here
+// get the tick alone (TICK_ONLY).
 
 import { haptic, HAS_HAPTICS } from './haptics'
 
@@ -124,8 +126,8 @@ export function springFrom(el, scale) {
 
 // Everything else you can press, for the haptic tick alone (the Android app;
 // utils/haptics.js): buttons with a press of their own already (the round
-// icon buttons, the radar's, the glance arrows), switches, links. Timed like a
-// surface, so a scroll that starts on one never ticks.
+// icon buttons, the radar's, the glance arrows), switches, links. Like every
+// press, it ticks on release, so a scroll that starts on one never does.
 const TICK_ONLY = [
   'button',
   '[role="button"]',
@@ -141,12 +143,11 @@ export function installTactilePress() {
   // One press at a time: a second finger down ends the first.
   let cur = null
 
-  // The press landing: the tick, and the dip if this press has one.
+  // The press landing: the dip, if this press has one.
   const dip = (p) => {
     if (p.dipped || p.released) return
     p.dipped = true
     p.downAt = performance.now()
-    haptic('tap')
     if (!p.pressed) return
     // A new press on something still springing back from the last one.
     live.get(p.el)?.anims.forEach(a => a.cancel())
@@ -176,6 +177,8 @@ export function installTactilePress() {
     clearTimeout(p.delay)
     if (cur === p) cur = null
     if (!hold) { springBack(p); return }
+    // A tap: the finger lifted without scrolling. Now it ticks.
+    if (!p.released) haptic('tap')
     // A tap released before a surface's wait ran out dips now, from the release.
     dip(p)
     const wait = Math.max(0, PRESS_MIN_MS - (performance.now() - p.downAt))

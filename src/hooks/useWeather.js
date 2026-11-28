@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { nowcastHourlyCode, precipTier, livePrecipRate, precipIsSnow } from '../utils/weatherCodes'
+import { nowcastHourlyCode, precipTier, livePrecipRate, precipIsSnow, reconcileDryCodes } from '../utils/weatherCodes'
 import { gridHourly, gridHourlyAccum, gridHourlySpans } from '../utils/nwsGrid'
 import { sampleRadar, radarVerdict } from './useRadarPrecip'
 import { IS_ANDROID_APP } from '../utils/version'
@@ -802,7 +802,7 @@ export function confirmCurrentCode(data, alerts) {
 
 const PARAMS = [
   'current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,surface_pressure,wind_speed_10m,wind_direction_10m,wind_gusts_10m,dew_point_2m,uv_index,visibility,snow_depth',
-  'hourly=temperature_2m,apparent_temperature,precipitation_probability,weather_code,is_day,uv_index,wind_speed_10m,wind_direction_10m,wind_gusts_10m,relative_humidity_2m,surface_pressure,visibility,snowfall,cape',
+  'hourly=temperature_2m,apparent_temperature,precipitation_probability,weather_code,is_day,uv_index,wind_speed_10m,wind_direction_10m,wind_gusts_10m,relative_humidity_2m,surface_pressure,visibility,snowfall,precipitation,cape',
   'daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,uv_index_max,wind_speed_10m_max,sunrise,sunset,snowfall_sum',
   'minutely_15=precipitation',
   'temperature_unit=fahrenheit',
@@ -1035,6 +1035,10 @@ export async function loadForecast(loc, { lite = false } = {}) {
     )
   }
 
+  // A rain code over a near-zero chance of rain is put back to a dry sky
+  // (reconcileDryCodes), before anything reads the codes or copies them.
+  reconcileDryCodes(data)
+
   // For US locations, overlay NWS data on top of Open-Meteo (see overlayNws).
   // A full load lays it on a copy and waits for it only NWS_GRACE_MS: in time,
   // the copy is the reading; late, the untouched Open-Meteo reading goes out
@@ -1175,6 +1179,9 @@ async function overlayNws(data, nwsChain, alertsPromise) {
       if (!dry) preferForecastHour(data)
     } catch { /* non-fatal */ }
   }
+  // Again over what NWS merged in: its codes and the gridpoint's chances can
+  // land from different products.
+  reconcileDryCodes(data)
   confirmCurrentCode(data, alertFeatures)
   return { alertFeatures, merged }
 }

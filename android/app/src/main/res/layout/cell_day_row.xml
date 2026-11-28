@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One day in the Big combo widget: day, icon, rain chance, low, range bar, high.
+     The bar is a bitmap drawn by WidgetRenderer, since RemoteViews can't
+     position a segment inside a track. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="28dp"
+    android:gravity="center_vertical"
+    android:orientation="horizontal">
+
+    <TextView
+        android:id="@+id/day"
+        style="@style/WidgetText.Medium"
+        android:layout_width="38dp"
+        android:textSize="13sp" />
+
+    <ImageView
+        android:id="@+id/icon"
+        android:layout_width="22dp"
+        android:layout_height="22dp"
+        android:layout_marginStart="6dp"
+        android:importantForAccessibility="no" />
+
+    <TextView
+        android:id="@+id/pop"
+        style="@style/WidgetText.Medium"
+        android:layout_width="36dp"
+        android:layout_marginStart="8dp"
+        android:textSize="12sp" />
+
+    <TextView
+        android:id="@+id/lo"
+        style="@style/WidgetText"
+        android:layout_width="32dp"
+        android:gravity="end"
+        android:textSize="13sp" />
+
+    <ImageView
+        android:id="@+id/bar"
+        android:layout_width="0dp"
+        android:layout_height="6dp"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="8dp"
+        android:layout_weight="1"
+        android:importantForAccessibility="no"
+        android:scaleType="fitXY" />
+
+    <TextView
+        android:id="@+id/hi"
+        style="@style/WidgetText.Medium"
+        android:layout_width="32dp"
+        android:textSize="13sp" />
+</LinearLayout>

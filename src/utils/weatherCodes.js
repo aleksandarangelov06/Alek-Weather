@@ -83,6 +83,31 @@ const PRECIP_TIER = {
 }
 export function precipTier(code) { return PRECIP_TIER[code] ?? 0 }
 
+// Under this chance of precipitation, an hour or day that still carries a
+// rain, snow or thunder code reads as a contradiction: a rain icon over "0%".
+// Open-Meteo's code and its probability come from different runs (the code
+// from the deterministic model, the chance from the ensemble), so they can
+// disagree outright. The chance is the better-calibrated of the two, so it
+// wins: the code is put back to a dry, cloudy sky. The chance itself is never
+// touched (see the note above RAIN_CODES on why numbers are not invented).
+export const DRY_POP = 5
+const DRY_CODE = 3
+
+// In place, on a forecast reading: every hourly and daily slot whose own
+// chance says dry. A slot with no chance at all is left as it is.
+export function reconcileDryCodes(data) {
+  const fix = (codes, pops) => {
+    if (!codes || !pops) return
+    for (let i = 0; i < codes.length; i++) {
+      const pop = pops[i]
+      if (precipTier(codes[i]) > 0 && Number.isFinite(pop) && pop < DRY_POP) codes[i] = DRY_CODE
+    }
+  }
+  fix(data?.hourly?.weather_code, data?.hourly?.precipitation_probability)
+  fix(data?.daily?.weather_code, data?.daily?.precipitation_probability_max)
+  return data
+}
+
 
 // ── Live "right now" condition from the 15-min nowcast ──────────────────────
 // Open-Meteo's current.weather_code is a categorical, often-lagging snapshot: a

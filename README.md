@@ -6,7 +6,7 @@ That check exists because forecast models are often wrong about right now. Open-
 
 [Web app](https://aleksandarangelov06.github.io/Alek-Weather/) · [Android APK](https://github.com/aleksandarangelov06/Alek-Weather/releases/latest/download/AlekWeather.apk) · [Releases](https://github.com/aleksandarangelov06/Alek-Weather/releases)
 
-Current release: web 4.0.2 Beta, Android 2.2 Beta.
+Current release: web 4.0.3 Beta, Android 2.3 Beta.
 
 ## What it does
 
@@ -62,6 +62,7 @@ Behind the forecast there's an animated sky that matches the weather (rain, snow
 The APK is the same web app in a native shell, with its own copy of the build. It doesn't load the website. It adds a few things the web can't do:
 
 - Notifications for rain, snow and storms on the way, NWS alerts, and a summary of tomorrow, all for your Home place (or your first saved place if there's no Home). The forecast is checked about once an hour in the background, even with the app closed. Ordinary rain, snow and the summary stay quiet overnight (the summary comes between 5 and 10 pm), but severe weather and alerts come through whenever they're issued.
+- Home-screen widgets for the same place: Compact (2×2), Now + 3-day and Hourly (4×2), Details & conditions (4×3), and a Big combo (4×4) with any active NWS alert on top. Each one can be Sky (follows the weather like the app's background), Material You (your wallpaper's colors on Android 12 and later, in light, dark or following the system) or Frosted glass, picked when you add it and changed later by holding it. They refresh about every 30 minutes and whenever you open the app.
 - Updates from GitHub. The app checks for a newer release on its own every few hours, and you can check any time in Settings > App updates. The download goes to Android's installer, which still asks you to confirm.
 - Haptics on presses, which you can turn off under Settings > Touch.
 - Android's predictive back gesture, a native launch screen, and status and navigation bars that match the sky.

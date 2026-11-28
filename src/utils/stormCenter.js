@@ -154,9 +154,13 @@ const CALM = 20
 // `start` is the index of the current hour in `weather.hourly`. `liveCode` is
 // the app's live condition (radar and nowcast included), which stands in for
 // the forecast's code for the current hour.
-export function analyzeStorm({ weather, alerts, liveCode, start, count = 24 }) {
-  const { hourly, current, daily } = weather
-  const ranked = sortAlerts(alerts)
+// Each hour's storm risk from `start` on, at most `count` of them. The part of
+// analyzeStorm that looks at hours one at a time, apart so the outlook
+// (stormOutlook) can read further ahead than the page's 24 hours.
+// `live` is whether the first hour is the current one, which takes the live
+// reading (code, gusts, a severe warning in force) over the forecast's.
+function scoreHours({ weather, ranked, liveCode, start, count, live = true }) {
+  const { hourly, current } = weather
   const tolerance = snowTolerance(weather.latitude, weather.elevation)
   const snowAt = (i) => (Number.isFinite(hourly.snowfall?.[i]) ? hourly.snowfall[i] : 0)
   const severeNow = ranked.some((a) =>
@@ -165,7 +169,7 @@ export function analyzeStorm({ weather, alerts, liveCode, start, count = 24 }) {
   const end = Math.min(hourly.time.length, start + count)
   const hours = []
   for (let i = start; i < end; i++) {
-    const k = i - start
+    const k = live ? i - start : -1
     const code = k === 0 && liveCode != null ? liveCode : hourly.weather_code?.[i]
     const hourGust = hourly.wind_gusts_10m?.[i]
     const gust = k === 0 && Number.isFinite(current.wind_gusts_10m)
@@ -219,6 +223,14 @@ export function analyzeStorm({ weather, alerts, liveCode, start, count = 24 }) {
       },
     })
   }
+  return hours
+}
+
+export function analyzeStorm({ weather, alerts, liveCode, start, count = 24 }) {
+  const { hourly, daily } = weather
+  const ranked = sortAlerts(alerts)
+  const tolerance = snowTolerance(weather.latitude, weather.elevation)
+  const hours = scoreHours({ weather, ranked, liveCode, start, count })
 
   const soon = hours.slice(0, HAZARD_HOURS)
   const snowTotal = hours.reduce((s, h) => s + (Number.isFinite(h.snowfall) ? h.snowfall : 0), 0)
@@ -336,4 +348,366 @@ export function alertFacts(description, max = 4) {
     if (out.length >= max) break
   }
   return out
+}
+
+// ── Advance warning ─────────────────────────────────────────────────────────
+//
+// The Storm Center used to switch on only once the weather here had already
+// turned, which is too late to buy groceries or fill the car. It now has two
+// modes: 'live', when it is happening (or a storm-based warning is out), and
+// 'ahead', when a significant storm is in the next three days, or a storm
+// watch or warning is out before anything has started. Both come from the
+// same scores the page shows, so the banner and the dial can't disagree.
+
+// Alerts that have not ended yet. A cached feed can hold on to one past its
+// end time, and it went on switching the Storm Center on.
+export function activeAlerts(alerts, nowMs) {
+  return (alerts ?? []).filter((a) => {
+    const end = a?.properties?.ends ?? a?.properties?.expires
+    if (!end) return true
+    const t = +new Date(end)
+    return !Number.isFinite(t) || t > nowMs
+  })
+}
+
+const OUTLOOK_HOURS = 72
+// Calm hours between two stormy spells that still make them one storm.
+const EVENT_GAP = 3
+
+// The first significant storm in the next three days, or null: a spell of
+// stormy hours (Low or worse) that peaks High or worse, or brings snow or ice
+// that is at least Moderate for this place (2 inches in Washington, more in
+// Denver, see snowTolerance). CAPE alone is fuel rather than a forecast, so a
+// thunder spell also needs thunder in the forecast or a real chance of rain.
+export function stormOutlook({ weather, alerts, liveCode, start, count = OUTLOOK_HOURS }) {
+  const ranked = sortAlerts(alerts)
+  const hours = scoreHours({ weather, ranked, liveCode, start, count })
+  const tolerance = snowTolerance(weather.latitude, weather.elevation)
+
+  const runs = []
+  let run = null
+  let calm = 0
+  hours.forEach((h, k) => {
+    if (h.score >= CALM) {
+      if (!run) run = { from: k, to: k }
+      run.to = k
+      calm = 0
+    } else if (run && ++calm >= EVENT_GAP) {
+      runs.push(run)
+      run = null
+      calm = 0
+    }
+  })
+  if (run) runs.push(run)
+
+  for (const r of runs) {
+    const span = hours.slice(r.from, r.to + 1)
+    const peakAt = span.reduce((best, h, k) => (h.score > span[best].score ? k : best), 0)
+    const peak = span[peakAt]
+    const snowTotal = span.reduce((s, h) => s + (Number.isFinite(h.snowfall) ? h.snowfall : 0), 0)
+    const snowSeverity = snowScore(SNOW_DAY, snowTotal, tolerance)
+    const freezing = span.some((h) => h.freezing)
+    let severity = Math.max(peak.score, snowSeverity)
+    // A glaze of ice is dangerous anywhere, however little falls.
+    if (freezing) severity = Math.max(severity, 40)
+    const kind = freezing ? 'ice'
+      : peak.kind === 'snow' || (snowSeverity >= 20 && snowSeverity >= peak.score - 10) ? 'snow'
+      : peak.kind ?? 'rain'
+    const wintry = kind === 'snow' || kind === 'ice'
+    if (kind === 'thunder' && !span.some((h) => h.thunderCode) && (peak.pop ?? 0) < 40) continue
+    if (severity < (wintry ? 40 : 60)) continue
+
+    let gustMax = null
+    span.forEach((h) => { if (h.gust != null && (gustMax == null || h.gust > gustMax)) gustMax = h.gust })
+    const end = r.to + 1 < hours.length ? r.to + 1 : null
+    const capped = Math.min(100, severity)
+    // A storm already under way began before this hour: walk back through the
+    // forecast's earlier hours (the feed carries the day before) to its first
+    // stormy one, allowing the same calm gaps a storm is joined across.
+    let beganTime = null
+    if (r.from === 0 && start > 0) {
+      const back = Math.min(start, 24)
+      const past = scoreHours({ weather, ranked, liveCode, start: start - back, count: back, live: false })
+      let gap = 0
+      for (let k = past.length - 1; k >= 0; k--) {
+        if (past[k].score >= CALM) { beganTime = past[k].time; gap = 0 }
+        else if (++gap >= EVENT_GAP) break
+      }
+    }
+    return {
+      kind,
+      severity: capped,
+      level: stormLevel(capped),
+      startIdx: r.from,
+      peakIdx: r.from + peakAt,
+      endIdx: end,
+      startTime: hours[r.from].time,
+      // When a storm under way began, if before this hour (else null).
+      beganTime,
+      peakTime: peak.time,
+      endTime: end != null ? hours[end].time : null,
+      nowTime: hours[0]?.time ?? null,
+      // The last hour looked at: where a storm still going (endTime null) runs off.
+      lastTime: hours[hours.length - 1]?.time ?? null,
+      snowTotal,
+      snowLevel: stormLevel(snowSeverity),
+      gustMax,
+      freezing,
+      thunder: span.some((h) => h.thunderCode),
+    }
+  }
+  return null
+}
+
+// ── How much has fallen ─────────────────────────────────────────────────────
+//
+// A storm's rain and snow, split into what has already fallen and what is
+// still to come, over the window the Storm progress bar shows (a warning's
+// times, or the outlook's storm). The page fills a gauge with it.
+//
+// Open-Meteo's hourly amounts are each the total for the hour *ending* at that
+// time, so the slot stamped 3 PM covers 2 to 3 PM. A slot the window's start,
+// its end or now cuts through counts the share of it on that side. An hour
+// with any snowfall counts toward snow (its precipitation is mostly that
+// snow's water), every other hour toward rain, so neither is counted twice.
+//
+// The hours already gone are the model's account of them, not a gauge's: an
+// estimate, and the page says so.
+const HOUR_MS = 3600000
+// Below these a gauge would be filling with nothing worth a gauge.
+export const RAIN_GAUGE_MIN = 0.05
+export const SNOW_GAUGE_MIN = 0.1
+
+// `toMs` turns an hourly timestamp into ms since the epoch; `start`, `end` and
+// `now` are ms too. Returns { rain, snow }, each { fallen, total, frac } in
+// inches, or null when the storm brings too little of it.
+export function stormPrecip({ hourly, toMs, start, end, now }) {
+  const times = hourly?.time ?? []
+  const amount = (v) => (Number.isFinite(v) && v > 0 ? v : 0)
+  const rain = { fallen: 0, total: 0 }
+  const snow = { fallen: 0, total: 0 }
+  for (let i = 0; i < times.length; i++) {
+    const slotEnd = toMs(times[i])
+    const lo = Math.max(slotEnd - HOUR_MS, start)
+    const hi = Math.min(slotEnd, end)
+    if (!(hi > lo)) continue
+    const snowfall = amount(hourly.snowfall?.[i])
+    const [bucket, value] = snowfall > 0 ? [snow, snowfall] : [rain, amount(hourly.precipitation?.[i])]
+    bucket.total += value * ((hi - lo) / HOUR_MS)
+    const doneTo = Math.min(hi, now)
+    if (doneTo > lo) bucket.fallen += value * ((doneTo - lo) / HOUR_MS)
+  }
+  const gauge = (b, min) => (b.total >= min
+    ? { fallen: b.fallen, total: b.total, frac: Math.min(1, b.fallen / b.total) }
+    : null)
+  return { rain: gauge(rain, RAIN_GAUGE_MIN), snow: gauge(snow, SNOW_GAUGE_MIN) }
+}
+
+// ── What happens when ───────────────────────────────────────────────────────
+//
+// The storm's window broken into what is happening across it: a lane per kind
+// of weather (snow, freezing rain, rain, thunder, strong winds) with the spans
+// it is forecast for, and a lane per storm alert with the span it is in force.
+// A tornado is never in a forecast, only in a warning, so alerts are how the
+// page can say "Tornado Warning 3:10 to 3:45 AM".
+//
+// The weather lanes read the hourly codes the way the rest of the page does
+// (the hour stamped 3 AM is 3 to 4 AM; scoreHours, the timeline), with the
+// live reading standing in for the forecast's code in the current hour. So a
+// snowfall the radar and stations see, and the model hasn't caught up with,
+// is on the snow lane from now. Snow also counts any hour the model puts
+// snowfall in, whatever its code says.
+//
+// `start` is the index of the current hour; `window` is { start, end } in ms
+// (the progress bar's); `toMs` turns an hourly timestamp into ms;
+// `windowAlert` is the alert that set the window, left out of the lanes since
+// the bar itself is it. Spans carry `from` and `to` in ms, `fromIso` and
+// `toIso` for their labels, and `level` (1 light to 4 extreme) to shade by.
+const STRONG_GUST = 40
+const DAMAGING_GUST = 58
+const LANE_ORDER = ['thunder', 'snow', 'ice', 'rain', 'wind']
+
+export function stormPhases({ hourly, liveCode, start, toMs, window: w, alerts = [], windowAlert = null }) {
+  const times = hourly?.time ?? []
+  const lanes = {}
+  const add = (id, slot, level) => {
+    const lane = (lanes[id] ??= [])
+    const last = lane[lane.length - 1]
+    if (last && last.endIndex === slot.i - 1) {
+      last.endIndex = slot.i
+      last.to = slot.to
+      last.toIso = slot.toIso
+      last.level = Math.max(last.level, level)
+    } else {
+      lane.push({ from: slot.from, to: slot.to, fromIso: slot.fromIso, toIso: slot.toIso, level, endIndex: slot.i })
+    }
+  }
+
+  for (let i = 0; i < times.length; i++) {
+    const t0 = toMs(times[i])
+    const t1 = t0 + HOUR_MS
+    if (t1 <= w.start || t0 >= w.end) continue
+    const code = i === start && liveCode != null ? liveCode : hourly.weather_code?.[i]
+    const tier = precipTier(code)
+    // The amount stamped at the *next* hour is the one that fell in this one.
+    const snowfall = hourly.snowfall?.[i + 1] ?? 0
+    const gust = hourly.wind_gusts_10m?.[i]
+    const slot = {
+      i,
+      from: Math.max(t0, w.start),
+      to: Math.min(t1, w.end),
+      fromIso: times[i],
+      toIso: times[i + 1] ?? null,
+    }
+    if (THUNDER_CODES.has(code)) add('thunder', slot, tier)
+    if (FREEZING_CODES.has(code)) add('ice', slot, Math.max(tier, 2))
+    else if (SNOW_CODES.has(code) || snowfall >= 0.01) add('snow', slot, Math.max(tier, 1))
+    else if (tier > 0) add('rain', slot, tier)
+    if (Number.isFinite(gust) && gust >= STRONG_GUST) add('wind', slot, gust >= DAMAGING_GUST ? 4 : 2)
+  }
+
+  const weather = LANE_ORDER.filter((id) => lanes[id]).map((id) => ({
+    id,
+    kind: 'weather',
+    spans: lanes[id].map((s) => ({ from: s.from, to: s.to, fromIso: s.fromIso, toIso: s.toIso, level: s.level })),
+  }))
+
+  // Storm alerts in force at some point in the window, most urgent first, one
+  // lane each. Alert times are real instants, so they need no toMs.
+  const alertLanes = sortAlerts(alerts)
+    .filter((a) => a !== windowAlert && a.id !== windowAlert?.id && isStormAlert(a))
+    .map((a) => {
+      const p = a.properties
+      const from = +new Date(p.onset ?? p.effective ?? p.sent)
+      const to = +new Date(p.ends ?? p.expires)
+      // No end on the alert: it runs to the end of the window.
+      const end = Number.isFinite(to) ? to : w.end
+      if (!Number.isFinite(from) || end <= w.start || from >= w.end) return null
+      return {
+        id: a.id,
+        kind: 'alert',
+        alert: a,
+        spans: [{
+          from: Math.max(from, w.start),
+          to: Math.min(end, w.end),
+          fromIso: null,
+          toIso: null,
+          fromInstant: p.onset ?? p.effective ?? p.sent,
+          toInstant: p.ends ?? p.expires ?? null,
+          level: 4,
+        }],
+      }
+    })
+    .filter(Boolean)
+
+  return [...alertLanes, ...weather]
+}
+
+// What to call a storm in the outlook.
+export function outlookName(o) {
+  const s = o.severity
+  switch (o.kind) {
+    case 'ice': return s >= 60 ? 'Ice storm' : 'Freezing rain'
+    case 'snow': return s >= 60 ? 'Winter storm' : 'Accumulating snow'
+    case 'thunder': return s >= 80 ? 'Severe storms' : 'Strong storms'
+    case 'wind': return s >= 80 ? 'Damaging winds' : 'High winds'
+    default: return s >= 80 ? 'Flooding rain' : 'Heavy rain'
+  }
+}
+
+const dayNumber = (date) => Date.UTC(+date.slice(0, 4), +date.slice(5, 7) - 1, +date.slice(8, 10)) / 86400000
+
+// When a naive local hour falls, said the way a forecast says it, from the
+// forecast's own current hour: "by 4 PM", "tonight", "tomorrow morning",
+// "early Saturday", "Saturday afternoon".
+export function whenText(iso, nowIso) {
+  if (!iso || !nowIso) return ''
+  const days = dayNumber(iso.slice(0, 10)) - dayNumber(nowIso.slice(0, 10))
+  const h = +iso.slice(11, 13)
+  const clock = `${h % 12 || 12} ${h < 12 ? 'AM' : 'PM'}`
+  const part = h < 5 ? 'early' : h < 12 ? 'morning' : h < 17 ? 'afternoon' : h < 21 ? 'evening' : 'night'
+  if (days <= 0) return h >= 18 && +nowIso.slice(11, 13) < 17 ? 'tonight' : `by ${clock}`
+  if (days === 1) {
+    if (part === 'early') return 'overnight'
+    return part === 'night' ? 'tomorrow night' : `tomorrow ${part}`
+  }
+  const day = new Date(`${iso.slice(0, 10)}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' })
+  return part === 'early' ? `early ${day}` : `${day} ${part}`
+}
+
+// The look the Storm Center takes (the tab glow, the banner's icon), by kind.
+const OUTLOOK_LOOK = { thunder: 'storm', wind: 'storm', rain: 'rain', snow: 'snow', ice: 'snow' }
+function alertLook(event) {
+  if (HAZARD_ALERTS.snow.test(event)) return 'snow'
+  if (/flood|rain/i.test(event)) return 'rain'
+  return 'storm'
+}
+
+// What a phone or the web Home should show of the Storm Center right now, or
+// null for nothing: { mode: 'live' | 'ahead', kind (its look), label, score
+// (what the dial reads), level, alert, outlook }.
+//
+// Live: a storm-based warning (stormCenterAlert); weather here now that is at
+// least Moderate, or freezing rain; or a significant storm (the outlook's)
+// already under way. Ordinary rain no longer opens it over a Low dial.
+// Ahead: a significant storm later in the next three days, or a storm watch
+// or warning in effect before the weather has turned.
+export function stormCenterState({ weather, alerts, liveCode, start }) {
+  const ranked = sortAlerts(alerts)
+  const storm = analyzeStorm({ weather, alerts: ranked, liveCode, start })
+  const outlook = stormOutlook({ weather, alerts: ranked, liveCode, start })
+  const now = storm.now
+  const nowScore = now?.score ?? 0
+  const make = (mode, kind, label, score, alert = null) => {
+    const s = Math.min(100, Math.max(0, score))
+    return { mode, kind, label, score: s, level: stormLevel(s), alert, outlook }
+  }
+
+  const lead = stormCenterAlert(ranked)
+  if (lead) return make('live', 'extreme', lead.properties.event, storm.threat.score, lead)
+
+  const freezingNow = FREEZING_CODES.has(liveCode) && nowScore >= 20
+  const underway = !!outlook && outlook.startIdx === 0
+  if (nowScore >= 40 || freezingNow || underway) {
+    const tier = precipTier(liveCode)
+    const label = liveCode >= 95 ? 'Thunderstorm now'
+      : freezingNow ? 'Freezing rain now'
+      : SNOW_CODES.has(liveCode) && tier >= 3 ? 'Heavy snow now'
+      : underway ? `${outlookName(outlook)} under way`
+      : now?.kind === 'wind' ? 'Strong winds now'
+      : SNOW_CODES.has(liveCode) ? 'Snow now'
+      : tier >= 3 ? 'Heavy rain now'
+      : 'Stormy weather now'
+    const kind = liveCode >= 95 || now?.kind === 'wind' || now?.kind === 'thunder' ? 'storm'
+      : freezingNow || SNOW_CODES.has(liveCode) ? 'snow'
+      : underway ? OUTLOOK_LOOK[outlook.kind]
+      : 'rain'
+    return make('live', kind, label, Math.max(storm.threat.score, underway ? outlook.severity : 0))
+  }
+
+  const watch = ranked.find((a) => isStormAlert(a) && alertTier(a.properties) <= 1) ?? null
+  if (outlook) {
+    const label = `${outlookName(outlook)} ${whenText(outlook.startTime, outlook.nowTime)}`
+    return make('ahead', OUTLOOK_LOOK[outlook.kind], label, outlook.severity, watch)
+  }
+  if (watch) {
+    const event = watch.properties.event
+    return make('ahead', alertLook(event), event, Math.max(storm.threat.score, alertFloor(watch.properties)), watch)
+  }
+  return null
+}
+
+// A sentence or three on a storm that is coming: when, how bad, what it
+// brings. `snowText` and `gustText` format amounts in the page's units.
+export function outlookNote(o, { snowText, gustText } = {}) {
+  const when = whenText(o.startTime, o.nowTime)
+  const peak = o.peakIdx > o.startIdx
+    ? `, at its worst ${whenText(o.peakTime, o.nowTime).replace(/^by /, 'around ')}`
+    : ''
+  const parts = [`${outlookName(o)} expected ${when}${peak}.`]
+  if (o.kind === 'snow' && o.snowTotal >= 0.1 && snowText) parts.push(`About ${snowText(o.snowTotal)} in all.`)
+  else if (o.kind === 'ice') parts.push('Roads and power lines could ice over.')
+  else if (o.gustMax >= 40 && gustText) parts.push(`Gusts could reach ${gustText(o.gustMax)}.`)
+  parts.push('Now is the time to get ready.')
+  return parts.join(' ')
 }

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Material You widgets set to "System" follow dark mode. -->
+    <color name="ws_surface">@color/wd_surface</color>
+    <color name="ws_tile">@color/wd_tile</color>
+    <color name="ws_text">@color/wd_text</color>
+    <color name="ws_sub">@color/wd_sub</color>
+    <color name="ws_line">@color/wd_line</color>
+    <color name="ws_rain">@color/wd_rain</color>
+    <color name="ws_good">@color/wd_good</color>
+    <color name="ws_warn">@color/wd_warn</color>
+    <color name="ws_bad">@color/wd_bad</color>
+    <color name="ws_alert_bg">@color/wd_alert_bg</color>
+    <color name="ws_alert_text">@color/wd_alert_text</color>
+
+    <color name="cfg_bg">#141218</color>
+    <color name="cfg_card">#211f26</color>
+    <color name="cfg_card_selected">#4a4458</color>
+    <color name="cfg_text">#e6e0e9</color>
+    <color name="cfg_sub">#cac4d0</color>
+    <color name="cfg_primary">#d0bcff</color>
+    <color name="cfg_on_primary">#381e72</color>
+    <color name="cfg_outline">#938f99</color>
+    <color name="cfg_swatch_line">#24e6e0e9</color>
+</resources>

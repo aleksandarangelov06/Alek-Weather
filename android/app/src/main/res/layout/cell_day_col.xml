@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One day in the Now + 3-day widget's right-hand columns. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="48dp"
+    android:layout_height="match_parent"
+    android:gravity="center_horizontal"
+    android:orientation="vertical">
+
+    <TextView
+        android:id="@+id/day"
+        style="@style/WidgetText.Medium"
+        android:textSize="13sp" />
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <ImageView
+        android:id="@+id/icon"
+        android:layout_width="30dp"
+        android:layout_height="30dp"
+        android:importantForAccessibility="no" />
+
+    <TextView
+        android:id="@+id/pop"
+        style="@style/WidgetText.Medium"
+        android:layout_marginTop="2dp"
+        android:minHeight="15dp"
+        android:textSize="12sp" />
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <TextView
+        android:id="@+id/hi"
+        style="@style/WidgetText.Medium"
+        android:textSize="15sp" />
+
+    <TextView
+        android:id="@+id/lo"
+        style="@style/WidgetText"
+        android:layout_marginTop="3dp"
+        android:textSize="13sp" />
+</LinearLayout>

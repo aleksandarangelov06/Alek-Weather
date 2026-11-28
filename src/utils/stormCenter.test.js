@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { alertFacts, analyzeStorm, sortAlerts, stormCenterAlert } from './stormCenter'
+import { alertFacts, analyzeStorm, sortAlerts, stormCenterAlert, stormPhases, stormPrecip } from './stormCenter'
 import { preparedness } from './preparedness'
 
 function forecast({ codes, gusts = [], pops = [], cape = [], snowfall = [] }) {
@@ -152,5 +152,96 @@ describe('false alarms', () => {
     const s = analyzeStorm({ weather, alerts: [], liveCode: 71, start: 0 })
     expect(s.now.level.index).toBeGreaterThanOrEqual(1)
     expect(s.now.kind).toBe('snow')
+  })
+})
+
+describe('stormPrecip', () => {
+  // Hourly slots stamped at the end of their hour, an hour apart from 0.
+  const H = 3600000
+  const hourly = (precipitation, snowfall = []) => ({
+    time: precipitation.map((_, i) => `t${i + 1}`),
+    precipitation,
+    snowfall: precipitation.map((_, i) => snowfall[i] ?? 0),
+  })
+  const toMs = (t) => Number(t.slice(1)) * H
+
+  it('splits a storm into what has fallen and what is to come', () => {
+    const p = stormPrecip({ hourly: hourly([0.1, 0.2, 0.3, 0.4]), toMs, start: 0, end: 4 * H, now: 2 * H })
+    expect(p.rain.total).toBeCloseTo(1.0)
+    expect(p.rain.fallen).toBeCloseTo(0.3)
+    expect(p.rain.frac).toBeCloseTo(0.3)
+    expect(p.snow).toBeNull()
+  })
+
+  it('counts the share of an hour that now cuts through', () => {
+    const p = stormPrecip({ hourly: hourly([0.2, 0.4]), toMs, start: 0, end: 2 * H, now: 1.5 * H })
+    expect(p.rain.fallen).toBeCloseTo(0.4)
+  })
+
+  it('only counts hours inside the storm window', () => {
+    const p = stormPrecip({ hourly: hourly([0.5, 0.1, 0.1, 0.5]), toMs, start: H, end: 3 * H, now: 0 })
+    expect(p.rain.total).toBeCloseTo(0.2)
+    expect(p.rain.fallen).toBe(0)
+  })
+
+  it('puts snowy hours on the snow gauge, not the rain one too', () => {
+    const p = stormPrecip({ hourly: hourly([0.05, 0.1, 0.1], [0, 1.2, 0.8]), toMs, start: 0, end: 3 * H, now: 3 * H })
+    expect(p.snow.total).toBeCloseTo(2.0)
+    expect(p.snow.frac).toBe(1)
+    // 0.05 in of rain is just enough for its own gauge.
+    expect(p.rain.total).toBeCloseTo(0.05)
+  })
+
+  it('leaves out a gauge for a trace', () => {
+    const p = stormPrecip({ hourly: hourly([0.01, 0.02]), toMs, start: 0, end: 2 * H, now: H })
+    expect(p.rain).toBeNull()
+  })
+})
+
+describe('stormPhases', () => {
+  const H = 3600000
+  // Hour i is stamped i, so it covers i to i + 1 hours.
+  const hourly = (codes, { snowfall = [], gusts = [] } = {}) => ({
+    time: codes.map((_, i) => `t${i}`),
+    weather_code: codes,
+    snowfall: codes.map((_, i) => snowfall[i] ?? 0),
+    wind_gusts_10m: codes.map((_, i) => gusts[i] ?? 10),
+  })
+  const toMs = (t) => Number(t.slice(1)) * H
+  const lane = (phases, id) => phases.find((l) => l.id === id)
+
+  it('joins hours of the same weather into spans', () => {
+    const p = stormPhases({ hourly: hourly([3, 71, 73, 75, 3, 71]), start: 0, toMs, window: { start: 0, end: 6 * H } })
+    const snow = lane(p, 'snow')
+    expect(snow.spans.map((s) => [s.from / H, s.to / H])).toEqual([[1, 4], [5, 6]])
+    expect(snow.spans[0].level).toBe(3)
+  })
+
+  it('takes the live reading for the current hour', () => {
+    // The model has snow from 2; the radar says it is snowing now (hour 0).
+    const p = stormPhases({ hourly: hourly([3, 3, 71, 71]), liveCode: 71, start: 0, toMs, window: { start: 0, end: 4 * H } })
+    expect(lane(p, 'snow').spans.map((s) => s.from / H)).toEqual([0, 2])
+  })
+
+  it('counts snowfall the code does not show, and strong gusts', () => {
+    const p = stormPhases({
+      hourly: hourly([3, 3, 3], { snowfall: [0, 0, 0.3], gusts: [10, 45, 62] }),
+      start: 0, toMs, window: { start: 0, end: 3 * H },
+    })
+    expect(lane(p, 'snow').spans[0].from / H).toBe(1)
+    expect(lane(p, 'wind').spans[0].level).toBe(4)
+  })
+
+  it('gives storm alerts their own lane, leaving out the one that set the window', () => {
+    const at = (h) => new Date(h * H).toISOString()
+    const winter = alert('Winter Storm Warning', 'Severe', { onset: at(0), ends: at(10) })
+    const tornado = alert('Tornado Warning', 'Extreme', { onset: at(3), ends: at(4) })
+    const p = stormPhases({
+      hourly: hourly([3, 3]), start: 0, toMs, window: { start: 0, end: 10 * H },
+      alerts: [winter, tornado], windowAlert: winter,
+    })
+    expect(p[0].id).toBe('Tornado Warning')
+    expect([p[0].spans[0].from / H, p[0].spans[0].to / H]).toEqual([3, 4])
+    expect(p.some((l) => l.id === 'Winter Storm Warning')).toBe(false)
   })
 })

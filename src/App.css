@@ -2050,6 +2050,41 @@ body {
   100% { transform: translate(-1px, 2.5px); opacity: 0; }
 }
 
+/* Snow: the two snowflakes fall. Each starts tucked up under the cloud (the
+   glyph draws them beneath it), drops out from behind it while turning about
+   its own middle, and fades out below before starting over: a flake falling
+   and gone, not a dot blinking on the spot. Their own lengths and a head start
+   for the second keep the two out of step. After the .wi-mote rule above, which
+   they also carry for the off switches, so this one wins at equal weight. */
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) .weather-icon--snow .wi-fallflake {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: wi-snowfall 3.6s linear infinite;
+  animation-delay: calc(0s - var(--wi-row-delay, 0s));
+}
+:is(.current-icon, .daily-icon, .web-day-icon, .web-week-icon, .web-mini-icon, .splash-logo-icon, .icon-set-preview-cell, .hourly-item[data-live] .hourly-icon) .weather-icon--snow .wi-fallflake:last-child {
+  animation-duration: 3s;
+  animation-delay: calc(-1.6s - var(--wi-row-delay, 0s));
+}
+/* The phone hero, where the box's blank bottom is pulled out of the layout and
+   the reading starts right under the art: a shorter fall, gone before the edge
+   (as wi-flake-short is for the dots it replaced). */
+:root[data-shell="mobile"] .current-card .current-icon:not(:has(.weather-icon-line)) .weather-icon--snow .wi-fallflake {
+  animation-name: wi-snowfall-short;
+}
+@keyframes wi-snowfall {
+  0%   { transform: translate(0, -5px) rotate(0deg); opacity: 0; }
+  15%  { opacity: 1; }
+  65%  { opacity: 1; }
+  100% { transform: translate(-1.2px, 4px) rotate(120deg); opacity: 0; }
+}
+@keyframes wi-snowfall-short {
+  0%   { transform: translate(0, -4px) rotate(0deg); opacity: 0; }
+  15%  { opacity: 1; }
+  60%  { opacity: 1; }
+  100% { transform: translate(-0.8px, 2px) rotate(90deg); opacity: 0; }
+}
+
 .daily-row:nth-child(2n),   .web-day:nth-child(2n),   .web-week-day:nth-child(2n),   .web-mini-hour:nth-child(2n),   .hourly-item:nth-child(2n)   { --wi-row-delay: 0.62s; }
 .daily-row:nth-child(3n+1), .web-day:nth-child(3n+1), .web-week-day:nth-child(3n+1), .web-mini-hour:nth-child(3n+1), .hourly-item:nth-child(3n+1) { --wi-row-delay: 1.18s; }
 
@@ -3581,7 +3616,11 @@ html:has(.detail-page) {
 
 .detail-page--daily .day-stats { order: 1; gap: 10px; }
 .detail-page--daily .day-cond { order: 2; gap: 10px; }
-.detail-page--daily .daily-hours-in { order: 3; margin-top: auto; }
+/* The chart and the hour strip follow the conditions directly. They were
+   pinned to the foot of the screen, which on a tall phone left the strip
+   stranded against the bottom edge, a long way from what it belongs to. */
+.detail-page--daily .day-temp-wrap { order: 3; }
+.detail-page--daily .hourly-scroll-wrapper.daily-hours-in { order: 4; }
 
 .detail-page--daily :is(.day-stat, .day-cond-cell) {
   padding: clamp(8px, 1.4dvh, 14px) 12px;
@@ -3615,6 +3654,75 @@ html:has(.detail-page) {
 .detail-page--daily .hourly-nav-left  { left: 0; }
 .detail-page--daily .hourly-nav-right { right: 0; }
 .detail-page--daily .hourly-item:first-child { background: transparent; }
+
+/* ── The day's temperature chart (DayTempChart) ──
+   The head sits over the hour strip; the plot is the first thing in the
+   strip's scrolled track, as wide as its columns, so it scrolls with them. */
+.day-temp-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px 12px;
+}
+.day-temp-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.day-temp-trend {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.day-temp-plot {
+  position: relative;
+  width: 100%;
+  height: 76px;
+  margin-bottom: 2px;
+}
+.day-temp-plot svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.day-temp-line {
+  fill: none;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.day-temp-now {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  border-left: 1.5px solid var(--text-tertiary);
+  pointer-events: none;
+}
+/* The high and the low: a dot on the line, the reading above or below it. */
+.day-temp-mark {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 0 0 2px var(--card-bg);
+}
+.day-temp-mark-label {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+.day-temp-mark.is-high .day-temp-mark-label { bottom: 9px; }
+.day-temp-mark.is-low .day-temp-mark-label { top: 9px; }
 
 /* The day cover's hourly strip is mounted after the reveal finishes (see
    DailyForecast), so it fades in on its own rather than popping. */
@@ -8075,6 +8183,10 @@ button.reorder-row-action:focus-visible {
 /* ── Toggle switch ── */
 .toggle-switch {
   position: relative;
+  /* A label is inline, which ignores width and height: only a direct flex
+     child got its size, and one wrapped in anything else collapsed to nothing
+     with its knob drawn off to the side. */
+  display: inline-block;
   width: 44px;
   height: 26px;
   flex-shrink: 0;
@@ -13173,16 +13285,18 @@ button.reorder-row-action:focus-visible {
      its grouped panels (.ss-group) is the sheet's glass (--glass-base at 52%
      under a 24px saturated blur, the per-sky tint carried in --glass-base)
      with a 7% white lift on top, and no outline or shadow. A card here is the
-     two layers in one: the same fill, blur and lift, so a card and a search
-     panel over the same sky come out the same colour. Card Transparency thins
-     both the same way, through --ios-glass-scale and --ios-glass-blur.
+     two layers in one: the same fill, blur and lift. Unlike the panel it is
+     solid at zero Card Transparency, and the slider thins it from there.
 
      This used to be the splash cards' dark --ios-frost with a white hairline;
      the hairline is gone with it (kept as a transparent 1px border so nothing
      inside moves). */
   --glass-tint: 0.07;
   --glass-rim: transparent;
-  --card-glass-fill: color-mix(in srgb, var(--glass-base) calc(52% * var(--ios-glass-scale)), transparent);
+  /* Solid at zero transparency, thinning to 23% at the clamp (where the old
+     52% x --ios-glass-scale ended up): zero has to mean no sky through the
+     card, which 52% at zero never did. */
+  --card-glass-fill: color-mix(in srgb, var(--glass-base) calc(100% - 77% * var(--card-glass-t, 0)), transparent);
   --card-glass-shadow: none;
   --card-glass-blur: blur(var(--ios-glass-blur)) saturate(180%);
   background-color: var(--card-glass-fill);
@@ -13288,10 +13402,10 @@ button.reorder-row-action:focus-visible {
    .sky-tone-light (App.jsx) is the same light/dark sky split the splash uses.
    The tokens the dark rule re-pointed go back to their light-mode values. */
 :root[data-theme="light"][data-shell="mobile"][data-platform="ios"] .app.sky-active.sky-tone-light {
-  /* Card Transparency thins it like the dark frost (--card-glass-t, 0–1):
-     90% → 75%, the same step the frost takes from 80% to 65%. */
-  --ios-light-glass: rgb(255 255 255 / calc(0.9 - 0.15 * var(--card-glass-t, 0)));
-  --ios-light-glass-press: rgb(255 255 255 / calc(0.96 - 0.15 * var(--card-glass-t, 0)));
+  /* Card Transparency thins it (--card-glass-t, 0–1): solid white at zero,
+     75% at the clamp. */
+  --ios-light-glass: rgb(255 255 255 / calc(1 - 0.25 * var(--card-glass-t, 0)));
+  --ios-light-glass-press: rgb(255 255 255 / calc(1 - 0.2 * var(--card-glass-t, 0)));
   /* The header buttons (and the hero's save/favourite circles) wear the same
      light glass as the cards, as they do on the splash. */
   --icon-circle-bg: var(--ios-light-glass);
@@ -13335,8 +13449,8 @@ button.reorder-row-action:focus-visible {
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme])[data-shell="mobile"][data-platform="ios"] .app.sky-active.sky-tone-light {
-    --ios-light-glass: rgb(255 255 255 / calc(0.9 - 0.15 * var(--card-glass-t, 0)));
-    --ios-light-glass-press: rgb(255 255 255 / calc(0.96 - 0.15 * var(--card-glass-t, 0)));
+    --ios-light-glass: rgb(255 255 255 / calc(1 - 0.25 * var(--card-glass-t, 0)));
+    --ios-light-glass-press: rgb(255 255 255 / calc(1 - 0.2 * var(--card-glass-t, 0)));
     --icon-circle-bg: var(--ios-light-glass);
     --icon-circle-press: var(--ios-light-glass-press);
     --icon-circle-ring: rgba(255, 255, 255, 0.6);
@@ -13571,7 +13685,7 @@ a.apk-download-btn {
 
    Over a sky they now take the separate cards' panel instead: the deep sky
    tint lifted by 7% white, the colour the Android cards are over the same sky.
-   Card Transparency thins it from 90% at zero to 50% at the clamp
+   Card Transparency thins it from solid at zero to 50% at the clamp
    (--card-glass-t, 0–1, written by App.jsx only while the slider is off zero
    and the sky is there).
 
@@ -13596,7 +13710,7 @@ a.apk-download-btn {
 :root[data-shell="mobile"][data-layout="connected"] .app.sky-active .weather-content {
   --connected-tile: color-mix(in srgb,
     color-mix(in srgb, var(--sky-card-deep, #2d3f55) 93%, #fff)
-    calc(90% - 40% * var(--card-glass-t, 0)), transparent);
+    calc(100% - 50% * var(--card-glass-t, 0)), transparent);
   --connected-text-shadow: 0 1px 3px rgb(0 0 0 / 0.2), 0 1px 12px rgb(0 0 0 / 0.16);
   --connected-value-shadow: 0 1px 1.5px rgb(0 0 0 / 0.55), 0 0 3px rgb(0 0 0 / 0.25), 0 1px 12px rgb(0 0 0 / 0.3);
   --connected-icon-lift: drop-shadow(0 1px 3px rgb(0 0 0 / 0.35));

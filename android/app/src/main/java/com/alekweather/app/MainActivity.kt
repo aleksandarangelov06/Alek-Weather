@@ -148,6 +148,9 @@ class MainActivity : AppCompatActivity() {
         const val REQ_LOCATION = 1
         const val REQ_NOTIF = 2
 
+        /** Opening the app refreshes the widgets unless their forecast is younger than this. */
+        const val WIDGET_FRESH_MS = 10 * 60 * 1000L
+
         /**
          * The page lifts the launch screen itself, by its own BOOT_MAX_MS (8s)
          * at the latest. This is for a page that never gets that far.
@@ -620,7 +623,10 @@ class MainActivity : AppCompatActivity() {
          * place), not whatever forecast is on screen, so browsing another city
          * never redirects the notifications.
          *
-         * @param json `{ enabled, types: string[], latitude, longitude, unit }`
+         * The same place feeds the home-screen widgets, along with its name and
+         * the wind and pressure units they display in.
+         *
+         * @param json `{ enabled, types: string[], latitude, longitude, unit, name?, units?: { wind, pressure } }`
          */
         @JavascriptInterface
         fun syncSettings(json: String) {
@@ -644,7 +650,22 @@ class MainActivity : AppCompatActivity() {
             val lat = obj.optDouble("latitude").takeIf { !it.isNaN() } ?: store.latitude
             val lon = obj.optDouble("longitude").takeIf { !it.isNaN() } ?: store.longitude
 
-            store.saveSettings(enabled, types, lat, lon, obj.optString("unit", "F"))
+            val before = listOf(store.latitude, store.longitude, store.placeName, store.unit, store.units.wind, store.units.pressure)
+            val units = obj.optJSONObject("units")
+            store.saveSettings(
+                enabled, types, lat, lon, obj.optString("unit", "F"),
+                // Like the coordinates, a missing name keeps the one stored.
+                placeName = obj.optString("name").takeIf { it.isNotEmpty() && it != "null" } ?: store.placeName,
+                windUnit = units?.optString("wind")?.ifEmpty { null },
+                pressureUnit = units?.optString("pressure")?.ifEmpty { null },
+            )
+            val after = listOf(store.latitude, store.longitude, store.placeName, store.unit, store.units.wind, store.units.pressure)
+            if (before != after) {
+                // Redraw now (new units, or the old place's cache is no longer
+                // shown) and fetch for the new place.
+                WidgetRenderer.updateAll(applicationContext)
+                WidgetRefreshWorker.refreshNow(applicationContext)
+            }
 
             if (enabled && lat != null && lon != null) {
                 WeatherCheckWorker.schedule(applicationContext)
@@ -766,6 +787,9 @@ class MainActivity : AppCompatActivity() {
         // re-runs the sync. Both go through the same unique one-shot, so at most
         // one extra check actually runs.
         if (NotifyStore(this).enabled) WeatherCheckWorker.checkNow(this)
+        // Same for the widgets, unless their forecast is only a few minutes old.
+        val fetchedAt = WidgetData.cache(this)?.optLong("fetchedAt") ?: 0L
+        if (System.currentTimeMillis() - fetchedAt > WIDGET_FRESH_MS) WidgetRefreshWorker.refreshNow(this)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

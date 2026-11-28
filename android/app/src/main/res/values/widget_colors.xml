@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Home-screen widget palettes. The Sky and Frosted glass styles use fixed
+         colors set in WidgetRenderer; the Material You style reads these.
+
+         wl_* is Material You light, wd_* dark, ws_* whichever the system is in
+         (values-night swaps ws_* to the dark set). Below Android 12 these are
+         the M3 baseline (the app's default seed, #6750a4); values-v31 points
+         the surfaces and text at the wallpaper's system colors instead. -->
+    <color name="wl_surface">#f3edf7</color>
+    <color name="wl_tile">#e8def8</color>
+    <color name="wl_text">#1d1b20</color>
+    <color name="wl_sub">#49454f</color>
+    <color name="wl_line">#1f1d1b20</color>
+    <color name="wl_rain">#1f5fbf</color>
+    <color name="wl_good">#1b7a3a</color>
+    <color name="wl_warn">#8a5a00</color>
+    <color name="wl_bad">#b3261e</color>
+    <color name="wl_alert_bg">#ffdad6</color>
+    <color name="wl_alert_text">#410002</color>
+
+    <color name="wd_surface">#211f26</color>
+    <color name="wd_tile">#36343b</color>
+    <color name="wd_text">#e6e0e9</color>
+    <color name="wd_sub">#cac4d0</color>
+    <color name="wd_line">#24e6e0e9</color>
+    <color name="wd_rain">#9ccaff</color>
+    <color name="wd_good">#7bdc8f</color>
+    <color name="wd_warn">#f5c451</color>
+    <color name="wd_bad">#ffb4ab</color>
+    <color name="wd_alert_bg">#93000a</color>
+    <color name="wd_alert_text">#ffdad6</color>
+
+    <color name="ws_surface">@color/wl_surface</color>
+    <color name="ws_tile">@color/wl_tile</color>
+    <color name="ws_text">@color/wl_text</color>
+    <color name="ws_sub">@color/wl_sub</color>
+    <color name="ws_line">@color/wl_line</color>
+    <color name="ws_rain">@color/wl_rain</color>
+    <color name="ws_good">@color/wl_good</color>
+    <color name="ws_warn">@color/wl_warn</color>
+    <color name="ws_bad">@color/wl_bad</color>
+    <color name="ws_alert_bg">@color/wl_alert_bg</color>
+    <color name="ws_alert_text">@color/wl_alert_text</color>
+
+    <!-- The widget setup screen, in the app's Material look. -->
+    <color name="cfg_bg">#fef7ff</color>
+    <color name="cfg_card">#f3edf7</color>
+    <color name="cfg_card_selected">#e8def8</color>
+    <color name="cfg_text">#1d1b20</color>
+    <color name="cfg_sub">#49454f</color>
+    <color name="cfg_primary">#6750a4</color>
+    <color name="cfg_on_primary">#ffffff</color>
+    <color name="cfg_outline">#79747e</color>
+    <color name="cfg_swatch_line">#1f1d1b20</color>
+</resources>

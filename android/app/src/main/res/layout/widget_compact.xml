@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 2x2: right now only. Colors, backgrounds and text are set in WidgetRenderer. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@android:id/background"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/bg_sky_clear_night"
+    android:clipToOutline="true"
+    android:paddingStart="16dp"
+    android:paddingTop="14dp"
+    android:paddingEnd="16dp"
+    android:paddingBottom="16dp">
+
+    <include layout="@layout/widget_empty" />
+
+    <LinearLayout
+        android:id="@+id/content"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <include layout="@layout/widget_place" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" />
+
+            <ImageView
+                android:id="@+id/icon"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/wx_moon" />
+        </LinearLayout>
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <TextView
+            android:id="@+id/temp"
+            style="@style/WidgetTemp"
+            android:textSize="48sp"
+            android:text="41°" />
+
+        <TextView
+            android:id="@+id/cond"
+            style="@style/WidgetText.Medium"
+            android:textSize="13sp"
+            android:text="Clear Sky" />
+
+        <TextView
+            android:id="@+id/hilo"
+            style="@style/WidgetText"
+            android:layout_marginTop="1dp"
+            android:textSize="12sp"
+            android:text="H 57°  L 38°" />
+    </LinearLayout>
+</FrameLayout>

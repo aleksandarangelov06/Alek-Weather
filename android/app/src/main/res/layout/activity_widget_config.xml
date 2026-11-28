@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The screen that opens when a widget is placed (or long-pressed and
+     reconfigured on Android 12+). Matches the app's Material look. -->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/cfg_bg"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="24dp">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="64dp"
+            android:layout_marginStart="-8dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageButton
+                android:id="@+id/back"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Back"
+                android:src="@drawable/ic_cfg_back" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:fontFamily="sans-serif"
+                android:text="Widget style"
+                android:textColor="@color/cfg_text"
+                android:textSize="22sp" />
+        </LinearLayout>
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:background="@drawable/cfg_preview_bg"
+            android:padding="16dp">
+
+            <FrameLayout
+                android:id="@+id/preview"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_gravity="center"
+                android:importantForAccessibility="noHideDescendants" />
+        </FrameLayout>
+
+        <TextView
+            style="@style/ConfigSection"
+            android:text="Style" />
+
+        <LinearLayout android:id="@+id/option_sky" style="@style/ConfigOption">
+            <RadioButton android:id="@+id/radio_sky" style="@style/ConfigRadio" />
+            <LinearLayout style="@style/ConfigOptionText">
+                <TextView style="@style/ConfigTitle" android:text="Sky" />
+                <TextView style="@style/ConfigDesc" android:text="Changes with the weather, like the app background" />
+            </LinearLayout>
+            <ImageView style="@style/ConfigSwatch" android:src="@drawable/cfg_swatch_sky" />
+        </LinearLayout>
+
+        <LinearLayout android:id="@+id/option_material" style="@style/ConfigOption">
+            <RadioButton android:id="@+id/radio_material" style="@style/ConfigRadio" />
+            <LinearLayout style="@style/ConfigOptionText">
+                <TextView style="@style/ConfigTitle" android:text="Material You" />
+                <TextView android:id="@+id/material_desc" style="@style/ConfigDesc" android:text="Uses your wallpaper colors on Android 12 and later" />
+            </LinearLayout>
+            <ImageView style="@style/ConfigSwatch" android:src="@drawable/cfg_swatch_material" />
+        </LinearLayout>
+
+        <LinearLayout android:id="@+id/option_frost" style="@style/ConfigOption">
+            <RadioButton android:id="@+id/radio_frost" style="@style/ConfigRadio" />
+            <LinearLayout style="@style/ConfigOptionText">
+                <TextView style="@style/ConfigTitle" android:text="Frosted glass" />
+                <TextView style="@style/ConfigDesc" android:text="A dark see-through card that suits any wallpaper" />
+            </LinearLayout>
+            <ImageView style="@style/ConfigSwatch" android:src="@drawable/cfg_swatch_frost" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/theme_section"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <TextView
+                style="@style/ConfigSection"
+                android:text="Theme" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:background="@drawable/cfg_segment"
+                android:orientation="horizontal"
+                android:padding="1dp">
+
+                <TextView android:id="@+id/theme_system" style="@style/ConfigSegment" android:text="System" />
+                <TextView android:id="@+id/theme_light" style="@style/ConfigSegment" android:text="Light" />
+                <TextView android:id="@+id/theme_dark" style="@style/ConfigSegment" android:text="Dark" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:background="@drawable/cfg_option"
+            android:gravity="center_vertical"
+            android:minHeight="72dp"
+            android:orientation="horizontal"
+            android:paddingStart="14dp"
+            android:paddingTop="12dp"
+            android:paddingEnd="14dp"
+            android:paddingBottom="12dp">
+
+            <ImageView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_cfg_home" />
+
+            <LinearLayout style="@style/ConfigOptionText">
+                <TextView android:id="@+id/home_title" style="@style/ConfigTitle" />
+                <TextView android:id="@+id/home_desc" style="@style/ConfigDesc" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:minHeight="24dp" />
+
+        <TextView
+            android:id="@+id/save"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:background="@drawable/cfg_button"
+            android:clickable="true"
+            android:focusable="true"
+            android:fontFamily="sans-serif-medium"
+            android:foreground="?attr/selectableItemBackground"
+            android:gravity="center"
+            android:text="Add widget"
+            android:textColor="@color/cfg_on_primary"
+            android:textSize="16sp" />
+    </LinearLayout>
+</ScrollView>

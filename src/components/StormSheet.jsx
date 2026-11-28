@@ -16,8 +16,9 @@ const freshImpl = () => { StormCenterImpl = makeImpl() }
 
 const KIND_ICON = { extreme: TriangleAlert, storm: Zap, rain: CloudRain, snow: Snowflake }
 
-// The way in, at the top of the forecast while something is happening.
-export function StormCenterBanner({ kind, label, tint, onOpen }) {
+// The way in, at the top of the forecast while something is happening, or
+// coming (`phase` 'ahead', tagged so it doesn't read as happening now).
+export function StormCenterBanner({ kind, label, tint, phase, onOpen }) {
   const Icon = KIND_ICON[kind] ?? Zap
   return (
     <button
@@ -29,7 +30,10 @@ export function StormCenterBanner({ kind, label, tint, onOpen }) {
     >
       <span className="storm-banner-icon" aria-hidden="true"><Icon size={20} strokeWidth={2.4} /></span>
       <span className="storm-banner-text">
-        <span className="storm-banner-title">Storm Center</span>
+        <span className="storm-banner-title">
+          Storm Center
+          {phase === 'ahead' && <span className="storm-banner-tag">Get ready</span>}
+        </span>
         <span className="storm-banner-sub">{label}</span>
       </span>
       <ChevronRight size={20} className="storm-banner-chevron" aria-hidden="true" />
